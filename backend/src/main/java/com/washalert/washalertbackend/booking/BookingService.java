@@ -1,0 +1,281 @@
+package com.washalert.washalertbackend.booking;
+
+import com.washalert.washalertbackend.booking.dto.BookingSlotResponse;
+import com.washalert.washalertbackend.booking.dto.CreateBookingRequest;
+import com.washalert.washalertbackend.machines.MachineRepository;
+import com.washalert.washalertbackend.machines.MachineStatus;
+import com.washalert.washalertbackend.orders.JobOrder;
+import com.washalert.washalertbackend.orders.JobOrderRepository;
+import com.washalert.washalertbackend.orders.JobOrderStatus;
+import com.washalert.washalertbackend.orders.JobOrderTimelineService;
+import com.washalert.washalertbackend.orders.ServiceType;
+import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
+import com.washalert.washalertbackend.notification.NotificationService;
+import jakarta.transaction.Transactional;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+@Service
+public class BookingService {
+
+    private final JobOrderRepository jobOrderRepository;
+    private final MachineRepository machineRepository;
+    private final BookingProperties bookingProperties;
+    private final JobOrderTimelineService timelineService;
+    private final NotificationService notificationService;
+    private final PricingService pricingService;
+
+    public BookingService(
+            JobOrderRepository jobOrderRepository,
+            MachineRepository machineRepository,
+            BookingProperties bookingProperties,
+            JobOrderTimelineService timelineService,
+            NotificationService notificationService,
+            PricingService pricingService
+    ) {
+        this.jobOrderRepository = jobOrderRepository;
+        this.machineRepository = machineRepository;
+        this.bookingProperties = bookingProperties;
+        this.timelineService = timelineService;
+        this.notificationService = notificationService;
+        this.pricingService = pricingService;
+    }
+
+    public List<BookingSlotResponse> getAvailableSlots(String branch, LocalDate date) {
+        String cleanBranch = normalizeBranch(branch);
+        LocalDate targetDate = (date == null) ? LocalDate.now() : date;
+        validateDate(targetDate);
+
+        long capacity = machineRepository.countByBranchIgnoreCaseAndStatusNot(cleanBranch, MachineStatus.MAINTENANCE);
+        if (capacity <= 0) {
+            throw new IllegalArgumentException("No active machines found for the selected branch.");
+        }
+
+        LocalTime opening = LocalTime.of(bookingProperties.getOpenHour(), 0);
+        LocalTime closing = LocalTime.of(bookingProperties.getCloseHour(), 0);
+        int slotMinutes = bookingProperties.getSlotMinutes();
+
+        if (!opening.isBefore(closing) || slotMinutes <= 0) {
+            throw new IllegalStateException("Invalid booking slot configuration.");
+        }
+
+        List<BookingSlotResponse> slots = new ArrayList<>();
+        for (LocalTime cursor = opening; !cursor.plusMinutes(slotMinutes).isAfter(closing); cursor = cursor.plusMinutes(slotMinutes)) {
+            LocalTime slotStart = cursor;
+            LocalTime slotEnd = cursor.plusMinutes(slotMinutes);
+
+            long booked = jobOrderRepository.countByBranchIgnoreCaseAndBookingDateAndSlotStartTime(cleanBranch, targetDate, slotStart);
+            long remaining = Math.max(capacity - booked, 0);
+
+            slots.add(new BookingSlotResponse(
+                    targetDate,
+                    slotStart,
+                    slotEnd,
+                    capacity,
+                    booked,
+                    remaining,
+                    remaining > 0
+            ));
+        }
+
+        return slots;
+    }
+
+    @Transactional
+    public JobOrderResponse createBooking(CreateBookingRequest req) {
+        String cleanBranch = normalizeBranch(req.branch());
+        validateDate(req.preferredDate());
+
+        if (req.serviceType() == ServiceType.PICKUP_DELIVERY
+                && (req.deliveryAddress() == null || req.deliveryAddress().isBlank())) {
+            throw new IllegalArgumentException("Delivery address is required for pickup and delivery.");
+        }
+
+        LocalTime slotStart = req.preferredSlotStartTime();
+        LocalTime slotEnd = slotStart.plusMinutes(bookingProperties.getSlotMinutes());
+        validateSlotTime(slotStart, slotEnd);
+
+        // Lock branch machines to serialize booking writes and prevent slot overbooking races.
+        var lockedMachines = machineRepository.lockByBranch(cleanBranch);
+        long capacity = lockedMachines.stream()
+                .filter(m -> m.getStatus() != MachineStatus.MAINTENANCE)
+                .count();
+        if (capacity <= 0) {
+            throw new IllegalArgumentException("No active machines found for the selected branch.");
+        }
+
+        long booked = jobOrderRepository.countByBranchIgnoreCaseAndBookingDateAndSlotStartTime(cleanBranch, req.preferredDate(), slotStart);
+        if (booked >= capacity) {
+            throw new IllegalArgumentException("Selected time slot is already full. Please choose another slot.");
+        }
+
+        var est = pricingService.estimate(
+                cleanBranch,
+                req.serviceName(),
+                req.estimatedWeightKg(),
+                req.isRush(),
+                req.detergentPreference(),
+                req.fabricConditionerPreference(),
+                req.distanceKm()
+        );
+
+        JobOrder order = JobOrder.builder()
+                .trackingNumber("TMP-" + UUID.randomUUID())
+                .customerName(req.customerName().trim())
+                .branch(cleanBranch)
+                .customerPhone(req.customerPhone().trim())
+                .customerEmail(trimToNull(req.customerEmail()))
+                .serviceType(req.serviceType())
+                .deliveryAddress(trimToNull(req.deliveryAddress()))
+                .deliveryLatitude(req.deliveryLatitude())
+                .deliveryLongitude(req.deliveryLongitude())
+                .branchLatitude(req.branchLatitude())
+                .branchLongitude(req.branchLongitude())
+                .bookingDate(req.preferredDate())
+                .slotStartTime(slotStart)
+                .slotEndTime(slotEnd)
+                .detergentPreference(req.detergentPreference().trim())
+                .fabricConditionerPreference(req.fabricConditionerPreference().trim())
+                .loadSize(req.loadSize())
+                .estimatedWeightKg(req.estimatedWeightKg())
+                .specialInstructions(trimToNull(req.specialInstructions()))
+                .servicePrice(est.servicePrice())
+                .suppliesPrice(est.suppliesPrice())
+                .deliveryPrice(est.deliveryPrice())
+                .totalPrice(est.totalPrice())
+                .paymentMethod(req.paymentMethod())
+                .status(JobOrderStatus.PENDING)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        jobOrderRepository.saveAndFlush(order);
+        order.setTrackingNumber(formatTrackingNumber(order.getId()));
+        JobOrder saved = jobOrderRepository.save(order);
+        timelineService.log(saved, saved.getStatus(), "customer", "Booking created");
+        notificationService.enqueueEmail(
+                saved.getCustomerEmail(),
+                "WashAlert Booking Confirmed",
+                "Your booking is confirmed.\nTracking Number: %s\nBranch: %s\nScheduled: %s %s"
+                        .formatted(
+                                saved.getTrackingNumber(),
+                                saved.getBranch(),
+                                saved.getBookingDate(),
+                                saved.getSlotStartTime()
+                        ),
+                "BOOKING",
+                String.valueOf(saved.getId())
+        );
+        return toResponse(saved);
+    }
+
+    private void validateDate(LocalDate date) {
+        if (date.isBefore(LocalDate.now())) {
+            throw new IllegalArgumentException("Preferred date cannot be in the past.");
+        }
+    }
+
+    private void validateSlotTime(LocalTime slotStart, LocalTime slotEnd) {
+        LocalTime opening = LocalTime.of(bookingProperties.getOpenHour(), 0);
+        LocalTime closing = LocalTime.of(bookingProperties.getCloseHour(), 0);
+
+        if (slotStart.isBefore(opening) || slotEnd.isAfter(closing)) {
+            throw new IllegalArgumentException("Selected slot is outside business hours.");
+        }
+    }
+
+    private String normalizeBranch(String branch) {
+        if (branch == null || branch.isBlank()) {
+            throw new IllegalArgumentException("Branch is required.");
+        }
+        return branch.trim();
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String formatTrackingNumber(Long id) {
+        if (id == null) {
+            throw new IllegalStateException("Booking ID was not generated.");
+        }
+        return "WA-" + (10000 + id);
+    }
+
+    @Transactional
+    public JobOrderResponse cancelBooking(Long id, com.washalert.washalertbackend.security.AuthUserDetails principal) {
+        JobOrder order = jobOrderRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Booking not found."));
+
+        String userRole = principal.getUser().getRole().name();
+        String userEmail = principal.getUser().getEmail();
+
+        boolean isStaffOrAdmin = userRole.equals("ADMIN") || userRole.equals("STAFF");
+        boolean isOwner = order.getCustomerEmail().equals(userEmail);
+
+        if (!isOwner && !isStaffOrAdmin) {
+            throw new IllegalStateException("You are not authorized to cancel this booking.");
+        }
+
+        if (order.getStatus() != JobOrderStatus.PENDING) {
+            throw new IllegalStateException("Only PENDING bookings can be cancelled.");
+        }
+
+        order.setStatus(JobOrderStatus.CANCELLED);
+        jobOrderRepository.save(order);
+
+        timelineService.log(order, JobOrderStatus.CANCELLED, principal.getUser().getFullName(), "Booking cancelled.");
+
+        // Optionally, send cancellation email
+        notificationService.enqueueEmail(
+                order.getCustomerEmail(),
+                "WashAlert Booking Cancelled",
+                "Your booking " + order.getTrackingNumber() + " has been successfully cancelled.",
+                "ORDER",
+                String.valueOf(order.getId())
+        );
+
+        return toResponse(order);
+    }
+
+    private JobOrderResponse toResponse(JobOrder jo) {
+        return new JobOrderResponse(
+                jo.getId(),
+                jo.getTrackingNumber(),
+                jo.getCustomerName(),
+                jo.getBranch(),
+                jo.getStatus(),
+                jo.getCreatedAt(),
+                jo.getUpdatedAt(),
+                jo.getServiceType(),
+                jo.getBookingDate(),
+                jo.getSlotStartTime(),
+                jo.getSlotEndTime(),
+                jo.getDetergentPreference(),
+                jo.getFabricConditionerPreference(),
+                jo.getLoadSize(),
+                jo.getEstimatedWeightKg(),
+                jo.getSpecialInstructions(),
+                jo.getCustomerPhone(),
+                jo.getCustomerEmail(),
+                jo.getDeliveryAddress(),
+                jo.getServicePrice(),
+                jo.getSuppliesPrice(),
+                jo.getDeliveryPrice(),
+                jo.getTotalPrice(),
+                jo.isPaid(),
+                jo.getPaymentMethod(),
+                jo.getDeliveryLatitude(),
+                jo.getDeliveryLongitude(),
+                jo.getBranchLatitude(),
+                jo.getBranchLongitude()
+        );
+    }
+}

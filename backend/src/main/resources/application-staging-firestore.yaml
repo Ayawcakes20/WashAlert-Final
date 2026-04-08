@@ -1,0 +1,6 @@
+washalert:
+  data:
+    read-mode: FIRESTORE
+  firebase:
+    enabled: true
+    backfill-on-startup: false

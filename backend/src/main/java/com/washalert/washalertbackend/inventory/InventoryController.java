@@ -1,0 +1,90 @@
+package com.washalert.washalertbackend.inventory;
+
+import com.washalert.washalertbackend.inventory.dto.AdjustInventoryRequest;
+import com.washalert.washalertbackend.inventory.dto.CreateInventoryItemRequest;
+import com.washalert.washalertbackend.inventory.dto.InventoryForecastResponse;
+import com.washalert.washalertbackend.inventory.dto.InventoryItemResponse;
+import com.washalert.washalertbackend.inventory.dto.UpdateInventoryItemRequest;
+import com.washalert.washalertbackend.security.AuthUserDetails;
+import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/inventory")
+public class InventoryController {
+
+    private final InventoryService inventoryService;
+
+    public InventoryController(InventoryService inventoryService) {
+        this.inventoryService = inventoryService;
+    }
+
+    @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public List<InventoryItemResponse> list(
+            @RequestParam(required = false) String branch,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return inventoryService.list(branch, principal);
+    }
+
+    @PostMapping("/items")
+    @PreAuthorize("hasRole('ADMIN')")
+    public InventoryItemResponse create(@Valid @RequestBody CreateInventoryItemRequest req) {
+        return inventoryService.create(req);
+    }
+
+    @PutMapping("/items/{itemId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public InventoryItemResponse update(
+            @PathVariable Long itemId,
+            @Valid @RequestBody UpdateInventoryItemRequest req
+    ) {
+        return inventoryService.update(itemId, req);
+    }
+
+    @PatchMapping("/items/{itemId}/adjust")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public InventoryItemResponse adjust(
+            @PathVariable Long itemId,
+            @Valid @RequestBody AdjustInventoryRequest req,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return inventoryService.adjust(itemId, req, principal);
+    }
+
+    @GetMapping("/alerts")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public List<InventoryItemResponse> lowStockAlerts(@AuthenticationPrincipal AuthUserDetails principal) {
+        return inventoryService.lowStockAlerts(principal);
+    }
+
+    @GetMapping("/forecast")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public List<InventoryForecastResponse> forecast(
+            @RequestParam(required = false) String branch,
+            @RequestParam(required = false) Integer days,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return inventoryService.forecast(branch, days, principal);
+    }
+
+    @DeleteMapping("/items/{itemId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public void delete(@PathVariable Long itemId) {
+        inventoryService.delete(itemId);
+    }
+}
