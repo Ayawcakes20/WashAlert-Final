@@ -58,6 +58,18 @@
     --gradient-gold: linear-gradient(135deg, hsl(42 52% 55%), hsl(42 62% 65%));
     --shadow-card: 0 4px 24px -4px hsl(218 58% 20% / 0.08);
     --shadow-elevated: 0 12px 40px -8px hsl(218 58% 20% / 0.15);
+
+    /* Hub specific tokens */
+    --wash-blue: 220 82% 48%;
+    --wash-blue-light: 220 82% 95%;
+    --wash-navy: 220 40% 13%;
+    --wash-gray: 220 10% 97%;
+    --wash-gray-dark: 220 10% 40%;
+    --wash-success: 142 71% 45%;
+    --wash-warning: 38 92% 50%;
+    --wash-orange: 25 95% 53%;
+    --wash-teal: 174 72% 40%;
+    --wash-purple: 262 52% 47%;
   }
 
   .dark {

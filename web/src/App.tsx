@@ -3,7 +3,11 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import WelcomePage from "./pages/WelcomePage";
+import HomePage from "./pages/public/HomePage";
+import FeaturesPage from "./pages/public/FeaturesPage";
+import AboutPage from "./pages/public/AboutPage";
+import BranchesPage from "./pages/public/BranchesPage";
+import DownloadPage from "./pages/public/DownloadPage";
 import LoginPage from "./pages/LoginPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
@@ -18,7 +22,7 @@ import DeliveryManagementPage from "./pages/DeliveryManagementPage";
 import PredictiveInventoryPage from "./pages/PredictiveInventoryPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import AIChatSupportPage from "./pages/AIChatSupportPage";
-import AboutPage from "./pages/AboutPage";
+import PublicAboutPage from "./pages/AboutPage";
 import UnauthorizedPage from "./pages/UnauthorizedPage";
 import NotFound from "./pages/NotFound";
 import ProfilePage from "./pages/ProfilePage";
@@ -47,7 +51,11 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<WelcomePage />} />
+          <Route path="/" element={<HomePage />} />
+          <Route path="/features" element={<FeaturesPage />} />
+          <Route path="/about-public" element={<AboutPage />} />
+          <Route path="/branches-public" element={<BranchesPage />} />
+          <Route path="/download" element={<DownloadPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<StaffAccountNoticePage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
