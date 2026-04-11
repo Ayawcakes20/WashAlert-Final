@@ -2,7 +2,16 @@ import React, { useContext } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Platform,
+  Dimensions,
+} from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 
@@ -36,340 +45,298 @@ import DriverProfileScreen from '../screens/driver/DriverProfileScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+const { width } = Dimensions.get('window');
 
-const AuthStack = () => {
+// ─────────────────────────────────────────────────────────────────────────────
+// Brsh.-style FLOATING rounded bottom tab bar — Customer
+// ─────────────────────────────────────────────────────────────────────────────
+const CUSTOMER_TABS = [
+  { name: 'Home',          label: 'Home',    icon: 'home-outline',          iconActive: 'home'          },
+  { name: 'Orders',        label: 'Orders',  icon: 'receipt-outline',       iconActive: 'receipt'       },
+  { name: 'Book',          label: null,      icon: null,                    iconActive: null            }, // FAB centre
+  { name: 'Notifications', label: 'Alerts',  icon: 'notifications-outline', iconActive: 'notifications' },
+  { name: 'Profile',       label: 'Profile', icon: 'person-outline',        iconActive: 'person'        },
+];
+
+function CustomerTabBar({ state, descriptors, navigation }) {
+  const insets = useSafeAreaInsets();
+
   return (
-    <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        cardStyle: { backgroundColor: colors.background },
-      }}
-    >
-      <Stack.Screen name="Splash" component={SplashScreen} />
-      <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="Register" component={RegisterScreen} />
-      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-      <Stack.Screen name="OTPVerification" component={OTPVerificationScreen} />
-      <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
-    </Stack.Navigator>
-  );
-};
+    <View style={[tabStyles.outerWrapper, { paddingBottom: insets.bottom + 8 }]}>
+      {/* Floating pill container */}
+      <View style={tabStyles.pill}>
+        {state.routes.map((route, index) => {
+          const isFocused = state.index === index;
+          const tab = CUSTOMER_TABS[index];
+          const isBook = route.name === 'Book';
 
-const CustomerTabs = () => {
+          const onPress = () => {
+            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+            if (!isFocused && !event.defaultPrevented) navigation.navigate(route.name);
+          };
+
+          if (isBook) {
+            return (
+              <View key={route.key} style={tabStyles.fabSlot}>
+                <TouchableOpacity
+                  style={[tabStyles.fab, isFocused && tabStyles.fabActive]}
+                  onPress={onPress}
+                  activeOpacity={0.85}
+                >
+                  <MaterialCommunityIcons name="washing-machine" size={26} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            );
+          }
+
+          return (
+            <TouchableOpacity
+              key={route.key}
+              style={tabStyles.tabItem}
+              onPress={onPress}
+              activeOpacity={0.7}
+            >
+              <View style={[tabStyles.iconWrap, isFocused && tabStyles.iconWrapActive]}>
+                <Ionicons
+                  name={isFocused ? tab.iconActive : tab.icon}
+                  size={21}
+                  color={isFocused ? colors.primary : colors.textTertiary}
+                />
+              </View>
+              <Text style={[tabStyles.tabLabel, isFocused && tabStyles.tabLabelActive]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+const tabStyles = StyleSheet.create({
+  outerWrapper: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    // Transparent — shows background through
+    backgroundColor: 'transparent',
+  },
+  // The pill itself
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 28,
+    height: 68,
+    paddingHorizontal: 4,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    elevation: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  // Regular tab
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  iconWrap: {
+    width: 40,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconWrapActive: {
+    backgroundColor: colors.primaryLight,
+  },
+  tabLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.textTertiary,
+    letterSpacing: 0.1,
+  },
+  tabLabelActive: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  // FAB (Book button)
+  fabSlot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fab: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
+    marginTop: -16, // float above pill
+  },
+  fabActive: {
+    backgroundColor: colors.primaryDark,
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared stack header style
+// ─────────────────────────────────────────────────────────────────────────────
+const stackHeader = (title) => ({
+  headerShown: true,
+  headerTitle: title,
+  headerStyle: {
+    backgroundColor: colors.surface,
+  },
+  headerTitleStyle: {
+    fontWeight: '700',
+    fontSize: 17,
+    color: colors.text,
+  },
+  headerBackTitle: '',
+  headerShadowVisible: false,
+  headerTintColor: colors.primary,
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Customer Tabs
+// ─────────────────────────────────────────────────────────────────────────────
+const CustomerTabs = () => (
+  <Tab.Navigator
+    tabBar={(props) => <CustomerTabBar {...props} />}
+    screenOptions={{ headerShown: false }}
+  >
+    <Tab.Screen name="Home"          component={HomeScreen} />
+    <Tab.Screen name="Orders"        component={OrdersScreen} />
+    <Tab.Screen name="Book"          component={BookingScreen} />
+    <Tab.Screen name="Notifications" component={NotificationsScreen} />
+    <Tab.Screen name="Profile"       component={ProfileScreen} />
+  </Tab.Navigator>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auth Stack
+// ─────────────────────────────────────────────────────────────────────────────
+const AuthStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="Splash"          component={SplashScreen} />
+    <Stack.Screen name="Onboarding"      component={OnboardingScreen} />
+    <Stack.Screen name="Login"           component={LoginScreen} />
+    <Stack.Screen name="Register"        component={RegisterScreen} />
+    <Stack.Screen name="ForgotPassword"  component={ForgotPasswordScreen} />
+    <Stack.Screen name="OTPVerification" component={OTPVerificationScreen} />
+    <Stack.Screen name="ResetPassword"   component={ResetPasswordScreen} />
+  </Stack.Navigator>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Customer Stack
+// ─────────────────────────────────────────────────────────────────────────────
+const CustomerStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="CustomerTabs"   component={CustomerTabs} />
+    <Stack.Screen name="OrderDetail"    component={OrderDetailScreen}    options={stackHeader('Order Details')} />
+    <Stack.Screen name="Tracking"       component={TrackingScreen}       options={stackHeader('Track Order')} />
+    <Stack.Screen name="Chat"           component={ChatScreen}           options={stackHeader('Support')} />
+    <Stack.Screen name="EditProfile"    component={EditProfileScreen}    options={stackHeader('Edit Profile')} />
+    <Stack.Screen name="PaymentSuccess" component={PaymentSuccessScreen} options={stackHeader('Payment Success')} />
+    <Stack.Screen name="PaymentCancel"  component={PaymentCancelScreen}  options={stackHeader('Payment Cancelled')} />
+  </Stack.Navigator>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Driver Tab Bar — matching pill style for consistency
+// ─────────────────────────────────────────────────────────────────────────────
+const DRIVER_TABS = [
+  { name: 'Dashboard',          label: 'Dashboard',  icon: 'view-dashboard-outline', iconActive: 'view-dashboard', lib: 'mci' },
+  { name: 'Deliveries',         label: 'Deliveries', icon: 'truck-outline',          iconActive: 'truck',          lib: 'mci' },
+  { name: 'DriverNotifications',label: 'Alerts',     icon: 'notifications-outline',  iconActive: 'notifications',  lib: 'ion' },
+  { name: 'DriverProfile',      label: 'Profile',    icon: 'person-outline',         iconActive: 'person',         lib: 'ion' },
+];
+
+function DriverTabBar({ state, descriptors, navigation }) {
+  const insets = useSafeAreaInsets();
   return (
-    <Tab.Navigator
-      screenOptions={{
-        headerShown: true,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textSecondary,
-        tabBarStyle: {
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
-          paddingBottom: 8,
-          height: 60,
-        },
-        headerStyle: {
-          backgroundColor: colors.cardBg,
-          borderBottomWidth: 1,
-          borderBottomColor: colors.border,
-        },
-        headerTitleStyle: {
-          fontWeight: '600',
-          fontSize: 18,
-          color: colors.text,
-        },
-      }}
-    >
-      <Tab.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="home" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Orders"
-        component={OrdersScreen}
-        options={{
-          title: 'Orders',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="history" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Book"
-        component={BookingScreen}
-        options={{
-          title: 'Book',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="plus-circle" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Notifications"
-        component={NotificationsScreen}
-        options={{
-          title: 'Notifications',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="bell" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Profile"
-        component={ProfileScreen}
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="account" color={color} size={size} />
-          ),
-        }}
-      />
-    </Tab.Navigator>
+    <View style={[tabStyles.outerWrapper, { paddingBottom: insets.bottom + 8 }]}>
+      <View style={tabStyles.pill}>
+        {state.routes.map((route, index) => {
+          const isFocused = state.index === index;
+          const tab = DRIVER_TABS[index];
+          const onPress = () => {
+            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+            if (!isFocused && !event.defaultPrevented) navigation.navigate(route.name);
+          };
+          return (
+            <TouchableOpacity key={route.key} style={tabStyles.tabItem} onPress={onPress} activeOpacity={0.7}>
+              <View style={[tabStyles.iconWrap, isFocused && tabStyles.iconWrapActive]}>
+                {tab.lib === 'mci' ? (
+                  <MaterialCommunityIcons
+                    name={isFocused ? tab.iconActive : tab.icon}
+                    size={21}
+                    color={isFocused ? colors.primary : colors.textTertiary}
+                  />
+                ) : (
+                  <Ionicons
+                    name={isFocused ? tab.iconActive : tab.icon}
+                    size={21}
+                    color={isFocused ? colors.primary : colors.textTertiary}
+                  />
+                )}
+              </View>
+              <Text style={[tabStyles.tabLabel, isFocused && tabStyles.tabLabelActive]}>{tab.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
   );
-};
+}
 
-const CustomerStack = () => {
-  return (
-    <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        cardStyle: { backgroundColor: colors.background },
-      }}
-    >
-      <Stack.Screen name="CustomerTabs" component={CustomerTabs} />
-      <Stack.Screen
-        name="OrderDetail"
-        component={OrderDetailScreen}
-        options={{
-          headerShown: true,
-          headerTitle: 'Order Details',
-          headerStyle: {
-            backgroundColor: colors.cardBg,
-            borderBottomWidth: 1,
-            borderBottomColor: colors.border,
-          },
-          headerTitleStyle: {
-            fontWeight: '600',
-            fontSize: 18,
-            color: colors.text,
-          },
-          headerBackTitle: 'Back',
-        }}
-      />
-      <Stack.Screen
-        name="Tracking"
-        component={TrackingScreen}
-        options={{
-          headerShown: true,
-          headerTitle: 'Track Order',
-          headerStyle: {
-            backgroundColor: colors.cardBg,
-            borderBottomWidth: 1,
-            borderBottomColor: colors.border,
-          },
-          headerTitleStyle: {
-            fontWeight: '600',
-            fontSize: 18,
-            color: colors.text,
-          },
-          headerBackTitle: 'Back',
-        }}
-      />
-      <Stack.Screen
-        name="Chat"
-        component={ChatScreen}
-        options={{
-          headerShown: true,
-          headerTitle: 'IkotAsk',
-          headerStyle: {
-            backgroundColor: colors.cardBg,
-            borderBottomWidth: 1,
-            borderBottomColor: colors.border,
-          },
-          headerTitleStyle: {
-            fontWeight: '600',
-            fontSize: 18,
-            color: colors.text,
-          },
-          headerBackTitle: 'Back',
-        }}
-      />
-      <Stack.Screen
-        name="EditProfile"
-        component={EditProfileScreen}
-        options={{
-          headerShown: true,
-          headerTitle: 'Edit Profile',
-          headerStyle: {
-            backgroundColor: colors.cardBg,
-            borderBottomWidth: 1,
-            borderBottomColor: colors.border,
-          },
-          headerTitleStyle: {
-            fontWeight: '600',
-            fontSize: 18,
-            color: colors.text,
-          },
-          headerBackTitle: 'Back',
-        }}
-      />
-      <Stack.Screen
-        name="PaymentSuccess"
-        component={PaymentSuccessScreen}
-        options={{
-          headerShown: true,
-          headerTitle: 'Payment Success',
-          headerStyle: {
-            backgroundColor: colors.cardBg,
-            borderBottomWidth: 1,
-            borderBottomColor: colors.border,
-          },
-          headerTitleStyle: {
-            fontWeight: '600',
-            fontSize: 18,
-            color: colors.text,
-          },
-        }}
-      />
-      <Stack.Screen
-        name="PaymentCancel"
-        component={PaymentCancelScreen}
-        options={{
-          headerShown: true,
-          headerTitle: 'Payment Cancelled',
-          headerStyle: {
-            backgroundColor: colors.cardBg,
-            borderBottomWidth: 1,
-            borderBottomColor: colors.border,
-          },
-          headerTitleStyle: {
-            fontWeight: '600',
-            fontSize: 18,
-            color: colors.text,
-          },
-        }}
-      />
-    </Stack.Navigator>
-  );
-};
+const DriverTabs = () => (
+  <Tab.Navigator
+    tabBar={(props) => <DriverTabBar {...props} />}
+    screenOptions={{ headerShown: true, headerStyle: { backgroundColor: colors.surface }, headerTitleStyle: { fontWeight: '700', fontSize: 17, color: colors.text }, headerShadowVisible: false, headerTintColor: colors.primary }}
+  >
+    <Tab.Screen name="Dashboard"           component={DriverDashboardScreen} options={{ title: 'Dashboard' }} />
+    <Tab.Screen name="Deliveries"          component={DriverDeliveriesScreen} options={{ title: 'My Deliveries' }} />
+    <Tab.Screen name="DriverNotifications" component={NotificationsScreen}    options={{ title: 'Alerts' }} />
+    <Tab.Screen name="DriverProfile"       component={DriverProfileScreen}    options={{ title: 'Profile' }} />
+  </Tab.Navigator>
+);
 
-const DriverTabs = () => {
-  return (
-    <Tab.Navigator
-      screenOptions={{
-        headerShown: true,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textSecondary,
-        tabBarStyle: {
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
-          paddingBottom: 8,
-          height: 60,
-        },
-        headerStyle: {
-          backgroundColor: colors.cardBg,
-          borderBottomWidth: 1,
-          borderBottomColor: colors.border,
-        },
-        headerTitleStyle: {
-          fontWeight: '600',
-          fontSize: 18,
-          color: colors.text,
-        },
-      }}
-    >
-      <Tab.Screen
-        name="Dashboard"
-        component={DriverDashboardScreen}
-        options={{
-          title: 'Dashboard',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="speedometer" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Deliveries"
-        component={DriverDeliveriesScreen}
-        options={{
-          title: 'Deliveries',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="truck" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="DriverNotifications"
-        component={NotificationsScreen}
-        options={{
-          title: 'Notifications',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="bell" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="DriverProfile"
-        component={DriverProfileScreen}
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="account" color={color} size={size} />
-          ),
-        }}
-      />
-    </Tab.Navigator>
-  );
-};
+// ─────────────────────────────────────────────────────────────────────────────
+// Driver Stack
+// ─────────────────────────────────────────────────────────────────────────────
+const DriverStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="DriverTabs"     component={DriverTabs} />
+    <Stack.Screen name="DeliveryDetail" component={DeliveryDetailScreen} options={stackHeader('Delivery Details')} />
+  </Stack.Navigator>
+);
 
-const DriverStack = () => {
-  return (
-    <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        cardStyle: { backgroundColor: colors.background },
-      }}
-    >
-      <Stack.Screen name="DriverTabs" component={DriverTabs} />
-      <Stack.Screen
-        name="DeliveryDetail"
-        component={DeliveryDetailScreen}
-        options={{
-          headerShown: true,
-          headerTitle: 'Delivery Details',
-          headerStyle: {
-            backgroundColor: colors.cardBg,
-            borderBottomWidth: 1,
-            borderBottomColor: colors.border,
-          },
-          headerTitleStyle: {
-            fontWeight: '600',
-            fontSize: 18,
-            color: colors.text,
-          },
-          headerBackTitle: 'Back',
-        }}
-      />
-    </Stack.Navigator>
-  );
-};
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Root
+// ─────────────────────────────────────────────────────────────────────────────
 const AppNavigator = () => {
   const { loading, isAuthenticated, user } = useAuth();
   const roleModules = new Set((user?.allowedModules || []).map((item) => String(item).toLowerCase()));
   const isDriver = user?.role === 'driver' || roleModules.has('driver-delivery');
 
-  // Show a loading/splash while checking auth state
-  if (loading) {
-    return <SplashScreen />;
-  }
+  if (loading) return <SplashScreen />;
 
   const linking = {
     prefixes: ['washalertmobile://'],

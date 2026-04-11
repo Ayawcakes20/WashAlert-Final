@@ -1,378 +1,481 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, StyleSheet, Dimensions, FlatList, TouchableOpacity, Image } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors } from '../../theme/colors';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Dimensions,
+  TouchableOpacity,
+  Image,
+  Animated,
+  StatusBar,
+  Platform,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
+// ── Brand colors (stand-alone so no dependency on theme) ──────────────────
+const BRAND = {
+  navy:    '#1A2B4A',
+  blue:    '#2563EB',
+  teal:    '#0EA5E9',
+  mint:    '#10B981',
+  amber:   '#F59E0B',
+  offwhite:'#F0F6FF',
+  slate:   '#64748B',
+  white:   '#FFFFFF',
+};
+
+// ── Slide definitions ─────────────────────────────────────────────────────
 const SLIDES = [
   {
     id: '1',
-    icon: 'water-outline',
-    title: 'Book Your Laundry',
-    description: 'Schedule pickup and delivery from any of our 10 branches across Metro Manila. Anytime, anywhere.',
-    color: colors.primary,
+    panelBg:    BRAND.navy,
+    panelAccent: BRAND.blue,
+    icon:       'washing-machine',
+    iconColor:  BRAND.white,
+    badge:      'BOOK',
+    badgeColor: BRAND.teal,
+    title:      'Clean clothes,\nzero effort.',
+    body:       'Book wash, dry, or fold services at any of our 10 branches — right from your phone.',
+    cta:        'Continue',
   },
   {
-    id: '2',
-    icon: 'location-outline',
-    title: 'Real-Time Tracking',
-    description: 'Track your laundry from wash to delivery. Know exactly when it\'s ready — no more guessing.',
-    color: colors.accent,
+    id:         '2',
+    panelBg:    BRAND.blue,
+    panelAccent:BRAND.teal,
+    icon:       'map-marker-radius',
+    iconColor:  BRAND.white,
+    badge:      'TRACK',
+    badgeColor: BRAND.mint,
+    title:      'Know where\nyour laundry is.',
+    body:       'Live status updates from pickup to your doorstep. Always in the loop.',
+    cta:        'Continue',
   },
   {
-    id: '3',
-    icon: 'shield-checkmark-outline',
-    title: 'Secure & Easy Payment',
-    description: 'Pay conveniently with GCash or cash. Fast, safe, and hassle-free every time.',
-    color: colors.success,
+    id:         '3',
+    panelBg:    '#0A2540',
+    panelAccent:BRAND.mint,
+    icon:       'contactless-payment',
+    iconColor:  BRAND.white,
+    badge:      'PAY',
+    badgeColor: BRAND.amber,
+    title:      'Pay instantly\nwith GCash.',
+    body:       'Secure, cashless payments via PayMongo. Quick checkout, every time.',
+    cta:        'Get Started',
   },
 ];
 
-const FEATURES = [
-  { icon: 'time-outline', label: 'Fast Service' },
-  { icon: 'bicycle-outline', label: 'Free Delivery' },
-  { icon: 'sparkles-outline', label: 'Premium Care' },
-  { icon: 'shield-checkmark-outline', label: 'Secure Pay' },
-];
-
-const BRANCHES = [
-  "Makati", "BGC", "Quezon City", "Mandaluyong", "Pasig",
-  "Parañaque", "Las Piñas", "Marikina", "Caloocan", "Pasay",
-];
-
-const OnboardingScreen = ({ navigation }) => {
-  const insets = useSafeAreaInsets();
-  const [currentSlide, setCurrentSlide] = useState(0);
-
-  const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
-  const onViewableItemsChanged = useRef(({ viewableItems }) => {
-    if (viewableItems[0]) {
-      setCurrentSlide(viewableItems[0].index);
-    }
-  }).current;
+// ── Visual panel for each slide ───────────────────────────────────────────
+function SlidePanel({ slide, index, scrollX }) {
+  // Subtle parallax on the icon
+  const translateY = scrollX.interpolate({
+    inputRange: [(index - 1) * width, index * width, (index + 1) * width],
+    outputRange: [30, 0, -30],
+    extrapolate: 'clamp',
+  });
+  const opacity = scrollX.interpolate({
+    inputRange: [(index - 0.5) * width, index * width, (index + 0.5) * width],
+    outputRange: [0, 1, 0],
+    extrapolate: 'clamp',
+  });
 
   return (
-    <View style={styles.container}>
-      {/* Hero Section */}
-      <LinearGradient
-        colors={[colors.primary, colors.primary, colors.accent]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.heroSection, { paddingTop: insets.top + 20 }]}
-      >
-        <View style={styles.heroContent}>
-          <View style={styles.imageWrapper}>
-            <Image 
-              source={require('../../../assets/images/icon.png')}
-              style={styles.logo} 
-              resizeMode="contain" 
-            />
-          </View>
-          <Text style={styles.heroTitle}>WashAlert</Text>
-          <Text style={styles.heroSubtitle}>Your Laundry, Our Priority</Text>
-          <Text style={styles.heroSubtext}>by Triplets LaundryHubs & SpeedyWash</Text>
-        </View>
-      </LinearGradient>
+    <View style={[panel.root, { backgroundColor: slide.panelBg }]}>
 
-      <View style={[styles.mainContent, { paddingBottom: insets.bottom + 20 }]}>
-        {/* Sliding Cards */}
-        <View style={styles.sliderContainer}>
-          <FlatList
-            data={SLIDES}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={(item) => item.id}
-            onViewableItemsChanged={onViewableItemsChanged}
-            viewabilityConfig={viewabilityConfig}
-            renderItem={({ item }) => (
-              <View style={styles.slide}>
-                <View style={styles.slideCard}>
-                  <View style={[styles.slideIconContainer, { backgroundColor: item.color + '1A' }]}>
-                    <Ionicons name={item.icon} size={28} color={item.color} />
-                  </View>
-                  <View style={styles.slideTextContainer}>
-                    <Text style={styles.slideTitle}>{item.title}</Text>
-                    <Text style={styles.slideDesc}>{item.description}</Text>
-                  </View>
-                </View>
-              </View>
-            )}
+      {/* Large decorative ring — top right */}
+      <View style={[panel.ringOuter, { borderColor: slide.panelAccent + '30' }]}>
+        <View style={[panel.ringInner, { borderColor: slide.panelAccent + '20' }]} />
+      </View>
+
+      {/* Small dot — bottom left */}
+      <View style={[panel.dot, { backgroundColor: slide.panelAccent + '40' }]} />
+
+      {/* Logo mark + badge ─────────────────────────────────── */}
+      <Animated.View style={[panel.center, { opacity, transform: [{ translateY }] }]}>
+
+        {/* Badge pill above icon */}
+        <View style={[panel.badgePill, { backgroundColor: slide.badgeColor }]}>
+          <Text style={panel.badgeText}>{slide.badge}</Text>
+        </View>
+
+        {/* Main icon container */}
+        <View style={[panel.iconBox, { borderColor: slide.panelAccent + '50' }]}>
+          <View style={[panel.iconInner, { backgroundColor: slide.panelAccent + '20' }]}>
+            <MaterialCommunityIcons name={slide.icon} size={72} color={slide.iconColor} />
+          </View>
+        </View>
+
+        {/* WashAlert wordmark below icon */}
+        <View style={panel.wordmarkRow}>
+          <Image
+            source={require('../../../assets/images/icon.png')}
+            style={panel.logoMini}
+            resizeMode="contain"
           />
+          <Text style={panel.wordmark}>WashAlert</Text>
         </View>
+      </Animated.View>
+    </View>
+  );
+}
 
-        {/* Dots */}
-        <View style={styles.dots}>
-          {SLIDES.map((_, i) => (
-            <View
-              key={i}
-              style={[
-                styles.dot,
-                i === currentSlide ? styles.dotActive : null,
-              ]}
-            />
-          ))}
-        </View>
+const panel = StyleSheet.create({
+  root: {
+    width,
+    height: height * 0.50,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Decorative circles
+  ringOuter: {
+    position: 'absolute',
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    borderWidth: 1,
+    top: -60,
+    right: -80,
+  },
+  ringInner: {
+    position: 'absolute',
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    borderWidth: 1,
+    top: 50,
+    right: 50,
+  },
+  dot: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    bottom: -20,
+    left: -20,
+  },
+  // Content
+  center: { alignItems: 'center', gap: 16 },
+  badgePill: {
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  badgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: BRAND.navy,
+    letterSpacing: 2,
+  },
+  iconBox: {
+    width: 140,
+    height: 140,
+    borderRadius: 40,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  iconInner: {
+    width: 110,
+    height: 110,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wordmarkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  logoMini: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    opacity: 0.8,
+  },
+  wordmark: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.7)',
+    letterSpacing: 0.3,
+  },
+});
 
-        {/* Features */}
-        <View style={styles.featuresGrid}>
-          {FEATURES.map((feature, i) => (
-            <View key={i} style={styles.featureItem}>
-              <View style={styles.featureIconBox}>
-                <Ionicons name={feature.icon} size={24} color={colors.primary} />
-              </View>
-              <Text style={styles.featureText}>{feature.label}</Text>
-            </View>
-          ))}
-        </View>
+// ── Main component ────────────────────────────────────────────────────────
+const OnboardingScreen = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const flatListRef = useRef(null);
 
-        {/* Branch Tags */}
-        <View style={styles.branchesSection}>
-          <Text style={styles.branchesHeader}>Available in 10 branches:</Text>
-          <View style={styles.tagsContainer}>
-            {BRANCHES.map((b, i) => (
-              <View key={i} style={styles.tag}>
-                <Text style={styles.tagText}>{b}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
+  const isLast = currentIndex === SLIDES.length - 1;
+  const slide  = SLIDES[currentIndex];
 
-        {/* Bottom CTA */}
-        <View style={styles.footer}>
-          <TouchableOpacity 
-            style={styles.getStartedButton}
+  const onViewableItemsChanged = useRef(({ viewableItems }) => {
+    if (viewableItems[0] != null) setCurrentIndex(viewableItems[0].index);
+  }).current;
+  const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
+
+  const goNext = () => {
+    if (isLast) {
+      navigation.navigate('Login');
+    } else {
+      flatListRef.current?.scrollToIndex({ index: currentIndex + 1, animated: true });
+    }
+  };
+
+  // Animate the sheet accent line to follow slide color
+  const accentColor = scrollX.interpolate({
+    inputRange: SLIDES.map((_, i) => i * width),
+    outputRange: SLIDES.map(s => s.panelAccent),
+    extrapolate: 'clamp',
+  });
+
+  return (
+    <View style={styles.root}>
+      <StatusBar barStyle="light-content" backgroundColor={slide.panelBg} translucent />
+
+      {/* ── Top bar (skip) ─────────────────────────────────────── */}
+      <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
+        {!isLast ? (
+          <TouchableOpacity
+            style={styles.skipBtn}
             onPress={() => navigation.navigate('Login')}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
-            <Text style={styles.getStartedText}>Get Started</Text>
-            <Ionicons name="chevron-forward" size={24} color={colors.card} />
+            <Text style={styles.skipTxt}>Skip</Text>
           </TouchableOpacity>
-          
-          <View style={styles.loginRow}>
-            <Text style={styles.loginHint}>Already have an account? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-              <Text style={styles.loginLink}>Log In</Text>
-            </TouchableOpacity>
-          </View>
+        ) : <View />}
+        {/* Step counter */}
+        <View style={styles.stepCounter}>
+          <Text style={styles.stepTxt}>{currentIndex + 1} / {SLIDES.length}</Text>
         </View>
+      </View>
+
+      {/* ── Slides: visual panels ───────────────────────────────── */}
+      <Animated.FlatList
+        ref={flatListRef}
+        data={SLIDES}
+        keyExtractor={(item) => item.id}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        bounces={false}
+        style={{ height: height * 0.50, flexGrow: 0 }}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+          { useNativeDriver: false }
+        )}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
+        renderItem={({ item, index }) => (
+          <SlidePanel slide={item} index={index} scrollX={scrollX} />
+        )}
+        scrollEnabled={true}
+      />
+
+      {/* ── Bottom content card ─────────────────────────────────── */}
+      <View style={[styles.card, { flex: 1, paddingBottom: insets.bottom + 20 }]}>
+
+        {/* Colored accent line */}
+        <Animated.View style={[styles.accentBar, { backgroundColor: accentColor }]} />
+
+        {/* Progress dots */}
+        <View style={styles.dots}>
+          {SLIDES.map((_, i) => {
+            const w = scrollX.interpolate({
+              inputRange: [(i - 1) * width, i * width, (i + 1) * width],
+              outputRange: [6, 20, 6],
+              extrapolate: 'clamp',
+            });
+            const bg = scrollX.interpolate({
+              inputRange: [(i - 1) * width, i * width, (i + 1) * width],
+              outputRange: [BRAND.slate + '50', BRAND.navy, BRAND.slate + '50'],
+              extrapolate: 'clamp',
+            });
+            return (
+              <Animated.View key={i} style={[styles.dot, { width: w, backgroundColor: bg }]} />
+            );
+          })}
+        </View>
+
+        {/* Title */}
+        <Text style={styles.title}>{slide.title}</Text>
+
+        {/* Body */}
+        <Text style={styles.body}>{slide.body}</Text>
+
+        {/* CTA row */}
+        <View style={styles.ctaRow}>
+          {/* Back arrow (not on first slide) */}
+          {currentIndex > 0 ? (
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => flatListRef.current?.scrollToIndex({ index: currentIndex - 1, animated: true })}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={20} color={BRAND.slate} />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.backBtn} />
+          )}
+
+          {/* Next / Get Started */}
+          <TouchableOpacity
+            style={[styles.ctaBtn, { backgroundColor: slide.panelBg }]}
+            onPress={goNext}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.ctaTxt}>{slide.cta}</Text>
+            <Ionicons
+              name={isLast ? 'checkmark-circle-outline' : 'arrow-forward'}
+              size={18}
+              color={BRAND.white}
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* Already have account */}
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Login')}
+          style={styles.loginRow}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.loginTxt}>
+            Already have an account?{' '}
+            <Text style={[styles.loginLink, { color: slide.panelBg }]}>Log in</Text>
+          </Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: BRAND.offwhite,
   },
-  heroSection: {
-    paddingBottom: 40,
-    paddingHorizontal: 24,
-    borderBottomLeftRadius: 36,
-    borderBottomRightRadius: 36,
-  },
-  heroContent: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  imageWrapper: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: colors.card,
-    padding: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 8,
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  logo: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 40,
-  },
-  heroTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: colors.card,
-  },
-  heroSubtitle: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.85)',
-    marginTop: 6,
-    fontWeight: '500',
-  },
-  heroSubtext: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.65)',
-    marginTop: 4,
-  },
-  mainContent: {
-    flex: 1,
-    paddingTop: 24,
-    paddingHorizontal: 20,
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  sliderContainer: {
-    height: 140,
-    marginBottom: 16,
-    marginTop: -80, // Negative margin to overlap the hero section
-  },
-  slide: {
-    width: width - 40,
-    paddingHorizontal: 4,
-  },
-  slideCard: {
-    flexDirection: 'row',
-    backgroundColor: colors.card,
-    borderRadius: 20,
-    borderColor: colors.border,
-    borderWidth: 1,
-    padding: 20,
-    alignItems: 'flex-start',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  slideIconContainer: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  slideTextContainer: {
-    flex: 1,
-  },
-  slideTitle: {
-    fontSize: 17,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: 4,
-  },
-  slideDesc: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 20,
-  },
-  dots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 28,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.border,
-    marginHorizontal: 4,
-  },
-  dotActive: {
-    width: 24,
-    backgroundColor: colors.primary,
-  },
-  featuresGrid: {
+
+  // Top bar
+  topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 28,
-  },
-  featureItem: {
     alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 8,
   },
-  featureIconBox: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    backgroundColor: 'hsla(224, 82%, 48%, 0.06)',
+  skipBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  skipTxt: { fontSize: 13, fontWeight: '600', color: BRAND.white },
+  stepCounter: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  stepTxt: { fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.8)' },
+
+  // Bottom card
+  card: {
+    flex: 1,
+    backgroundColor: BRAND.white,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingHorizontal: 28,
+    paddingTop: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  accentBar: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+    marginTop: 6,
+  },
+
+  // Dots
+  dots: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 18,
+  },
+  dot: { height: 5, borderRadius: 3 },
+
+  // Text
+  title: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: BRAND.navy,
+    lineHeight: 38,
+    marginBottom: 10,
+    letterSpacing: -0.5,
+  },
+  body: {
+    fontSize: 15,
+    lineHeight: 24,
+    color: BRAND.slate,
+    fontWeight: '400',
+    marginBottom: 24,
+  },
+
+  // CTA
+  ctaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  backBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
   },
-  featureText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  branchesSection: {
-    marginBottom: 28,
-  },
-  branchesHeader: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: 12,
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  tag: {
-    backgroundColor: 'hsla(224, 82%, 48%, 0.05)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 100,
-    borderWidth: 1,
-    borderColor: 'hsla(224, 82%, 48%, 0.1)',
-  },
-  tagText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  footer: {
-    marginTop: 'auto',
-  },
-  getStartedButton: {
-    width: '100%',
-    height: 56,
-    backgroundColor: colors.primary,
+  ctaBtn: {
+    flex: 1,
+    height: 52,
     borderRadius: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: colors.primary,
+    gap: 8,
+    shadowColor: BRAND.navy,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-    marginBottom: 16,
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 5,
   },
-  getStartedText: {
-    fontSize: 17,
-    fontWeight: 'bold',
-    color: colors.card,
-    marginRight: 8,
-  },
-  loginRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loginHint: {
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-  loginLink: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.primary,
-  },
+  ctaTxt: { fontSize: 15, fontWeight: '700', color: BRAND.white },
+
+  // Login hint
+  loginRow: { alignItems: 'center' },
+  loginTxt: { fontSize: 13, color: BRAND.slate, textAlign: 'center' },
+  loginLink: { fontWeight: '700' },
 });
 
 export default OnboardingScreen;

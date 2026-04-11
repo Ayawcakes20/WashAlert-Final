@@ -122,7 +122,7 @@ const ProfileScreen = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 16 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 110 },
   headerTitle: { fontSize: 24, fontWeight: '800', color: colors.text, marginBottom: 24 },
   
   profileHeader: {

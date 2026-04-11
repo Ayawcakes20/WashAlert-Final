@@ -106,7 +106,7 @@ const OrdersScreen = ({ navigation }) => {
     <TouchableOpacity
       onPress={() => navigation.navigate('OrderDetail', { orderId: item.id })}
       activeOpacity={0.7}
-      style={styles.orderCard}
+      style={[styles.orderCard, { borderLeftColor: getStatusColor(item.status) }]}
     >
       <View style={styles.orderHeader}>
         <View style={{ flex: 1 }}>
@@ -283,20 +283,21 @@ const styles = StyleSheet.create({
   listContainer: {
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 24,
+    paddingBottom: 110,
     flexGrow: 1,
   },
   orderCard: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
+    borderLeftWidth: 4,
     borderColor: colors.border,
-    shadowColor: '#000',
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
     elevation: 1,
   },
   orderHeader: {

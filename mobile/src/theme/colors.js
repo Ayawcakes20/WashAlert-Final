@@ -1,31 +1,43 @@
 export const colors = {
-  primary: '#1A56DB',
-  primaryLight: '#E1EFFE',
-  accent: '#16BDCA',
-  accentLight: '#D5F5F6',
-  background: '#F9FAFB',
+  // ── Brand ──────────────────────────────────────────────────────────────
+  primary: '#1E3A5F',       // Deep navy blue — trustworthy, premium
+  primaryLight: '#E8F0FB',  // Soft blue tint for badges/icons bg
+  primaryDark: '#152C4A',
+
+  accent: '#2EC4B6',        // Fresh teal — clean laundry feel
+  accentLight: '#E0F7F5',
+  accentDark: '#1D9E93',
+
+  // ── Backgrounds ─────────────────────────────────────────────────────────
+  background: '#F5F8FF',    // Soft blue-white (Brsh. signature tint)
   surface: '#FFFFFF',
-  surfaceVariant: '#F3F4F6',
-  text: '#111928',
-  textPrimary: '#111928',
-  textSecondary: '#6B7280',
-  textTertiary: '#9CA3AF',
-  success: '#0E9F6E',
-  successLight: '#DEF7EC',
-  warning: '#FF5A1F',
-  warningLight: '#FEF3C7',
-  error: '#E02424',
-  errorLight: '#FDE8E8',
-  border: '#E5E7EB',
-  divider: '#E5E7EB',
-  disabled: '#9CA3AF',
+  surfaceVariant: '#EEF3FB',
   cardBg: '#FFFFFF',
-  shadow: 'rgba(0, 0, 0, 0.08)',
-  overlay: 'rgba(0, 0, 0, 0.5)',
-  info: '#3B82F6',
-  onBackground: '#111928',
-  onSurface: '#111928',
-  danger: '#E02424',
-  secondary: '#0E9F6E',
   card: '#FFFFFF',
+
+  // ── Text ────────────────────────────────────────────────────────────────
+  text: '#0D1B2A',
+  textPrimary: '#0D1B2A',
+  textSecondary: '#5E738A',
+  textTertiary: '#96AAC0',
+  onBackground: '#0D1B2A',
+  onSurface: '#0D1B2A',
+
+  // ── Semantic ────────────────────────────────────────────────────────────
+  success: '#0EB07B',
+  successLight: '#D7F4EA',
+  warning: '#F4A72A',
+  warningLight: '#FEF3DC',
+  error: '#E03E3E',
+  errorLight: '#FDEAEA',
+  info: '#3B82F6',
+
+  // ── UI chrome ────────────────────────────────────────────────────────────
+  border: '#DDE6F3',
+  divider: '#DDE6F3',
+  disabled: '#96AAC0',
+  shadow: 'rgba(30, 58, 95, 0.08)',
+  overlay: 'rgba(13, 27, 42, 0.5)',
+  danger: '#E03E3E',
+  secondary: '#0EB07B',
 };

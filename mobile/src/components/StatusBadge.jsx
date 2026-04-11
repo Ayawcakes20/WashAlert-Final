@@ -1,48 +1,52 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { colors } from '../theme/colors';
-import { typography } from '../theme/typography';
 
-const StatusBadge = ({ status, style }) => {
-  const getStatusColors = () => {
-    switch (status) {
-      case 'pending':
-        return { bg: '#FEF3C7', text: '#92400E' };
-      case 'active':
-      case 'in-progress':
-        return { bg: '#DBEAFE', text: '#1E40AF' };
-      case 'completed':
-        return { bg: '#DCFCE7', text: '#15803D' };
-      case 'cancelled':
-        return { bg: '#FEE2E2', text: '#991B1B' };
-      case 'delivering':
-        return { bg: '#E0E7FF', text: '#3730A3' };
-      default:
-        return { bg: colors.border, text: colors.text };
-    }
+const STATUS_MAP = {
+  pending:    { label: 'Pending',    color: colors.warning,   bg: '#FEF3C7' },
+  received:   { label: 'Received',   color: colors.info,      bg: '#DBEAFE' },
+  washing:    { label: 'Washing',    color: colors.accent,    bg: '#CCFBF1' },
+  drying:     { label: 'Drying',     color: colors.accent,    bg: '#CCFBF1' },
+  ready:      { label: 'Ready',      color: colors.success,   bg: '#D1FAE5' },
+  delivering: { label: 'Delivering', color: colors.primary,   bg: '#E8EEF5' },
+  delivered:  { label: 'Completed',  color: colors.success,   bg: '#D1FAE5' },
+  completed:  { label: 'Completed',  color: colors.success,   bg: '#D1FAE5' },
+  cancelled:  { label: 'Cancelled',  color: colors.error,     bg: '#FEE2E2' },
+};
+
+const StatusBadge = ({ status }) => {
+  const cfg = STATUS_MAP[status?.toLowerCase()] || {
+    label: status || 'Unknown',
+    color: colors.textSecondary,
+    bg: colors.surfaceVariant,
   };
 
-  const statusColors = getStatusColors();
-
   return (
-    <View style={[styles.badge, { backgroundColor: statusColors.bg }, style]}>
-      <Text style={[styles.text, { color: statusColors.text }]}>
-        {status.charAt(0).toUpperCase() + status.slice(1).replace('-', ' ')}
-      </Text>
+    <View style={[styles.badge, { backgroundColor: cfg.bg }]}>
+      <View style={[styles.dot, { backgroundColor: cfg.color }]} />
+      <Text style={[styles.label, { color: cfg.color }]}>{cfg.label}</Text>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   badge: {
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
   },
-  text: {
-    fontSize: typography.small.fontSize,
-    fontWeight: typography.smallBold.fontWeight,
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 });
 

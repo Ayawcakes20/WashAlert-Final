@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   View,
@@ -7,9 +7,10 @@ import {
   ScrollView,
   FlatList,
   TouchableOpacity,
+  Image,
   Dimensions,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors } from '../../theme/colors';
 import { Card, Button, LoadingSkeleton, EmptyState, StatusBadge } from '../../components';
@@ -18,6 +19,66 @@ import { branches as branchesApi, bookings as bookingsApi } from '../../services
 import { typography } from '../../theme/typography';
 
 const { width } = Dimensions.get('window');
+
+const QUICK_ACTIONS = [
+  {
+    id: 'wash-dry',
+    label: 'Wash & Dry',
+    icon: 'washing-machine',
+    screen: 'Book',
+    params: { serviceId: 'wash-dry' },
+    iconColor: colors.primary,
+    iconBg: colors.primaryLight,
+  },
+  {
+    id: 'wash-fold',
+    label: 'Wash & Fold',
+    icon: 'tshirt-crew-outline',
+    screen: 'Book',
+    params: { serviceId: 'wash-fold' },
+    iconColor: colors.success,
+    iconBg: colors.successLight,
+  },
+  {
+    id: 'support',
+    label: 'Support',
+    icon: 'chat-processing-outline',
+    screen: 'Chat',
+    params: {},
+    iconColor: colors.accent,
+    iconBg: colors.accentLight,
+  },
+  {
+    id: 'updates',
+    label: 'Notifications',
+    icon: 'bell-ring-outline',
+    screen: 'Notifications',
+    params: {},
+    iconColor: colors.warning,
+    iconBg: colors.warningLight,
+  },
+];
+
+const STATUS_STEPS = ['pending', 'received', 'washing', 'drying', 'ready'];
+const STATUS_LABELS = {
+  pending: 'Pending Confirmation',
+  received: 'Order Received',
+  washing: 'Washing in Progress',
+  drying: 'Drying',
+  ready: 'Ready for Pickup / Delivery',
+};
+
+const STATUS_BORDER_COLOR = {
+  pending: colors.warning,
+  received: colors.info,
+  washing: colors.accent,
+  drying: colors.accent,
+  ready: colors.success,
+  delivering: colors.primary,
+  delivered: colors.success,
+  completed: colors.success,
+  cancelled: colors.error,
+};
 
 const HomeScreen = ({ navigation }) => {
   const { user } = useAuth();
@@ -39,11 +100,9 @@ const HomeScreen = ({ navigation }) => {
         branchesApi.getAll(),
         bookingsApi.getMyBookings('all'),
       ]);
-
       setBranches(branchesRes.branches || []);
       const allOrders = ordersRes.bookings || [];
       setRecentOrders(allOrders.slice(0, 3));
-
       const active = allOrders.find(
         (order) => ['pending', 'received', 'washing', 'drying', 'ready'].includes(order.status)
       );
@@ -55,30 +114,36 @@ const HomeScreen = ({ navigation }) => {
     }
   };
 
-  const handleRefresh = () => {
-    loadData();
+  const handleRefresh = () => loadData();
+
+  const getStatusProgress = (status) => {
+    const idx = STATUS_STEPS.indexOf(status);
+    return idx >= 0 ? (idx + 1) / STATUS_STEPS.length : 0;
   };
 
   const renderBranchCard = ({ item }) => (
     <Card style={styles.branchCard}>
-      <View style={styles.branchHeader}>
-        <View>
+      <View style={styles.branchRow}>
+        <View style={styles.branchIconBox}>
+          <MaterialCommunityIcons name="store-outline" size={20} color={colors.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.branchName}>{item.name}</Text>
           <Text style={styles.branchCity}>{item.city}</Text>
         </View>
-        <View style={styles.distanceBadge}>
-          <MaterialCommunityIcons name="map-marker" size={14} color={colors.warning} />
+        <View style={styles.distancePill}>
+          <MaterialCommunityIcons name="map-marker-outline" size={12} color={colors.warning} />
           <Text style={styles.distanceText}>{item.distance} km</Text>
         </View>
       </View>
       <Text style={styles.branchAddress}>{item.address}</Text>
       <View style={styles.branchFooter}>
-        <View style={styles.hoursContainer}>
-          <MaterialCommunityIcons name="clock-outline" size={14} color={colors.textSecondary} />
+        <View style={styles.hoursRow}>
+          <MaterialCommunityIcons name="clock-outline" size={13} color={colors.textSecondary} />
           <Text style={styles.hoursText}>{item.hours}</Text>
         </View>
         <TouchableOpacity>
-          <MaterialCommunityIcons name="phone" size={20} color={colors.primary} />
+          <MaterialCommunityIcons name="phone-outline" size={18} color={colors.accent} />
         </TouchableOpacity>
       </View>
     </Card>
@@ -89,8 +154,8 @@ const HomeScreen = ({ navigation }) => {
       onPress={() => navigation.navigate('OrderDetail', { orderId: item.id })}
       activeOpacity={0.7}
     >
-      <Card style={styles.orderCard}>
-        <View style={styles.orderHeader}>
+      <View style={[styles.orderCard, { borderLeftColor: STATUS_BORDER_COLOR[item.status] || colors.border }]}>
+        <View style={styles.orderCardRow}>
           <View>
             <Text style={styles.orderId}>{item.id}</Text>
             <Text style={styles.orderDate}>{item.date}</Text>
@@ -98,7 +163,7 @@ const HomeScreen = ({ navigation }) => {
           <StatusBadge status={item.status} />
         </View>
         <Text style={styles.orderAmount}>₱{item.amount}</Text>
-      </Card>
+      </View>
     </TouchableOpacity>
   );
 
@@ -117,30 +182,75 @@ const HomeScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Header Greeting */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Hello, {user?.fullName || 'Customer'}</Text>
-            <Text style={styles.subtitle}>Ready for clean laundry?</Text>
-          </View>
-          <TouchableOpacity>
-            <MaterialCommunityIcons name="bell-outline" size={28} color={colors.text} />
-          </TouchableOpacity>
-        </View>
 
-        {/* Active Order Card */}
+      {/* ── Top Header Bar ─────────────────────────────────────────────── */}
+      <View style={styles.topBar}>
+        <View style={styles.topBarLeft}>
+          <Image
+            source={require('../../../assets/images/icon.png')}
+            style={styles.topLogo}
+            resizeMode="contain"
+          />
+          <View>
+            <Text style={styles.greeting}>
+              Hello, {user?.fullName?.split(' ')[0] || 'Customer'} 👋
+            </Text>
+            <Text style={styles.greetingSub}>Ready for clean laundry?</Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          style={styles.notifBtn}
+          onPress={() => navigation.navigate('Notifications')}
+        >
+          <Ionicons name="notifications-outline" size={20} color={colors.primary} />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+
+        {/* ── Active Order ─────────────────────────────────────────────── */}
         {activeOrder ? (
-          <Card style={styles.activeOrderCard}>
-            <View style={styles.activeOrderHeader}>
-              <Text style={styles.activeOrderLabel}>Active Order</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Tracking', { orderId: activeOrder.id })}>
-                <Text style={styles.trackLink}>Track</Text>
+          <View style={styles.activeOrderCard}>
+            <View style={styles.activeOrderTopRow}>
+              <View style={styles.activeOrderBadge}>
+                <View style={styles.activeDot} />
+                <Text style={styles.activeOrderBadgeText}>Active Order</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.trackBtn}
+                onPress={() => navigation.navigate('Tracking', { orderId: activeOrder.id })}
+              >
+                <Ionicons name="navigate-outline" size={13} color={colors.primary} />
+                <Text style={styles.trackBtnText}>Track</Text>
               </TouchableOpacity>
             </View>
+
             <Text style={styles.activeOrderId}>{activeOrder.id}</Text>
-            <Text style={styles.activeOrderStatus}>{activeOrder.status.toUpperCase()}</Text>
-            <Text style={styles.activeOrderEta}>Estimated: {activeOrder.estimatedTime}</Text>
+            <Text style={styles.activeOrderStatus}>
+              {STATUS_LABELS[activeOrder.status] || activeOrder.status}
+            </Text>
+
+            {/* Step progress */}
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, {
+                width: `${getStatusProgress(activeOrder.status) * 100}%`,
+              }]} />
+            </View>
+            <View style={styles.progressLabels}>
+              {STATUS_STEPS.map((s, i) => (
+                <Text
+                  key={s}
+                  style={[
+                    styles.progressStep,
+                    STATUS_STEPS.indexOf(activeOrder.status) >= i && styles.progressStepActive,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {s.charAt(0).toUpperCase() + s.slice(1)}
+                </Text>
+              ))}
+            </View>
+
             <View style={styles.activeOrderActions}>
               <Button
                 title="View Details"
@@ -157,42 +267,28 @@ const HomeScreen = ({ navigation }) => {
                 style={styles.actionButton}
               />
             </View>
-          </Card>
+          </View>
         ) : null}
 
-        {/* Quick Actions */}
+        {/* ── Quick Actions ────────────────────────────────────────────── */}
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionsGrid}>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => navigation.navigate('Book', { serviceId: 'wash-dry' })}
-          >
-            <MaterialCommunityIcons name="water" size={32} color={colors.primary} />
-            <Text style={styles.actionBtnText}>Wash & Dry</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => navigation.navigate('Book', { serviceId: 'wash-fold' })}
-          >
-            <MaterialCommunityIcons name="content-cut" size={32} color={colors.success} />
-            <Text style={styles.actionBtnText}>Wash & Fold</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => navigation.navigate('Chat')}
-          >
-            <MaterialCommunityIcons name="chat-outline" size={32} color={colors.accent} />
-            <Text style={styles.actionBtnText}>Support</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => navigation.navigate('Notifications')}
-          >
-            <MaterialCommunityIcons name="bell-outline" size={32} color={colors.warning} />
-            <Text style={styles.actionBtnText}>Updates</Text>
-          </TouchableOpacity>
+          {QUICK_ACTIONS.map((action) => (
+            <TouchableOpacity
+              key={action.id}
+              style={styles.actionTile}
+              onPress={() => navigation.navigate(action.screen, action.params)}
+              activeOpacity={0.75}
+            >
+              <View style={[styles.actionIconBox, { backgroundColor: action.iconBg }]}>
+                <MaterialCommunityIcons name={action.icon} size={24} color={action.iconColor} />
+              </View>
+              <Text style={styles.actionLabel}>{action.label}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* Nearby Branches */}
+        {/* ── Nearby Branches ──────────────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Nearby Branches</Text>
@@ -206,14 +302,14 @@ const HomeScreen = ({ navigation }) => {
               renderItem={renderBranchCard}
               keyExtractor={(item) => item.id.toString()}
               scrollEnabled={false}
-              gap={12}
+              ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
             />
           ) : (
             <EmptyState title="No branches found" />
           )}
         </View>
 
-        {/* Recent Orders */}
+        {/* ── Recent Orders ─────────────────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Recent Orders</Text>
@@ -227,7 +323,7 @@ const HomeScreen = ({ navigation }) => {
               renderItem={renderOrderCard}
               keyExtractor={(item) => item.id}
               scrollEnabled={false}
-              gap={12}
+              ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
             />
           ) : (
             <EmptyState
@@ -235,17 +331,13 @@ const HomeScreen = ({ navigation }) => {
               title="No orders yet"
               description="Book your first laundry service today!"
               actionButton={
-                <Button
-                  title="Book Now"
-                  onPress={() => navigation.navigate('Book')}
-                  size="sm"
-                />
+                <Button title="Book Now" onPress={() => navigation.navigate('Book')} size="sm" />
               }
             />
           )}
         </View>
 
-        <View style={styles.refreshButton}>
+        <View style={{ marginTop: 8, marginBottom: 8 }}>
           <Button
             title="Refresh"
             variant="ghost"
@@ -260,102 +352,193 @@ const HomeScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-  },
-  header: {
+  container: { flex: 1, backgroundColor: colors.background },
+
+  // ── Header ──────────────────────────────────────────────────────────────
+  topBar: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 24,
-    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  topBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  topLogo: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
   },
   greeting: {
-    fontSize: typography.h3.fontSize,
-    fontWeight: typography.h3.fontWeight,
+    fontSize: 15,
+    fontWeight: '700',
     color: colors.text,
   },
-  subtitle: {
-    fontSize: typography.caption.fontSize,
+  greetingSub: {
+    fontSize: 12,
     color: colors.textSecondary,
-    marginTop: 4,
+    marginTop: 1,
   },
+  notifBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  content: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 110, // extra room for floating tab bar
+  },
+
+  // ── Active Order ────────────────────────────────────────────────────────
   activeOrderCard: {
-    backgroundColor: '#F0F9FF',
-    borderColor: colors.primary,
-    marginBottom: 24,
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
   },
-  activeOrderHeader: {
+  activeOrderTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  activeOrderLabel: {
-    fontSize: typography.caption.fontSize,
-    fontWeight: '600',
+  activeOrderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  activeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
+  },
+  activeOrderBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
     color: colors.primary,
   },
-  trackLink: {
-    fontSize: typography.caption.fontSize,
-    color: colors.accent,
-    fontWeight: '600',
+  trackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  trackBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
   },
   activeOrderId: {
-    fontSize: typography.bodyBold.fontSize,
-    fontWeight: typography.bodyBold.fontWeight,
+    fontSize: 16,
+    fontWeight: '800',
     color: colors.text,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   activeOrderStatus: {
-    fontSize: typography.small.fontSize,
-    fontWeight: '600',
-    color: colors.success,
-    marginBottom: 8,
-  },
-  activeOrderEta: {
-    fontSize: typography.caption.fontSize,
+    fontSize: 13,
     color: colors.textSecondary,
+    marginBottom: 14,
+  },
+  progressTrack: {
+    height: 6,
+    backgroundColor: colors.surfaceVariant,
+    borderRadius: 3,
+    marginBottom: 6,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
+    borderRadius: 3,
+  },
+  progressLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginBottom: 16,
+  },
+  progressStep: {
+    fontSize: 9,
+    color: colors.textTertiary,
+    fontWeight: '500',
+    flex: 1,
+    textAlign: 'center',
+  },
+  progressStepActive: {
+    color: colors.primary,
+    fontWeight: '700',
   },
   activeOrderActions: {
     flexDirection: 'row',
     gap: 8,
   },
-  actionButton: {
-    flex: 1,
-  },
+  actionButton: { flex: 1 },
+
+  // ── Quick Actions ───────────────────────────────────────────────────────
   actionsGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 24,
     gap: 12,
+    marginBottom: 24,
   },
-  actionBtn: {
-    width: '48%',
-    backgroundColor: colors.cardBg,
-    borderRadius: 12,
-    padding: 16,
+  actionTile: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
     alignItems: 'center',
+    gap: 10,
     borderWidth: 1,
     borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  actionBtnText: {
-    fontSize: typography.caption.fontSize,
-    fontWeight: '600',
+  actionIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
     color: colors.text,
-    marginTop: 8,
     textAlign: 'center',
   },
-  section: {
-    marginBottom: 24,
-  },
+
+  // ── Sections ────────────────────────────────────────────────────────────
+  section: { marginBottom: 24 },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -363,94 +546,96 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: {
-    fontSize: typography.bodyBold.fontSize,
-    fontWeight: typography.bodyBold.fontWeight,
+    fontSize: 16,
+    fontWeight: '800',
     color: colors.text,
-  },
-  seeAll: {
-    fontSize: typography.caption.fontSize,
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  branchCard: {
     marginBottom: 12,
   },
-  branchHeader: {
+  seeAll: {
+    fontSize: 13,
+    color: colors.accent,
+    fontWeight: '600',
+  },
+
+  // ── Branch Card ─────────────────────────────────────────────────────────
+  branchCard: { marginBottom: 0 },
+  branchRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    gap: 10,
     marginBottom: 8,
   },
+  branchIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   branchName: {
-    fontSize: typography.bodyBold.fontSize,
-    fontWeight: typography.bodyBold.fontWeight,
+    fontSize: 14,
+    fontWeight: '700',
     color: colors.text,
   },
   branchCity: {
-    fontSize: typography.small.fontSize,
+    fontSize: 12,
     color: colors.textSecondary,
-    marginTop: 2,
+    marginTop: 1,
   },
-  distanceBadge: {
+  distancePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FFF4E6',
-    paddingVertical: 4,
+    gap: 3,
+    backgroundColor: colors.warningLight,
     paddingHorizontal: 8,
-    borderRadius: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
   distanceText: {
-    fontSize: typography.small.fontSize,
+    fontSize: 11,
     color: colors.warning,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   branchAddress: {
-    fontSize: typography.small.fontSize,
+    fontSize: 12,
     color: colors.textSecondary,
     marginBottom: 10,
+    marginLeft: 48,
   },
   branchFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  hoursContainer: {
+  hoursRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  hoursText: {
-    fontSize: typography.small.fontSize,
-    color: colors.textSecondary,
-  },
+  hoursText: { fontSize: 12, color: colors.textSecondary },
+
+  // ── Order Card ──────────────────────────────────────────────────────────
   orderCard: {
-    marginBottom: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderLeftWidth: 4,
   },
-  orderHeader: {
+  orderCardRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  orderId: {
-    fontSize: typography.bodyBold.fontSize,
-    fontWeight: typography.bodyBold.fontWeight,
-    color: colors.text,
-  },
-  orderDate: {
-    fontSize: typography.small.fontSize,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  orderAmount: {
-    fontSize: typography.h4.fontSize,
-    fontWeight: typography.h4.fontWeight,
-    color: colors.primary,
-  },
-  refreshButton: {
-    marginTop: 8,
-  },
+  orderId: { fontSize: 14, fontWeight: '700', color: colors.text },
+  orderDate: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  orderAmount: { fontSize: 18, fontWeight: '800', color: colors.primary },
+
+  // loading header
+  header: { paddingHorizontal: 16, paddingTop: 12, marginBottom: 8 },
 });
 
 export default HomeScreen;

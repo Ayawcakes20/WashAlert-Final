@@ -9,7 +9,6 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -25,6 +24,7 @@ const LoginScreen = ({ navigation }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [focusedField, setFocusedField] = useState(null);
 
   const validateField = (key, value) => {
     const e = { ...errors };
@@ -63,10 +63,10 @@ const LoginScreen = ({ navigation }) => {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <WashingMachineLoader size={120} />
+      <View style={styles.loadingContainer}>
+        <WashingMachineLoader size={80} />
         <Text style={styles.loadingText}>Logging in...</Text>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -81,32 +81,46 @@ const LoginScreen = ({ navigation }) => {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Logo Section */}
-          <View style={styles.logoSection}>
-            <Image
-              source={require('../../../assets/images/icon.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-            <Text style={styles.welcomeTitle}>Welcome Back!</Text>
-            <Text style={styles.welcomeSubtitle}>Sign in to your WashAlert account</Text>
+          {/* ── Brand Header ──────────────────────────────────────────────── */}
+          <View style={styles.brandHeader}>
+            <View style={styles.logoBox}>
+              <Image
+                source={require('../../../assets/images/icon.png')}
+                style={styles.logo}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={styles.brandName}>WashAlert</Text>
+            <Text style={styles.brandSub}>Your Laundry, Our Priority</Text>
           </View>
 
-          {/* Form */}
+          {/* ── Form ──────────────────────────────────────────────────────── */}
           <View style={styles.formSection}>
-            {/* Email Input */}
-            <View style={styles.inputWrapper}>
+            <Text style={styles.formTitle}>Welcome back</Text>
+            <Text style={styles.formSub}>Sign in to your account to continue</Text>
+
+            {/* Email */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Email address</Text>
               <View style={[
-                styles.inputContainer,
-                errors.email && styles.inputError,
+                styles.inputRow,
+                focusedField === 'email' && styles.inputRowFocused,
+                errors.email && styles.inputRowError,
               ]}>
-                <Ionicons name="mail-outline" size={20} color={colors.textSecondary} />
+                <Ionicons
+                  name="mail-outline"
+                  size={18}
+                  color={focusedField === 'email' ? colors.primary : colors.textTertiary}
+                  style={styles.inputIcon}
+                />
                 <TextInput
                   style={styles.input}
-                  placeholder="Email address"
-                  placeholderTextColor={colors.textSecondary}
+                  placeholder="you@example.com"
+                  placeholderTextColor={colors.textTertiary}
                   value={email}
                   onChangeText={(val) => { setEmail(val); validateField('email', val); }}
+                  onFocus={() => setFocusedField('email')}
+                  onBlur={() => setFocusedField(null)}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -115,64 +129,77 @@ const LoginScreen = ({ navigation }) => {
               {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
             </View>
 
-            {/* Password Input */}
-            <View style={styles.inputWrapper}>
+            {/* Password */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Password</Text>
               <View style={[
-                styles.inputContainer,
-                errors.password && styles.inputError,
+                styles.inputRow,
+                focusedField === 'password' && styles.inputRowFocused,
+                errors.password && styles.inputRowError,
               ]}>
-                <Ionicons name="lock-closed-outline" size={20} color={colors.textSecondary} />
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={18}
+                  color={focusedField === 'password' ? colors.primary : colors.textTertiary}
+                  style={styles.inputIcon}
+                />
                 <TextInput
                   style={styles.input}
-                  placeholder="Password"
-                  placeholderTextColor={colors.textSecondary}
+                  placeholder="Min. 8 characters"
+                  placeholderTextColor={colors.textTertiary}
                   value={password}
                   onChangeText={(val) => { setPassword(val); validateField('password', val); }}
+                  onFocus={() => setFocusedField('password')}
+                  onBlur={() => setFocusedField(null)}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                 />
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.eyeBtn}
+                >
                   <Ionicons
                     name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                    size={20}
-                    color={colors.textSecondary}
+                    size={18}
+                    color={colors.textTertiary}
                   />
                 </TouchableOpacity>
               </View>
               {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
             </View>
 
-            {/* Forgot Password */}
+            {/* Forgot */}
             <TouchableOpacity
-              style={styles.forgotButton}
+              style={styles.forgotWrapper}
               onPress={() => navigation.navigate('ForgotPassword')}
             >
-              <Text style={styles.forgotText}>Forgot Password?</Text>
+              <Text style={styles.forgotText}>Forgot password?</Text>
             </TouchableOpacity>
 
-            {/* Login Button */}
+            {/* Login CTA */}
             <TouchableOpacity
-              style={styles.loginButton}
+              style={styles.loginBtn}
               onPress={handleLogin}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
-              <Text style={styles.loginButtonText}>Log In</Text>
+              <Text style={styles.loginBtnText}>Log In</Text>
             </TouchableOpacity>
 
             {/* Divider */}
-            <View style={styles.dividerRow}>
+            <View style={styles.divider}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
+              <Text style={styles.dividerLabel}>or</Text>
               <View style={styles.dividerLine} />
             </View>
 
-            {/* Register Link */}
-            <View style={styles.registerRow}>
-              <Text style={styles.registerText}>Don't have an account? </Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-                <Text style={styles.registerLink}>Register</Text>
-              </TouchableOpacity>
-            </View>
+            {/* Register */}
+            <TouchableOpacity
+              style={styles.registerBtn}
+              onPress={() => navigation.navigate('Register')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.registerBtnText}>Create an Account</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -181,138 +208,157 @@ const LoginScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 48,
-    paddingBottom: 32,
-  },
+  container: { flex: 1, backgroundColor: colors.background },
+  keyboardView: { flex: 1 },
+  scrollContent: { flexGrow: 1, paddingBottom: 40 },
+
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
+    backgroundColor: colors.primary,
     alignItems: 'center',
-    backgroundColor: colors.background,
+    justifyContent: 'center',
   },
   loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: colors.textSecondary,
+    marginTop: 12,
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.7)',
     fontWeight: '500',
   },
-  logoSection: {
+
+  // Brand header — navy block at top
+  brandHeader: {
+    backgroundColor: colors.primary,
     alignItems: 'center',
-    marginBottom: 32,
+    paddingTop: 48,
+    paddingBottom: 40,
+    paddingHorizontal: 24,
   },
-  logo: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    marginBottom: 16,
+  logoBox: {
+    width: 80,
+    height: 80,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
   },
-  welcomeTitle: {
-    fontSize: 24,
-    fontWeight: '700',
+  logo: { width: 56, height: 56, borderRadius: 14 },
+  brandName: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+    marginBottom: 4,
+  },
+  brandSub: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.6)',
+    fontWeight: '400',
+  },
+
+  // Form section
+  formSection: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginTop: -20,
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    flex: 1,
+  },
+  formTitle: {
+    fontSize: 22,
+    fontWeight: '800',
     color: colors.text,
+    marginBottom: 4,
   },
-  welcomeSubtitle: {
+  formSub: {
     fontSize: 14,
     color: colors.textSecondary,
-    marginTop: 4,
+    marginBottom: 28,
   },
-  formSection: {
-    width: '100%',
+
+  // Fields
+  fieldGroup: { marginBottom: 18 },
+  label: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 6,
+    letterSpacing: 0.1,
   },
-  inputWrapper: {
-    marginBottom: 16,
-  },
-  inputContainer: {
+  inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
+    backgroundColor: colors.surfaceVariant,
+    borderWidth: 1.5,
     borderColor: colors.border,
     borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: 14,
+    height: 52,
   },
-  inputError: {
-    borderColor: colors.error,
+  inputRowFocused: {
+    borderColor: colors.primary,
+    backgroundColor: '#EAF0F8',
   },
+  inputRowError: { borderColor: colors.error },
+  inputIcon: { marginRight: 10 },
   input: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 15,
     color: colors.text,
     padding: 0,
   },
+  eyeBtn: { padding: 4 },
   errorText: {
-    color: colors.error,
     fontSize: 12,
-    marginTop: 4,
-    marginLeft: 4,
+    color: colors.error,
+    marginTop: 5,
+    marginLeft: 2,
   },
-  forgotButton: {
-    alignSelf: 'flex-end',
-    marginTop: -8,
-    marginBottom: 16,
-  },
-  forgotText: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  loginButton: {
+
+  forgotWrapper: { alignSelf: 'flex-end', marginBottom: 24 },
+  forgotText: { fontSize: 13, fontWeight: '600', color: colors.accent },
+
+  // Buttons
+  loginBtn: {
+    height: 54,
     backgroundColor: colors.primary,
-    height: 52,
-    borderRadius: 12,
-    justifyContent: 'center',
+    borderRadius: 14,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
+    justifyContent: 'center',
+    marginBottom: 20,
   },
-  loginButtonText: {
-    color: '#FFFFFF',
+  loginBtnText: {
     fontSize: 16,
     fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
   },
-  dividerRow: {
+  divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 16,
     gap: 12,
+    marginBottom: 16,
   },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.border,
-  },
-  dividerText: {
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
-  registerRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  dividerLabel: { fontSize: 12, color: colors.textTertiary },
+
+  registerBtn: {
+    height: 54,
+    backgroundColor: colors.surfaceVariant,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: colors.border,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  registerText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  registerLink: {
-    fontSize: 14,
-    color: colors.primary,
-    fontWeight: '600',
+  registerBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
   },
 });
 

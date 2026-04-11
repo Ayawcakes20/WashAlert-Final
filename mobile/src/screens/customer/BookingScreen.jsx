@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { MapView, Marker, PROVIDER_GOOGLE } from '../../components/SafeMap';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import * as WebBrowser from 'expo-web-browser';
 import { colors } from '../../theme/colors';

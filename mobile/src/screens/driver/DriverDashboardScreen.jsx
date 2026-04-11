@@ -7,14 +7,26 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
-import { LinearGradient } from 'expo-linear-gradient';
 import { deliveries as deliveriesApi } from '../../services/api';
+
+const STATUS_CONFIG = {
+  pending:     { label: 'Pending Pickup', color: colors.warning,   bg: colors.warningLight },
+  en_route:    { label: 'En Route',       color: colors.info,      bg: '#DBEAFE' },
+  picked_up:   { label: 'Picked Up',      color: colors.accent,    bg: colors.accentLight },
+  in_progress: { label: 'In Transit',     color: colors.primary,   bg: colors.primaryLight },
+  completed:   { label: 'Completed',      color: colors.success,   bg: colors.successLight },
+  failed:      { label: 'Failed',         color: colors.error,     bg: colors.errorLight },
+};
+
+const getStatusCfg = (status) =>
+  STATUS_CONFIG[status] || { label: status, color: colors.textSecondary, bg: colors.surfaceVariant };
 
 const DriverDashboardScreen = ({ navigation }) => {
   const { user } = useAuth();
@@ -53,25 +65,16 @@ const DriverDashboardScreen = ({ navigation }) => {
     loadData();
   }, [loadData]);
 
-  const pending = deliveries.filter((item) => item.status === 'pending' || item.status === 'en_route').length;
-  const completed = deliveries.filter((item) => item.status === 'completed').length;
-  const active = deliveries.find((item) => item.status === 'in_progress' || item.status === 'picked_up');
-
-  const getStatusLabel = (status) => {
-    if (status === 'pending') return 'Pending Pickup';
-    if (status === 'en_route') return 'En Route';
-    if (status === 'picked_up') return 'Picked Up';
-    if (status === 'in_progress') return 'In Transit';
-    if (status === 'completed') return 'Completed';
-    if (status === 'failed') return 'Failed';
-    return 'Pending';
-  };
+  const pending   = deliveries.filter((d) => d.status === 'pending' || d.status === 'en_route').length;
+  const completed = deliveries.filter((d) => d.status === 'completed').length;
+  const active    = deliveries.find((d) => d.status === 'in_progress' || d.status === 'picked_up');
 
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading dashboard…</Text>
         </View>
       </SafeAreaView>
     );
@@ -82,126 +85,115 @@ const DriverDashboardScreen = ({ navigation }) => {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
       >
+
+        {/* ── Header ──────────────────────────────────────────────────── */}
         <View style={styles.header}>
-          <Text style={styles.greetingText}>{greeting},</Text>
-          <Text style={styles.nameText}>{firstName}!</Text>
+          <View>
+            <Text style={styles.greetingText}>{greeting} 👋</Text>
+            <Text style={styles.nameText}>{firstName}</Text>
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          </View>
+          <View style={styles.avatarCircle}>
+            <Text style={styles.avatarInitial}>{firstName.charAt(0)}</Text>
+          </View>
         </View>
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-        <LinearGradient
-          colors={[colors.primary, colors.accent]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.summaryCard}
-        >
-          <Text style={styles.summaryLabel}>TODAY'S SUMMARY</Text>
-          <View style={styles.summaryGrid}>
-            <View style={styles.summaryItem}>
-              <View style={styles.summaryIconBox}>
-                <Ionicons name="cube-outline" size={20} color={colors.card} />
-              </View>
-              <Text style={styles.summaryVal}>{deliveries.length}</Text>
-              <Text style={styles.summarySub}>Total</Text>
-            </View>
-            <View style={styles.summaryItem}>
-              <View style={styles.summaryIconBox}>
-                <Ionicons name="checkmark-circle-outline" size={20} color={colors.card} />
-              </View>
-              <Text style={styles.summaryVal}>{completed}</Text>
-              <Text style={styles.summarySub}>Done</Text>
-            </View>
-            <View style={styles.summaryItem}>
-              <View style={styles.summaryIconBox}>
-                <Ionicons name="time-outline" size={20} color={colors.card} />
-              </View>
-              <Text style={styles.summaryVal}>{pending}</Text>
-              <Text style={styles.summarySub}>Pending</Text>
-            </View>
+        {/* ── Summary tiles ────────────────────────────────────────────── */}
+        <Text style={styles.sectionLabel}>Today's Summary</Text>
+        <View style={styles.tilesRow}>
+          <View style={[styles.tile, styles.tilePrimary]}>
+            <MaterialCommunityIcons name="package-variant-closed" size={22} color={colors.primary} />
+            <Text style={styles.tileValue}>{deliveries.length}</Text>
+            <Text style={styles.tileLabel}>Total</Text>
           </View>
-        </LinearGradient>
+          <View style={[styles.tile, styles.tileSuccess]}>
+            <MaterialCommunityIcons name="check-circle-outline" size={22} color={colors.success} />
+            <Text style={[styles.tileValue, { color: colors.success }]}>{completed}</Text>
+            <Text style={styles.tileLabel}>Done</Text>
+          </View>
+          <View style={[styles.tile, styles.tilePending]}>
+            <MaterialCommunityIcons name="clock-outline" size={22} color={colors.warning} />
+            <Text style={[styles.tileValue, { color: colors.warning }]}>{pending}</Text>
+            <Text style={styles.tileLabel}>Pending</Text>
+          </View>
+        </View>
 
+        {/* ── Active delivery banner ───────────────────────────────────── */}
         {active ? (
-          <View style={styles.activeDeliveryBox}>
-            <View style={styles.activeHeaderRow}>
-              <Ionicons name="bus-outline" size={20} color={colors.accent} />
-              <Text style={styles.activeDeliveryTitle}>Active Delivery</Text>
+          <View style={styles.activeBanner}>
+            <View style={styles.activeBannerLeft}>
+              <View style={styles.activePulse}>
+                <View style={styles.activeDot} />
+              </View>
+              <View>
+                <Text style={styles.activeBannerLabel}>Active Delivery</Text>
+                <Text style={styles.activeBannerCustomer}>{active.customerName}</Text>
+                <View style={styles.addressRow}>
+                  <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
+                  <Text style={styles.addressText} numberOfLines={1}>{active.deliveryAddress}</Text>
+                </View>
+              </View>
             </View>
-            <Text style={styles.activeCustomer}>{active.customerName}</Text>
-            <View style={styles.addressRow}>
-              <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
-              <Text style={styles.addressText}>{active.deliveryAddress}</Text>
-            </View>
-
             <TouchableOpacity
               style={styles.goBtn}
               onPress={() => navigation.navigate('Deliveries')}
             >
-              <Text style={styles.goBtnText}>Go to Delivery</Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.card} />
+              <Text style={styles.goBtnText}>Go</Text>
+              <Ionicons name="arrow-forward" size={14} color="#fff" />
             </TouchableOpacity>
           </View>
         ) : null}
 
+        {/* ── Today's deliveries list ──────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Today's Deliveries</Text>
             <TouchableOpacity onPress={() => navigation.navigate('Deliveries')}>
-              <Text style={styles.seeAllText}>See All</Text>
+              <Text style={styles.seeAll}>See All</Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.listContainer}>
-            {!deliveries.length ? (
-              <View style={styles.emptyCard}>
-                <Text style={styles.emptyText}>No deliveries found.</Text>
-              </View>
-            ) : (
-              deliveries.slice(0, 5).map((item) => (
-                <View key={item.id} style={styles.deliveryCard}>
-                  <View style={styles.delHeader}>
-                    <Text style={styles.delCustomer}>{item.customerName}</Text>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        item.status === 'completed'
-                          ? styles.statusCompleted
-                          : item.status === 'in_progress'
-                          ? styles.statusActive
-                          : item.status === 'failed'
-                          ? styles.statusFailed
-                          : styles.statusPending,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.statusText,
-                          item.status === 'completed'
-                            ? styles.statusTextCompleted
-                            : item.status === 'in_progress'
-                            ? styles.statusTextActive
-                            : item.status === 'failed'
-                            ? styles.statusTextFailed
-                            : styles.statusTextPending,
-                        ]}
-                      >
-                        {getStatusLabel(item.status)}
-                      </Text>
+
+          {!deliveries.length ? (
+            <View style={styles.emptyCard}>
+              <MaterialCommunityIcons name="truck-check-outline" size={40} color={colors.border} />
+              <Text style={styles.emptyTitle}>All clear!</Text>
+              <Text style={styles.emptyMsg}>No deliveries assigned for today.</Text>
+            </View>
+          ) : (
+            deliveries.slice(0, 5).map((item) => {
+              const cfg = getStatusCfg(item.status);
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[styles.deliveryCard, { borderLeftColor: cfg.color }]}
+                  onPress={() => navigation.navigate('DeliveryDetail', { deliveryId: item.id })}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.deliveryCardTop}>
+                    <Text style={styles.customerName}>{item.customerName}</Text>
+                    <View style={[styles.statusPill, { backgroundColor: cfg.bg }]}>
+                      <View style={[styles.statusDot, { backgroundColor: cfg.color }]} />
+                      <Text style={[styles.statusText, { color: cfg.color }]}>{cfg.label}</Text>
                     </View>
                   </View>
-                  <View style={[styles.addressRow, { marginTop: 4 }]}>
+                  <View style={styles.addressRow}>
                     <Ionicons name="map-outline" size={12} color={colors.textSecondary} />
-                    <Text style={styles.addressText}>
-                      {item.leg === 'PICKUP_FROM_CUSTOMER' ? "Pickup: " : "Deliver to: "}
-                      {item.leg === 'PICKUP_FROM_CUSTOMER' ? item.customerName : item.deliveryAddress}
+                    <Text style={styles.addressText} numberOfLines={1}>
+                      {item.leg === 'PICKUP_FROM_CUSTOMER' ? `Pickup: ${item.customerName}` : `Deliver: ${item.deliveryAddress}`}
                     </Text>
                   </View>
-                </View>
-              ))
-            )}
-          </View>
+                  <View style={styles.cardFooter}>
+                    <Text style={styles.cardFooterText}>View details</Text>
+                    <Ionicons name="chevron-forward" size={13} color={colors.textTertiary} />
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
         </View>
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -209,108 +201,165 @@ const DriverDashboardScreen = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 24 },
-  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 32 },
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  loadingText: { fontSize: 14, color: colors.textSecondary },
 
-  header: { marginBottom: 24 },
-  greetingText: { fontSize: 12, color: colors.textSecondary, marginBottom: 2 },
-  nameText: { fontSize: 22, fontWeight: 'bold', color: colors.text },
-  errorText: { fontSize: 12, color: colors.error, marginBottom: 16 },
-
-  summaryCard: {
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  summaryLabel: {
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: 11,
-    fontWeight: '600',
-    marginBottom: 12,
-    letterSpacing: 0.5,
-  },
-  summaryGrid: { flexDirection: 'row', justifyContent: 'space-between' },
-  summaryItem: { alignItems: 'center', flex: 1 },
-  summaryIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  summaryVal: { fontSize: 24, fontWeight: 'bold', color: colors.card },
-  summarySub: { fontSize: 10, color: 'rgba(255,255,255,0.85)' },
-
-  activeDeliveryBox: {
-    backgroundColor: 'hsla(174, 79%, 44%, 0.1)',
-    borderWidth: 2,
-    borderColor: colors.accent,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-  },
-  activeHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  activeDeliveryTitle: { fontSize: 14, fontWeight: 'bold', color: colors.text, marginLeft: 8 },
-  activeCustomer: { fontSize: 14, fontWeight: '600', color: colors.text },
-  addressRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-  addressText: { fontSize: 12, color: colors.textSecondary, marginLeft: 4, flex: 1 },
-  goBtn: {
-    marginTop: 12,
-    width: '100%',
-    height: 40,
-    backgroundColor: colors.accent,
-    borderRadius: 12,
+  // Header
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
   },
-  goBtnText: { fontSize: 14, fontWeight: '600', color: colors.card, marginRight: 4 },
-
-  section: { marginBottom: 24 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: colors.text },
-  seeAllText: { fontSize: 13, fontWeight: '600', color: colors.primary },
-  listContainer: { gap: 12 },
-  emptyCard: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
+  greetingText: { fontSize: 13, color: colors.textSecondary, marginBottom: 2 },
+  nameText: { fontSize: 24, fontWeight: '800', color: colors.text },
+  errorText: { fontSize: 12, color: colors.error, marginTop: 4 },
+  avatarCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center',
-  },
-  emptyText: { fontSize: 12, color: colors.textSecondary },
-  deliveryCard: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 16,
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
-  delHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  delCustomer: { fontSize: 14, fontWeight: 'bold', color: colors.text, flex: 1, paddingRight: 8 },
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 100 },
-  statusCompleted: { backgroundColor: 'hsla(156, 87%, 34%, 0.1)' },
-  statusActive: { backgroundColor: 'hsla(174, 79%, 44%, 0.1)' },
-  statusPending: { backgroundColor: 'hsla(16, 100%, 56%, 0.1)' },
-  statusFailed: { backgroundColor: 'hsla(0, 84%, 60%, 0.1)' },
-  statusText: { fontSize: 10, fontWeight: 'bold' },
-  statusTextCompleted: { color: colors.success },
-  statusTextActive: { color: colors.accent },
-  statusTextPending: { color: colors.warning },
-  statusTextFailed: { color: colors.error },
+  avatarInitial: { fontSize: 20, fontWeight: '800', color: colors.primary },
+
+  // Section label
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textTertiary,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+
+  // Summary tiles
+  tilesRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 20,
+  },
+  tile: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    paddingVertical: 16,
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tilePrimary: { borderTopColor: colors.primary, borderTopWidth: 3 },
+  tileSuccess:  { borderTopColor: colors.success, borderTopWidth: 3 },
+  tilePending:  { borderTopColor: colors.warning, borderTopWidth: 3 },
+  tileValue: { fontSize: 22, fontWeight: '800', color: colors.primary },
+  tileLabel: { fontSize: 10, fontWeight: '600', color: colors.textTertiary, letterSpacing: 0.2 },
+
+  // Active delivery banner
+  activeBanner: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.accent,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  activeBannerLeft: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, flex: 1 },
+  activePulse: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: colors.accentLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  activeDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.accent },
+  activeBannerLabel: { fontSize: 10, fontWeight: '700', color: colors.accent, letterSpacing: 0.5, marginBottom: 2 },
+  activeBannerCustomer: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 2 },
+  addressRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  addressText: { fontSize: 12, color: colors.textSecondary, flex: 1 },
+  goBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  goBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+
+  // Section
+  section: { marginBottom: 8 },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sectionTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
+  seeAll: { fontSize: 13, fontWeight: '600', color: colors.accent },
+
+  // Empty
+  emptyCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 8,
+  },
+  emptyTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+  emptyMsg: { fontSize: 13, color: colors.textSecondary, textAlign: 'center' },
+
+  // Delivery card
+  deliveryCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderLeftWidth: 4,
+  },
+  deliveryCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  customerName: { fontSize: 14, fontWeight: '700', color: colors.text, flex: 1, paddingRight: 8 },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 20,
+  },
+  statusDot: { width: 5, height: 5, borderRadius: 2.5 },
+  statusText: { fontSize: 10, fontWeight: '700' },
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  cardFooterText: { fontSize: 12, color: colors.textTertiary, fontWeight: '600' },
 });
 
 export default DriverDashboardScreen;

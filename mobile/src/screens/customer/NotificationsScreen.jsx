@@ -171,7 +171,7 @@ const NotificationsScreen = () => {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 110 },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   headerRow: {
@@ -180,9 +180,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: colors.text },
-  markReadBtn: { flexDirection: 'row', alignItems: 'center' },
-  markReadText: { fontSize: 12, fontWeight: '500', color: colors.primary, marginLeft: 4 },
+  headerTitle: { fontSize: 26, fontWeight: '800', color: colors.text },
+  markReadBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primaryLight, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
+  markReadText: { fontSize: 12, fontWeight: '700', color: colors.primary },
   markReadTextDisabled: { color: colors.textSecondary },
 
   errorText: { color: colors.error, fontSize: 12, marginBottom: 12 },
@@ -201,20 +201,20 @@ const styles = StyleSheet.create({
   emptyText: { marginTop: 6, fontSize: 12, color: colors.textSecondary },
 
   notifCard: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    padding: 14,
     borderWidth: 1,
     borderColor: colors.border,
-    shadowColor: '#000',
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
     elevation: 1,
     flexDirection: 'row',
     gap: 12,
   },
-  notifCardUnread: { borderColor: 'hsla(224, 82%, 48%, 0.3)' },
+  notifCardUnread: { borderLeftWidth: 4, borderLeftColor: colors.primary },
   iconBox: {
     width: 40,
     height: 40,
