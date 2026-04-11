@@ -21,10 +21,10 @@ spring:
     open-in-view: false
 
   mail:
-    host: ${MAIL_HOST:smtp.gmail.com}
+    host: ${MAIL_HOST:smtp.resend.com}
     port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:jeyamaedacara815@gmail.com}
-    password: ${MAIL_PASSWORD:xijvucmgsgetpiqr}
+    username: ${MAIL_USERNAME:resend}
+    password: ${MAIL_PASSWORD:re_XGM1yzf7_BEyFZwyiAGXnRkY7wF8XrAuS}
     properties:
       mail:
         smtp:
@@ -55,7 +55,7 @@ washalert:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081}
   mail:
-    from: ${MAIL_FROM:jeyamaedacara815@gmail.com}
+    from: ${MAIL_FROM:WashAlert Support <noreply@washalert.com>}
   otp:
     length: ${OTP_LENGTH:6}
     ttl-minutes: ${OTP_TTL_MINUTES:15}
