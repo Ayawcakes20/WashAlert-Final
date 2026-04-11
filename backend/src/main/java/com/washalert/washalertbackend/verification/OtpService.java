@@ -53,8 +53,10 @@ public class OtpService {
     }
 
     public void generateAndSend(User user) {
-        String code = generateNumericCode(otpLength);
+        String normalizedEmail = normalizeEmail(user.getEmail());
+        log.info("[OTP] Generating OTP for userId={} email={}", user.getId(), maskEmail(normalizedEmail));
 
+        String code = generateNumericCode(otpLength);
         EmailOtp otp = otps.findByUser(user).orElse(null);
         LocalDateTime now = LocalDateTime.now();
 
@@ -74,40 +76,36 @@ public class OtpService {
         otp.setExpiresAt(now.plusMinutes(ttlMinutes));
         otp.setLastSentAt(now);
 
-        otps.save(otp);
+        EmailOtp savedOtp = otps.save(otp);
+        log.info(
+                "[OTP] OTP persisted for userId={} otpId={} expiresAt={} lastSentAt={}",
+                user.getId(),
+                savedOtp.getId(),
+                savedOtp.getExpiresAt(),
+                savedOtp.getLastSentAt()
+        );
 
         try {
-            mail.sendOtpEmail(user.getEmail(), code);
-            log.info("[OTP] Email successfully sent to {}", user.getEmail());
+            mail.sendOtpEmail(normalizedEmail, code);
+            log.info("[OTP] Email dispatch succeeded for userId={} email={}", user.getId(), maskEmail(normalizedEmail));
         } catch (Exception ex) {
-            // ⚠️ Do NOT re-throw here.
-            // The OTP code is already persisted in the DB (otps.save above).
-            // The controller will handle surfacing the mail failure gracefully
-            // so the user can still reach the OTP screen and use "Resend Code".
-            System.err.println("==========================================");
-            System.err.println("[OTP] Mail delivery FAILED for " + user.getEmail());
-            System.err.println("[OTP] FOR TESTING / MANUAL VERIFY: Code = " + code);
-            System.err.println("==========================================");
-            log.error("[OTP] Mail delivery failed for {} — OTP is in DB, user can resend. Cause: {}",
-                    user.getEmail(), ex.getMessage());
-            // Re-throw so the caller (controller) can log it and decide the HTTP response.
+            log.error(
+                    "[OTP] Email dispatch failed for userId={} email={}. OTP remains persisted for retry.",
+                    user.getId(),
+                    maskEmail(normalizedEmail),
+                    ex
+            );
             throw ex;
         }
     }
 
-    // ✅ IMPORTANT: transaction needed (updates + delete)
     @Transactional
     public User verifyAndActivate(String email, String code) {
-        User user = users.findByEmail(email.trim().toLowerCase())
+        User user = users.findByEmail(normalizeEmail(email))
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         if (user.isEnabled()) {
             throw new IllegalArgumentException("Email is already verified.");
-        }
-
-        // Backdoor for development/testing
-        if ("888888".equals(code)) {
-            return activateUser(user);
         }
 
         verifyCodeOnly(user, code);
@@ -116,13 +114,8 @@ public class OtpService {
 
     @Transactional
     public void verifyCodeOnly(String email, String code) {
-        User user = users.findByEmail(email.trim().toLowerCase())
+        User user = users.findByEmail(normalizeEmail(email))
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
-
-        if ("888888".equals(code)) {
-            otps.deleteByUser(user);
-            return;
-        }
 
         verifyCodeOnly(user, code);
         otps.deleteByUser(user);
@@ -161,7 +154,10 @@ public class OtpService {
     }
 
     public void resend(String email) {
-        User user = users.findByEmail(email.trim().toLowerCase())
+        String normalizedEmail = normalizeEmail(email);
+        log.info("[OTP] Resend requested for {}", maskEmail(normalizedEmail));
+
+        User user = users.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         if (user.isEnabled()) {
@@ -172,7 +168,10 @@ public class OtpService {
     }
 
     public void sendForReset(String email) {
-        User user = users.findByEmail(email.trim().toLowerCase())
+        String normalizedEmail = normalizeEmail(email);
+        log.info("[OTP] Password reset OTP requested for {}", maskEmail(normalizedEmail));
+
+        User user = users.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
         generateAndSend(user);
     }
@@ -182,5 +181,21 @@ public class OtpService {
         int floor = (int) Math.pow(10, length - 1);
         int value = floor + random.nextInt(bound - floor);
         return String.valueOf(value);
+    }
+
+    private String normalizeEmail(String email) {
+        return email == null ? "" : email.trim().toLowerCase();
+    }
+
+    private String maskEmail(String email) {
+        if (email == null || email.isBlank() || !email.contains("@")) {
+            return "<unknown-email>";
+        }
+        int at = email.indexOf('@');
+        String local = email.substring(0, at);
+        if (local.length() <= 2) {
+            return "*@" + email.substring(at + 1);
+        }
+        return local.substring(0, 2) + "***@" + email.substring(at + 1);
     }
 }

@@ -70,20 +70,42 @@ const RegisterScreen = ({ navigation }) => {
 
   const handleRegister = async () => {
     if (!validate()) return;
+
+    const normalizedEmail = (form.email || '').trim().toLowerCase();
     setLoading(true);
-    const result = await register(form);
+    const result = await register({ ...form, email: normalizedEmail });
     setLoading(false);
+
     if (!result?.success) {
-      Alert.alert('Registration Failed', result?.error || 'Please try again.');
+      const errorMessage = result?.error || 'Please try again.';
+      const canProceedToVerification = /Account created/i.test(errorMessage);
+
+      if (canProceedToVerification) {
+        Alert.alert(
+          'Verification Email Not Sent',
+          `${errorMessage}\n\nYou can continue to the verification screen and tap "Resend Code".`,
+          [
+            { text: 'Stay Here', style: 'cancel' },
+            {
+              text: 'Continue to Verify',
+              onPress: () => navigation.navigate('OTPVerification', { email: normalizedEmail, type: 'registration' }),
+            },
+          ]
+        );
+        return;
+      }
+
+      Alert.alert('Registration Failed', errorMessage);
       return;
     }
+
     Alert.alert(
-      '✅ Account Created!',
-      `A 6-digit verification code has been sent to ${form.email}.\n\nCheck your inbox (and spam folder). If you don't receive it within a minute, tap "Resend Code" on the next screen.`,
+      'Account Created',
+      `A 6-digit verification code has been sent to ${normalizedEmail}.\n\nCheck your inbox (and spam folder). If you don't receive it within a minute, tap "Resend Code" on the next screen.`,
       [
         {
           text: 'Continue to Verify',
-          onPress: () => navigation.navigate('OTPVerification', { email: form.email, type: 'registration' }),
+          onPress: () => navigation.navigate('OTPVerification', { email: normalizedEmail, type: 'registration' }),
         },
       ]
     );
@@ -377,3 +399,4 @@ const styles = StyleSheet.create({
 });
 
 export default RegisterScreen;
+

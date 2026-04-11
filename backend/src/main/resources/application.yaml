@@ -1,5 +1,5 @@
 server:
-  port: 8081
+  port: ${SERVER_PORT:8081}
   servlet:
     session:
       cookie:
@@ -9,9 +9,9 @@ server:
 
 spring:
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/washalert?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:jm801050}
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
@@ -22,27 +22,23 @@ spring:
 
   mail:
     host: ${MAIL_HOST:smtp.resend.com}
-    port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:resend}
-    password: ${MAIL_PASSWORD:re_XGM1yzf7_BEyFZwyiAGXnRkY7wF8XrAuS}
+    port: ${MAIL_PORT:465}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
     properties:
       mail:
         smtp:
           auth: true
-          starttls:
+          ssl:
             enable: true
-            required: true
-          connectiontimeout: 10000
-          timeout: 10000
-          writetimeout: 10000
 
   security:
     oauth2:
       client:
         registration:
           google:
-            client-id: test-google-client-id
-            client-secret: test-google-client-secret
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
             scope:
               - email
               - profile
@@ -72,26 +68,22 @@ washalert:
       enabled: ${STAFF_INVITATION_CLEANUP_ENABLED:true}
       cron: ${STAFF_INVITATION_CLEANUP_CRON:0 */30 * * * *}
   booking:
-    open-hour: ${BOOKING_OPEN_HOUR:7}
-    close-hour: ${BOOKING_CLOSE_HOUR:22}
+    open-hour: ${BOOKING_OPEN_HOUR:8}
+    close-hour: ${BOOKING_CLOSE_HOUR:20}
     slot-minutes: ${BOOKING_SLOT_MINUTES:90}
   payment:
     webhook:
-      secret: ${PAYMENT_WEBHOOK_SECRET:change-me}
+      secret: ${PAYMENT_WEBHOOK_SECRET}
       max-attempts: ${PAYMENT_WEBHOOK_MAX_ATTEMPTS:5}
       retry-delay-minutes: ${PAYMENT_WEBHOOK_RETRY_DELAY_MINUTES:5}
       retry-interval-ms: ${PAYMENT_WEBHOOK_RETRY_INTERVAL_MS:60000}
-  paymongo:
-    secret-key: ${PAYMONGO_SECRET_KEY:sk_test_r9z3bPB9Y6kUUd6DUazN8E1a}
-    public-key: ${PAYMONGO_PUBLIC_KEY:pk_test_...}
-    webhook-secret: ${PAYMONGO_WEBHOOK_SECRET:change-me}
   notification:
     max-attempts: ${NOTIFICATION_MAX_ATTEMPTS:5}
     retry-delay-minutes: ${NOTIFICATION_RETRY_DELAY_MINUTES:2}
     process-interval-ms: ${NOTIFICATION_PROCESS_INTERVAL_MS:60000}
   firebase:
-    enabled: ${FIREBASE_ENABLED:true}
-    project-id: ${FIREBASE_PROJECT_ID:washalert-b8ce8}
-    service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:./firebase-service-account.json}
+    enabled: ${FIREBASE_ENABLED:false}
+    project-id: ${FIREBASE_PROJECT_ID}
+    service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH}
     service-account-base64: ${FIREBASE_SERVICE_ACCOUNT_BASE64:}
     backfill-on-startup: ${FIREBASE_BACKFILL_ON_STARTUP:false}

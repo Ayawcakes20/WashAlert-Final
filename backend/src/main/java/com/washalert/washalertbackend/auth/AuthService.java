@@ -64,6 +64,7 @@ public class AuthService {
     public User upsertMobileCustomerProfile(String idToken, String fullName) {
         FirebaseToken token = firebaseIdentityService.verifyIdToken(idToken);
         String email = normalizeEmail(token.getEmail());
+        log.info("[AUTH][REGISTER] upsertMobileCustomerProfile uid={} email={}", token.getUid(), maskEmail(email));
         if (email.isBlank()) {
             throw new IllegalArgumentException("Firebase token does not contain an email.");
         }
@@ -89,6 +90,8 @@ public class AuthService {
             }
             User saved = users.save(existing);
             syncUserToFirestore(saved);
+            log.info("[AUTH][REGISTER] Existing customer profile saved id={} role={} status={} enabled={}",
+                    saved.getId(), saved.getRole(), saved.getStatus(), saved.isEnabled());
             return saved;
         }
 
@@ -109,12 +112,16 @@ public class AuthService {
 
         User saved = users.save(customer);
         syncUserToFirestore(saved);
+        log.info("[AUTH][REGISTER] New customer profile saved id={} role={} status={} enabled={}",
+                saved.getId(), saved.getRole(), saved.getStatus(), saved.isEnabled());
         return saved;
     }
 
     public User authenticateWithFirebase(String idToken, String platform, String selectedBranch) {
         FirebaseToken token = firebaseIdentityService.verifyIdToken(idToken);
         String email = normalizeEmail(token.getEmail());
+        log.info("[AUTH][LOGIN] authenticateWithFirebase uid={} email={} platform={}",
+                token.getUid(), maskEmail(email), platform);
         if (email.isBlank()) throw new IllegalArgumentException("Firebase token does not contain an email.");
 
         User user = users.findByFirebaseUid(token.getUid())
@@ -143,6 +150,8 @@ public class AuthService {
         user.syncEnabledFromStatus();
         User saved = users.save(user);
         syncUserToFirestore(saved);
+        log.info("[AUTH][LOGIN] Login profile resolved id={} role={} status={} enabled={}",
+                saved.getId(), saved.getRole(), saved.getStatus(), saved.isEnabled());
         return saved;
     }
 
@@ -360,6 +369,18 @@ public class AuthService {
 
     private String normalizeEmail(String email) {
         return (email == null) ? "" : email.trim().toLowerCase();
+    }
+
+    private String maskEmail(String email) {
+        if (email == null || email.isBlank() || !email.contains("@")) {
+            return "<unknown-email>";
+        }
+        int at = email.indexOf('@');
+        String local = email.substring(0, at);
+        if (local.length() <= 2) {
+            return "*@" + email.substring(at + 1);
+        }
+        return local.substring(0, 2) + "***@" + email.substring(at + 1);
     }
 
     private String normalizeBranch(String branch) {

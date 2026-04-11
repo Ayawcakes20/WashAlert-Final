@@ -1,12 +1,11 @@
 package com.washalert.washalertbackend.auth;
 
-import com.washalert.washalertbackend.verification.OtpService;
-
 import com.washalert.washalertbackend.auth.dto.*;
 import com.washalert.washalertbackend.common.ApiError;
 import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.user.User;
 import com.washalert.washalertbackend.user.UserStatus;
+import com.washalert.washalertbackend.verification.OtpService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
@@ -73,24 +72,32 @@ public class AuthController {
             @Valid @RequestBody MobileCustomerProfileRequest req,
             HttpServletRequest request
     ) {
+        log.info("[AUTH][REGISTER] Mobile customer registration requested");
         try {
             User user = authService.upsertMobileCustomerProfile(req.idToken(), req.fullName());
+            log.info(
+                    "[AUTH][REGISTER] Profile upserted for {} with status={} enabled={}",
+                    maskEmail(user.getEmail()),
+                    user.getStatus(),
+                    user.isEnabled()
+            );
+
             if (user.getStatus() == UserStatus.PENDING) {
-                try {
-                    otpService.generateAndSend(user);
-                } catch (Exception mailEx) {
-                    // ⚠️  SMTP failure must NOT abort registration.
-                    // The user account is already saved in DB + Firebase.
-                    // The OTP code is also already persisted in the DB.
-                    // The mobile app will show the OTP screen where the user
-                    // can tap "Resend Code" to get a fresh delivery attempt.
-                    log.error("[OTP] Initial email delivery failed for {} — account created, user can resend. Cause: {}",
-                            user.getEmail(), mailEx.getMessage());
-                }
+                log.info("[AUTH][REGISTER] Generating and dispatching OTP for {}", maskEmail(user.getEmail()));
+                otpService.generateAndSend(user);
+                log.info("[AUTH][REGISTER] OTP dispatch completed for {}", maskEmail(user.getEmail()));
             }
             return ResponseEntity.status(201).body(authService.toSessionResponse(user, "MOBILE"));
         } catch (IllegalArgumentException ex) {
+            log.warn("[AUTH][REGISTER] Registration rejected: {}", ex.getMessage());
             return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
+        } catch (Exception ex) {
+            log.error("[AUTH][REGISTER] Registration completed but OTP email dispatch failed", ex);
+            return ResponseEntity.status(503).body(apiError(
+                    request,
+                    503,
+                    "Account created, but we could not send the verification email. Please try again or tap Resend Code on the verification screen."
+            ));
         }
     }
 
@@ -158,15 +165,17 @@ public class AuthController {
 
     @PostMapping("/otp/request")
     public ResponseEntity<?> requestOtp(@Valid @RequestBody OtpRequest req, HttpServletRequest request) {
+        String normalizedEmail = req.email() == null ? "" : req.email().trim().toLowerCase();
+        log.info("[OTP][RESEND] Resend requested for {}", maskEmail(normalizedEmail));
         try {
             otpService.resend(req.email());
+            log.info("[OTP][RESEND] Resend dispatched for {}", maskEmail(normalizedEmail));
             return ResponseEntity.ok().build();
         } catch (IllegalArgumentException ex) {
+            log.warn("[OTP][RESEND] Resend rejected for {}: {}", maskEmail(normalizedEmail), ex.getMessage());
             return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
         } catch (Exception mailEx) {
-            // OTP was regenerated and saved; only the email delivery failed.
-            // Surface a friendly message so the mobile app can tell the user.
-            log.error("[OTP] Resend email delivery failed for {}: {}", req.email(), mailEx.getMessage());
+            log.error("[OTP][RESEND] Email delivery failed for {}", maskEmail(normalizedEmail), mailEx);
             return ResponseEntity.status(503).body(apiError(request, 503,
                     "Verification email could not be sent. Please check your inbox or try again in a moment."));
         }
@@ -174,22 +183,43 @@ public class AuthController {
 
     @PostMapping("/otp/verify")
     public ResponseEntity<?> verifyOtp(@Valid @RequestBody VerifyOtpRequest req, HttpServletRequest request) {
+        String normalizedEmail = req.email() == null ? "" : req.email().trim().toLowerCase();
+        log.info("[OTP][VERIFY] Verification requested for {} with codeLength={}",
+                maskEmail(normalizedEmail),
+                req.code() == null ? 0 : req.code().length());
         try {
             User user = otpService.verifyAndActivate(req.email(), req.code());
+            log.info("[OTP][VERIFY] Account activated for {} role={} status={} enabled={}",
+                    maskEmail(user.getEmail()),
+                    user.getRole(),
+                    user.getStatus(),
+                    user.isEnabled());
             establishSession(user, request);
             return ResponseEntity.ok(authService.toSessionResponse(user, "MOBILE"));
         } catch (IllegalArgumentException ex) {
+            log.warn("[OTP][VERIFY] Verification rejected for {}: {}", maskEmail(normalizedEmail), ex.getMessage());
             return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
         }
     }
 
     @PostMapping("/otp/forgot-password")
     public ResponseEntity<?> requestResetOtp(@Valid @RequestBody OtpRequest req, HttpServletRequest request) {
+        String normalizedEmail = req.email() == null ? "" : req.email().trim().toLowerCase();
+        log.info("[OTP][RESET] Reset OTP requested for {}", maskEmail(normalizedEmail));
         try {
             authService.requestPasswordResetOtp(req.email());
+            log.info("[OTP][RESET] Reset OTP dispatched for {}", maskEmail(normalizedEmail));
             return ResponseEntity.ok().build();
         } catch (IllegalArgumentException ex) {
+            log.warn("[OTP][RESET] Reset OTP rejected for {}: {}", maskEmail(normalizedEmail), ex.getMessage());
             return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
+        } catch (Exception mailEx) {
+            log.error("[OTP][RESET] Reset OTP email delivery failed for {}", maskEmail(normalizedEmail), mailEx);
+            return ResponseEntity.status(503).body(apiError(
+                    request,
+                    503,
+                    "Reset code email could not be sent. Please try again in a moment."
+            ));
         }
     }
 
@@ -218,6 +248,18 @@ public class AuthController {
 
     private ApiError apiError(HttpServletRequest request, int status, String message) {
         return new ApiError(Instant.now(), status, message, request.getRequestURI());
+    }
+
+    private String maskEmail(String email) {
+        if (email == null || email.isBlank() || !email.contains("@")) {
+            return "<unknown-email>";
+        }
+        int at = email.indexOf('@');
+        String local = email.substring(0, at);
+        if (local.length() <= 2) {
+            return "*@" + email.substring(at + 1);
+        }
+        return local.substring(0, 2) + "***@" + email.substring(at + 1);
     }
 
     private void establishSession(User user, HttpServletRequest request) {

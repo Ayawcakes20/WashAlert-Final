@@ -5,14 +5,27 @@ import { API_BASE_URL, FIREBASE_API_KEY } from '../config/env';
 const AuthContext = createContext(undefined);
 
 const USER_STORAGE_KEY = 'userData';
+const normalizeEmail = (email) => (email || '').trim().toLowerCase();
+const looksLikeHtml = (value) => /<!doctype html|<html[\s>]/i.test(String(value || ''));
+
+const invalidApiResponseError = () =>
+  new Error(
+    `Unexpected non-JSON response from auth API (${API_BASE_URL}). Check EXPO_PUBLIC_API_BASE_URL and ensure it points to backend.`
+  );
 
 const parseResponse = async (res) => {
   const text = await res.text();
+  const contentType = String(res.headers?.get?.('content-type') || '').toLowerCase();
   let payload = null;
   if (text) {
     try {
       payload = JSON.parse(text);
     } catch {
+      if (contentType.includes('text/html') || looksLikeHtml(text)) {
+        const err = invalidApiResponseError();
+        err.status = res.status;
+        throw err;
+      }
       payload = { message: text };
     }
   }
@@ -70,6 +83,23 @@ const authRequest = async (path, options = {}) => {
       body: body ? JSON.stringify(body) : undefined,
     })
   );
+};
+
+const isSessionProfilePayload = (profile) =>
+  !!profile &&
+  typeof profile === 'object' &&
+  profile.id !== undefined &&
+  profile.id !== null &&
+  typeof profile.role === 'string' &&
+  profile.role.trim().length > 0;
+
+const requireSessionProfilePayload = (profile, contextLabel) => {
+  if (!isSessionProfilePayload(profile)) {
+    throw new Error(
+      `${contextLabel} failed due to invalid server response. Check API base URL and backend auth endpoint routing.`
+    );
+  }
+  return profile;
 };
 
 const firebaseRequest = async (path, body) => {
@@ -159,7 +189,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = useCallback(async (email, password) => {
-    if (!email || !/\S+@\S+\.\S+/.test(email)) {
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail || !/\S+@\S+\.\S+/.test(normalizedEmail)) {
       return { success: false, error: 'Invalid email format' };
     }
     if (!password || password.length < 8) {
@@ -168,7 +199,7 @@ export const AuthProvider = ({ children }) => {
 
     try {
       const firebaseLogin = await firebaseRequest('accounts:signInWithPassword', {
-        email,
+        email: normalizedEmail,
         password,
         returnSecureToken: true,
       });
@@ -179,7 +210,7 @@ export const AuthProvider = ({ children }) => {
           platform: 'MOBILE',
         },
       });
-      const mapped = mapSessionProfile(profile);
+      const mapped = mapSessionProfile(requireSessionProfilePayload(profile, 'Login'));
       if (!mapped.role) {
         return {
           success: false,
@@ -196,19 +227,27 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const register = useCallback(async (data) => {
+    const normalizedEmail = normalizeEmail(data.email);
     try {
       const signup = await firebaseRequest('accounts:signUp', {
-        email: data.email,
+        email: normalizedEmail,
         password: data.password,
         returnSecureToken: true,
       });
-      await authRequest('/api/auth/mobile/register-profile', {
+      const registerProfile = await authRequest('/api/auth/mobile/register-profile', {
         method: 'POST',
         body: {
           idToken: signup.idToken,
           fullName: data.fullName,
         },
       });
+      const createdProfile = requireSessionProfilePayload(registerProfile, 'Registration');
+      if (String(createdProfile.role || '').trim().toUpperCase() !== 'CUSTOMER') {
+        return {
+          success: false,
+          error: `Registered account has unexpected role "${createdProfile.role || 'UNKNOWN'}". Please contact support.`,
+        };
+      }
       return {
         success: true,
         message: 'Registration successful. You can now log in.',
@@ -239,7 +278,7 @@ export const AuthProvider = ({ children }) => {
       // Switch from Firebase direct to Backend to use unified email system
       await authRequest('/api/auth/forgot-password', {
         method: 'POST',
-        body: { email },
+        body: { email: normalizeEmail(email) },
       });
       return { success: true };
     } catch (error) {
@@ -251,7 +290,7 @@ export const AuthProvider = ({ children }) => {
     try {
       await authRequest('/api/auth/otp/request', {
         method: 'POST',
-        body: { email },
+        body: { email: normalizeEmail(email) },
       });
       return { success: true };
     } catch (error) {
@@ -263,7 +302,7 @@ export const AuthProvider = ({ children }) => {
     try {
       await authRequest('/api/auth/otp/forgot-password', {
         method: 'POST',
-        body: { email },
+        body: { email: normalizeEmail(email) },
       });
       return { success: true };
     } catch (error) {
@@ -275,7 +314,7 @@ export const AuthProvider = ({ children }) => {
     try {
       await authRequest('/api/auth/otp/verify-reset', {
         method: 'POST',
-        body: { email, code },
+        body: { email: normalizeEmail(email), code },
       });
       return { success: true };
     } catch (error) {
@@ -287,20 +326,20 @@ export const AuthProvider = ({ children }) => {
     try {
       const profile = await authRequest('/api/auth/otp/verify', {
         method: 'POST',
-        body: { email, code },
+        body: { email: normalizeEmail(email), code },
       });
 
-      // If profile is returned (auto-login), update state
-      if (profile && profile.id) {
-        const mapped = mapSessionProfile(profile);
-        if (mapped.role) {
-          setUser(mapped);
-          await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(mapped));
-          return { success: true, user: mapped, autoLogin: true };
-        }
+      const mapped = mapSessionProfile(requireSessionProfilePayload(profile, 'OTP verification'));
+      if (!mapped.role) {
+        return {
+          success: false,
+          error: `Account role "${mapped.backendRole || 'UNKNOWN'}" is not allowed on mobile.`,
+        };
       }
 
-      return { success: true };
+      setUser(mapped);
+      await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(mapped));
+      return { success: true, user: mapped, autoLogin: true };
     } catch (error) {
       return { success: false, error: formatAuthError(error) };
     }
@@ -310,7 +349,7 @@ export const AuthProvider = ({ children }) => {
     try {
       await authRequest('/api/auth/otp/reset-password', {
         method: 'POST',
-        body: { email, newPassword },
+        body: { email: normalizeEmail(email), newPassword },
       });
       return { success: true };
     } catch (error) {

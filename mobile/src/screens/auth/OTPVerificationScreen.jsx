@@ -95,9 +95,12 @@ const OTPVerificationScreen = ({ navigation, route }) => {
     }
 
     if (type === 'registration') {
-      Alert.alert('Success', 'Account activated! You can now log in.', [
-        { text: 'Login', onPress: () => navigation.navigate('Login') },
-      ]);
+      Alert.alert(
+        'Verification Failed',
+        'Could not confirm account activation from the server. Please try verifying again.'
+      );
+      setOtp(['', '', '', '', '', '']);
+      refs.current[0]?.focus();
     } else {
       navigation.navigate('ResetPassword', { email, code });
     }
