@@ -398,6 +398,8 @@ export const analyticsApi = {
       totalRevenue: number;
       peakHour: number | null;
       branchBreakdown: Array<{ branch: string; totalOrders: number; revenue: number }>;
+      hourlyBreakdown: Record<string, number>;
+      paymentMethodBreakdown: Record<string, number>;
     }>(`/api/analytics/summary${suffix}`);
   },
 };
@@ -432,4 +434,24 @@ export const supportApi = {
         updatedAt: string;
       }>;
     }>(`/api/support/history?sessionId=${encodeURIComponent(sessionId)}`),
+  allTickets: () =>
+    apiRequest<
+      Array<{
+        ticketNumber: string;
+        issue: string;
+        status: string;
+        createdAt: string;
+        updatedAt: string;
+      }>
+    >("/api/support/tickets"),
+  resolveTicket: (ticketNumber: string) =>
+    apiRequest<{
+      ticketNumber: string;
+      issue: string;
+      status: string;
+      createdAt: string;
+      updatedAt: string;
+    }>(`/api/support/tickets/${encodeURIComponent(ticketNumber)}/resolve`, {
+      method: "PATCH",
+    }),
 };

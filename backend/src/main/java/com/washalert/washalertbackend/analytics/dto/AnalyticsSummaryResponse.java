@@ -3,6 +3,7 @@ package com.washalert.washalertbackend.analytics.dto;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 public record AnalyticsSummaryResponse(
         LocalDate fromDate,
@@ -14,6 +15,8 @@ public record AnalyticsSummaryResponse(
         long ready,
         BigDecimal totalRevenue,
         Integer peakHour,
-        List<BranchAnalyticsResponse> branchBreakdown
+        List<BranchAnalyticsResponse> branchBreakdown,
+        Map<String, Long> hourlyBreakdown,
+        Map<String, Long> paymentMethodBreakdown
 ) {
 }

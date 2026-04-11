@@ -5,6 +5,7 @@ import com.washalert.washalertbackend.analytics.dto.BranchAnalyticsResponse;
 import com.washalert.washalertbackend.orders.JobOrder;
 import com.washalert.washalertbackend.orders.JobOrderRepository;
 import com.washalert.washalertbackend.orders.JobOrderStatus;
+import com.washalert.washalertbackend.payment.PaymentMethod;
 import com.washalert.washalertbackend.payment.PaymentRecord;
 import com.washalert.washalertbackend.payment.PaymentRecordRepository;
 import com.washalert.washalertbackend.payment.PaymentStatus;
@@ -18,8 +19,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 @Service
 public class AnalyticsService {
@@ -66,6 +69,8 @@ public class AnalyticsService {
         Integer peakHour = findPeakHour(orders);
 
         List<BranchAnalyticsResponse> branchBreakdown = computeBranchBreakdown(orders, payments, effectiveBranch);
+        Map<String, Long> hourlyBreakdown = computeHourlyBreakdown(orders);
+        Map<String, Long> paymentMethodBreakdown = computePaymentMethodBreakdown(payments);
 
         return new AnalyticsSummaryResponse(
                 from,
@@ -77,7 +82,9 @@ public class AnalyticsService {
                 ready,
                 totalRevenue,
                 peakHour,
-                branchBreakdown
+                branchBreakdown,
+                hourlyBreakdown,
+                paymentMethodBreakdown
         );
     }
 
@@ -104,6 +111,32 @@ public class AnalyticsService {
                 .max(Map.Entry.comparingByValue())
                 .map(Map.Entry::getKey)
                 .orElse(null);
+    }
+
+    private Map<String, Long> computeHourlyBreakdown(List<JobOrder> orders) {
+        Map<String, Long> result = new LinkedHashMap<>();
+        // Initialize all 24 hours to 0
+        for (int h = 0; h < 24; h++) {
+            result.put(String.format("%02d:00", h), 0L);
+        }
+        for (JobOrder order : orders) {
+            String key = String.format("%02d:00", order.getCreatedAt().getHour());
+            result.put(key, result.getOrDefault(key, 0L) + 1);
+        }
+        return result;
+    }
+
+    private Map<String, Long> computePaymentMethodBreakdown(List<PaymentRecord> payments) {
+        Map<String, Long> result = new LinkedHashMap<>();
+        result.put("GCASH", 0L);
+        result.put("MAYA", 0L);
+        result.put("CASH", 0L);
+        for (PaymentRecord p : payments) {
+            if (p.getStatus() != PaymentStatus.VERIFIED && p.getStatus() != PaymentStatus.PAID) continue;
+            String key = p.getMethod() == null ? "CASH" : p.getMethod().name();
+            result.put(key, result.getOrDefault(key, 0L) + 1);
+        }
+        return result;
     }
 
     private List<BranchAnalyticsResponse> computeBranchBreakdown(

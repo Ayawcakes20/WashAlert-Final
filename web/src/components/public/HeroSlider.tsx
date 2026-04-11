@@ -1,12 +1,17 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import heroMachines from "@/assets/hero-machines.png";
+import heroLinens from "@/assets/hero-linens.png";
+import heroDetergent from "@/assets/hero-detergent.png";
+import heroBasket from "@/assets/hero-basket.png";
+import heroDryer from "@/assets/hero-dryer.png";
 
 const slides = [
-  { image: "https://picsum.photos/seed/laundromat1/1920/1080", label: "WashAlert" },
-  { image: "https://picsum.photos/seed/washroom2/1920/1080", label: "WashAlert" },
-  { image: "https://picsum.photos/seed/cleanspace3/1920/1080", label: "WashAlert" },
-  { image: "https://picsum.photos/seed/machines4/1920/1080", label: "WashAlert" },
-  { image: "https://picsum.photos/seed/freshlinens5/1920/1080", label: "WashAlert" },
+  { image: heroMachines, label: "Commercial-Grade Washing Machines" },
+  { image: heroLinens, label: "Fresh Clean Linens" },
+  { image: heroDetergent, label: "Premium Laundry Supplies" },
+  { image: heroBasket, label: "Organized Laundry Care" },
+  { image: heroDryer, label: "Professional Dryers" },
 ];
 
 export default function HeroSlider() {

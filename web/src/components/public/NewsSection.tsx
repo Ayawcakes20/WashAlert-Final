@@ -11,7 +11,7 @@ const news = [
 
 export default function NewsSection() {
   return (
-    <section className="py-20 lg:py-28 bg-secondary">
+    <section className="py-20 lg:py-28 bg-[hsl(220,10%,18%)]">
       <div className="max-w-4xl mx-auto px-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -19,9 +19,9 @@ export default function NewsSection() {
           viewport={{ once: true }}
           className="text-center mb-12"
         >
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground">News</h2>
+          <h2 className="text-3xl md:text-4xl font-bold text-primary-foreground">News</h2>
         </motion.div>
-        <div className="border-t border-border">
+        <div className="border-t border-primary-foreground/10">
           {news.map((item, i) => (
             <motion.div
               key={i}
@@ -29,15 +29,15 @@ export default function NewsSection() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.05 }}
-              className="flex flex-col md:flex-row md:items-start gap-3 md:gap-8 py-5 border-b border-border group cursor-pointer hover:opacity-70 transition-opacity"
+              className="flex flex-col md:flex-row md:items-start gap-3 md:gap-8 py-5 border-b border-primary-foreground/10 group cursor-pointer hover:opacity-70 transition-opacity"
             >
-              <span className="text-sm text-muted-foreground font-medium whitespace-nowrap">{item.date}</span>
-              <p className="text-foreground text-sm md:text-base leading-relaxed">{item.text}</p>
+              <span className="text-sm text-primary-foreground/50 font-medium whitespace-nowrap">{item.date}</span>
+              <p className="text-primary-foreground/80 text-sm md:text-base leading-relaxed">{item.text}</p>
             </motion.div>
           ))}
         </div>
         <div className="mt-10 text-center">
-          <Link to="/about-public" className="inline-block text-base font-medium text-foreground border-b-2 border-foreground pb-1 hover:opacity-70 transition-opacity">
+          <Link to="/about-public" className="inline-block text-base font-medium text-primary-foreground border-b-2 border-primary-foreground pb-1 hover:opacity-70 transition-opacity">
             Read More
           </Link>
         </div>

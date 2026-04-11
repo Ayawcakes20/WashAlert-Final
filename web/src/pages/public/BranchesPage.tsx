@@ -7,8 +7,8 @@ import { FiClock, FiMapPin, FiPhone, FiSearch, FiNavigation } from "react-icons/
 
 export default function BranchesPage() {
   const [search, setSearch] = useState("");
-  const filtered = branches.filter(b => 
-    b.name.toLowerCase().includes(search.toLowerCase()) || 
+  const filtered = branches.filter(b =>
+    b.name.toLowerCase().includes(search.toLowerCase()) ||
     b.area.toLowerCase().includes(search.toLowerCase()) ||
     b.address.toLowerCase().includes(search.toLowerCase())
   );

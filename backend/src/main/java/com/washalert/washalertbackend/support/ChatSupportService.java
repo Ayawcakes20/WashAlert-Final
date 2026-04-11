@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
@@ -90,6 +91,33 @@ public class ChatSupportService {
                 .toList();
 
         return new ChatHistoryResponse(messages, tickets);
+    }
+
+    public List<SupportTicketResponse> allTickets() {
+        return supportTicketRepository.findTop100ByOrderByCreatedAtDesc().stream()
+                .map(t -> new SupportTicketResponse(
+                        t.getTicketNumber(),
+                        t.getIssue(),
+                        t.getStatus().name(),
+                        t.getCreatedAt(),
+                        t.getUpdatedAt()
+                ))
+                .toList();
+    }
+
+    @Transactional
+    public SupportTicketResponse resolveTicket(String ticketNumber) {
+        SupportTicket ticket = supportTicketRepository.findByTicketNumber(ticketNumber)
+                .orElseThrow(() -> new IllegalArgumentException("Ticket not found: " + ticketNumber));
+        ticket.setStatus(SupportTicketStatus.RESOLVED);
+        SupportTicket saved = supportTicketRepository.save(ticket);
+        return new SupportTicketResponse(
+                saved.getTicketNumber(),
+                saved.getIssue(),
+                saved.getStatus().name(),
+                saved.getCreatedAt(),
+                saved.getUpdatedAt()
+        );
     }
 
     private ChatSupportResponse buildReply(ChatSupportRequest req, String message, String sessionId) {

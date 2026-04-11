@@ -5,7 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import HomePage from "./pages/public/HomePage";
 import FeaturesPage from "./pages/public/FeaturesPage";
-import AboutPage from "./pages/public/AboutPage";
+import PublicAboutPage from "./pages/public/AboutPage";
 import BranchesPage from "./pages/public/BranchesPage";
 import DownloadPage from "./pages/public/DownloadPage";
 import LoginPage from "./pages/LoginPage";
@@ -22,7 +22,7 @@ import DeliveryManagementPage from "./pages/DeliveryManagementPage";
 import PredictiveInventoryPage from "./pages/PredictiveInventoryPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import AIChatSupportPage from "./pages/AIChatSupportPage";
-import PublicAboutPage from "./pages/AboutPage";
+import DashboardAboutPage from "./pages/AboutPage";
 import UnauthorizedPage from "./pages/UnauthorizedPage";
 import NotFound from "./pages/NotFound";
 import ProfilePage from "./pages/ProfilePage";
@@ -53,7 +53,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/features" element={<FeaturesPage />} />
-          <Route path="/about-public" element={<AboutPage />} />
+          <Route path="/about-public" element={<PublicAboutPage />} />
           <Route path="/branches-public" element={<BranchesPage />} />
           <Route path="/download" element={<DownloadPage />} />
           <Route path="/login" element={<LoginPage />} />
@@ -99,7 +99,7 @@ const App = () => (
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/chat-support" element={<AIChatSupportPage />} />
             <Route path="/profile" element={<ProfilePage />} />
-            <Route path="/about" element={<AboutPage />} />
+            <Route path="/about" element={<DashboardAboutPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

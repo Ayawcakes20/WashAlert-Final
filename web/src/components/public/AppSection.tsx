@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
+import appMockup from "@/assets/app-mockup.png";
 
 export default function AppSection() {
   return (
@@ -54,23 +55,17 @@ export default function AppSection() {
             </svg>
           </div>
 
-          {/* Phone mockup */}
-          <div className="max-w-xs mx-auto mb-12">
-            <div className="bg-primary-foreground/5 rounded-3xl p-6 border border-primary-foreground/10">
-              <div className="bg-primary-foreground/10 rounded-2xl p-4 mb-4">
-                <img
-                  src="https://picsum.photos/seed/appscreen1/400/300"
-                  alt="WashAlert App"
-                  className="w-full rounded-lg opacity-60"
-                />
-              </div>
-              <div className="text-left space-y-2">
-                <div className="text-primary-foreground/60 text-xs font-medium">WashAlert Branch</div>
-                <div className="text-primary-foreground/40 text-[10px]">Open 24 hours</div>
-                <div className="flex gap-2 mt-3">
-                  <div className="text-[10px] text-primary-foreground/50 border border-primary-foreground/20 px-2 py-1 rounded">Washer</div>
-                  <div className="text-[10px] text-primary-foreground/50 border border-primary-foreground/20 px-2 py-1 rounded">Dryer</div>
-                  <div className="text-[10px] text-primary-foreground/50 border border-primary-foreground/20 px-2 py-1 rounded">Fold</div>
+          {/* Phone mockup — actual WashAlert UI */}
+          <div className="flex justify-center mb-12">
+            <div className="relative">
+              <div className="absolute inset-0 rounded-[2.8rem] bg-primary/15 blur-2xl scale-110 -z-10" />
+              <div className="w-[200px] h-[400px] bg-[#0f1923] rounded-[2.2rem] p-[8px] shadow-2xl ring-1 ring-white/10">
+                <div className="w-full h-full bg-[#1a2b3c] rounded-[1.8rem] overflow-hidden">
+                  <img
+                    src={appMockup}
+                    alt="WashAlert App"
+                    className="w-full h-full object-cover object-top"
+                  />
                 </div>
               </div>
             </div>
