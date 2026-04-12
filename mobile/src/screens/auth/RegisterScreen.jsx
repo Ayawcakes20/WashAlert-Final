@@ -78,23 +78,6 @@ const RegisterScreen = ({ navigation }) => {
 
     if (!result?.success) {
       const errorMessage = result?.error || 'Please try again.';
-      const canProceedToVerification = /Account created/i.test(errorMessage);
-
-      if (canProceedToVerification) {
-        Alert.alert(
-          'Verification Email Not Sent',
-          `${errorMessage}\n\nYou can continue to the verification screen and tap "Resend Code".`,
-          [
-            { text: 'Stay Here', style: 'cancel' },
-            {
-              text: 'Continue to Verify',
-              onPress: () => navigation.navigate('OTPVerification', { email: normalizedEmail, type: 'registration' }),
-            },
-          ]
-        );
-        return;
-      }
-
       Alert.alert('Registration Failed', errorMessage);
       return;
     }

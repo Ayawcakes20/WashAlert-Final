@@ -80,10 +80,8 @@ export default function DashboardLayout() {
           const sessionProfile = await authApi.firebaseSession({
             idToken: refreshed.id_token,
             platform: "WEB",
-            selectedBranch: firebaseSession.selectedBranch || getSessionUser()?.branch || undefined,
           });
-
-          const nextUser: MeResponse = {
+          const nextUser: MeResponse = await authApi.me().catch(() => ({
             id: sessionProfile.id,
             firebaseUid: sessionProfile.firebaseUid,
             email: sessionProfile.email,
@@ -95,13 +93,12 @@ export default function DashboardLayout() {
             enabled: sessionProfile.status === "ACTIVE",
             mustChangePassword: false,
             provider: "FIREBASE",
-          };
+          }));
 
           saveSessionUser(nextUser);
           saveFirebaseWebSession({
             idToken: refreshed.id_token,
             refreshToken: refreshed.refresh_token || firebaseSession.refreshToken,
-            selectedBranch: firebaseSession.selectedBranch,
             email: nextUser.email,
           });
           setUser(nextUser);
@@ -243,7 +240,9 @@ export default function DashboardLayout() {
                 </div>
                 <div className="hidden md:block">
                   <p className="text-sm font-semibold text-foreground leading-none">{user?.fullName || "WashAlert User"}</p>
-                  <p className="text-[11px] text-muted-foreground">{user?.branch || "Branch not set"}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {user?.role === "ADMIN" ? "All Branches" : user?.branch || "Branch not set"}
+                  </p>
                 </div>
               </div>
             </div>

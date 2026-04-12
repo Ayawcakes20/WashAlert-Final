@@ -11,6 +11,7 @@ import com.washalert.washalertbackend.orders.JobOrderTimelineService;
 import com.washalert.washalertbackend.orders.ServiceType;
 import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
 import com.washalert.washalertbackend.notification.NotificationService;
+import com.washalert.washalertbackend.payment.PaymentStatus;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
@@ -272,6 +273,7 @@ public class BookingService {
                 jo.getTotalPrice(),
                 jo.isPaid(),
                 jo.getPaymentMethod(),
+                jo.isPaid() ? PaymentStatus.PAID : null,
                 jo.getDeliveryLatitude(),
                 jo.getDeliveryLongitude(),
                 jo.getBranchLatitude(),

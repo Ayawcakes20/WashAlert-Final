@@ -4,11 +4,13 @@ import com.washalert.washalertbackend.delivery.DeliveryService;
 import com.washalert.washalertbackend.orders.JobOrderService;
 import com.washalert.washalertbackend.orders.dto.OrderTrackingResponse;
 import com.washalert.washalertbackend.payment.PaymentService;
+import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.support.dto.ChatHistoryMessageResponse;
 import com.washalert.washalertbackend.support.dto.ChatHistoryResponse;
 import com.washalert.washalertbackend.support.dto.ChatSupportRequest;
 import com.washalert.washalertbackend.support.dto.ChatSupportResponse;
 import com.washalert.washalertbackend.support.dto.SupportTicketResponse;
+import com.washalert.washalertbackend.user.Role;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
@@ -93,8 +95,14 @@ public class ChatSupportService {
         return new ChatHistoryResponse(messages, tickets);
     }
 
-    public List<SupportTicketResponse> allTickets() {
-        return supportTicketRepository.findTop100ByOrderByCreatedAtDesc().stream()
+    public List<SupportTicketResponse> allTickets(AuthUserDetails principal) {
+        String staffBranch = principal.getUser().getRole() == Role.STAFF ? principal.getUser().getBranch() : null;
+
+        List<SupportTicket> tickets = (staffBranch == null || staffBranch.isBlank())
+                ? supportTicketRepository.findTop100ByOrderByCreatedAtDesc()
+                : supportTicketRepository.findTop100ByBranchIgnoreCaseOrderByCreatedAtDesc(staffBranch);
+
+        return tickets.stream()
                 .map(t -> new SupportTicketResponse(
                         t.getTicketNumber(),
                         t.getIssue(),
@@ -106,9 +114,15 @@ public class ChatSupportService {
     }
 
     @Transactional
-    public SupportTicketResponse resolveTicket(String ticketNumber) {
+    public SupportTicketResponse resolveTicket(String ticketNumber, AuthUserDetails principal) {
         SupportTicket ticket = supportTicketRepository.findByTicketNumber(ticketNumber)
                 .orElseThrow(() -> new IllegalArgumentException("Ticket not found: " + ticketNumber));
+
+        if (principal.getUser().getRole() == Role.STAFF
+                && !sameBranch(principal.getUser().getBranch(), ticket.getBranch())) {
+            throw new IllegalArgumentException("You can only resolve tickets for your assigned branch.");
+        }
+
         ticket.setStatus(SupportTicketStatus.RESOLVED);
         SupportTicket saved = supportTicketRepository.save(ticket);
         return new SupportTicketResponse(
@@ -176,7 +190,7 @@ public class ChatSupportService {
                 || lower.contains("problem")
                 || lower.contains("talk to staff")
                 || lower.contains("human")) {
-            String ticket = createTicket(sessionId, message);
+            String ticket = createTicket(sessionId, message, resolveTrackingNumber(req.trackingNumber(), message));
             return new ChatSupportResponse(
                     "complaint",
                     "Your concern has been logged and escalated to staff. Please keep this ticket number.",
@@ -235,13 +249,14 @@ public class ChatSupportService {
         messageRepository.save(entry);
     }
 
-    private String createTicket(String sessionId, String issue) {
+    private String createTicket(String sessionId, String issue, String trackingNumber) {
         String ticketNumber = "SUP-" + LocalDateTime.now().format(TICKET_TIME)
                 + "-" + ThreadLocalRandom.current().nextInt(100, 1000);
 
         SupportTicket ticket = SupportTicket.builder()
                 .ticketNumber(ticketNumber)
                 .sessionId(sessionId)
+                .branch(resolveBranchFromTracking(trackingNumber))
                 .issue(issue)
                 .status(SupportTicketStatus.OPEN)
                 .build();
@@ -268,5 +283,20 @@ public class ChatSupportService {
         }
 
         return null;
+    }
+
+    private String resolveBranchFromTracking(String trackingNumber) {
+        if (trackingNumber == null || trackingNumber.isBlank()) {
+            return null;
+        }
+        try {
+            return jobOrderService.trackByTrackingNumber(trackingNumber).branch();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private boolean sameBranch(String a, String b) {
+        return a != null && b != null && a.trim().equalsIgnoreCase(b.trim());
     }
 }

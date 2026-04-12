@@ -3,9 +3,11 @@ import { motion } from "framer-motion";
 import {
   CheckCircle2,
   Clock,
+  Info,
   Eye,
   Filter,
   GripVertical,
+  HelpCircle,
   Loader2,
   Pencil,
   Plus,
@@ -67,6 +69,7 @@ type Order = {
   estimatedWeightKg: number;
   specialInstructions?: string;
   paymentMethod?: string;
+  paymentStatus?: "PENDING" | "VERIFIED" | "REJECTED" | "PAID" | null;
   isPaid?: boolean;
   totalPrice?: number;
 };
@@ -119,6 +122,7 @@ const mapOrder = (order: JobOrderResponse): Order => ({
   estimatedWeightKg: Number(order.estimatedWeightKg || 0),
   specialInstructions: order.specialInstructions,
   paymentMethod: order.paymentMethod,
+  paymentStatus: order.paymentStatus,
   isPaid: order.isPaid,
   totalPrice: order.totalPrice,
 });
@@ -139,6 +143,20 @@ const formatDateTime = (timestamp?: string) =>
       })
     : "-";
 
+const normalizePaymentMethod = (value?: string | null) => (value || "").trim().toUpperCase();
+
+const isOnlinePaymentMethod = (value?: string | null) => {
+  const method = normalizePaymentMethod(value);
+  return method.includes("GCASH") || method.includes("MAYA") || method.includes("EWALLET") || method.includes("ONLINE");
+};
+
+const isCashPaymentMethod = (value?: string | null) => normalizePaymentMethod(value).includes("CASH");
+
+const resolvePaymentStatusLabel = (order: Order) => {
+  if (order.paymentStatus) return order.paymentStatus;
+  return order.isPaid ? "PAID" : "PENDING";
+};
+
 const emptyCreateForm: CreateOrderPayload = {
   customerName: "",
   serviceType: "DROP_OFF",
@@ -157,6 +175,7 @@ export default function OrderManagementPage() {
   const [filterBranch, setFilterBranch] = useState(isAdmin ? "" : staffBranch);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showHelp, setShowHelp] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const autoRefreshRef = useRef<NodeJS.Timeout | null>(null);
@@ -223,10 +242,10 @@ export default function OrderManagementPage() {
     };
     void run();
 
-    // Auto-refresh every 30 seconds so new customer orders appear without manual refresh
+    // Poll frequently so webhook-confirmed payment updates surface quickly in Order Management.
     autoRefreshRef.current = setInterval(() => {
       void loadOrders();
-    }, 30000);
+    }, 10000);
 
     return () => {
       if (autoRefreshRef.current) clearInterval(autoRefreshRef.current);
@@ -472,9 +491,14 @@ export default function OrderManagementPage() {
       )}
       <div className="flex items-center justify-between mt-2">
         <span className="text-[10px] text-muted-foreground">{order.branch}</span>
-        <span className={`text-[10px] font-medium ${order.isPaid ? "text-green-600" : "text-amber-600"}`}>
-          {order.isPaid ? "Paid" : order.paymentMethod || "–"}
+        <span
+          className={`text-[10px] font-medium ${resolvePaymentStatusLabel(order) === "PAID" || resolvePaymentStatusLabel(order) === "VERIFIED" ? "text-green-600" : resolvePaymentStatusLabel(order) === "REJECTED" ? "text-destructive" : "text-amber-600"}`}
+        >
+          {resolvePaymentStatusLabel(order)}
         </span>
+      </div>
+      <div className="text-[10px] text-muted-foreground mt-0.5">
+        Method: {order.paymentMethod || "N/A"}
       </div>
       <div className="flex items-center gap-1 mt-1">
         <Clock className="h-3 w-3 text-muted-foreground" />
@@ -531,11 +555,20 @@ export default function OrderManagementPage() {
           </p>
           {lastRefreshed && (
             <p className="text-[11px] text-muted-foreground/60 mt-0.5">
-              Last updated: {lastRefreshed.toLocaleTimeString()} · auto-refreshes every 30s
+              Last updated: {lastRefreshed.toLocaleTimeString()} - auto-refreshes every 10s
             </p>
           )}
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 px-3 rounded-xl"
+            onClick={() => setShowHelp((prev) => !prev)}
+          >
+            <HelpCircle className="h-4 w-4" />
+            {showHelp ? "Hide Help" : "How This Module Works"}
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -552,6 +585,31 @@ export default function OrderManagementPage() {
             </Button>
           )}
         </div>
+      </motion.div>
+
+      <motion.div variants={item} className="overflow-hidden">
+        {showHelp ? (
+          <div className="rounded-2xl border border-border/50 bg-muted/30 p-4 sm:p-5 space-y-2.5">
+            <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Info className="h-4 w-4 text-primary" /> Order Management Guide
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Overview: This board tracks each order lifecycle. Drag laundry cards through status columns (Pending to Washing to Drying to Ready), then monitor delivery in the read-only delivery columns.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Updating status: Drag a card to its next valid stage, or open details to review timestamps and order info before updating.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Payment status: Order progress status and payment status are separate. Online and e-wallet payments update automatically to PAID after provider webhook confirmation. Cash remains manual confirmation only.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Search and filter: Use keyword search for customer or order ID and branch filters (admin only) to narrow visible cards.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              When status changes: The backend writes timeline history updates, refreshes dashboard data, and syncs the latest order state for live visibility.
+            </p>
+          </div>
+        ) : null}
       </motion.div>
 
       {loading ? <p className="text-sm text-muted-foreground">Loading orders...</p> : null}
@@ -754,9 +812,21 @@ export default function OrderManagementPage() {
                   <p className="font-medium">{selectedOrder.branch}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs">Payment</p>
-                  <p className={`font-medium ${selectedOrder.isPaid ? "text-green-600" : "text-amber-600"}`}>
-                    {selectedOrder.isPaid ? "✓ Paid" : `Unpaid — ${selectedOrder.paymentMethod || "–"}`}
+                  <p className="text-muted-foreground text-xs">Payment Method</p>
+                  <p className="font-medium">{selectedOrder.paymentMethod || "N/A"}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs">Payment Status</p>
+                  <p
+                    className={`font-medium ${
+                      resolvePaymentStatusLabel(selectedOrder) === "PAID" || resolvePaymentStatusLabel(selectedOrder) === "VERIFIED"
+                        ? "text-green-600"
+                        : resolvePaymentStatusLabel(selectedOrder) === "REJECTED"
+                        ? "text-destructive"
+                        : "text-amber-600"
+                    }`}
+                  >
+                    {resolvePaymentStatusLabel(selectedOrder)}
                   </p>
                 </div>
                 <div>
@@ -782,28 +852,34 @@ export default function OrderManagementPage() {
                   <p className="text-sm">{selectedOrder.specialInstructions}</p>
                 </div>
               )}
-              {/* Payment Verification — per approved Order Management scope */}
-              {!selectedOrder.isPaid && (
+              {/* Payment Status Handling */}
+              {resolvePaymentStatusLabel(selectedOrder) !== "PAID" && resolvePaymentStatusLabel(selectedOrder) !== "VERIFIED" && (
                 <div className="border border-amber-200 rounded-lg p-3 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800">
-                  <p className="text-xs text-amber-700 dark:text-amber-400 font-medium mb-2">⚠ Payment not yet verified</p>
-                  <Button
-                    size="sm"
-                    className="w-full h-8 text-xs bg-green-600 hover:bg-green-700 text-white"
-                    onClick={async () => {
-                      if (!selectedOrder) return;
-                      try {
-                        const updated = await ordersApi.markAsPaid(selectedOrder.id);
-                        const mapped = mapOrder(updated);
-                        setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
-                        setSelectedOrder(mapped);
-                        toast.success(`Payment verified for ${selectedOrder.orderId}.`);
-                      } catch (err: any) {
-                        toast.error(err?.message || "Unable to mark as paid.");
-                      }
-                    }}
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Mark as Paid
-                  </Button>
+                  <p className="text-xs text-amber-700 dark:text-amber-400 font-medium mb-2">Payment awaiting confirmation</p>
+                  {isCashPaymentMethod(selectedOrder.paymentMethod) ? (
+                    <Button
+                      size="sm"
+                      className="w-full h-8 text-xs bg-green-600 hover:bg-green-700 text-white"
+                      onClick={async () => {
+                        if (!selectedOrder) return;
+                        try {
+                          const updated = await ordersApi.markAsPaid(selectedOrder.id);
+                          const mapped = mapOrder(updated);
+                          setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
+                          setSelectedOrder(mapped);
+                          toast.success(`Cash payment confirmed for ${selectedOrder.orderId}.`);
+                        } catch (err: any) {
+                          toast.error(err?.message || "Unable to mark as paid.");
+                        }
+                      }}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Confirm Cash Payment
+                    </Button>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Online and e-wallet payments are auto-marked as PAID after webhook or provider confirmation.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

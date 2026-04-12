@@ -127,6 +127,32 @@ class OtpServiceTests {
                 .hasMessageContaining("No verification code found");
     }
 
+    @Test
+    void verifyAndActivateRejectsInvalidCodeWithoutActivatingUser() {
+        User user = pendingUser();
+        EmailOtp otp = EmailOtp.builder()
+                .id(321L)
+                .user(user)
+                .codeHash("hashed")
+                .attempts(0)
+                .expiresAt(LocalDateTime.now().plusMinutes(5))
+                .lastSentAt(LocalDateTime.now().minusMinutes(1))
+                .build();
+
+        when(users.findByEmail("customer@example.com")).thenReturn(Optional.of(user));
+        when(otps.findByUser(user)).thenReturn(Optional.of(otp));
+        when(encoder.matches("111111", "hashed")).thenReturn(false);
+
+        assertThatThrownBy(() -> otpService.verifyAndActivate("customer@example.com", "111111"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid code");
+
+        verify(users, never()).save(any(User.class));
+        verify(otps).save(otp);
+        assertThat(user.isEnabled()).isFalse();
+        assertThat(user.getStatus()).isEqualTo(UserStatus.PENDING);
+    }
+
     private User pendingUser() {
         LocalDateTime now = LocalDateTime.now();
         return User.builder()

@@ -6,6 +6,7 @@ import com.washalert.washalertbackend.machines.MachineStatus;
 import com.washalert.washalertbackend.orders.JobOrderRepository;
 import com.washalert.washalertbackend.orders.JobOrderStatus;
 import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
+import com.washalert.washalertbackend.payment.PaymentStatus;
 import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
@@ -106,6 +107,7 @@ public class DashboardService {
                     jo.getTotalPrice(),
                     jo.isPaid(),
                     jo.getPaymentMethod(),
+                    jo.isPaid() ? PaymentStatus.PAID : null,
                     jo.getDeliveryLatitude(),
                     jo.getDeliveryLongitude(),
                     jo.getBranchLatitude(),

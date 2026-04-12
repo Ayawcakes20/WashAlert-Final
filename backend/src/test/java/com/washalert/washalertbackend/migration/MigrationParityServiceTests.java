@@ -2,6 +2,7 @@ package com.washalert.washalertbackend.migration;
 
 import com.washalert.washalertbackend.common.DataReadMode;
 import com.washalert.washalertbackend.common.DataReadProperties;
+import com.washalert.washalertbackend.delivery.DeliveryLeg;
 import com.washalert.washalertbackend.delivery.DeliveryOrderRepository;
 import com.washalert.washalertbackend.delivery.DeliveryStatus;
 import com.washalert.washalertbackend.delivery.dto.DeliveryResponse;
@@ -65,7 +66,8 @@ class MigrationParityServiceTests {
         ));
         when(firestoreReadService.listDeliveries()).thenReturn(List.of(
                 new DeliveryResponse(1L, "WA-10001", "Main", "Customer", "Address", "Driver", "09123",
-                        DeliveryStatus.PENDING_PICKUP, null, null, null, null, LocalDateTime.now(), null, null)
+                        DeliveryLeg.DELIVERY_TO_CUSTOMER, DeliveryStatus.PENDING_PICKUP,
+                        null, null, null, null, LocalDateTime.now(), null, null, null, null)
         ));
 
         MigrationParityService service = new MigrationParityService(

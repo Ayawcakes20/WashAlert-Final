@@ -3,6 +3,7 @@ package com.washalert.washalertbackend.auth;
 import com.washalert.washalertbackend.auth.dto.AuthSessionResponse;
 import com.washalert.washalertbackend.auth.dto.MobileCustomerProfileRequest;
 import com.washalert.washalertbackend.auth.dto.OtpRequest;
+import com.washalert.washalertbackend.auth.dto.VerifyOtpRequest;
 import com.washalert.washalertbackend.common.ApiError;
 import com.washalert.washalertbackend.user.AuthProvider;
 import com.washalert.washalertbackend.user.Role;
@@ -50,7 +51,7 @@ class AuthControllerOtpFlowTests {
         assertThat(response.getStatusCode().value()).isEqualTo(503);
         assertThat(response.getBody()).isInstanceOf(ApiError.class);
         ApiError error = (ApiError) response.getBody();
-        assertThat(error.message()).contains("could not send the verification email");
+        assertThat(error.message().toLowerCase()).contains("smtp");
     }
 
     @Test
@@ -97,7 +98,7 @@ class AuthControllerOtpFlowTests {
         assertThat(response.getStatusCode().value()).isEqualTo(503);
         assertThat(response.getBody()).isInstanceOf(ApiError.class);
         ApiError error = (ApiError) response.getBody();
-        assertThat(error.message()).contains("Verification email could not be sent");
+        assertThat(error.message().toLowerCase()).contains("smtp");
     }
 
     @Test
@@ -112,7 +113,26 @@ class AuthControllerOtpFlowTests {
         assertThat(response.getStatusCode().value()).isEqualTo(503);
         assertThat(response.getBody()).isInstanceOf(ApiError.class);
         ApiError error = (ApiError) response.getBody();
-        assertThat(error.message()).contains("Reset code email could not be sent");
+        assertThat(error.message().toLowerCase()).contains("smtp");
+    }
+
+    @Test
+    void verifyOtpReturns400WhenCodeIsInvalid() {
+        doThrow(new IllegalArgumentException("Invalid code.")).when(otpService).verifyAndActivate("customer@example.com", "111111");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRequestURI("/api/auth/otp/verify");
+
+        ResponseEntity<?> response = controller.verifyOtp(
+                new VerifyOtpRequest("customer@example.com", "111111"),
+                request
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody()).isInstanceOf(ApiError.class);
+        ApiError error = (ApiError) response.getBody();
+        assertThat(error.message()).contains("Invalid code");
+        verify(authService, never()).toSessionResponse(any(User.class), anyString());
     }
 
     private User pendingUser() {

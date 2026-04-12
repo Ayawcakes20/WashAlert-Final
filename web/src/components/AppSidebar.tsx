@@ -6,6 +6,7 @@ import {
   Package,
   BarChart3,
   MessageCircle,
+  Megaphone,
   Info,
   LogOut,
   UserCircle,
@@ -60,6 +61,7 @@ export function AppSidebar() {
         { title: "Predictive Inventory", url: "/inventory", icon: Package, visible: true },
         { title: "AI Analytics & Reports", url: "/analytics", icon: BarChart3, visible: isAdmin },
         { title: "AI Chat Support", url: "/chat-support", icon: MessageCircle, visible: true },
+        { title: "Announcements", url: "/announcements", icon: Megaphone, visible: true },
       ].filter((item) => item.visible),
     [isAdmin],
   );
@@ -89,13 +91,13 @@ export function AppSidebar() {
 
   return (
     <>
-      <Sidebar collapsible="icon" className="border-r-0">
-        <SidebarHeader className="p-4">
+      <Sidebar collapsible="icon" className="border-r-0 bg-[radial-gradient(120%_100%_at_0%_0%,hsl(var(--sidebar-primary)/0.28)_0%,transparent_45%),linear-gradient(180deg,hsl(var(--sidebar-background))_0%,hsl(214_64%_20%)_100%)]">
+        <SidebarHeader className="p-4 border-b border-sidebar-border/60">
           <div className="flex items-center gap-3">
             <img
               src={logoLaundryHubs}
               alt="WashAlert"
-              className="h-10 w-10 rounded-full object-cover ring-2 ring-sidebar-primary/30"
+              className="h-10 w-10 rounded-full object-cover ring-2 ring-sidebar-primary/50 shadow-lg shadow-black/30"
             />
             {!collapsed && (
               <div className="flex flex-col">
@@ -108,15 +110,15 @@ export function AppSidebar() {
 
         <SidebarContent className="px-2">
           <SidebarGroup>
-            <SidebarGroupLabel className="text-[10px] uppercase tracking-widest text-sidebar-foreground/40 mb-1">
+            <SidebarGroupLabel className="text-[10px] uppercase tracking-widest text-sidebar-foreground/55 mb-1">
               Main Menu
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {navModules.map((item) => (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={isActive(item.url)} className="h-10 rounded-lg transition-all duration-200">
-                      <NavLink to={item.url} end activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold">
+                    <SidebarMenuButton asChild isActive={isActive(item.url)} className="h-10 rounded-lg transition-all duration-200 hover:bg-sidebar-accent/85 hover:text-sidebar-primary shadow-[inset_0_0_0_1px_hsl(var(--sidebar-border)/0.2)]">
+                      <NavLink to={item.url} end activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold shadow-[0_0_0_1px_hsl(var(--sidebar-primary)/0.45)]">
                         <item.icon className="h-4 w-4" />
                         {!collapsed && <span>{item.title}</span>}
                       </NavLink>
@@ -132,8 +134,8 @@ export function AppSidebar() {
               <SidebarMenu>
                 {otherItems.map((item) => (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={isActive(item.url)} className="h-10 rounded-lg transition-all duration-200">
-                      <NavLink to={item.url} end activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold">
+                    <SidebarMenuButton asChild isActive={isActive(item.url)} className="h-10 rounded-lg transition-all duration-200 hover:bg-sidebar-accent/85 hover:text-sidebar-primary shadow-[inset_0_0_0_1px_hsl(var(--sidebar-border)/0.2)]">
+                      <NavLink to={item.url} end activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold shadow-[0_0_0_1px_hsl(var(--sidebar-primary)/0.45)]">
                         <item.icon className="h-4 w-4" />
                         {!collapsed && <span>{item.title}</span>}
                       </NavLink>
@@ -145,7 +147,7 @@ export function AppSidebar() {
           </SidebarGroup>
         </SidebarContent>
 
-        <SidebarFooter className="p-3">
+        <SidebarFooter className="p-3 border-t border-sidebar-border/50">
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton asChild className="h-10 rounded-lg text-sidebar-foreground/60 hover:text-sidebar-foreground">

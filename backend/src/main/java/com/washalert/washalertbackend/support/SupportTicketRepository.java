@@ -9,4 +9,5 @@ public interface SupportTicketRepository extends JpaRepository<SupportTicket, Lo
     List<SupportTicket> findTop50BySessionIdOrderByCreatedAtDesc(String sessionId);
     Optional<SupportTicket> findByTicketNumber(String ticketNumber);
     List<SupportTicket> findTop100ByOrderByCreatedAtDesc();
+    List<SupportTicket> findTop100ByBranchIgnoreCaseOrderByCreatedAtDesc(String branch);
 }

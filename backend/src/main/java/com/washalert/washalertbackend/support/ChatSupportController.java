@@ -4,9 +4,11 @@ import com.washalert.washalertbackend.support.dto.ChatSupportRequest;
 import com.washalert.washalertbackend.support.dto.ChatSupportResponse;
 import com.washalert.washalertbackend.support.dto.ChatHistoryResponse;
 import com.washalert.washalertbackend.support.dto.SupportTicketResponse;
+import com.washalert.washalertbackend.security.AuthUserDetails;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -43,8 +45,8 @@ public class ChatSupportController {
      */
     @GetMapping("/tickets")
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
-    public List<SupportTicketResponse> allTickets() {
-        return chatSupportService.allTickets();
+    public List<SupportTicketResponse> allTickets(@AuthenticationPrincipal AuthUserDetails principal) {
+        return chatSupportService.allTickets(principal);
     }
 
     /**
@@ -52,7 +54,10 @@ public class ChatSupportController {
      */
     @PatchMapping("/tickets/{ticketNumber}/resolve")
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
-    public ResponseEntity<SupportTicketResponse> resolveTicket(@PathVariable String ticketNumber) {
-        return ResponseEntity.ok(chatSupportService.resolveTicket(ticketNumber));
+    public ResponseEntity<SupportTicketResponse> resolveTicket(
+            @PathVariable String ticketNumber,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return ResponseEntity.ok(chatSupportService.resolveTicket(ticketNumber, principal));
     }
 }

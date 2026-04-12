@@ -21,7 +21,7 @@ public class NotificationCenterController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','STAFF','DRIVER')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','DRIVER','CUSTOMER')")
     public List<AppNotificationResponse> list(@AuthenticationPrincipal AuthUserDetails principal) {
         return notificationCenterService.list(principal);
     }

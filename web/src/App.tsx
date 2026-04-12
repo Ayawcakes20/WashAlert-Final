@@ -22,6 +22,7 @@ import DeliveryManagementPage from "./pages/DeliveryManagementPage";
 import PredictiveInventoryPage from "./pages/PredictiveInventoryPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import AIChatSupportPage from "./pages/AIChatSupportPage";
+import AnnouncementsPage from "./pages/AnnouncementsPage";
 import DashboardAboutPage from "./pages/AboutPage";
 import UnauthorizedPage from "./pages/UnauthorizedPage";
 import NotFound from "./pages/NotFound";
@@ -98,6 +99,7 @@ const App = () => (
             <Route path="/inventory" element={<PredictiveInventoryPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/chat-support" element={<AIChatSupportPage />} />
+            <Route path="/announcements" element={<AnnouncementsPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/about" element={<DashboardAboutPage />} />
           </Route>

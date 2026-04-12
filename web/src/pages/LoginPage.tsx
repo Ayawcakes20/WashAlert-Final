@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Eye, EyeOff, ChevronDown, ArrowLeft } from "lucide-react";
+import { Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { motion } from "framer-motion";
 import logoLaundryHubs from "@/assets/logo-laundryhubs.webp";
 import logoSpeedyWash from "@/assets/logo-speedywash.webp";
@@ -8,19 +8,6 @@ import { authApi } from "@/lib/api";
 import { firebaseAuthApi } from "@/lib/firebaseAuth";
 import { saveFirebaseWebSession, saveSessionUser } from "@/lib/session";
 import { toast } from "@/components/ui/sonner";
-
-const branches = [
-  { name: "Makati Branch", brand: "triplets" },
-  { name: "UP Diliman", brand: "speedywash" },
-  { name: "JP Rizal", brand: "speedywash" },
-  { name: "S. Catalina", brand: "speedywash" },
-  { name: "Pasig City", brand: "speedywash" },
-  { name: "Republic Ave", brand: "speedywash" },
-  { name: "Chestnut St", brand: "speedywash" },
-  { name: "Tondo", brand: "speedywash" },
-  { name: "Samat St", brand: "speedywash" },
-  { name: "St. Nino", brand: "speedywash" },
-];
 
 type LoginField = "email" | "password";
 type LoginFieldErrors = Partial<Record<LoginField, string>>;
@@ -51,26 +38,11 @@ const toFriendlyLoginMessage = (error: unknown) => {
 export default function LoginPage() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
-  const [branch, setBranch] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<LoginFieldErrors>({});
-
-  const selectedBranch = branches.find((b) => b.name === branch);
-  const activeLogo =
-    selectedBranch?.brand === "triplets"
-      ? logoLaundryHubs
-      : selectedBranch?.brand === "speedywash"
-      ? logoSpeedyWash
-      : null;
-  const brandName =
-    selectedBranch?.brand === "triplets"
-      ? "Triplets LaundryHubs"
-      : selectedBranch?.brand === "speedywash"
-      ? "SpeedyWash"
-      : null;
 
   const clearFieldError = (field: LoginField) => {
     setFieldErrors((prev) => ({
@@ -110,15 +82,8 @@ export default function LoginPage() {
       const sessionProfile = await authApi.firebaseSession({
         idToken: firebaseAuth.idToken,
         platform: "WEB",
-        selectedBranch: branch.trim() || undefined,
       });
-      saveFirebaseWebSession({
-        idToken: firebaseAuth.idToken,
-        refreshToken: firebaseAuth.refreshToken,
-        selectedBranch: branch.trim() || undefined,
-        email: firebaseAuth.email,
-      });
-      saveSessionUser({
+      const me = await authApi.me().catch(() => ({
         id: sessionProfile.id,
         firebaseUid: sessionProfile.firebaseUid,
         email: sessionProfile.email,
@@ -130,7 +95,14 @@ export default function LoginPage() {
         enabled: sessionProfile.status === "ACTIVE",
         mustChangePassword: false,
         provider: "FIREBASE",
+      }));
+
+      saveFirebaseWebSession({
+        idToken: firebaseAuth.idToken,
+        refreshToken: firebaseAuth.refreshToken,
+        email: firebaseAuth.email,
       });
+      saveSessionUser(me);
       toast.success("Login successful.");
       navigate("/dashboard");
     } catch (err: any) {
@@ -164,61 +136,23 @@ export default function LoginPage() {
           </button>
 
           <div className="flex flex-col items-center mb-8">
-            <motion.div
-              key={activeLogo || "default"}
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="flex items-center gap-3 mb-4"
-            >
-              {activeLogo ? (
-                <img
-                  src={activeLogo}
-                  alt={brandName || ""}
-                  className="h-16 w-16 rounded-full object-cover ring-2 ring-primary/30 shadow-lg"
-                />
-              ) : (
-                <>
-                  <img
-                    src={logoLaundryHubs}
-                    alt="Triplets"
-                    className="h-14 w-14 rounded-full object-cover ring-2 ring-secondary/50"
-                  />
-                  <img
-                    src={logoSpeedyWash}
-                    alt="SpeedyWash"
-                    className="h-14 w-14 rounded-full object-cover ring-2 ring-secondary/50"
-                  />
-                </>
-              )}
+            <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="flex items-center gap-3 mb-4">
+              <img
+                src={logoLaundryHubs}
+                alt="Triplets"
+                className="h-14 w-14 rounded-full object-cover ring-2 ring-secondary/50"
+              />
+              <img
+                src={logoSpeedyWash}
+                alt="SpeedyWash"
+                className="h-14 w-14 rounded-full object-cover ring-2 ring-secondary/50"
+              />
             </motion.div>
-            <h1 className="text-2xl font-bold text-foreground tracking-tight">
-              {brandName ? brandName : "WashAlert"}
-            </h1>
+            <h1 className="text-2xl font-bold text-foreground tracking-tight">WashAlert</h1>
             <p className="text-sm text-muted-foreground mt-1">Sign in to the Management System</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">
-                Branch
-              </label>
-              <div className="relative">
-                <select
-                  value={branch}
-                  onChange={(e) => setBranch(e.target.value)}
-                  className="w-full h-12 px-4 pr-10 rounded-xl border border-border bg-muted/30 text-sm text-foreground appearance-none outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                >
-                  <option value="">Select your branch</option>
-                  {branches.map((b) => (
-                    <option key={b.name} value={b.name}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-              </div>
-            </div>
-
             <div>
               <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">
                 Email

@@ -1,4 +1,4 @@
-package com.washalert.washalertbackend.support;
+package com.washalert.washalertbackend.announcement;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -21,11 +21,10 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(
-        name = "support_tickets",
+        name = "announcements",
         indexes = {
-                @Index(name = "idx_support_tickets_session_created", columnList = "session_id,created_at"),
-                @Index(name = "idx_support_tickets_branch_created", columnList = "branch,created_at"),
-                @Index(name = "idx_support_tickets_number", columnList = "ticket_number", unique = true)
+                @Index(name = "idx_announcements_created", columnList = "created_at"),
+                @Index(name = "idx_announcements_branch_created", columnList = "branch,created_at")
         }
 )
 @Getter
@@ -33,27 +32,33 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class SupportTicket {
+public class Announcement {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "ticket_number", nullable = false, length = 40, unique = true)
-    private String ticketNumber;
+    @Column(nullable = false, length = 180)
+    private String title;
 
-    @Column(name = "session_id", nullable = false, length = 80)
-    private String sessionId;
+    @Column(nullable = false, columnDefinition = "TEXT")
+    private String message;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private AnnouncementType type;
+
+    @Column(name = "target_all_branches", nullable = false)
+    private boolean targetAllBranches;
 
     @Column(length = 80)
     private String branch;
 
-    @Column(nullable = false, columnDefinition = "TEXT")
-    private String issue;
+    @Column(name = "created_by_user_id")
+    private Long createdByUserId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private SupportTicketStatus status;
+    @Column(name = "created_by_name", length = 120)
+    private String createdByName;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
@@ -66,7 +71,7 @@ public class SupportTicket {
         LocalDateTime now = LocalDateTime.now();
         if (createdAt == null) createdAt = now;
         if (updatedAt == null) updatedAt = now;
-        if (status == null) status = SupportTicketStatus.OPEN;
+        if (type == null) type = AnnouncementType.GENERAL;
     }
 
     @PreUpdate

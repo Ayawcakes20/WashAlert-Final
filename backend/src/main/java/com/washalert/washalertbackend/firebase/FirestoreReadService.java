@@ -13,6 +13,7 @@ import com.washalert.washalertbackend.orders.JobOrderStatus;
 import com.washalert.washalertbackend.orders.LoadSize;
 import com.washalert.washalertbackend.orders.ServiceType;
 import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
+import com.washalert.washalertbackend.payment.PaymentStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -227,6 +228,7 @@ public class FirestoreReadService {
                 asBigDecimal(data.get("totalPrice")),
                 asBoolean(data.get("isPaid")),
                 asString(data.get("paymentMethod")),
+                asEnum(data.get("paymentStatus"), PaymentStatus.class),
                 asDouble(data.get("deliveryLatitude")),
                 asDouble(data.get("deliveryLongitude")),
                 asDouble(data.get("branchLatitude")),

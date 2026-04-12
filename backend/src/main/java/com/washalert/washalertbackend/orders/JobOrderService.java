@@ -11,6 +11,9 @@ import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
 import com.washalert.washalertbackend.orders.dto.OrderTrackingEventResponse;
 import com.washalert.washalertbackend.orders.dto.OrderTrackingResponse;
 import com.washalert.washalertbackend.orders.dto.UpdateJobOrderRequest;
+import com.washalert.washalertbackend.payment.PaymentRecord;
+import com.washalert.washalertbackend.payment.PaymentRecordRepository;
+import com.washalert.washalertbackend.payment.PaymentStatus;
 import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
@@ -19,8 +22,10 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class JobOrderService {
@@ -32,6 +37,7 @@ public class JobOrderService {
     private final FirestoreSyncService firestoreSyncService;
     private final FirestoreReadService firestoreReadService;
     private final DataReadProperties dataReadProperties;
+    private final PaymentRecordRepository paymentRepository;
 
     public JobOrderService(
             JobOrderRepository repo,
@@ -40,7 +46,8 @@ public class JobOrderService {
             NotificationService notificationService,
             FirestoreSyncService firestoreSyncService,
             FirestoreReadService firestoreReadService,
-            DataReadProperties dataReadProperties
+            DataReadProperties dataReadProperties,
+            PaymentRecordRepository paymentRepository
     ) {
         this.repo = repo;
         this.historyRepository = historyRepository;
@@ -49,6 +56,7 @@ public class JobOrderService {
         this.firestoreSyncService = firestoreSyncService;
         this.firestoreReadService = firestoreReadService;
         this.dataReadProperties = dataReadProperties;
+        this.paymentRepository = paymentRepository;
     }
 
     public List<JobOrderResponse> listAll(AuthUserDetails principal) {
@@ -163,9 +171,9 @@ public class JobOrderService {
                 "ORDER",
                 String.valueOf(saved.getId())
         );
-        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), toResponse(saved));
-
-        return toResponse(saved);
+        JobOrderResponse response = toResponse(saved);
+        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        return response;
     }
 
     @Transactional
@@ -181,8 +189,9 @@ public class JobOrderService {
         order.setBranch(req.branch().trim());
 
         JobOrder saved = repo.save(order);
-        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), toResponse(saved));
-        return toResponse(saved);
+        JobOrderResponse response = toResponse(saved);
+        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        return response;
     }
 
     @Transactional
@@ -209,8 +218,9 @@ public class JobOrderService {
         }
 
         JobOrder saved = repo.save(jo);
-        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), toResponse(saved));
-        return toResponse(saved);
+        JobOrderResponse response = toResponse(saved);
+        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        return response;
     }
 
     @Transactional
@@ -222,8 +232,9 @@ public class JobOrderService {
         jo.setPaid(true);
         jo.setUpdatedAt(LocalDateTime.now());
         JobOrder saved = repo.save(jo);
-        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), toResponse(saved));
-        return toResponse(saved);
+        JobOrderResponse response = toResponse(saved, PaymentStatus.PAID);
+        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        return response;
     }
 
     @Transactional
@@ -239,20 +250,59 @@ public class JobOrderService {
     }
 
     private List<JobOrderResponse> listFromMysql(User actor) {
+        List<JobOrder> orders;
         if (actor.getRole() == Role.ADMIN) {
-            return repo.findAllByOrderByCreatedAtDesc().stream().map(this::toResponse).toList();
+            orders = repo.findAllByOrderByCreatedAtDesc();
+        } else {
+            orders = repo.findByBranchIgnoreCaseOrderByCreatedAtDesc(actor.getBranch());
         }
 
-        return repo.findByBranchIgnoreCaseOrderByCreatedAtDesc(actor.getBranch())
+        if (orders.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, PaymentStatus> paymentStatusByOrderId = paymentRepository
+                .findByJobOrder_IdIn(orders.stream().map(JobOrder::getId).toList())
                 .stream()
-                .map(this::toResponse)
+                .filter(record -> record.getJobOrder() != null && record.getJobOrder().getId() != null)
+                .collect(Collectors.toMap(
+                        record -> record.getJobOrder().getId(),
+                        PaymentRecord::getStatus,
+                        (left, right) -> right
+                ));
+
+        return orders.stream()
+                .map(order -> toResponse(order, paymentStatusByOrderId.get(order.getId())))
                 .toList();
     }
 
     private List<JobOrderResponse> listFromFirestore(User actor) {
-        return firestoreReadService.listOrders().stream()
+        List<JobOrderResponse> scoped = firestoreReadService.listOrders().stream()
                 .filter(order -> actor.getRole() == Role.ADMIN || safeEquals(actor.getBranch(), order.branch()))
                 .sorted((a, b) -> compareDateDesc(a.createdAt(), b.createdAt()))
+                .toList();
+
+        if (scoped.isEmpty()) {
+            return scoped;
+        }
+
+        Map<Long, PaymentStatus> paymentStatusByOrderId = paymentRepository
+                .findByJobOrder_IdIn(
+                        scoped.stream()
+                                .map(JobOrderResponse::id)
+                                .filter(id -> id != null)
+                                .toList()
+                )
+                .stream()
+                .filter(record -> record.getJobOrder() != null && record.getJobOrder().getId() != null)
+                .collect(Collectors.toMap(
+                        record -> record.getJobOrder().getId(),
+                        PaymentRecord::getStatus,
+                        (left, right) -> right
+                ));
+
+        return scoped.stream()
+                .map(order -> withPaymentStatus(order, paymentStatusByOrderId.get(order.id())))
                 .toList();
     }
 
@@ -323,6 +373,14 @@ public class JobOrderService {
     }
 
     private JobOrderResponse toResponse(JobOrder jo) {
+        PaymentStatus paymentStatus = paymentRepository.findByJobOrder_TrackingNumber(jo.getTrackingNumber())
+                .map(PaymentRecord::getStatus)
+                .orElse(null);
+        return toResponse(jo, paymentStatus);
+    }
+
+    private JobOrderResponse toResponse(JobOrder jo, PaymentStatus paymentStatus) {
+        PaymentStatus effectivePaymentStatus = resolvePaymentStatus(jo.isPaid(), paymentStatus);
         return new JobOrderResponse(
                 jo.getId(),
                 jo.getTrackingNumber(),
@@ -349,11 +407,55 @@ public class JobOrderService {
                 jo.getTotalPrice(),
                 jo.isPaid(),
                 jo.getPaymentMethod(),
+                effectivePaymentStatus,
                 jo.getDeliveryLatitude(),
                 jo.getDeliveryLongitude(),
                 jo.getBranchLatitude(),
                 jo.getBranchLongitude()
         );
+    }
+
+    private JobOrderResponse withPaymentStatus(JobOrderResponse response, PaymentStatus paymentStatus) {
+        PaymentStatus effectivePaymentStatus = resolvePaymentStatus(response.isPaid(), paymentStatus);
+        return new JobOrderResponse(
+                response.id(),
+                response.trackingNumber(),
+                response.customerName(),
+                response.branch(),
+                response.status(),
+                response.createdAt(),
+                response.updatedAt(),
+                response.serviceType(),
+                response.bookingDate(),
+                response.slotStartTime(),
+                response.slotEndTime(),
+                response.detergentPreference(),
+                response.fabricConditionerPreference(),
+                response.loadSize(),
+                response.estimatedWeightKg(),
+                response.specialInstructions(),
+                response.customerPhone(),
+                response.customerEmail(),
+                response.deliveryAddress(),
+                response.servicePrice(),
+                response.suppliesPrice(),
+                response.deliveryPrice(),
+                response.totalPrice(),
+                response.isPaid(),
+                response.paymentMethod(),
+                effectivePaymentStatus,
+                response.deliveryLatitude(),
+                response.deliveryLongitude(),
+                response.branchLatitude(),
+                response.branchLongitude()
+        );
+    }
+
+    private PaymentStatus resolvePaymentStatus(boolean orderPaid, PaymentStatus paymentStatus) {
+        if (paymentStatus != null) {
+            return paymentStatus;
+        }
+        return orderPaid ? PaymentStatus.PAID : null;
     }
 
     private String formatTrackingNumber(Long id) {

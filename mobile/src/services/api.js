@@ -4,6 +4,7 @@ import { API_BASE_URL, DEMO_MODE_ENABLED } from '../config/env';
 const ORDER_STORAGE_KEY = 'washalert_orders_v1';
 const USER_STORAGE_KEY = 'userData';
 const NOTIFICATION_READ_IDS_KEY = 'washalert_notifications_read_ids_v1';
+const looksLikeHtml = (value) => /<!doctype html|<html[\s>]/i.test(String(value || ''));
 
 // Static booking catalog used by mobile until backend exposes catalog endpoints.
 // IMPORTANT: branch 'name' must exactly match the branch names in the machines table
@@ -245,12 +246,23 @@ const DEMO_NOTIFICATIONS = [
 
 const parseResponse = async (res) => {
   const text = await res.text();
+  const contentType = String(res.headers?.get?.('content-type') || '').toLowerCase();
+  const jsonContentType = contentType.includes('application/json') || contentType.includes('+json');
   let payload = null;
+  let parseFailed = false;
   if (text) {
     try {
       payload = JSON.parse(text);
     } catch {
-      payload = text;
+      parseFailed = true;
+      if (contentType.includes('text/html') || looksLikeHtml(text)) {
+        const err = new Error(
+          `Unexpected non-JSON response from API (${API_BASE_URL}). Check EXPO_PUBLIC_API_BASE_URL and backend port.`
+        );
+        err.status = res.status;
+        throw err;
+      }
+      payload = { message: text };
     }
   }
   if (!res.ok) {
@@ -261,6 +273,18 @@ const parseResponse = async (res) => {
     err.status = res.status;
     throw err;
   }
+
+  if (res.ok && text) {
+    const payloadLooksStructured = payload && typeof payload === 'object';
+    if (!jsonContentType || parseFailed || !payloadLooksStructured) {
+      const err = new Error(
+        `Unexpected non-JSON response from API (${API_BASE_URL}). Check EXPO_PUBLIC_API_BASE_URL and backend port.`
+      );
+      err.status = res.status;
+      throw err;
+    }
+  }
+
   return payload;
 };
 
@@ -312,6 +336,15 @@ const toMobileOrderStatus = (status) => {
   return map[String(status || '').toUpperCase()] || String(status || '').toLowerCase();
 };
 
+const toMobilePaymentStatus = (order = {}, fallback = 'Pending') => {
+  const backendPaymentStatus = String(order.paymentStatus || '').trim().toUpperCase();
+  if (backendPaymentStatus === 'PAID' || backendPaymentStatus === 'VERIFIED') return 'Paid';
+  if (backendPaymentStatus === 'REJECTED') return 'Rejected';
+  if (backendPaymentStatus === 'PENDING') return 'Pending';
+  if (order.isPaid) return 'Paid';
+  return fallback;
+};
+
 const parseDateLabel = (isoDate) => {
   if (!isoDate) return '';
   const d = new Date(isoDate);
@@ -339,7 +372,7 @@ const mapJobOrderToMobile = (jobOrder, previous = {}) => ({
   deliveryPrice: Number(jobOrder.deliveryPrice ?? 0),
   amountPaid: Number(previous.amountPaid ?? 0),
   paymentMethod: jobOrder.paymentMethod ?? previous.paymentMethod ?? 'GCash',
-  paymentStatus: jobOrder.isPaid ? 'Paid' : (previous.paymentStatus ?? 'Pending'),
+  paymentStatus: toMobilePaymentStatus(jobOrder, previous.paymentStatus ?? 'Pending'),
   date: parseDateLabel(jobOrder.createdAt ?? previous.dateBooked),
   dateBooked: jobOrder.createdAt ?? previous.dateBooked ?? new Date().toISOString(),
   estimatedTime: previous.estimatedTime ?? '2-4 hours',
@@ -430,6 +463,22 @@ const refreshOrderStatus = async (order) => {
       // Delivery may not exist for non-delivery bookings.
     }
 
+    try {
+      const payment = await apiRequest(
+        `/api/payments/track/${encodeURIComponent(order.trackingNumber)}`
+      );
+      updated.paymentMethod = payment?.method || updated.paymentMethod;
+      updated.paymentStatus = toMobilePaymentStatus(
+        { paymentStatus: payment?.status, isPaid: payment?.status === 'PAID' || payment?.status === 'VERIFIED' },
+        updated.paymentStatus || 'Pending'
+      );
+      if (updated.paymentStatus === 'Paid') {
+        updated.amountPaid = Number(payment?.amount ?? updated.amountPaid ?? updated.amount ?? 0);
+      }
+    } catch {
+      // Payment record may not exist yet.
+    }
+
     return updated;
   } catch {
     return order;
@@ -504,9 +553,18 @@ const mapNotificationSeverity = (severity = '') => {
   return 'status';
 };
 
+const mapNotificationType = (notification = {}) => {
+  const title = String(notification.title || '').toLowerCase();
+  const route = String(notification.route || '').toLowerCase();
+  if (route.includes('announcement') || title.includes('announcement') || title.includes('closure') || title.includes('holiday')) {
+    return 'promo';
+  }
+  return mapNotificationSeverity(notification.severity);
+};
+
 const mapNotification = (notification) => ({
   id: String(notification.id),
-  type: mapNotificationSeverity(notification.severity),
+  type: mapNotificationType(notification),
   title: notification.title || 'Update',
   message: notification.message || '',
   timestamp: notification.createdAt || new Date().toISOString(),
@@ -580,9 +638,9 @@ export const createOrder = async (orderData) => {
     branchId: orderData.branchId,
     serviceType: orderData.serviceType,
     amount: Number(orderData.total || 0),
-    amountPaid: Number(orderData.paymentMethod === 'gcash' ? orderData.total || 0 : 0),
+    amountPaid: 0,
     paymentMethod: orderData.paymentMethod === 'cash' ? 'Cash' : 'GCash',
-    paymentStatus: orderData.paymentMethod === 'cash' ? 'Pending' : 'Paid',
+    paymentStatus: 'Pending',
     estimatedTime: '2-4 hours',
     scheduleDate: orderData.scheduleDate,
     scheduleTime: orderData.scheduleTime,

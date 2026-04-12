@@ -115,7 +115,12 @@ public class PaymentService {
         payment.setVerifiedBy(actor.getEmail());
         payment.setNotes(blankToNull(req.notes()));
 
+        if (Boolean.TRUE.equals(req.approved())) {
+            payment.getJobOrder().setPaid(true);
+        }
+
         PaymentRecord saved = paymentRepository.save(payment);
+        orderRepository.save(saved.getJobOrder());
         notificationService.enqueueEmail(
                 saved.getJobOrder().getCustomerEmail(),
                 "WashAlert Payment Update",

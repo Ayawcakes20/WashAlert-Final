@@ -36,14 +36,14 @@
 
     --radius: 1rem;
 
-    --sidebar-background: 218 58% 15%;
-    --sidebar-foreground: 210 30% 90%;
-    --sidebar-primary: 168 55% 68%;
+    --sidebar-background: 216 66% 16%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-primary: 42 86% 64%;
     --sidebar-primary-foreground: 220 40% 13%;
-    --sidebar-accent: 218 50% 22%;
-    --sidebar-accent-foreground: 210 30% 90%;
-    --sidebar-border: 218 45% 25%;
-    --sidebar-ring: 168 55% 68%;
+    --sidebar-accent: 216 62% 24%;
+    --sidebar-accent-foreground: 210 40% 96%;
+    --sidebar-border: 216 52% 34%;
+    --sidebar-ring: 42 86% 64%;
 
     /* Custom tokens */
     --mint: 168 55% 68%;

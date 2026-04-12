@@ -177,7 +177,7 @@ public class AuthService {
             log.info("Password reset email dispatched for {}", normalized);
         } catch (Exception ex) {
             log.error("Failed to dispatch password reset email for {}", normalized, ex);
-            throw new IllegalStateException("Unable to send password reset email. Please try again.");
+            throw new IllegalStateException(passwordResetFailureMessage(ex), ex);
         }
     }
 
@@ -320,9 +320,8 @@ public class AuthService {
         }
 
         String assignedBranch = normalizeBranch(user.getBranch());
-        String loginBranch = normalizeBranch(selectedBranch);
-        if (assignedBranch.isBlank() || loginBranch.isBlank() || !assignedBranch.equalsIgnoreCase(loginBranch)) {
-            throw new IllegalArgumentException("You are not assigned to this branch.");
+        if (assignedBranch.isBlank()) {
+            throw new IllegalArgumentException("Your staff account has no assigned branch. Please contact an administrator.");
         }
     }
 
@@ -385,5 +384,22 @@ public class AuthService {
 
     private String normalizeBranch(String branch) {
         return branch == null ? "" : branch.trim();
+    }
+
+    private String passwordResetFailureMessage(Exception ex) {
+        String message = ex == null || ex.getMessage() == null ? "" : ex.getMessage().trim();
+        if (message.isBlank()) {
+            return "Unable to send password reset email. Please verify mail configuration and try again.";
+        }
+
+        String normalized = message.toLowerCase();
+        if (normalized.contains("smtp")
+                || normalized.contains("mail_")
+                || normalized.contains("sender")
+                || normalized.contains("email dispatch")) {
+            return message;
+        }
+
+        return "Unable to send password reset email. Please verify mail configuration and try again.";
     }
 }

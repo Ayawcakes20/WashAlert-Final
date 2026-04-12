@@ -40,6 +40,7 @@ export type JobOrderResponse = {
   totalPrice?: number | null;
   isPaid?: boolean;
   paymentMethod?: string | null;
+  paymentStatus?: "PENDING" | "VERIFIED" | "REJECTED" | "PAID" | null;
   deliveryLatitude?: number | null;
   deliveryLongitude?: number | null;
   branchLatitude?: number | null;
@@ -106,6 +107,20 @@ export type AppNotification = {
   message: string;
   route: string;
   severity: "warning" | "success" | "info";
+  createdAt: string;
+};
+
+export type AnnouncementType = "CLOSURE" | "HOLIDAY" | "GENERAL";
+
+export type AnnouncementRecord = {
+  id: number;
+  title: string;
+  message: string;
+  type: AnnouncementType;
+  targetAllBranches: boolean;
+  branch: string | null;
+  createdByUserId: number | null;
+  createdByName: string | null;
   createdAt: string;
 };
 
@@ -378,6 +393,15 @@ export const inventoryApi = {
 
 export const notificationsApi = {
   list: () => apiRequest<AppNotification[]>("/api/notifications"),
+};
+
+export const announcementsApi = {
+  list: () => apiRequest<AnnouncementRecord[]>("/api/announcements"),
+  create: (payload: { title: string; message: string; type: AnnouncementType; branch?: string }) =>
+    apiRequest<AnnouncementRecord>("/api/announcements", {
+      method: "POST",
+      body: payload,
+    }),
 };
 
 export const analyticsApi = {

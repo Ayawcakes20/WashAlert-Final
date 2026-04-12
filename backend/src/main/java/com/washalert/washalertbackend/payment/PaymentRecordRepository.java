@@ -12,4 +12,5 @@ public interface PaymentRecordRepository extends JpaRepository<PaymentRecord, Lo
     List<PaymentRecord> findAllByOrderBySubmittedAtDesc();
     List<PaymentRecord> findBySubmittedAtBetween(LocalDateTime start, LocalDateTime end);
     List<PaymentRecord> findByJobOrder_BranchIgnoreCaseAndSubmittedAtBetween(String branch, LocalDateTime start, LocalDateTime end);
+    List<PaymentRecord> findByJobOrder_IdIn(List<Long> jobOrderIds);
 }

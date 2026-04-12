@@ -73,32 +73,43 @@ public class AuthController {
             HttpServletRequest request
     ) {
         log.info("[AUTH][REGISTER] Mobile customer registration requested");
+        User user;
         try {
-            User user = authService.upsertMobileCustomerProfile(req.idToken(), req.fullName());
-            log.info(
-                    "[AUTH][REGISTER] Profile upserted for {} with status={} enabled={}",
-                    maskEmail(user.getEmail()),
-                    user.getStatus(),
-                    user.isEnabled()
-            );
-
-            if (user.getStatus() == UserStatus.PENDING) {
-                log.info("[AUTH][REGISTER] Generating and dispatching OTP for {}", maskEmail(user.getEmail()));
-                otpService.generateAndSend(user);
-                log.info("[AUTH][REGISTER] OTP dispatch completed for {}", maskEmail(user.getEmail()));
-            }
-            return ResponseEntity.status(201).body(authService.toSessionResponse(user, "MOBILE"));
+            user = authService.upsertMobileCustomerProfile(req.idToken(), req.fullName());
         } catch (IllegalArgumentException ex) {
             log.warn("[AUTH][REGISTER] Registration rejected: {}", ex.getMessage());
             return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
-        } catch (Exception ex) {
-            log.error("[AUTH][REGISTER] Registration completed but OTP email dispatch failed", ex);
-            return ResponseEntity.status(503).body(apiError(
-                    request,
-                    503,
-                    "Account created, but we could not send the verification email. Please try again or tap Resend Code on the verification screen."
-            ));
         }
+
+        log.info(
+                "[AUTH][REGISTER] Profile upserted for {} with status={} enabled={}",
+                maskEmail(user.getEmail()),
+                user.getStatus(),
+                user.isEnabled()
+        );
+
+        if (user.getStatus() == UserStatus.PENDING) {
+            try {
+                log.info("[AUTH][REGISTER] Generating and dispatching OTP for {}", maskEmail(user.getEmail()));
+                otpService.generateAndSend(user);
+                log.info("[AUTH][REGISTER] OTP dispatch completed for {}", maskEmail(user.getEmail()));
+            } catch (IllegalArgumentException ex) {
+                log.warn("[AUTH][REGISTER] OTP generation rejected for {}: {}", maskEmail(user.getEmail()), ex.getMessage());
+                return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
+            } catch (Exception ex) {
+                log.error("[AUTH][REGISTER] Registration completed but OTP email dispatch failed", ex);
+                return ResponseEntity.status(503).body(apiError(
+                        request,
+                        503,
+                        mailFailureMessage(
+                                ex,
+                                "Account created, but verification email delivery failed. Please retry in a moment."
+                        )
+                ));
+            }
+        }
+
+        return ResponseEntity.status(201).body(authService.toSessionResponse(user, "MOBILE"));
     }
 
     @PostMapping("/complete-invitation")
@@ -176,8 +187,14 @@ public class AuthController {
             return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
         } catch (Exception mailEx) {
             log.error("[OTP][RESEND] Email delivery failed for {}", maskEmail(normalizedEmail), mailEx);
-            return ResponseEntity.status(503).body(apiError(request, 503,
-                    "Verification email could not be sent. Please check your inbox or try again in a moment."));
+            return ResponseEntity.status(503).body(apiError(
+                    request,
+                    503,
+                    mailFailureMessage(
+                            mailEx,
+                            "Verification email could not be sent. Please retry in a moment."
+                    )
+            ));
         }
     }
 
@@ -218,7 +235,10 @@ public class AuthController {
             return ResponseEntity.status(503).body(apiError(
                     request,
                     503,
-                    "Reset code email could not be sent. Please try again in a moment."
+                    mailFailureMessage(
+                            mailEx,
+                            "Reset code email could not be sent. Please retry in a moment."
+                    )
             ));
         }
     }
@@ -248,6 +268,23 @@ public class AuthController {
 
     private ApiError apiError(HttpServletRequest request, int status, String message) {
         return new ApiError(Instant.now(), status, message, request.getRequestURI());
+    }
+
+    private String mailFailureMessage(Exception ex, String fallbackMessage) {
+        String message = ex == null || ex.getMessage() == null ? "" : ex.getMessage().trim();
+        if (message.isBlank()) {
+            return fallbackMessage;
+        }
+
+        String normalized = message.toLowerCase();
+        if (normalized.contains("smtp")
+                || normalized.contains("mail_")
+                || normalized.contains("sender")
+                || normalized.contains("email dispatch")) {
+            return message;
+        }
+
+        return fallbackMessage;
     }
 
     private String maskEmail(String email) {

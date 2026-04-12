@@ -2,6 +2,8 @@ package com.washalert.washalertbackend.payment;
 
 import com.washalert.washalertbackend.payment.dto.PaymentWebhookRequest;
 import com.washalert.washalertbackend.notification.NotificationService;
+import com.washalert.washalertbackend.orders.JobOrder;
+import com.washalert.washalertbackend.orders.JobOrderRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
@@ -18,17 +20,20 @@ public class PaymentWebhookService {
 
     private final PaymentWebhookEventRepository eventRepository;
     private final PaymentRecordRepository paymentRepository;
+    private final JobOrderRepository jobOrderRepository;
     private final PaymentWebhookProperties properties;
     private final NotificationService notificationService;
 
     public PaymentWebhookService(
             PaymentWebhookEventRepository eventRepository,
             PaymentRecordRepository paymentRepository,
+            JobOrderRepository jobOrderRepository,
             PaymentWebhookProperties properties,
             NotificationService notificationService
     ) {
         this.eventRepository = eventRepository;
         this.paymentRepository = paymentRepository;
+        this.jobOrderRepository = jobOrderRepository;
         this.properties = properties;
         this.notificationService = notificationService;
     }
@@ -94,6 +99,11 @@ public class PaymentWebhookService {
                 payment.setVerifiedAt(LocalDateTime.now());
                 payment.setVerifiedBy("webhook:" + event.getProvider());
                 payment.setNotes("Auto-updated by payment webhook event " + event.getExternalEventId());
+                JobOrder order = payment.getJobOrder();
+                if (order != null) {
+                    order.setPaid(true);
+                    jobOrderRepository.save(order);
+                }
             } else if (isFailureStatus(externalStatus)) {
                 if (payment.getStatus() == PaymentStatus.PAID || payment.getStatus() == PaymentStatus.VERIFIED) {
                     throw new IllegalStateException("Cannot mark already paid/verified payment as failed.");

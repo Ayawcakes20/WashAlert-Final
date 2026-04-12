@@ -22,6 +22,7 @@ public interface JobOrderRepository extends JpaRepository<JobOrder, Long> {
     List<JobOrder> findByBranchIgnoreCaseOrderByCreatedAtDesc(String branch);
     List<JobOrder> findByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
     List<JobOrder> findByBranchIgnoreCaseAndCreatedAtBetween(String branch, LocalDateTime start, LocalDateTime end);
+    Optional<JobOrder> findTopByCustomerEmailIgnoreCaseOrderByCreatedAtDesc(String customerEmail);
 
     long countByStatusAndBranchIgnoreCase(JobOrderStatus status, String branch);
 

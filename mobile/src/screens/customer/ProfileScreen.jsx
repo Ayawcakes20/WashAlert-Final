@@ -1,11 +1,11 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
-
-const { width } = Dimensions.get('window');
+import * as ImagePicker from 'expo-image-picker';
+import { uploadImageAsync } from '../../services/storageService';
 
 const MENU_GROUPS = [
   {
@@ -34,9 +34,47 @@ const MENU_GROUPS = [
 ];
 
 const ProfileScreen = ({ navigation }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, firebaseIdToken } = useAuth();
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [avatarUri, setAvatarUri] = useState('');
   const userName = user?.fullName || "User";
   const userEmail = user?.email || "No email on profile";
+
+  const handleAvatarUpload = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission?.granted) {
+        Alert.alert('Permission Required', 'Please allow photo library access to upload a profile image.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.85,
+      });
+
+      if (result?.canceled || !result?.assets?.length) {
+        return;
+      }
+
+      setUploadingPhoto(true);
+      const selectedAsset = result.assets[0];
+      const upload = await uploadImageAsync(selectedAsset.uri, {
+        idToken: firebaseIdToken,
+        folder: `customers/${user?.id || 'unknown'}/profile-images`,
+        fileName: `profile_${Date.now()}.jpg`,
+      });
+
+      setAvatarUri(upload.downloadURL || selectedAsset.uri);
+      Alert.alert('Upload Successful', `Image uploaded to Firebase Storage.\nPath: ${upload.path}`);
+    } catch (error) {
+      console.error('[StorageUpload] Profile image upload failed:', error);
+      Alert.alert('Upload Failed', error?.message || 'Unable to upload image right now.');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -47,10 +85,14 @@ const ProfileScreen = ({ navigation }) => {
         <View style={styles.profileHeader}>
           <View style={styles.avatarContainer}>
             <View style={styles.avatarGradient}>
-              <Text style={styles.avatarInitial}>{userName.charAt(0)}</Text>
+              {avatarUri ? (
+                <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+              ) : (
+                <Text style={styles.avatarInitial}>{userName.charAt(0)}</Text>
+              )}
             </View>
-            <TouchableOpacity style={styles.editAvatarBtn}>
-              <Ionicons name="camera" size={16} color="#FFF" />
+            <TouchableOpacity style={styles.editAvatarBtn} onPress={handleAvatarUpload} disabled={uploadingPhoto}>
+              <Ionicons name={uploadingPhoto ? "cloud-upload" : "camera"} size={16} color="#FFF" />
             </TouchableOpacity>
           </View>
           
@@ -150,6 +192,11 @@ const styles = StyleSheet.create({
     fontSize: 40,
     fontWeight: '800',
     color: '#FFF',
+  },
+  avatarImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
   },
   editAvatarBtn: {
     position: 'absolute',

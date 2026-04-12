@@ -8,6 +8,9 @@ import com.washalert.washalertbackend.inventory.dto.CreateInventoryItemRequest;
 import com.washalert.washalertbackend.inventory.dto.InventoryForecastResponse;
 import com.washalert.washalertbackend.inventory.dto.InventoryItemResponse;
 import com.washalert.washalertbackend.inventory.dto.UpdateInventoryItemRequest;
+import com.washalert.washalertbackend.orders.JobOrder;
+import com.washalert.washalertbackend.orders.JobOrderRepository;
+import com.washalert.washalertbackend.orders.JobOrderStatus;
 import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
@@ -18,13 +21,19 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class InventoryService {
+    private static final BigDecimal FORECAST_DETERGENT_PER_KG = new BigDecimal("0.03");
+    private static final BigDecimal FORECAST_CONDITIONER_PER_KG = new BigDecimal("0.02");
+    private static final BigDecimal DEFAULT_ORDER_WEIGHT_KG = new BigDecimal("5.00");
 
     private final InventoryItemRepository itemRepository;
     private final InventoryMovementRepository movementRepository;
+    private final JobOrderRepository jobOrderRepository;
     private final FirestoreSyncService firestoreSyncService;
     private final FirestoreReadService firestoreReadService;
     private final DataReadProperties dataReadProperties;
@@ -32,12 +41,14 @@ public class InventoryService {
     public InventoryService(
             InventoryItemRepository itemRepository,
             InventoryMovementRepository movementRepository,
+            JobOrderRepository jobOrderRepository,
             FirestoreSyncService firestoreSyncService,
             FirestoreReadService firestoreReadService,
             DataReadProperties dataReadProperties
     ) {
         this.itemRepository = itemRepository;
         this.movementRepository = movementRepository;
+        this.jobOrderRepository = jobOrderRepository;
         this.firestoreSyncService = firestoreSyncService;
         this.firestoreReadService = firestoreReadService;
         this.dataReadProperties = dataReadProperties;
@@ -161,20 +172,26 @@ public class InventoryService {
     public List<InventoryForecastResponse> forecast(String branch, Integer days, AuthUserDetails principal) {
         int horizonDays = (days == null || days <= 0) ? 7 : Math.min(days, 30);
         LocalDateTime since = LocalDateTime.now().minusDays(30);
+        String effectiveBranch = resolveEffectiveBranch(branch, principal.getUser());
+
+        // Data flow note:
+        // 1) Mobile/Web bookings write to the shared job_orders table.
+        // 2) Forecast reads those shared orders to estimate branch consumable usage.
+        // 3) Inventory projection then uses branch usage for low-stock forecasting.
+        List<JobOrder> scopedOrders = effectiveBranch == null
+                ? jobOrderRepository.findByCreatedAtBetween(since, LocalDateTime.now())
+                : jobOrderRepository.findByBranchIgnoreCaseAndCreatedAtBetween(
+                effectiveBranch,
+                since,
+                LocalDateTime.now()
+        );
+        Map<String, BranchConsumableUsage> usageByBranch = buildBranchConsumableUsage(scopedOrders);
 
         return list(branch, principal).stream().map(item -> {
-            BigDecimal totalUsage = BigDecimal.ZERO;
-            if (item.id() != null) {
-                totalUsage = movementRepository
-                        .findByInventoryItem_IdAndCreatedAtAfter(item.id(), since)
-                        .stream()
-                        .map(InventoryMovement::getQuantityDelta)
-                        .filter(delta -> delta.compareTo(BigDecimal.ZERO) < 0)
-                        .map(BigDecimal::abs)
-                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal dailyUsage = estimateOrderBackedDailyUsage(item, usageByBranch);
+            if (dailyUsage.compareTo(BigDecimal.ZERO) == 0 && item.id() != null) {
+                dailyUsage = movementBasedDailyUsage(item.id(), since);
             }
-
-            BigDecimal dailyUsage = totalUsage.divide(BigDecimal.valueOf(30), 4, RoundingMode.HALF_UP);
             BigDecimal projected = item.currentStock().subtract(dailyUsage.multiply(BigDecimal.valueOf(horizonDays)));
             if (projected.compareTo(BigDecimal.ZERO) < 0) projected = BigDecimal.ZERO;
 
@@ -193,6 +210,102 @@ public class InventoryService {
                     daysUntilStockout
             );
         }).toList();
+    }
+
+    private Map<String, BranchConsumableUsage> buildBranchConsumableUsage(List<JobOrder> orders) {
+        Map<String, BranchConsumableUsage> usage = new HashMap<>();
+        for (JobOrder order : orders) {
+            if (order == null || order.getBranch() == null || order.getBranch().isBlank()) {
+                continue;
+            }
+            if (order.getStatus() == JobOrderStatus.CANCELLED) {
+                continue;
+            }
+
+            BigDecimal weightKg = order.getEstimatedWeightKg() == null
+                    ? DEFAULT_ORDER_WEIGHT_KG
+                    : order.getEstimatedWeightKg().max(BigDecimal.ZERO);
+
+            BigDecimal detergentUsage = hasConsumableSelection(order.getDetergentPreference())
+                    ? weightKg.multiply(FORECAST_DETERGENT_PER_KG)
+                    : BigDecimal.ZERO;
+            BigDecimal conditionerUsage = hasConsumableSelection(order.getFabricConditionerPreference())
+                    ? weightKg.multiply(FORECAST_CONDITIONER_PER_KG)
+                    : BigDecimal.ZERO;
+
+            usage.merge(
+                    order.getBranch().trim().toLowerCase(),
+                    new BranchConsumableUsage(detergentUsage, conditionerUsage),
+                    BranchConsumableUsage::add
+            );
+        }
+        return usage;
+    }
+
+    private BigDecimal estimateOrderBackedDailyUsage(
+            InventoryItemResponse item,
+            Map<String, BranchConsumableUsage> usageByBranch
+    ) {
+        if (item.branch() == null || item.branch().isBlank()) {
+            return BigDecimal.ZERO;
+        }
+
+        BranchConsumableUsage branchUsage = usageByBranch.get(item.branch().trim().toLowerCase());
+        if (branchUsage == null) {
+            return BigDecimal.ZERO;
+        }
+
+        BigDecimal monthlyUsage = BigDecimal.ZERO;
+        if (isDetergentItem(item)) {
+            monthlyUsage = branchUsage.detergent();
+        } else if (isConditionerItem(item)) {
+            monthlyUsage = branchUsage.conditioner();
+        }
+
+        return monthlyUsage.divide(BigDecimal.valueOf(30), 4, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal movementBasedDailyUsage(Long itemId, LocalDateTime since) {
+        BigDecimal totalUsage = movementRepository
+                .findByInventoryItem_IdAndCreatedAtAfter(itemId, since)
+                .stream()
+                .map(InventoryMovement::getQuantityDelta)
+                .filter(delta -> delta.compareTo(BigDecimal.ZERO) < 0)
+                .map(BigDecimal::abs)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return totalUsage.divide(BigDecimal.valueOf(30), 4, RoundingMode.HALF_UP);
+    }
+
+    private boolean hasConsumableSelection(String value) {
+        if (value == null) return false;
+        String normalized = value.trim().toLowerCase();
+        return !normalized.isBlank() && !normalized.equals("none");
+    }
+
+    private boolean isDetergentItem(InventoryItemResponse item) {
+        String haystack = ((item.itemName() == null ? "" : item.itemName()) + " "
+                + (item.category() == null ? "" : item.category())).toLowerCase();
+        return haystack.contains("detergent") || haystack.contains("surf") || haystack.contains("ariel");
+    }
+
+    private boolean isConditionerItem(InventoryItemResponse item) {
+        String haystack = ((item.itemName() == null ? "" : item.itemName()) + " "
+                + (item.category() == null ? "" : item.category())).toLowerCase();
+        return haystack.contains("conditioner")
+                || haystack.contains("fabric")
+                || haystack.contains("fabcon")
+                || haystack.contains("downy")
+                || haystack.contains("charm");
+    }
+
+    private record BranchConsumableUsage(BigDecimal detergent, BigDecimal conditioner) {
+        private BranchConsumableUsage add(BranchConsumableUsage other) {
+            return new BranchConsumableUsage(
+                    detergent.add(other.detergent),
+                    conditioner.add(other.conditioner)
+            );
+        }
     }
 
     private List<InventoryItemResponse> listFromMysql(String effectiveBranch) {

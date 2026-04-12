@@ -112,7 +112,7 @@ const NotificationsScreen = () => {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         <View style={styles.headerRow}>
-          <Text style={styles.headerTitle}>Notifications</Text>
+          <Text style={styles.headerTitle}>Notifications & Announcements</Text>
           <TouchableOpacity style={styles.markReadBtn} onPress={markAllRead} disabled={!items.length}>
             <Ionicons
               name="checkmark"
@@ -131,7 +131,7 @@ const NotificationsScreen = () => {
           {!items.length ? (
             <View style={styles.emptyCard}>
               <Ionicons name="notifications-off-outline" size={32} color={colors.textSecondary} />
-              <Text style={styles.emptyTitle}>No notifications yet</Text>
+              <Text style={styles.emptyTitle}>No notifications or announcements yet</Text>
               <Text style={styles.emptyText}>You are all caught up.</Text>
             </View>
           ) : (

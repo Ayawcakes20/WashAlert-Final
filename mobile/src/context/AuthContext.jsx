@@ -5,6 +5,7 @@ import { API_BASE_URL, FIREBASE_API_KEY } from '../config/env';
 const AuthContext = createContext(undefined);
 
 const USER_STORAGE_KEY = 'userData';
+const FIREBASE_SESSION_STORAGE_KEY = 'firebaseSessionData';
 const normalizeEmail = (email) => (email || '').trim().toLowerCase();
 const looksLikeHtml = (value) => /<!doctype html|<html[\s>]/i.test(String(value || ''));
 
@@ -16,11 +17,14 @@ const invalidApiResponseError = () =>
 const parseResponse = async (res) => {
   const text = await res.text();
   const contentType = String(res.headers?.get?.('content-type') || '').toLowerCase();
+  const jsonContentType = contentType.includes('application/json') || contentType.includes('+json');
   let payload = null;
+  let parseFailed = false;
   if (text) {
     try {
       payload = JSON.parse(text);
     } catch {
+      parseFailed = true;
       if (contentType.includes('text/html') || looksLikeHtml(text)) {
         const err = invalidApiResponseError();
         err.status = res.status;
@@ -49,6 +53,16 @@ const parseResponse = async (res) => {
     err.status = res.status;
     throw err;
   }
+
+  if (res.ok && text) {
+    const payloadLooksStructured = payload && typeof payload === 'object';
+    if (!jsonContentType || parseFailed || !payloadLooksStructured) {
+      const err = invalidApiResponseError();
+      err.status = res.status;
+      throw err;
+    }
+  }
+
   return payload;
 };
 
@@ -148,6 +162,7 @@ const mapSessionProfile = (profile) => ({
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [firebaseSession, setFirebaseSession] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -158,7 +173,10 @@ export const AuthProvider = ({ children }) => {
     try {
       const minDelay = new Promise((r) => setTimeout(r, 800));
       const stored = await AsyncStorage.getItem(USER_STORAGE_KEY);
+      const storedFirebaseSession = await AsyncStorage.getItem(FIREBASE_SESSION_STORAGE_KEY);
       const localUser = stored ? JSON.parse(stored) : null;
+      const localFirebaseSession = storedFirebaseSession ? JSON.parse(storedFirebaseSession) : null;
+      setFirebaseSession(localFirebaseSession);
 
       if (localUser) {
         setUser(localUser);
@@ -175,6 +193,7 @@ export const AuthProvider = ({ children }) => {
         } catch (error) {
           if (error?.status === 401 || error?.status === 403) {
             await AsyncStorage.removeItem(USER_STORAGE_KEY);
+            await clearFirebaseSession();
             setUser(null);
           }
         }
@@ -186,6 +205,21 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const persistFirebaseSession = async (session = {}) => {
+    if (!session?.idToken) return;
+    const normalized = {
+      idToken: String(session.idToken),
+      refreshToken: session.refreshToken ? String(session.refreshToken) : '',
+    };
+    setFirebaseSession(normalized);
+    await AsyncStorage.setItem(FIREBASE_SESSION_STORAGE_KEY, JSON.stringify(normalized));
+  };
+
+  const clearFirebaseSession = async () => {
+    setFirebaseSession(null);
+    await AsyncStorage.removeItem(FIREBASE_SESSION_STORAGE_KEY);
   };
 
   const login = useCallback(async (email, password) => {
@@ -212,16 +246,22 @@ export const AuthProvider = ({ children }) => {
       });
       const mapped = mapSessionProfile(requireSessionProfilePayload(profile, 'Login'));
       if (!mapped.role) {
+        await clearFirebaseSession();
         return {
           success: false,
           error: `Account role "${mapped.backendRole || 'UNKNOWN'}" is not allowed on mobile.`,
         };
       }
 
+      await persistFirebaseSession({
+        idToken: firebaseLogin.idToken,
+        refreshToken: firebaseLogin.refreshToken,
+      });
       setUser(mapped);
       await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(mapped));
       return { success: true, user: mapped };
     } catch (error) {
+      await clearFirebaseSession();
       return { success: false, error: formatAuthError(error) };
     }
   }, []);
@@ -243,16 +283,22 @@ export const AuthProvider = ({ children }) => {
       });
       const createdProfile = requireSessionProfilePayload(registerProfile, 'Registration');
       if (String(createdProfile.role || '').trim().toUpperCase() !== 'CUSTOMER') {
+        await clearFirebaseSession();
         return {
           success: false,
           error: `Registered account has unexpected role "${createdProfile.role || 'UNKNOWN'}". Please contact support.`,
         };
       }
+      await persistFirebaseSession({
+        idToken: signup.idToken,
+        refreshToken: signup.refreshToken,
+      });
       return {
         success: true,
         message: 'Registration successful. You can now log in.',
       };
     } catch (error) {
+      await clearFirebaseSession();
       return { success: false, error: formatAuthError(error) };
     }
   }, []);
@@ -266,6 +312,7 @@ export const AuthProvider = ({ children }) => {
       } catch {
         // best effort
       }
+      await clearFirebaseSession();
       await AsyncStorage.removeItem(USER_STORAGE_KEY);
       setUser(null);
     } catch (error) {
@@ -374,6 +421,7 @@ export const AuthProvider = ({ children }) => {
         verifyOTP,
         verifyResetOTP,
         resetPassword,
+        firebaseIdToken: firebaseSession?.idToken || '',
       }}
     >
       {children}
