@@ -5,6 +5,25 @@ import { motion } from "framer-motion";
 import { branches } from "@/data/branches";
 import { FiClock, FiMapPin, FiPhone, FiSearch, FiNavigation } from "react-icons/fi";
 
+const buildGoogleMapsDirectionsUrl = (branch: {
+  name: string;
+  area: string;
+  address: string;
+  coords?: { lat: number; lng: number };
+}) => {
+  const destination = branch.coords
+    ? `${branch.coords.lat},${branch.coords.lng}`
+    : `${branch.name}, ${branch.address}, ${branch.area}`;
+
+  const params = new URLSearchParams({
+    api: "1",
+    destination,
+    travelmode: "driving",
+  });
+
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+};
+
 export default function BranchesPage() {
   const [search, setSearch] = useState("");
   const filtered = branches.filter(b =>
@@ -67,9 +86,15 @@ export default function BranchesPage() {
                     <FiPhone className="w-4 h-4 flex-shrink-0" /> {b.phone}
                   </div>
                 </div>
-                <button className="w-full flex items-center justify-center gap-2 py-2.5 border border-primary text-primary rounded-lg text-sm font-medium hover:bg-primary hover:text-primary-foreground transition-colors">
+                <a
+                  href={buildGoogleMapsDirectionsUrl(b)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 border border-primary text-primary rounded-lg text-sm font-medium hover:bg-primary hover:text-primary-foreground transition-colors"
+                  aria-label={`Get directions to ${b.name} ${b.area}`}
+                >
                   <FiNavigation className="w-4 h-4" /> Get Directions
-                </button>
+                </a>
               </motion.div>
             ))}
           </div>

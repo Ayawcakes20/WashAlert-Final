@@ -4,7 +4,22 @@ import { API_BASE_URL, DEMO_MODE_ENABLED } from '../config/env';
 const ORDER_STORAGE_KEY = 'washalert_orders_v1';
 const USER_STORAGE_KEY = 'userData';
 const NOTIFICATION_READ_IDS_KEY = 'washalert_notifications_read_ids_v1';
+const SUPPORT_SESSION_KEY = 'washalert_support_session_id_v1';
 const looksLikeHtml = (value) => /<!doctype html|<html[\s>]/i.test(String(value || ''));
+
+const createSupportSessionId = () => `mobile-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+const getSupportSessionId = async () => {
+  try {
+    const existing = await AsyncStorage.getItem(SUPPORT_SESSION_KEY);
+    if (existing) return existing;
+    const next = createSupportSessionId();
+    await AsyncStorage.setItem(SUPPORT_SESSION_KEY, next);
+    return next;
+  } catch {
+    return createSupportSessionId();
+  }
+};
 
 // Static booking catalog used by mobile until backend exposes catalog endpoints.
 // IMPORTANT: branch 'name' must exactly match the branch names in the machines table
@@ -423,7 +438,9 @@ const mapJobOrderToMobile = (jobOrder, previous = {}) => ({
 const refreshOrderStatus = async (order) => {
   if (!order?.trackingNumber) return order;
   try {
+    console.log('[Orders] Refreshing order status tracking=', order.trackingNumber);
     const tracked = await apiRequest(`/api/orders/track/${encodeURIComponent(order.trackingNumber)}`);
+    console.log('[Orders] Backend order status tracking=', order.trackingNumber, 'status=', tracked?.currentStatus);
     const updated = mapJobOrderToMobile(
       {
         id: order.id,
@@ -451,6 +468,7 @@ const refreshOrderStatus = async (order) => {
         `/api/deliveries/track/${encodeURIComponent(order.trackingNumber)}`
       );
       if (delivery?.status) {
+        console.log('[Orders] Delivery status tracking=', order.trackingNumber, 'status=', delivery.status);
         updated.status = toMobileOrderStatus(delivery.status);
         updated.delivery = {
           address: delivery.deliveryAddress || updated.delivery?.address || '',
@@ -467,6 +485,7 @@ const refreshOrderStatus = async (order) => {
       const payment = await apiRequest(
         `/api/payments/track/${encodeURIComponent(order.trackingNumber)}`
       );
+      console.log('[Orders] Payment status tracking=', order.trackingNumber, 'status=', payment?.status);
       updated.paymentMethod = payment?.method || updated.paymentMethod;
       updated.paymentStatus = toMobilePaymentStatus(
         { paymentStatus: payment?.status, isPaid: payment?.status === 'PAID' || payment?.status === 'VERIFIED' },
@@ -846,10 +865,50 @@ export const notifications = {
 
 export const payments = {
   initiateGcashCheckout: async (trackingNumber) => {
-    return await apiRequest(`/api/payments/checkout/gcash/${encodeURIComponent(trackingNumber)}`, {
+    console.log('[Payments] Requesting GCash checkout URL tracking=', trackingNumber);
+    const payload = await apiRequest(`/api/payments/checkout/gcash/${encodeURIComponent(trackingNumber)}`, {
       method: 'POST',
     });
+    console.log('[Payments] Raw checkout response=', payload);
+    const checkoutUrl = payload?.checkout_url || payload?.checkoutUrl || payload?.url || null;
+    console.log('[Payments] Checkout URL=', checkoutUrl || '(missing)');
+    return checkoutUrl;
   },
+};
+
+export const support = {
+  chat: async (message, trackingNumber = null) => {
+    const sessionId = await getSupportSessionId();
+    return await apiRequest('/api/support/chat', {
+      method: 'POST',
+      body: {
+        message,
+        trackingNumber,
+        sessionId,
+      },
+    });
+  },
+};
+
+export const profileApi = {
+  updateProfile: async ({ fullName, mobileNumber, profileImageUrl }) =>
+    await apiRequest('/api/user/profile', {
+      method: 'PUT',
+      body: {
+        fullName,
+        mobileNumber,
+        profileImageUrl,
+      },
+    }),
+  updateFcmToken: async ({ fcmToken, platform, deviceId }) =>
+    await apiRequest('/api/user/profile/fcm-token', {
+      method: 'PUT',
+      body: {
+        fcmToken,
+        platform,
+        deviceId,
+      },
+    }),
 };
 
 export default {
@@ -861,4 +920,6 @@ export default {
   deliveries,
   notifications,
   payments,
+  support,
+  profileApi,
 };

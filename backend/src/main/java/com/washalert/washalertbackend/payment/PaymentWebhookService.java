@@ -3,7 +3,9 @@ package com.washalert.washalertbackend.payment;
 import com.washalert.washalertbackend.payment.dto.PaymentWebhookRequest;
 import com.washalert.washalertbackend.notification.NotificationService;
 import com.washalert.washalertbackend.orders.JobOrder;
+import com.washalert.washalertbackend.orders.JobOrderStatus;
 import com.washalert.washalertbackend.orders.JobOrderRepository;
+import com.washalert.washalertbackend.orders.JobOrderTimelineService;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
@@ -23,19 +25,22 @@ public class PaymentWebhookService {
     private final JobOrderRepository jobOrderRepository;
     private final PaymentWebhookProperties properties;
     private final NotificationService notificationService;
+    private final JobOrderTimelineService timelineService;
 
     public PaymentWebhookService(
             PaymentWebhookEventRepository eventRepository,
             PaymentRecordRepository paymentRepository,
             JobOrderRepository jobOrderRepository,
             PaymentWebhookProperties properties,
-            NotificationService notificationService
+            NotificationService notificationService,
+            JobOrderTimelineService timelineService
     ) {
         this.eventRepository = eventRepository;
         this.paymentRepository = paymentRepository;
         this.jobOrderRepository = jobOrderRepository;
         this.properties = properties;
         this.notificationService = notificationService;
+        this.timelineService = timelineService;
     }
 
     @Transactional
@@ -102,6 +107,10 @@ public class PaymentWebhookService {
                 JobOrder order = payment.getJobOrder();
                 if (order != null) {
                     order.setPaid(true);
+                    if (order.getStatus() == JobOrderStatus.PENDING) {
+                        order.setStatus(JobOrderStatus.WASHING);
+                        timelineService.log(order, order.getStatus(), "system", "Payment confirmed via webhook");
+                    }
                     jobOrderRepository.save(order);
                 }
             } else if (isFailureStatus(externalStatus)) {
@@ -124,6 +133,14 @@ public class PaymentWebhookService {
                             .formatted(payment.getJobOrder().getTrackingNumber(), payment.getStatus()),
                     "PAYMENT_WEBHOOK",
                     String.valueOf(payment.getId())
+            );
+            notificationService.enqueuePushToUserEmail(
+                    payment.getJobOrder().getCustomerEmail(),
+                    payment.getStatus() == PaymentStatus.PAID ? "Payment Confirmed" : "Payment Update",
+                    "Payment for order %s is now %s."
+                            .formatted(payment.getJobOrder().getTrackingNumber(), payment.getStatus().name()),
+                    "PAYMENT_WEBHOOK",
+                    payment.getJobOrder().getTrackingNumber() + ":" + payment.getStatus().name()
             );
 
             event.setProcessingStatus(PaymentWebhookProcessingStatus.PROCESSED);

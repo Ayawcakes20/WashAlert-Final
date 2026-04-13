@@ -34,6 +34,11 @@ import NotificationsScreen from '../screens/customer/NotificationsScreen';
 import ChatScreen from '../screens/customer/ChatScreen';
 import ProfileScreen from '../screens/customer/ProfileScreen';
 import EditProfileScreen from '../screens/customer/EditProfileScreen';
+import ChangePasswordScreen from '../screens/customer/ChangePasswordScreen';
+import SavedAddressesScreen from '../screens/customer/SavedAddressesScreen';
+import PaymentMethodsScreen from '../screens/customer/PaymentMethodsScreen';
+import TermsAndConditionsScreen from '../screens/customer/TermsAndConditionsScreen';
+import PrivacyPolicyScreen from '../screens/customer/PrivacyPolicyScreen';
 import PaymentSuccessScreen from '../screens/customer/PaymentSuccessScreen';
 import PaymentCancelScreen from '../screens/customer/PaymentCancelScreen';
 
@@ -253,6 +258,11 @@ const CustomerStack = () => (
     <Stack.Screen name="Tracking"       component={TrackingScreen}       options={stackHeader('Track Order')} />
     <Stack.Screen name="Chat"           component={ChatScreen}           options={stackHeader('Support')} />
     <Stack.Screen name="EditProfile"    component={EditProfileScreen}    options={stackHeader('Edit Profile')} />
+    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={stackHeader('Change Password')} />
+    <Stack.Screen name="SavedAddresses" component={SavedAddressesScreen} options={stackHeader('Saved Addresses')} />
+    <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} options={stackHeader('Payment Methods')} />
+    <Stack.Screen name="TermsAndConditions" component={TermsAndConditionsScreen} options={stackHeader('Terms & Conditions')} />
+    <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={stackHeader('Privacy Policy')} />
     <Stack.Screen name="PaymentSuccess" component={PaymentSuccessScreen} options={stackHeader('Payment Success')} />
     <Stack.Screen name="PaymentCancel"  component={PaymentCancelScreen}  options={stackHeader('Payment Cancelled')} />
   </Stack.Navigator>
@@ -325,6 +335,9 @@ const DriverStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="DriverTabs"     component={DriverTabs} />
     <Stack.Screen name="DeliveryDetail" component={DeliveryDetailScreen} options={stackHeader('Delivery Details')} />
+    <Stack.Screen name="Chat" component={ChatScreen} options={stackHeader('Support')} />
+    <Stack.Screen name="TermsAndConditions" component={TermsAndConditionsScreen} options={stackHeader('Terms & Conditions')} />
+    <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={stackHeader('Privacy Policy')} />
   </Stack.Navigator>
 );
 

@@ -147,11 +147,12 @@ const resolveMobileRole = (profile = {}) => {
   return '';
 };
 
-const mapSessionProfile = (profile) => ({
+const mapSessionProfile = (profile, fallback = null) => ({
   id: String(profile.id),
   fullName: profile.fullName || 'WashAlert User',
   email: profile.email || '',
-  phone: '',
+  phone: profile.mobileNumber || profile.phone || fallback?.phone || '',
+  profileImageUrl: profile.profileImageUrl || fallback?.profileImageUrl || '',
   role: resolveMobileRole(profile),
   status: String(profile.status || '').toLowerCase(),
   backendRole: profile.role || '',
@@ -182,7 +183,7 @@ export const AuthProvider = ({ children }) => {
         setUser(localUser);
         try {
           const profile = await authRequest('/api/auth/me');
-          const mapped = mapSessionProfile(profile);
+          const mapped = mapSessionProfile(profile, localUser);
           if (!mapped.role) {
             await AsyncStorage.removeItem(USER_STORAGE_KEY);
             setUser(null);
@@ -320,6 +321,49 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+  const updateUserProfile = useCallback(async (updates = {}) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = {
+        ...prev,
+        ...updates,
+      };
+      void AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const changePassword = useCallback(async ({ currentPassword, newPassword }) => {
+    if (!user?.email) {
+      return { success: false, error: 'No authenticated user email available.' };
+    }
+    if (!currentPassword || !newPassword) {
+      return { success: false, error: 'Current and new passwords are required.' };
+    }
+
+    try {
+      const reauth = await firebaseRequest('accounts:signInWithPassword', {
+        email: normalizeEmail(user.email),
+        password: currentPassword,
+        returnSecureToken: true,
+      });
+
+      const updated = await firebaseRequest('accounts:update', {
+        idToken: reauth.idToken,
+        password: newPassword,
+        returnSecureToken: true,
+      });
+
+      await persistFirebaseSession({
+        idToken: updated.idToken || reauth.idToken,
+        refreshToken: updated.refreshToken || reauth.refreshToken,
+      });
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: formatAuthError(error) };
+    }
+  }, [user?.email]);
+
   const forgotPassword = useCallback(async (email) => {
     try {
       // Switch from Firebase direct to Backend to use unified email system
@@ -421,6 +465,8 @@ export const AuthProvider = ({ children }) => {
         verifyOTP,
         verifyResetOTP,
         resetPassword,
+        updateUserProfile,
+        changePassword,
         firebaseIdToken: firebaseSession?.idToken || '',
       }}
     >

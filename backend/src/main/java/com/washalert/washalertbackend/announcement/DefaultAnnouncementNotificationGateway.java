@@ -28,11 +28,11 @@ public class DefaultAnnouncementNotificationGateway implements AnnouncementNotif
         }
 
         for (User recipient : recipients) {
-            if (recipient == null || recipient.getFcmToken() == null || recipient.getFcmToken().isBlank()) {
+            if (recipient == null) {
                 continue;
             }
-            notificationService.enqueuePush(
-                    recipient.getFcmToken(),
+            notificationService.enqueuePushToUser(
+                    recipient,
                     announcement.getTitle(),
                     announcement.getMessage(),
                     "ANNOUNCEMENT",

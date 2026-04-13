@@ -171,6 +171,14 @@ public class JobOrderService {
                 "ORDER",
                 String.valueOf(saved.getId())
         );
+        notificationService.enqueuePushToUserEmail(
+                saved.getCustomerEmail(),
+                "Order Created",
+                "Your order %s has been created."
+                        .formatted(saved.getTrackingNumber()),
+                "ORDER_CREATED",
+                saved.getTrackingNumber() + ":created"
+        );
         JobOrderResponse response = toResponse(saved);
         firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
         return response;
@@ -214,6 +222,14 @@ public class JobOrderService {
                             .formatted(jo.getTrackingNumber(), jo.getStatus()),
                     "ORDER_STATUS",
                     String.valueOf(jo.getId())
+            );
+            notificationService.enqueuePushToUserEmail(
+                    jo.getCustomerEmail(),
+                    "Order Status Updated",
+                    "Order %s is now %s."
+                            .formatted(jo.getTrackingNumber(), jo.getStatus().name().replace('_', ' ')),
+                    "ORDER_STATUS",
+                    jo.getTrackingNumber() + ":" + jo.getStatus().name()
             );
         }
 

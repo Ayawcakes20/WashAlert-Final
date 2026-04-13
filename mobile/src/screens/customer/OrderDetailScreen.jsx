@@ -6,28 +6,73 @@ import { Ionicons } from '@expo/vector-icons';
 import { bookings as bookingsApi, payments } from '../../services/api';
 import { Button } from '../../components';
 import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 
+const ORDER_PROGRESS_STEPS = [
+  { key: 'pending', label: 'Order Received', icon: 'cube-outline' },
+  { key: 'washing', label: 'Washing', icon: 'water-outline' },
+  { key: 'drying', label: 'Drying', icon: 'bonfire-outline' },
+  { key: 'ready', label: 'Ready', icon: 'checkmark-circle-outline' },
+  { key: 'delivering', label: 'Out for Delivery', icon: 'bus-outline' },
+  { key: 'delivered', label: 'Delivered', icon: 'checkmark-done-outline' },
+];
+
+const normalizeOrderStatus = (status) => {
+  const raw = String(status || '').trim().toLowerCase();
+  const map = {
+    received: 'pending',
+    pending: 'pending',
+    washing: 'washing',
+    drying: 'drying',
+    ready: 'ready',
+    pending_pickup: 'delivering',
+    en_route_to_pickup: 'delivering',
+    picked_up: 'delivering',
+    in_transit: 'delivering',
+    delivering: 'delivering',
+    delivered: 'delivered',
+    cancelled: 'cancelled',
+    failed: 'cancelled',
+  };
+  return map[raw] || raw || 'pending';
+};
+
+const formatStatusLabel = (status) =>
+  String(status || 'pending')
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, (s) => s.toUpperCase());
+
 const getStatusColor = (status) => {
-  switch (status) {
-    case 'received':
+  switch (normalizeOrderStatus(status)) {
+    case 'pending':
       return { bg: 'hsla(224, 82%, 48%, 0.1)', text: colors.primary };
     case 'washing':
+    case 'drying':
       return { bg: 'hsla(16, 100%, 56%, 0.1)', text: colors.warning };
     case 'ready':
       return { bg: 'hsla(156, 87%, 34%, 0.1)', text: colors.success };
+    case 'delivering':
+      return { bg: 'hsla(38, 92%, 50%, 0.1)', text: colors.warning };
     case 'delivered':
       return { bg: 'hsla(174, 79%, 44%, 0.1)', text: colors.accent };
-    default: return { bg: colors.border, text: colors.textSecondary };
+    case 'cancelled':
+      return { bg: 'hsla(0, 84%, 60%, 0.1)', text: colors.error };
+    default:
+      return { bg: colors.border, text: colors.textSecondary };
   }
+};
+
+const normalizeCheckoutUrl = (value) => {
+  if (!value) return null;
+  return String(value).trim();
 };
 
 const OrderDetailScreen = ({ route, navigation }) => {
   const { orderId } = route.params;
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [liveStatus, setLiveStatus] = useState(null); // tracks real-time override from Firestore
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   // Pulse animation for live indicator
@@ -61,17 +106,20 @@ const OrderDetailScreen = ({ route, navigation }) => {
           // Map Firestore status field to the mobile status format
           const rawStatus = (data.status || '').toLowerCase();
           const statusMap = {
-            pending: 'received',
+            pending: 'pending',
             washing: 'washing',
             drying: 'drying',
             ready: 'ready',
+            pending_pickup: 'delivering',
+            en_route_to_pickup: 'delivering',
             picked_up: 'delivering',
+            in_transit: 'delivering',
             delivered: 'delivered',
             cancelled: 'cancelled',
           };
           const mappedStatus = statusMap[rawStatus] || rawStatus;
           if (mappedStatus && mappedStatus !== order?.status) {
-            setLiveStatus(mappedStatus);
+            console.log('[OrderDetail] Firestore status update tracking=', trackingNumber, 'status=', mappedStatus);
             setOrder(prev => prev ? { ...prev, status: mappedStatus } : prev);
           }
         }
@@ -86,6 +134,7 @@ const OrderDetailScreen = ({ route, navigation }) => {
     try {
       setLoading(true);
       const data = await bookingsApi.getById(orderId);
+      console.log('[OrderDetail] Backend order loaded tracking=', data?.trackingNumber || data?.id, 'status=', data?.status);
       setOrder(data);
     } catch (error) {
       console.error('Error fetching order details:', error);
@@ -111,20 +160,24 @@ const OrderDetailScreen = ({ route, navigation }) => {
     );
   }
 
-  const sColor = getStatusColor(order.status?.toLowerCase());
+  const normalizedStatus = normalizeOrderStatus(order.status);
+  const sColor = getStatusColor(normalizedStatus);
 
   // Show a live indicator dot when real-time status is being tracked
   const isTracking = !!order?.trackingNumber;
+  const currentStepIndex = ORDER_PROGRESS_STEPS.findIndex((step) => step.key === normalizedStatus);
+  const completedSteps = currentStepIndex >= 0 ? currentStepIndex + 1 : 1;
+  const progressPercent = Math.max(10, Math.round((completedSteps / ORDER_PROGRESS_STEPS.length) * 100));
 
   // Default timeline if missing from API
-  const timeline = order.timeline || [
-    { step: "Order Received", time: order.date, done: true, icon: "cube-outline" },
-    { step: "Washing", time: "", done: ['washing', 'drying', 'ready', 'delivered'].includes(order.status), icon: "water-outline" },
-    { step: "Drying", time: "", done: ['drying', 'ready', 'delivered'].includes(order.status), icon: "bonfire-outline" },
-    { step: "Ready for Pickup", time: "", done: ['ready', 'delivered'].includes(order.status), icon: "checkmark-circle-outline" },
-    { step: "Out for Delivery", time: "", done: order.status === 'delivered', icon: "bus-outline" },
-    { step: "Delivered", time: "", done: order.status === 'delivered', icon: "checkmark-done-outline" },
-  ];
+  const timeline = (order.timeline && order.timeline.length
+    ? order.timeline
+    : ORDER_PROGRESS_STEPS.map((step, index) => ({
+        step: step.label,
+        time: index === 0 ? order.date : '',
+        done: index <= currentStepIndex,
+        icon: step.icon,
+      })));
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -146,7 +199,7 @@ const OrderDetailScreen = ({ route, navigation }) => {
               </View>
             )}
             <View style={[styles.badge, { backgroundColor: sColor.bg }]}>
-              <Text style={[styles.badgeText, { color: sColor.text }]}>{order.status}</Text>
+              <Text style={[styles.badgeText, { color: sColor.text }]}>{formatStatusLabel(normalizedStatus)}</Text>
             </View>
           </View>
         </View>
@@ -154,21 +207,31 @@ const OrderDetailScreen = ({ route, navigation }) => {
         {/* Progress Tracker */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Order Progress</Text>
-          <View style={styles.progressTracker}>
-            <View style={styles.progressLineBg} />
-            <View style={[styles.progressLineActive, { width: `${(timeline.filter(t => t.done).length / timeline.length) * 100}%` }]} />
-            
-            <View style={styles.progressNodesRow}>
-              {timeline.map((t, i) => (
-                <View key={i} style={styles.progressNodeWrap}>
-                  <View style={[styles.nodeCircle, t.done ? styles.nodeActive : styles.nodeInactive]}>
-                    <Ionicons name={t.done ? "checkmark" : t.icon} size={14} color={t.done ? colors.card : colors.textSecondary} />
-                  </View>
-                  <Text style={styles.nodeLabel} numberOfLines={2}>{t.step}</Text>
-                </View>
-              ))}
-            </View>
+          <View style={styles.progressBarTrack}>
+            <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
           </View>
+          <Text style={styles.progressSummary}>
+            Current: {formatStatusLabel(normalizedStatus)} ({completedSteps}/{ORDER_PROGRESS_STEPS.length})
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.progressChipsRow}>
+            {ORDER_PROGRESS_STEPS.map((step, index) => {
+              const done = index <= currentStepIndex;
+              const active = index === currentStepIndex;
+              return (
+                <View
+                  key={step.key}
+                  style={[styles.progressChip, done && styles.progressChipDone, active && styles.progressChipActive]}
+                >
+                  <Ionicons
+                    name={done ? 'checkmark' : step.icon}
+                    size={13}
+                    color={done ? colors.card : colors.textSecondary}
+                  />
+                  <Text style={[styles.progressChipText, done && styles.progressChipTextDone]}>{step.label}</Text>
+                </View>
+              );
+            })}
+          </ScrollView>
         </View>
 
         {/* Order Info */}
@@ -208,11 +271,34 @@ const OrderDetailScreen = ({ route, navigation }) => {
               style={[styles.trackBtn, { backgroundColor: colors.primary, marginTop: 16 }]}
               onPress={async () => {
                 try {
-                  const url = await payments.initiateGcashCheckout(order.trackingNumber || order.id);
-                  if (url) {
-                    await WebBrowser.openBrowserAsync(url);
+                  console.log('[OrderDetail][Payment] Initiating GCash checkout', order.trackingNumber || order.id);
+                  const rawUrl = await payments.initiateGcashCheckout(order.trackingNumber || order.id);
+                  const checkoutUrl = normalizeCheckoutUrl(rawUrl);
+                  if (!checkoutUrl || !/^https?:\/\//i.test(checkoutUrl)) {
+                    throw new Error('Checkout URL was not returned by backend.');
+                  }
+                  try {
+                    const browserResult = await WebBrowser.openBrowserAsync(checkoutUrl);
+                    console.log('[OrderDetail][Payment] Browser launch result=', browserResult?.type || 'unknown');
+                    if (browserResult?.type !== 'opened') {
+                      const canOpen = await Linking.canOpenURL(checkoutUrl);
+                      if (canOpen) {
+                        await Linking.openURL(checkoutUrl);
+                        console.log('[OrderDetail][Payment] Fallback Linking.openURL success');
+                      }
+                    }
+                  } catch (openError) {
+                    console.warn('[OrderDetail][Payment] WebBrowser launch failed, attempting Linking fallback');
+                    const canOpen = await Linking.canOpenURL(checkoutUrl);
+                    if (canOpen) {
+                      await Linking.openURL(checkoutUrl);
+                      console.log('[OrderDetail][Payment] Fallback Linking.openURL success');
+                    } else {
+                      throw openError;
+                    }
                   }
                 } catch (error) {
+                  console.error('[OrderDetail][Payment] Checkout launch failed:', error);
                   Alert.alert('Error', 'Could not initiate payment. Please try again.');
                 }
               }}
@@ -273,7 +359,7 @@ const OrderDetailScreen = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {order.status?.toLowerCase() === 'received' && (
+        {normalizedStatus === 'pending' && (
           <TouchableOpacity 
             style={[styles.callBtn, { borderColor: colors.error, marginTop: 12, height: 48, width: '100%' }]}
             onPress={() => {
@@ -321,15 +407,54 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colors.card, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.border, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
   cardTitle: { fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: 16 },
 
-  progressTracker: { position: 'relative' },
-  progressLineBg: { position: 'absolute', top: 16, left: '8%', right: '8%', height: 2, backgroundColor: colors.border },
-  progressLineActive: { position: 'absolute', top: 16, left: '8%', height: 2, backgroundColor: colors.primary, zIndex: 1 },
-  progressNodesRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  progressNodeWrap: { width: '16.6%', alignItems: 'center', zIndex: 2 },
-  nodeCircle: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  nodeActive: { backgroundColor: colors.primary },
-  nodeInactive: { backgroundColor: colors.border },
-  nodeLabel: { fontSize: 8, fontWeight: '500', color: colors.textSecondary, marginTop: 4, textAlign: 'center' },
+  progressBarTrack: {
+    height: 8,
+    borderRadius: 6,
+    backgroundColor: colors.border,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: 8,
+    borderRadius: 6,
+    backgroundColor: colors.primary,
+  },
+  progressSummary: {
+    marginTop: 10,
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  progressChipsRow: {
+    marginTop: 10,
+    gap: 8,
+    paddingRight: 8,
+  },
+  progressChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+  },
+  progressChipDone: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  progressChipActive: {
+    borderColor: colors.primary,
+  },
+  progressChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  progressChipTextDone: {
+    color: colors.card,
+  },
 
   receiptDivider: { height: 1, backgroundColor: colors.border, marginVertical: 12, borderStyle: 'dashed' },
 

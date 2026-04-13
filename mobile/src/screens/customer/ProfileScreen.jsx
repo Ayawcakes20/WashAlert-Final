@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
@@ -6,14 +6,15 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadImageAsync } from '../../services/storageService';
+import { profileApi } from '../../services/api';
 
 const MENU_GROUPS = [
   {
     title: "Account Settings",
     items: [
       { label: "Personal Information", icon: "person-outline", color: colors.primary, screen: 'EditProfile' },
-      { label: "Saved Addresses", icon: "location-outline", color: colors.accent, screen: 'Addresses' },
-      { label: "Payment Methods", icon: "card-outline", color: colors.success, screen: 'Payments' },
+      { label: "Saved Addresses", icon: "location-outline", color: colors.accent, screen: 'SavedAddresses' },
+      { label: "Payment Methods", icon: "card-outline", color: colors.success, screen: 'PaymentMethods' },
     ]
   },
   {
@@ -27,18 +28,22 @@ const MENU_GROUPS = [
     title: "Support",
     items: [
       { label: "Help & Support", icon: "help-circle-outline", color: colors.accent, screen: 'Chat' },
-      { label: "Terms & Conditions", icon: "document-text-outline", color: colors.textSecondary, screen: 'Legal' },
-      { label: "Privacy Policy", icon: "shield-checkmark-outline", color: colors.textSecondary, screen: 'Privacy' },
+      { label: "Terms & Conditions", icon: "document-text-outline", color: colors.textSecondary, screen: 'TermsAndConditions' },
+      { label: "Privacy Policy", icon: "shield-checkmark-outline", color: colors.textSecondary, screen: 'PrivacyPolicy' },
     ]
   }
 ];
 
 const ProfileScreen = ({ navigation }) => {
-  const { user, logout, firebaseIdToken } = useAuth();
+  const { user, logout, firebaseIdToken, updateUserProfile } = useAuth();
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
-  const [avatarUri, setAvatarUri] = useState('');
+  const [avatarUri, setAvatarUri] = useState(user?.profileImageUrl || '');
   const userName = user?.fullName || "User";
   const userEmail = user?.email || "No email on profile";
+
+  useEffect(() => {
+    setAvatarUri(user?.profileImageUrl || '');
+  }, [user?.profileImageUrl]);
 
   const handleAvatarUpload = async () => {
     try {
@@ -60,20 +65,40 @@ const ProfileScreen = ({ navigation }) => {
 
       setUploadingPhoto(true);
       const selectedAsset = result.assets[0];
+      console.log('[Profile][ImageUpload] Uploading selected image for user', user?.id);
       const upload = await uploadImageAsync(selectedAsset.uri, {
         idToken: firebaseIdToken,
         folder: `customers/${user?.id || 'unknown'}/profile-images`,
         fileName: `profile_${Date.now()}.jpg`,
       });
 
-      setAvatarUri(upload.downloadURL || selectedAsset.uri);
-      Alert.alert('Upload Successful', `Image uploaded to Firebase Storage.\nPath: ${upload.path}`);
+      const nextAvatar = upload.downloadURL || selectedAsset.uri;
+      await profileApi.updateProfile({
+        fullName: userName,
+        mobileNumber: user?.phone || '',
+        profileImageUrl: nextAvatar,
+      });
+      await updateUserProfile({ profileImageUrl: nextAvatar });
+      setAvatarUri(nextAvatar);
+      console.log('[Profile][ImageUpload] Profile image saved path=', upload.path);
+      Alert.alert('Upload Successful', 'Your profile image has been updated.');
     } catch (error) {
       console.error('[StorageUpload] Profile image upload failed:', error);
       Alert.alert('Upload Failed', error?.message || 'Unable to upload image right now.');
     } finally {
       setUploadingPhoto(false);
     }
+  };
+
+  const confirmSignOut = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign Out', style: 'destructive', onPress: () => logout() },
+      ]
+    );
   };
 
   return (
@@ -151,7 +176,7 @@ const ProfileScreen = ({ navigation }) => {
         ))}
 
         {/* Logout Button */}
-        <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
+        <TouchableOpacity style={styles.logoutBtn} onPress={confirmSignOut}>
           <MaterialCommunityIcons name="logout" size={20} color={colors.error} />
           <Text style={styles.logoutText}>Sign Out</Text>
         </TouchableOpacity>

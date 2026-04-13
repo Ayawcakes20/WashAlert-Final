@@ -5,6 +5,8 @@ public record MeResponse(
         String firebaseUid,
         String email,
         String fullName,
+        String mobileNumber,
+        String profileImageUrl,
         String role,
         String status,
         Long branchId,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View,
   Text,
@@ -16,10 +16,11 @@ import * as Location from 'expo-location';
 import { MapView, Marker, PROVIDER_GOOGLE } from '../../components/SafeMap';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { colors } from '../../theme/colors';
-import { typography } from '../../theme/typography';
 import { Card, Button } from '../../components';
 import { branches, laundry, createOrder, estimatePrice, payments } from '../../services/api';
+import { GOOGLE_MAPS_API_KEY } from '../../config/env';
 
 const { width } = Dimensions.get('window');
 
@@ -31,7 +32,48 @@ const TIME_SLOTS = [
   "5:00 PM - 7:00 PM",
 ];
 
+const SERVICE_ICON_BY_ID = {
+  wash: 'washing-machine',
+  dry: 'tumble-dryer',
+  'ecowash-full': 'leaf',
+  'basic-full-7': 'tshirt-crew-outline',
+  'basic-full-8': 'tshirt-crew-outline',
+  'premium-full-7': 'star-four-points-outline',
+  'premium-full-8': 'star-four-points-outline',
+  handwash: 'hand-wash',
+};
+
+const resolveServiceIcon = (service = {}) => {
+  const byId = SERVICE_ICON_BY_ID[String(service.id || '').toLowerCase()];
+  if (byId) return byId;
+  const byName = String(service.name || '').toLowerCase();
+  if (byName.includes('dry')) return 'tumble-dryer';
+  if (byName.includes('handwash')) return 'hand-wash';
+  if (byName.includes('premium')) return 'star-four-points-outline';
+  if (byName.includes('wash')) return 'washing-machine';
+  return 'washing-machine';
+};
+
+const normalizeCheckoutUrl = (payload) => {
+  const candidate = payload?.checkout_url || payload?.checkoutUrl || payload?.url || payload || null;
+  if (!candidate) return null;
+  return String(candidate).trim();
+};
+
+const formatAddressFromGeo = (geo = {}, fallbackLat, fallbackLng) => {
+  const parts = [
+    geo.name,
+    geo.street,
+    geo.subregion,
+    geo.city,
+    geo.region,
+  ].filter(Boolean);
+  if (parts.length) return parts.join(', ');
+  return `Pinned location (${fallbackLat.toFixed(6)}, ${fallbackLng.toFixed(6)})`;
+};
+
 const BookingScreen = ({ route, navigation }) => {
+  const insets = useSafeAreaInsets();
   const preSelectedServiceId = route.params?.serviceId;
 
   const [step, setStep] = useState(1);
@@ -56,6 +98,8 @@ const BookingScreen = ({ route, navigation }) => {
   const [isRush, setIsRush] = useState(false);
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('gcash');
+  const [deliveryLocationError, setDeliveryLocationError] = useState('');
+  const [resolvingLocation, setResolvingLocation] = useState(false);
   const [priceDetails, setPriceDetails] = useState({
     deliveryPrice: 0,
     totalPrice: 0
@@ -72,12 +116,15 @@ const BookingScreen = ({ route, navigation }) => {
     latitudeDelta: 0.005,
     longitudeDelta: 0.005,
   });
-
-  const GOOGLE_MAPS_API_KEY = 'AIzaSyAzAGBAijqpEZki3ZZBYe-9rxtzjF55RSY';
+  const hasMapsApiKey = !!String(GOOGLE_MAPS_API_KEY || '').trim();
 
   useEffect(() => {
     loadInitialData();
   }, []);
+
+  useEffect(() => {
+    console.log(`GOOGLE MAPS KEY LOADED: ${hasMapsApiKey ? 'YES' : 'NO'}`);
+  }, [hasMapsApiKey]);
 
   const loadInitialData = async () => {
     try {
@@ -111,6 +158,12 @@ const BookingScreen = ({ route, navigation }) => {
       handleEstimate();
     }
   }, [selectedService, loadKg, isRush, selectedDetergent, selectedConditioner, requestDelivery, selectedBranch]);
+
+  useEffect(() => {
+    if (!requestDelivery) {
+      setDeliveryLocationError('');
+    }
+  }, [requestDelivery]);
 
   const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Radius of the earth in km
@@ -162,7 +215,61 @@ const BookingScreen = ({ route, navigation }) => {
     return priceDetails.totalPrice;
   };
 
+  const isDeliveryLocationValid = () => {
+    if (!requestDelivery) return true;
+    const hasCoords =
+      Number.isFinite(Number(deliveryCoords?.latitude)) &&
+      Number.isFinite(Number(deliveryCoords?.longitude));
+    const hasAddress = !!String(deliveryCoords?.address || '').trim();
+    return hasCoords && hasAddress;
+  };
+
+  const syncAddressFromCoordinates = async (latitude, longitude, reason = 'unknown') => {
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+    try {
+      setResolvingLocation(true);
+      console.log(`[Booking][Location] Resolving address from coordinates reason=${reason} lat=${latitude} lng=${longitude}`);
+      const reverse = await Location.reverseGeocodeAsync({ latitude, longitude });
+      const first = Array.isArray(reverse) && reverse.length ? reverse[0] : null;
+      const resolvedAddress = formatAddressFromGeo(first || {}, latitude, longitude);
+      setDeliveryCoords((prev) => ({
+        ...prev,
+        latitude,
+        longitude,
+        address: resolvedAddress,
+      }));
+      setDeliveryLocationError('');
+      console.log('[Booking][Location] Address resolved=', resolvedAddress);
+    } catch (error) {
+      console.warn('[Booking][Location] Reverse geocode failed:', error?.message || error);
+      setDeliveryCoords((prev) => ({
+        ...prev,
+        latitude,
+        longitude,
+        address: prev?.address || `Pinned location (${latitude.toFixed(6)}, ${longitude.toFixed(6)})`,
+      }));
+    } finally {
+      setResolvingLocation(false);
+    }
+  };
+
+  const handleStep3Continue = () => {
+    if (!isDeliveryLocationValid()) {
+      setDeliveryLocationError('Delivery location is required. Please pin or search your delivery address before continuing.');
+      return;
+    }
+    setDeliveryLocationError('');
+    setStep(4);
+  };
+
   const handleConfirmBooking = async () => {
+    if (!isDeliveryLocationValid()) {
+      setStep(3);
+      setDeliveryLocationError('Delivery location is required before placing this booking.');
+      Alert.alert('Delivery Location Required', 'Please provide a valid delivery location before placing your booking.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const orderData = {
@@ -189,17 +296,32 @@ const BookingScreen = ({ route, navigation }) => {
       };
 
       const result = await createOrder(orderData);
+      const trackingNumber = String(result?.trackingNumber || '').trim();
+      if (!trackingNumber) {
+        throw new Error('Booking created without a tracking number, cannot continue to payment.');
+      }
       
       if (paymentMethod === 'gcash') {
         try {
-          const checkout = await payments.initiateGcashCheckout(result.trackingNumber);
-          if (checkout && checkout.checkout_url) {
-            await WebBrowser.openBrowserAsync(checkout.checkout_url);
-          } else {
-            throw new Error('Failed to generate payment link');
+          console.log('[Booking][Payment] Initiating GCash checkout tracking=', trackingNumber);
+          const checkoutPayload = await payments.initiateGcashCheckout(trackingNumber);
+          const checkoutUrl = normalizeCheckoutUrl(checkoutPayload);
+          if (!checkoutUrl || !/^https?:\/\//i.test(checkoutUrl)) {
+            console.error('[Booking][Payment] Invalid checkout URL payload=', checkoutPayload);
+            throw new Error('Missing checkout URL from backend payment response.');
+          }
+          console.log('[Booking][Payment] Opening checkout URL', checkoutUrl);
+          try {
+            const browserResult = await WebBrowser.openBrowserAsync(checkoutUrl);
+            console.log('[Booking][Payment] Browser launch result type=', browserResult?.type || 'unknown');
+          } catch (openError) {
+            console.warn('[Booking][Payment] WebBrowser launch failed, trying Linking.openURL');
+            const canOpen = await Linking.canOpenURL(checkoutUrl);
+            if (!canOpen) throw openError;
+            await Linking.openURL(checkoutUrl);
           }
         } catch (payError) {
-          console.error('Payment initiation failed:', payError);
+          console.error('[Booking][Payment] Payment initiation failed:', payError);
           Alert.alert(
             'Payment Error',
             'Booking was created but we could not open the payment gateway. Please go to Orders to pay.',
@@ -211,7 +333,7 @@ const BookingScreen = ({ route, navigation }) => {
 
       Alert.alert(
         'Booking Confirmed!',
-        `Your tracking number is ${result.trackingNumber}. You can view the status in the Orders tab.`,
+        `Your tracking number is ${trackingNumber}. You can view the status in the Orders tab.`,
         [{ text: 'View Order', onPress: () => {
           setStep(1);
           navigation.navigate('Orders');
@@ -227,18 +349,22 @@ const BookingScreen = ({ route, navigation }) => {
 
   const handleUseCurrentLocation = async () => {
     try {
+      console.log('[Booking][Location] Use current location requested');
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission denied', 'Allow location access to use this feature.');
         return;
       }
-      const loc = await Location.getCurrentPositionAsync({});
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
       const newCoords = {
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
       };
-      setDeliveryCoords(prev => ({ ...prev, ...newCoords }));
-      setMapRegion(prev => ({ ...prev, ...newCoords }));
+      setMapRegion((prev) => ({ ...prev, ...newCoords }));
+      await syncAddressFromCoordinates(newCoords.latitude, newCoords.longitude, 'current_location');
+      setDeliveryLocationError('');
     } catch (e) {
       Alert.alert('Error', 'Unable to fetch current location.');
     }
@@ -275,7 +401,11 @@ const BookingScreen = ({ route, navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 150 + insets.bottom }]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.screenTitle}>New Booking</Text>
         
         {renderStepIndicator()}
@@ -295,7 +425,7 @@ const BookingScreen = ({ route, navigation }) => {
                   onPress={() => setSelectedBranch(branch)}
                 >
                   <Ionicons 
-                    name="map-marker" 
+                    name="location-outline"
                     size={20} 
                     color={selectedBranch?.id === branch.id ? colors.primary : colors.textSecondary} 
                   />
@@ -319,7 +449,7 @@ const BookingScreen = ({ route, navigation }) => {
                   onPress={() => setSelectedService(service)}
                 >
                   <MaterialCommunityIcons 
-                    name={service.icon} 
+                    name={resolveServiceIcon(service)} 
                     size={28} 
                     color={selectedService?.id === service.id ? colors.white : colors.primary} 
                   />
@@ -468,6 +598,11 @@ const BookingScreen = ({ route, navigation }) => {
                <View style={styles.addressSection}>
                  <Text style={styles.sectionTitle}>Pin Delivery Location</Text>
                  <Text style={styles.addressTip}>Search for your address or drag the pin to your exact spot.</Text>
+                 {!hasMapsApiKey && (
+                  <Text style={styles.deliveryErrorText}>
+                    Google Maps API key is not configured. Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY to enable autocomplete.
+                  </Text>
+                 )}
                  
                  <GooglePlacesAutocomplete
                     placeholder='Type your neighborhood or street...'
@@ -479,25 +614,46 @@ const BookingScreen = ({ route, navigation }) => {
                           longitude: loc.lng,
                           address: data.description
                         };
+                        console.log('[Booking][Location] Place selected address=', data.description);
+                        console.log('[Booking][Location] Autocomplete result coords=', loc.lat, loc.lng);
                         setDeliveryCoords(newCoords);
+                        setDeliveryLocationError('');
                         setMapRegion(prev => ({
                           ...prev,
                           latitude: loc.lat,
                           longitude: loc.lng,
                         }));
+                      } else {
+                        console.log('[Booking][Location] Autocomplete press without details payload');
                       }
                     }}
                     query={{
                       key: GOOGLE_MAPS_API_KEY,
                       language: 'en',
-                      components: 'country:ph', // Philippines scope
+                      components: 'country:ph',
+                      types: 'geocode',
                     }}
+                    minLength={2}
+                    debounce={250}
                     fetchDetails={true}
+                    nearbyPlacesAPI="GooglePlacesSearch"
+                    onFail={(error) => {
+                      console.warn('[Booking][Location] Places autocomplete failed:', error);
+                    }}
+                    onNotFound={() => {
+                      console.log('[Booking][Location] Places autocomplete: no results found');
+                    }}
+                    listViewDisplayed
                     styles={{
                       container: styles.autocompleteContainer,
                       textInput: styles.autocompleteInput,
+                      listView: styles.autocompleteListView,
+                      row: styles.autocompleteRow,
                     }}
-                    listViewDisplayed="auto"
+                    textInputProps={{
+                      placeholderTextColor: colors.textTertiary,
+                      editable: hasMapsApiKey,
+                    }}
                  />
 
                  <TouchableOpacity 
@@ -510,18 +666,44 @@ const BookingScreen = ({ route, navigation }) => {
 
                  <View style={styles.mapPinContainer}>
                    <MapView
-                    provider={PROVIDER_GOOGLE}
-                    style={styles.minMap}
-                    region={mapRegion}
-                    onRegionChangeComplete={(region) => setMapRegion(region)}
+                     style={styles.minMap}
+                     provider={PROVIDER_GOOGLE}
+                     initialRegion={mapRegion}
+                     region={mapRegion}
+                     onRegionChangeComplete={(region) => setMapRegion(region)}
+                     onMapReady={() =>
+                       console.log(
+                         '[Booking][Map] Map initialized provider=google lat=',
+                         mapRegion.latitude,
+                         'lng=',
+                         mapRegion.longitude
+                       )
+                     }
+                    onPress={(event) => {
+                      const coordinate = event?.nativeEvent?.coordinate;
+                      if (!coordinate) return;
+                      void syncAddressFromCoordinates(
+                        coordinate.latitude,
+                        coordinate.longitude,
+                        'map_press'
+                      );
+                    }}
                    >
                      <Marker
-                        coordinate={deliveryCoords}
+                        coordinate={{
+                          latitude: deliveryCoords.latitude,
+                          longitude: deliveryCoords.longitude,
+                        }}
                         draggable
-                        onDragEnd={(e) => setDeliveryCoords(prev => ({
-                          ...prev,
-                          ...e.nativeEvent.coordinate
-                        }))}
+                        onDragEnd={(e) => {
+                          const coordinate = e?.nativeEvent?.coordinate;
+                          if (!coordinate) return;
+                          void syncAddressFromCoordinates(
+                            coordinate.latitude,
+                            coordinate.longitude,
+                            'marker_drag'
+                          );
+                        }}
                         title="Delivery Spot"
                         description="Drag to fine-tune"
                      />
@@ -533,12 +715,22 @@ const BookingScreen = ({ route, navigation }) => {
                  <Text style={styles.coordsInfo}>
                     Pos: {deliveryCoords.latitude.toFixed(6)}, {deliveryCoords.longitude.toFixed(6)}
                  </Text>
+                 <Text style={styles.selectedAddressText}>
+                  {deliveryCoords.address ? `Address: ${deliveryCoords.address}` : 'Address not set yet.'}
+                 </Text>
+                 {resolvingLocation && <Text style={styles.locationResolvingText}>Resolving pinned address...</Text>}
+                 {!!deliveryLocationError && <Text style={styles.deliveryErrorText}>{deliveryLocationError}</Text>}
                </View>
             )}
 
             <View style={styles.buttonRow}>
               <Button title="Back" variant="ghost" onPress={() => setStep(2)} style={styles.halfButton} />
-              <Button title="Continue" onPress={() => setStep(4)} style={styles.halfButton} />
+              <Button
+                title="Continue"
+                onPress={handleStep3Continue}
+                disabled={resolvingLocation}
+                style={styles.halfButton}
+              />
             </View>
           </View>
         )}
@@ -660,8 +852,6 @@ const BookingScreen = ({ route, navigation }) => {
             </View>
           </View>
         )}
-
-        <View style={{ height: 60 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -951,6 +1141,7 @@ const styles = StyleSheet.create({
   autocompleteContainer: {
     flex: 0,
     zIndex: 10,
+    elevation: 10,
   },
   autocompleteInput: {
     height: 50,
@@ -960,6 +1151,19 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     paddingHorizontal: 16,
     fontSize: 14,
+  },
+  autocompleteListView: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    marginTop: 6,
+    zIndex: 20,
+    elevation: 20,
+  },
+  autocompleteRow: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
   },
   locationBtn: {
     flexDirection: 'row',
@@ -995,6 +1199,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textTertiary,
     textAlign: 'right',
+  },
+  selectedAddressText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  locationResolvingText: {
+    fontSize: 11,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  deliveryErrorText: {
+    fontSize: 12,
+    color: colors.error,
+    fontWeight: '600',
   },
   toggleSwitch: {
     width: 52,

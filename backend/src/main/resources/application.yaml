@@ -77,6 +77,10 @@ washalert:
       max-attempts: ${PAYMENT_WEBHOOK_MAX_ATTEMPTS:5}
       retry-delay-minutes: ${PAYMENT_WEBHOOK_RETRY_DELAY_MINUTES:5}
       retry-interval-ms: ${PAYMENT_WEBHOOK_RETRY_INTERVAL_MS:60000}
+  paymongo:
+    secret-key: ${PAYMONGO_SECRET_KEY:}
+    public-key: ${PAYMONGO_PUBLIC_KEY:}
+    webhook-secret: ${PAYMONGO_WEBHOOK_SECRET:}
   notification:
     max-attempts: ${NOTIFICATION_MAX_ATTEMPTS:5}
     retry-delay-minutes: ${NOTIFICATION_RETRY_DELAY_MINUTES:2}
@@ -87,3 +91,7 @@ washalert:
     service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH}
     service-account-base64: ${FIREBASE_SERVICE_ACCOUNT_BASE64:}
     backfill-on-startup: ${FIREBASE_BACKFILL_ON_STARTUP:false}
+  openai:
+    api-key: ${OPENAI_API_KEY:}
+    model: ${OPENAI_MODEL:gpt-4o-mini}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}

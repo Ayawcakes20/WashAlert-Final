@@ -89,6 +89,12 @@ public class User {
     @Column(name = "fcm_token")
     private String fcmToken;
 
+    @Column(name = "mobile_number", length = 20)
+    private String mobileNumber;
+
+    @Column(name = "profile_image_url", length = 1000)
+    private String profileImageUrl;
+
     @PrePersist
     void onCreate() {
         LocalDateTime now = LocalDateTime.now();

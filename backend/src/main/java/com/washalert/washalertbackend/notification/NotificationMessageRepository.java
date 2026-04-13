@@ -10,4 +10,12 @@ public interface NotificationMessageRepository extends JpaRepository<Notificatio
             List<NotificationStatus> statuses,
             LocalDateTime nextAttemptAt
     );
+
+    boolean existsByChannelAndRecipientAndRelatedTypeAndRelatedIdAndStatusIn(
+            NotificationChannel channel,
+            String recipient,
+            String relatedType,
+            String relatedId,
+            List<NotificationStatus> statuses
+    );
 }

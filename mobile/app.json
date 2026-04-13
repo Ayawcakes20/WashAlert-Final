@@ -16,6 +16,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "package": "com.washalert.mobile",
+      "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyAzAGBAijqpEZki3ZZBYe-9rxtzjF55RSY"
@@ -23,9 +24,12 @@
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
+        "POST_NOTIFICATIONS",
         "ACCESS_BACKGROUND_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ],
       "predictiveBackGestureEnabled": false
     },
@@ -66,10 +70,24 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow WashAlert to track your location for real-time delivery updates."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#1d4ed8",
+          "defaultChannel": "washalert-updates"
+        }
       ]
     ],
     "experiments": {
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "845aec17-c683-45c6-82ad-37b352f6bc08"
+      }
+    },
+    "owner": "ayawcakes20"
   }
 }

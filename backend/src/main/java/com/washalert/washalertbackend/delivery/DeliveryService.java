@@ -126,24 +126,29 @@ public class DeliveryService {
                 "DELIVERY",
                 String.valueOf(saved.getId())
         );
+        notificationService.enqueuePushToUserEmail(
+                customerEmail,
+                "Driver Assigned",
+                "A driver is assigned for order %s.".formatted(saved.getJobOrder().getTrackingNumber()),
+                "DELIVERY_ASSIGNED_CUSTOMER",
+                saved.getJobOrder().getTrackingNumber() + ":assigned"
+        );
 
         // Notify Driver by push — use linked User account if available, otherwise fallback to name lookup
         Optional<User> driverOpt = driverUser != null
                 ? Optional.of(driverUser)
                 : userRepository.findAllByRoleAndFullName(Role.DRIVER, saved.getDriverName()).stream().findFirst();
 
-        driverOpt.ifPresent(driver -> {
-            if (driver.getFcmToken() != null) {
-                notificationService.enqueuePush(
-                        driver.getFcmToken(),
+        driverOpt.ifPresent(driver ->
+                notificationService.enqueuePushToUser(
+                        driver,
                         "New Delivery Job Assigned",
                         "You have been assigned to order %s. Pickup at %s."
                                 .formatted(saved.getJobOrder().getTrackingNumber(), saved.getJobOrder().getBranch()),
                         "DELIVERY_ASSIGNED",
-                        String.valueOf(saved.getId())
-                );
-            }
-        });
+                        saved.getJobOrder().getTrackingNumber() + ":assigned"
+                )
+        );
 
         firestoreSyncService.upsert("deliveries", saved.getJobOrder().getTrackingNumber(), toResponse(saved));
         return toResponse(saved);
@@ -268,27 +273,33 @@ public class DeliveryService {
                 "DELIVERY_STATUS",
                 String.valueOf(saved.getId())
         );
-
-        // Push notification to Customer
-        userRepository.findByEmail(saved.getJobOrder().getCustomerEmail())
-                .ifPresent(customer -> {
-                    if (customer.getFcmToken() != null) {
-                        String title = "Delivery Update";
-                        String body = "Your laundry is now %s!".formatted(saved.getStatus().toString().toLowerCase().replace('_', ' '));
-                        if (saved.getStatus() == DeliveryStatus.PICKED_UP) {
-                             body = "Your driver has picked up your laundry and is now heading to you!";
-                        } else if (saved.getStatus() == DeliveryStatus.DELIVERED) {
-                             body = "Your laundry has been delivered. Thank you for using WashAlert!";
-                        }
-                        notificationService.enqueuePush(
-                                customer.getFcmToken(),
-                                title,
-                                body,
-                                "DELIVERY_UPDATE",
-                                saved.getJobOrder().getTrackingNumber()
-                        );
-                    }
-                });
+        String customerBody = "Your laundry is now %s."
+                .formatted(saved.getStatus().toString().toLowerCase().replace('_', ' '));
+        if (saved.getStatus() == DeliveryStatus.EN_ROUTE_TO_PICKUP || saved.getStatus() == DeliveryStatus.IN_TRANSIT) {
+            customerBody = "Your order %s is out for delivery."
+                    .formatted(saved.getJobOrder().getTrackingNumber());
+        } else if (saved.getStatus() == DeliveryStatus.PICKED_UP) {
+            customerBody = "Your driver has picked up your laundry and is now heading to you.";
+        } else if (saved.getStatus() == DeliveryStatus.DELIVERED) {
+            customerBody = "Your laundry has arrived. Delivery completed.";
+        }
+        notificationService.enqueuePushToUserEmail(
+                saved.getJobOrder().getCustomerEmail(),
+                "Delivery Update",
+                customerBody,
+                "DELIVERY_UPDATE",
+                saved.getJobOrder().getTrackingNumber() + ":" + saved.getStatus().name()
+        );
+        if (saved.getDriverUser() != null) {
+            notificationService.enqueuePushToUser(
+                    saved.getDriverUser(),
+                    "Delivery Status Changed",
+                    "Order %s is now %s."
+                            .formatted(saved.getJobOrder().getTrackingNumber(), saved.getStatus().name().replace('_', ' ')),
+                    "DRIVER_DELIVERY_STATUS",
+                    saved.getJobOrder().getTrackingNumber() + ":" + saved.getStatus().name()
+            );
+        }
 
         firestoreSyncService.upsert("deliveries", saved.getJobOrder().getTrackingNumber(), toResponse(saved));
         return toResponse(saved);
@@ -304,12 +315,24 @@ public class DeliveryService {
 
         delivery.setDriverName(req.driverName().trim());
         delivery.setDriverPhone(req.driverPhone().trim());
+        userRepository.findAllByRoleAndFullName(Role.DRIVER, req.driverName().trim()).stream().findFirst()
+                .ifPresent(delivery::setDriverUser);
         delivery.setEstimatedArrivalAt(req.estimatedArrivalAt());
         if (req.notes() != null) {
             delivery.setNotes(blankToNull(req.notes()));
         }
 
         DeliveryOrder saved = deliveryRepository.save(delivery);
+        if (saved.getDriverUser() != null) {
+            notificationService.enqueuePushToUser(
+                    saved.getDriverUser(),
+                    "Route/Assignment Updated",
+                    "Delivery assignment for order %s was updated."
+                            .formatted(saved.getJobOrder().getTrackingNumber()),
+                    "DRIVER_ASSIGNMENT_UPDATE",
+                    saved.getJobOrder().getTrackingNumber() + ":assignment-update"
+            );
+        }
         firestoreSyncService.upsert("deliveries", saved.getJobOrder().getTrackingNumber(), toResponse(saved));
         return toResponse(saved);
     }

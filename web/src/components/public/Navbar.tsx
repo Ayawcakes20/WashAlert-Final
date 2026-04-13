@@ -41,9 +41,10 @@ export default function Navbar() {
 
   return (
     <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${navBg}`}>
-      <div className="max-w-7xl mx-auto px-6 flex items-center justify-between h-16 lg:h-20">
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[1400px] h-16 lg:h-20 flex items-center">
         {/* Logo */}
-        <Link to="/" className="flex items-center gap-2.5">
+        <Link to="/" className="flex items-center gap-2.5 shrink-0">
           <div className="w-9 h-9 rounded-md bg-primary flex items-center justify-center">
             <svg viewBox="0 0 24 24" className="w-5 h-5 text-primary-foreground" fill="none" stroke="currentColor" strokeWidth="2">
               <rect x="4" y="4" width="16" height="16" rx="2" />
@@ -63,7 +64,7 @@ export default function Navbar() {
         </Link>
 
         {/* Center nav links */}
-        <nav className="hidden lg:flex items-center gap-8">
+        <nav className="hidden xl:flex flex-1 items-center justify-center gap-8 px-10">
           {navLinks.map((link) =>
             link.children ? (
               <div
@@ -109,7 +110,7 @@ export default function Navbar() {
         </nav>
 
         {/* Right side buttons */}
-        <div className="hidden lg:flex items-center gap-3">
+        <div className="hidden md:flex items-center gap-3 ml-auto">
           <Link
             to="/branches-public"
             className={`text-sm font-medium px-5 py-2 rounded-sm border transition-all ${
@@ -127,16 +128,17 @@ export default function Navbar() {
             <svg viewBox="0 0 20 20" className="w-4 h-4" fill="currentColor">
               <path d="M10 2a4 4 0 00-4 4v2H5a1 1 0 00-1 1v7a2 2 0 002 2h8a2 2 0 002-2V9a1 1 0 00-1-1h-1V6a4 4 0 00-4-4zm2 6V6a2 2 0 10-4 0v2h4z" />
             </svg>
-            Login
+            Log-in
           </Link>
         </div>
 
         <button
           onClick={() => setMobileOpen(!mobileOpen)}
-          className={`lg:hidden p-2 ${textColor}`}
+          className={`xl:hidden p-2 ${textColor} ml-2`}
         >
           {mobileOpen ? <FiX className="w-6 h-6" /> : <FiMenu className="w-6 h-6" />}
         </button>
+      </div>
       </div>
 
       <AnimatePresence>

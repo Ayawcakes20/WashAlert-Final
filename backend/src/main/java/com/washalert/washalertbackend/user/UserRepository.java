@@ -18,4 +18,5 @@ public interface UserRepository extends JpaRepository<User, Long> {
     List<User> findByRoleIn(List<Role> roles);
     List<User> findAllByRoleAndFullName(Role role, String fullName);
     List<User> findByRoleAndBranchIgnoreCase(Role role, String branch);
+    List<User> findAllByFcmToken(String fcmToken);
 }

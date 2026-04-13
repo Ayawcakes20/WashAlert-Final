@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
@@ -22,17 +22,28 @@ const MENU_GROUPS = [
   {
     title: 'Settings',
     items: [
-      { label: 'Notification Settings', icon: 'notifications-outline',        color: colors.warning },
-      { label: 'Terms & Conditions',    icon: 'document-text-outline',        color: colors.textSecondary },
-      { label: 'Privacy Policy',        icon: 'shield-checkmark-outline',     color: colors.textSecondary },
-      { label: 'Help & Support',        icon: 'help-circle-outline',          color: colors.accent },
+      { label: 'Notification Settings', icon: 'notifications-outline',        color: colors.warning, screen: 'DriverNotifications' },
+      { label: 'Terms & Conditions',    icon: 'document-text-outline',        color: colors.textSecondary, screen: 'TermsAndConditions' },
+      { label: 'Privacy Policy',        icon: 'shield-checkmark-outline',     color: colors.textSecondary, screen: 'PrivacyPolicy' },
+      { label: 'Help & Support',        icon: 'help-circle-outline',          color: colors.accent, screen: 'Chat' },
     ],
   },
 ];
 
-const DriverProfileScreen = () => {
+const DriverProfileScreen = ({ navigation }) => {
   const { user, logout } = useAuth();
   const firstName = user?.fullName?.split(' ')[0] || 'Driver';
+
+  const confirmSignOut = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign Out', style: 'destructive', onPress: () => logout() },
+      ]
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -96,6 +107,13 @@ const DriverProfileScreen = () => {
                   key={item.label}
                   style={[styles.menuRow, i < group.items.length - 1 && styles.menuRowBorder]}
                   activeOpacity={0.7}
+                  onPress={() => {
+                    if (item.screen) {
+                      navigation.navigate(item.screen);
+                      return;
+                    }
+                    Alert.alert('Coming Soon', `${item.label} is not yet available in this build.`);
+                  }}
                 >
                   <View style={[styles.menuIconBox, { backgroundColor: item.color + '15' }]}>
                     <Ionicons name={item.icon} size={18} color={item.color} />
@@ -109,7 +127,7 @@ const DriverProfileScreen = () => {
         ))}
 
         {/* ── Logout ────────────────────────────────────────────────── */}
-        <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.8}>
+        <TouchableOpacity style={styles.logoutBtn} onPress={confirmSignOut} activeOpacity={0.8}>
           <Ionicons name="log-out-outline" size={19} color={colors.error} />
           <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>

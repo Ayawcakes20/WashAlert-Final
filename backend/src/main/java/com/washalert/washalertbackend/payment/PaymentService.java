@@ -2,6 +2,8 @@ package com.washalert.washalertbackend.payment;
 
 import com.washalert.washalertbackend.orders.JobOrder;
 import com.washalert.washalertbackend.orders.JobOrderRepository;
+import com.washalert.washalertbackend.orders.JobOrderStatus;
+import com.washalert.washalertbackend.orders.JobOrderTimelineService;
 import com.washalert.washalertbackend.payment.dto.PaymentResponse;
 import com.washalert.washalertbackend.payment.dto.SubmitPaymentProofRequest;
 import com.washalert.washalertbackend.payment.dto.VerifyPaymentRequest;
@@ -10,6 +12,8 @@ import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
 import jakarta.transaction.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -17,22 +21,26 @@ import java.util.List;
 
 @Service
 public class PaymentService {
+    private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
 
     private final PaymentRecordRepository paymentRepository;
     private final JobOrderRepository orderRepository;
     private final NotificationService notificationService;
     private final PaymongoService paymongoService;
+    private final JobOrderTimelineService timelineService;
 
     public PaymentService(
             PaymentRecordRepository paymentRepository,
             JobOrderRepository orderRepository,
             NotificationService notificationService,
-            PaymongoService paymongoService
+            PaymongoService paymongoService,
+            JobOrderTimelineService timelineService
     ) {
         this.paymentRepository = paymentRepository;
         this.orderRepository = orderRepository;
         this.notificationService = notificationService;
         this.paymongoService = paymongoService;
+        this.timelineService = timelineService;
     }
 
     @Transactional
@@ -65,6 +73,14 @@ public class PaymentService {
                         .formatted(saved.getJobOrder().getTrackingNumber()),
                 "PAYMENT",
                 String.valueOf(saved.getId())
+        );
+        notificationService.enqueuePushToUserEmail(
+                saved.getJobOrder().getCustomerEmail(),
+                "Payment Proof Received",
+                "Payment proof for order %s is pending verification."
+                        .formatted(saved.getJobOrder().getTrackingNumber()),
+                "PAYMENT_PENDING",
+                saved.getJobOrder().getTrackingNumber() + ":pending"
         );
         return toResponse(saved);
     }
@@ -129,12 +145,25 @@ public class PaymentService {
                 "PAYMENT_STATUS",
                 String.valueOf(saved.getId())
         );
+        String paymentBody = Boolean.TRUE.equals(req.approved())
+                ? "Payment confirmed for order %s."
+                .formatted(saved.getJobOrder().getTrackingNumber())
+                : "Payment for order %s was rejected. Please review and resubmit."
+                .formatted(saved.getJobOrder().getTrackingNumber());
+        notificationService.enqueuePushToUserEmail(
+                saved.getJobOrder().getCustomerEmail(),
+                Boolean.TRUE.equals(req.approved()) ? "Payment Confirmed" : "Payment Rejected",
+                paymentBody,
+                "PAYMENT_STATUS",
+                saved.getJobOrder().getTrackingNumber() + ":" + saved.getStatus().name()
+        );
         return toResponse(saved);
     }
 
     @Transactional
     public String initiateGcashCheckout(String trackingNumber) {
         String tracking = normalizeTracking(trackingNumber);
+        log.info("[PAYMENT][GCASH] Initiating checkout request tracking={}", tracking);
         JobOrder order = orderRepository.findByTrackingNumber(tracking)
                 .orElseThrow(() -> new IllegalArgumentException("Order not found."));
 
@@ -151,7 +180,19 @@ public class PaymentService {
         payment.setStatus(PaymentStatus.PENDING);
         paymentRepository.save(payment);
 
-        return paymongoService.createCheckoutSession(order);
+        String checkoutUrl = paymongoService.createCheckoutSession(order);
+        if (checkoutUrl == null || checkoutUrl.isBlank()) {
+            log.error("[PAYMENT][GCASH] PayMongo returned empty checkout URL tracking={}", tracking);
+            throw new IllegalStateException("Unable to generate GCash checkout URL.");
+        }
+        log.info("CHECKOUT URL GENERATED: {}", checkoutUrl);
+        if (order.getStatus() == JobOrderStatus.PENDING) {
+            order.setStatus(JobOrderStatus.WASHING);
+            orderRepository.save(order);
+            timelineService.log(order, order.getStatus(), "system", "GCash checkout initiated");
+            log.info("[PAYMENT][GCASH] Order status advanced to {} tracking={}", order.getStatus(), tracking);
+        }
+        return checkoutUrl;
     }
 
     private PaymentResponse toResponse(PaymentRecord p) {

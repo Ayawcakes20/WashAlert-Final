@@ -6,6 +6,7 @@ import AppNavigator from './src/navigation/AppNavigation';
 import * as TaskManager from 'expo-task-manager';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './src/services/firebase';
+import PushNotificationBridge from './src/components/PushNotificationBridge';
 
 const LOCATION_TRACKING_TASK = 'LOCATION_TRACKING_TASK';
 
@@ -31,6 +32,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
+        <PushNotificationBridge />
         <AppNavigator />
       </AuthProvider>
     </SafeAreaProvider>

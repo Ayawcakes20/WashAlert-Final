@@ -12,6 +12,7 @@ import com.washalert.washalertbackend.orders.ServiceType;
 import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
 import com.washalert.washalertbackend.notification.NotificationService;
 import com.washalert.washalertbackend.payment.PaymentStatus;
+import com.washalert.washalertbackend.user.Role;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
@@ -171,6 +172,23 @@ public class BookingService {
                         ),
                 "BOOKING",
                 String.valueOf(saved.getId())
+        );
+        notificationService.enqueuePushToUserEmail(
+                saved.getCustomerEmail(),
+                "Booking Confirmed",
+                "Your booking %s is confirmed for %s %s."
+                        .formatted(saved.getTrackingNumber(), saved.getBookingDate(), saved.getSlotStartTime()),
+                "BOOKING_CONFIRMED",
+                saved.getTrackingNumber() + ":confirmed"
+        );
+        notificationService.enqueuePushToRoles(
+                List.of(Role.ADMIN, Role.STAFF),
+                saved.getBranch(),
+                "New Booking Received",
+                "Order %s was booked for branch %s."
+                        .formatted(saved.getTrackingNumber(), saved.getBranch()),
+                "BOOKING_NEW",
+                saved.getTrackingNumber() + ":new"
         );
         return toResponse(saved);
     }

@@ -1,6 +1,7 @@
 package com.washalert.washalertbackend.support;
 
 import com.washalert.washalertbackend.delivery.DeliveryService;
+import com.washalert.washalertbackend.notification.NotificationService;
 import com.washalert.washalertbackend.orders.JobOrderService;
 import com.washalert.washalertbackend.orders.dto.OrderTrackingResponse;
 import com.washalert.washalertbackend.payment.PaymentService;
@@ -16,6 +17,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -35,19 +38,25 @@ public class ChatSupportService {
     private final PaymentService paymentService;
     private final ChatSupportMessageRepository messageRepository;
     private final SupportTicketRepository supportTicketRepository;
+    private final OpenAiChatClient openAiChatClient;
+    private final NotificationService notificationService;
 
     public ChatSupportService(
             JobOrderService jobOrderService,
             DeliveryService deliveryService,
             PaymentService paymentService,
             ChatSupportMessageRepository messageRepository,
-            SupportTicketRepository supportTicketRepository
+            SupportTicketRepository supportTicketRepository,
+            OpenAiChatClient openAiChatClient,
+            NotificationService notificationService
     ) {
         this.jobOrderService = jobOrderService;
         this.deliveryService = deliveryService;
         this.paymentService = paymentService;
         this.messageRepository = messageRepository;
         this.supportTicketRepository = supportTicketRepository;
+        this.openAiChatClient = openAiChatClient;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -220,9 +229,61 @@ public class ChatSupportService {
             );
         }
 
+        return buildAiAssistedFaqReply(message, sessionId);
+    }
+
+    private ChatSupportResponse buildAiAssistedFaqReply(String message, String sessionId) {
+        if (!openAiChatClient.isConfigured()) {
+            return new ChatSupportResponse(
+                    "ai_configuration",
+                    "AI support is unavailable because OPENAI_API_KEY is not configured on the server. "
+                            + "I can still help with tracking (WA-xxxxx), payments, delivery updates, and ticket escalation.",
+                    false,
+                    null,
+                    null
+            );
+        }
+
+        List<ChatSupportMessage> context = new ArrayList<>(
+                messageRepository.findTop20BySessionIdOrderByCreatedAtDesc(sessionId)
+        );
+        context.sort(Comparator.comparing(ChatSupportMessage::getCreatedAt));
+        if (!context.isEmpty()) {
+            ChatSupportMessage latest = context.get(context.size() - 1);
+            if (latest.getSenderType() == ChatResponderType.USER
+                    && latest.getMessage() != null
+                    && latest.getMessage().trim().equalsIgnoreCase(message.trim())) {
+                context.remove(context.size() - 1);
+            }
+        }
+
+        OpenAiSupportDecision aiDecision;
+        try {
+            aiDecision = openAiChatClient.generateReply(message, context);
+        } catch (IllegalStateException ex) {
+            return new ChatSupportResponse(
+                    "ai_unavailable",
+                    ex.getMessage() + " You can type 'talk to staff' any time to open a support ticket.",
+                    false,
+                    null,
+                    null
+            );
+        }
+
+        if (aiDecision.escalate()) {
+            String ticket = createTicket(sessionId, message, null);
+            return new ChatSupportResponse(
+                    aiDecision.category(),
+                    aiDecision.reply(),
+                    true,
+                    ticket,
+                    null
+            );
+        }
+
         return new ChatSupportResponse(
-                "faq_general",
-                "I can help with order tracking, payment updates, delivery status, and complaint escalation. Tell me what you need.",
+                aiDecision.category(),
+                aiDecision.reply(),
                 false,
                 null,
                 null
@@ -262,6 +323,16 @@ public class ChatSupportService {
                 .build();
         supportTicketRepository.save(ticket);
 
+        notificationService.enqueuePushToRoles(
+                List.of(Role.ADMIN, Role.STAFF),
+                ticket.getBranch(),
+                "Escalated Support Ticket",
+                "Ticket %s needs manual response. Issue: %s"
+                        .formatted(ticketNumber, truncate(issue, 100)),
+                "SUPPORT_ESCALATION",
+                ticketNumber
+        );
+
         return ticketNumber;
     }
 
@@ -298,5 +369,10 @@ public class ChatSupportService {
 
     private boolean sameBranch(String a, String b) {
         return a != null && b != null && a.trim().equalsIgnoreCase(b.trim());
+    }
+
+    private String truncate(String value, int max) {
+        if (value == null) return "";
+        return value.length() <= max ? value : value.substring(0, max);
     }
 }

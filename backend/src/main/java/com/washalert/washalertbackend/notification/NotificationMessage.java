@@ -42,7 +42,7 @@ public class NotificationMessage {
     @Column(nullable = false, length = 20)
     private NotificationChannel channel;
 
-    @Column(nullable = false, length = 160)
+    @Column(nullable = false, length = 512)
     private String recipient;
 
     @Column(nullable = false, length = 180)

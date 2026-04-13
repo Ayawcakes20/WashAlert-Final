@@ -8,6 +8,7 @@ import com.washalert.washalertbackend.inventory.dto.CreateInventoryItemRequest;
 import com.washalert.washalertbackend.inventory.dto.InventoryForecastResponse;
 import com.washalert.washalertbackend.inventory.dto.InventoryItemResponse;
 import com.washalert.washalertbackend.inventory.dto.UpdateInventoryItemRequest;
+import com.washalert.washalertbackend.notification.NotificationService;
 import com.washalert.washalertbackend.orders.JobOrder;
 import com.washalert.washalertbackend.orders.JobOrderRepository;
 import com.washalert.washalertbackend.orders.JobOrderStatus;
@@ -37,6 +38,7 @@ public class InventoryService {
     private final FirestoreSyncService firestoreSyncService;
     private final FirestoreReadService firestoreReadService;
     private final DataReadProperties dataReadProperties;
+    private final NotificationService notificationService;
 
     public InventoryService(
             InventoryItemRepository itemRepository,
@@ -44,7 +46,8 @@ public class InventoryService {
             JobOrderRepository jobOrderRepository,
             FirestoreSyncService firestoreSyncService,
             FirestoreReadService firestoreReadService,
-            DataReadProperties dataReadProperties
+            DataReadProperties dataReadProperties,
+            NotificationService notificationService
     ) {
         this.itemRepository = itemRepository;
         this.movementRepository = movementRepository;
@@ -52,6 +55,7 @@ public class InventoryService {
         this.firestoreSyncService = firestoreSyncService;
         this.firestoreReadService = firestoreReadService;
         this.dataReadProperties = dataReadProperties;
+        this.notificationService = notificationService;
     }
 
     public List<InventoryItemResponse> list(String branch, AuthUserDetails principal) {
@@ -92,6 +96,7 @@ public class InventoryService {
 
         InventoryItem saved = itemRepository.save(item);
         firestoreSyncService.upsert("inventory", String.valueOf(saved.getId()), toResponse(saved));
+        maybeNotifyLowStockCrossed(saved, false, isLowStock(saved), "created");
         return toResponse(saved);
     }
 
@@ -110,6 +115,7 @@ public class InventoryService {
                     }
                 });
 
+        boolean wasLowStock = isLowStock(item);
         item.setBranch(branch);
         item.setItemName(itemName);
         item.setCategory(req.category().trim());
@@ -118,6 +124,7 @@ public class InventoryService {
 
         InventoryItem saved = itemRepository.save(item);
         firestoreSyncService.upsert("inventory", String.valueOf(saved.getId()), toResponse(saved));
+        maybeNotifyLowStockCrossed(saved, wasLowStock, isLowStock(saved), "updated");
         return toResponse(saved);
     }
 
@@ -138,6 +145,7 @@ public class InventoryService {
             throw new IllegalArgumentException("Stock adjustment would result in negative stock.");
         }
 
+        boolean wasLowStock = isLowStock(item);
         item.setCurrentStock(nextStock);
         InventoryItem savedItem = itemRepository.save(item);
 
@@ -149,6 +157,7 @@ public class InventoryService {
                 .build();
         movementRepository.save(movement);
         firestoreSyncService.upsert("inventory", String.valueOf(savedItem.getId()), toResponse(savedItem));
+        maybeNotifyLowStockCrossed(savedItem, wasLowStock, isLowStock(savedItem), "adjusted");
 
         return toResponse(savedItem);
     }
@@ -367,5 +376,38 @@ public class InventoryService {
 
     private boolean sameBranch(String a, String b) {
         return a != null && b != null && a.trim().equalsIgnoreCase(b.trim());
+    }
+
+    private boolean isLowStock(InventoryItem item) {
+        return item != null
+                && item.getCurrentStock() != null
+                && item.getReorderLevel() != null
+                && item.getCurrentStock().compareTo(item.getReorderLevel()) <= 0;
+    }
+
+    private void maybeNotifyLowStockCrossed(
+            InventoryItem item,
+            boolean wasLowStock,
+            boolean isLowStock,
+            String changeType
+    ) {
+        if (item == null || wasLowStock || !isLowStock) {
+            return;
+        }
+
+        notificationService.enqueuePushToRoles(
+                List.of(Role.ADMIN, Role.STAFF),
+                item.getBranch(),
+                "Low Stock Alert",
+                "Inventory item %s at %s is low (%s %s remaining)."
+                        .formatted(
+                                item.getItemName(),
+                                item.getBranch(),
+                                item.getCurrentStock(),
+                                item.getUnit()
+                        ),
+                "LOW_STOCK",
+                item.getId() + ":" + changeType
+        );
     }
 }

@@ -6,4 +6,5 @@ import java.util.List;
 
 public interface ChatSupportMessageRepository extends JpaRepository<ChatSupportMessage, Long> {
     List<ChatSupportMessage> findTop200BySessionIdOrderByCreatedAtAsc(String sessionId);
+    List<ChatSupportMessage> findTop20BySessionIdOrderByCreatedAtDesc(String sessionId);
 }

@@ -1,7 +1,5 @@
 import { motion } from "framer-motion";
 import { Building2, Target, Users, Zap, MapPin } from "lucide-react";
-import logoLaundryHubs from "@/assets/logo-laundryhubs.webp";
-import logoSpeedyWash from "@/assets/logo-speedywash.webp";
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 
@@ -32,12 +30,15 @@ export default function AboutPage() {
       </motion.div>
 
       {/* Brand logos */}
-      <motion.div variants={item} className="glass-card rounded-2xl p-8 flex flex-col sm:flex-row items-center gap-8">
-        <div className="flex items-center gap-4">
-          <img src={logoLaundryHubs} alt="Triplets LaundryHubs" className="h-20 w-20 rounded-full object-cover ring-4 ring-secondary/30" />
-          <img src={logoSpeedyWash} alt="SpeedyWash" className="h-20 w-20 rounded-full object-cover ring-4 ring-secondary/30" />
+      <motion.div variants={item} className="glass-card rounded-2xl p-8 flex flex-col sm:flex-row items-center gap-6 sm:gap-8">
+        <div className="flex items-center justify-center shrink-0">
+          <img
+            src="/washalert-logo.png"
+            alt="WashAlert"
+            className="h-20 w-20 rounded-full object-cover ring-4 ring-secondary/30"
+          />
         </div>
-        <div>
+        <div className="text-center sm:text-left">
           <h2 className="text-xl font-bold text-foreground">WashAlert</h2>
           <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
             A Booking System with Real-Time Tracking and Predictive Inventory built specifically for 
