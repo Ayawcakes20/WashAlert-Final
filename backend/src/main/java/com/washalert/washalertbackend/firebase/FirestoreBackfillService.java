@@ -2,12 +2,14 @@ package com.washalert.washalertbackend.firebase;
 
 import com.washalert.washalertbackend.delivery.DeliveryOrder;
 import com.washalert.washalertbackend.delivery.DeliveryOrderRepository;
+import com.washalert.washalertbackend.delivery.DeliveryWorkflowStatus;
 import com.washalert.washalertbackend.inventory.InventoryItem;
 import com.washalert.washalertbackend.inventory.InventoryItemRepository;
 import com.washalert.washalertbackend.machines.Machine;
 import com.washalert.washalertbackend.machines.MachineRepository;
 import com.washalert.washalertbackend.orders.JobOrder;
 import com.washalert.washalertbackend.orders.JobOrderRepository;
+import com.washalert.washalertbackend.orders.JobOrderStatus;
 import com.washalert.washalertbackend.user.User;
 import com.washalert.washalertbackend.user.UserRepository;
 import org.springframework.stereotype.Service;
@@ -142,15 +144,47 @@ public class FirestoreBackfillService {
         payload.put("trackingNumber", d.getJobOrder().getTrackingNumber());
         payload.put("branch", d.getJobOrder().getBranch());
         payload.put("customerName", d.getJobOrder().getCustomerName());
+        payload.put("customerPhone", d.getJobOrder().getCustomerPhone());
         payload.put("deliveryAddress", d.getJobOrder().getDeliveryAddress());
         payload.put("driverName", d.getDriverName());
         payload.put("driverPhone", d.getDriverPhone());
+        payload.put("driverPhotoUrl", d.getDriverUser() != null ? d.getDriverUser().getProfileImageUrl() : null);
+        payload.put("paymentMethod", d.getJobOrder().getPaymentMethod());
+        payload.put("isPaid", d.getJobOrder().isPaid());
+        payload.put("amountToCollect", d.getJobOrder().getTotalPrice());
+        payload.put("workflowStatus", deriveWorkflowStatus(d));
+        payload.put("leg", d.getLeg());
         payload.put("status", d.getStatus());
         payload.put("currentLatitude", d.getCurrentLatitude());
         payload.put("currentLongitude", d.getCurrentLongitude());
         payload.put("estimatedArrivalAt", d.getEstimatedArrivalAt());
+        payload.put("pickupProofUrl", d.getPickupProofUrl());
+        payload.put("dropoffProofUrl", d.getDropoffProofUrl());
         payload.put("notes", d.getNotes());
         payload.put("updatedAt", d.getUpdatedAt());
+        payload.put("branchLatitude", d.getJobOrder().getBranchLatitude());
+        payload.put("branchLongitude", d.getJobOrder().getBranchLongitude());
+        payload.put("deliveryLatitude", d.getJobOrder().getDeliveryLatitude());
+        payload.put("deliveryLongitude", d.getJobOrder().getDeliveryLongitude());
         return payload;
+    }
+
+    private DeliveryWorkflowStatus deriveWorkflowStatus(DeliveryOrder delivery) {
+        JobOrderStatus orderStatus = delivery.getJobOrder().getStatus();
+        if (orderStatus == JobOrderStatus.CANCELLED) return DeliveryWorkflowStatus.CANCELLED;
+        if (orderStatus == JobOrderStatus.DELIVERED) return DeliveryWorkflowStatus.COMPLETED;
+        if (orderStatus == JobOrderStatus.READY) return DeliveryWorkflowStatus.READY;
+        if (orderStatus == JobOrderStatus.WASHING || orderStatus == JobOrderStatus.DRYING) {
+            return DeliveryWorkflowStatus.AT_SHOP;
+        }
+
+        return switch (delivery.getStatus()) {
+            case PENDING_PICKUP -> DeliveryWorkflowStatus.DRIVER_ACCEPTED;
+            case EN_ROUTE_TO_PICKUP -> DeliveryWorkflowStatus.PICKING_UP;
+            case PICKED_UP -> DeliveryWorkflowStatus.PICKED_UP;
+            case IN_TRANSIT -> DeliveryWorkflowStatus.PICKING_UP;
+            case DELIVERED -> DeliveryWorkflowStatus.COMPLETED;
+            case FAILED -> DeliveryWorkflowStatus.CANCELLED;
+        };
     }
 }

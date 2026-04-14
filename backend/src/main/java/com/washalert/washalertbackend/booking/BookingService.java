@@ -2,6 +2,8 @@ package com.washalert.washalertbackend.booking;
 
 import com.washalert.washalertbackend.booking.dto.BookingSlotResponse;
 import com.washalert.washalertbackend.booking.dto.CreateBookingRequest;
+import com.washalert.washalertbackend.delivery.DeliveryLeg;
+import com.washalert.washalertbackend.delivery.DeliveryOrderRepository;
 import com.washalert.washalertbackend.machines.MachineRepository;
 import com.washalert.washalertbackend.machines.MachineStatus;
 import com.washalert.washalertbackend.orders.JobOrder;
@@ -29,6 +31,7 @@ public class BookingService {
     private final JobOrderRepository jobOrderRepository;
     private final MachineRepository machineRepository;
     private final BookingProperties bookingProperties;
+    private final DeliveryOrderRepository deliveryOrderRepository;
     private final JobOrderTimelineService timelineService;
     private final NotificationService notificationService;
     private final PricingService pricingService;
@@ -37,6 +40,7 @@ public class BookingService {
             JobOrderRepository jobOrderRepository,
             MachineRepository machineRepository,
             BookingProperties bookingProperties,
+            DeliveryOrderRepository deliveryOrderRepository,
             JobOrderTimelineService timelineService,
             NotificationService notificationService,
             PricingService pricingService
@@ -44,6 +48,7 @@ public class BookingService {
         this.jobOrderRepository = jobOrderRepository;
         this.machineRepository = machineRepository;
         this.bookingProperties = bookingProperties;
+        this.deliveryOrderRepository = deliveryOrderRepository;
         this.timelineService = timelineService;
         this.notificationService = notificationService;
         this.pricingService = pricingService;
@@ -190,6 +195,17 @@ public class BookingService {
                 "BOOKING_NEW",
                 saved.getTrackingNumber() + ":new"
         );
+        if (saved.getServiceType() == ServiceType.PICKUP_DELIVERY) {
+            notificationService.enqueuePushToRoles(
+                    List.of(Role.DRIVER),
+                    saved.getBranch(),
+                    "New Booking Available",
+                    "Order %s in %s is ready for driver acceptance."
+                            .formatted(saved.getTrackingNumber(), saved.getBranch()),
+                    "BOOKING_AVAILABLE_DRIVER",
+                    saved.getTrackingNumber() + ":driver-pool"
+            );
+        }
         return toResponse(saved);
     }
 
@@ -245,6 +261,9 @@ public class BookingService {
 
         if (order.getStatus() != JobOrderStatus.PENDING) {
             throw new IllegalStateException("Only PENDING bookings can be cancelled.");
+        }
+        if (deliveryOrderRepository.findByJobOrder_TrackingNumberAndLeg(order.getTrackingNumber(), DeliveryLeg.PICKUP_FROM_CUSTOMER).isPresent()) {
+            throw new IllegalStateException("This booking already has a driver assigned and can no longer be cancelled.");
         }
 
         order.setStatus(JobOrderStatus.CANCELLED);

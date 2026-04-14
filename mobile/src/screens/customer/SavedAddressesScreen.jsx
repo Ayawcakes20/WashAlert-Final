@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
-
-const STORAGE_KEY = 'washalert_saved_addresses_v1';
+import {
+  loadSavedAddresses,
+  saveSavedAddresses,
+} from '../../services/savedAddresses';
 
 const SavedAddressesScreen = () => {
   const [items, setItems] = useState([]);
@@ -15,9 +16,8 @@ const SavedAddressesScreen = () => {
   useEffect(() => {
     const load = async () => {
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        const parsed = raw ? JSON.parse(raw) : [];
-        setItems(Array.isArray(parsed) ? parsed : []);
+        const parsed = await loadSavedAddresses();
+        setItems(parsed);
       } catch {
         setItems([]);
       }
@@ -26,8 +26,8 @@ const SavedAddressesScreen = () => {
   }, []);
 
   const persist = async (next) => {
-    setItems(next);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    const saved = await saveSavedAddresses(next);
+    setItems(saved);
   };
 
   const addAddress = async () => {
@@ -37,7 +37,12 @@ const SavedAddressesScreen = () => {
     }
     const next = [
       ...items,
-      { id: `${Date.now()}`, label: label.trim(), address: address.trim() },
+      {
+        id: `${Date.now()}`,
+        label: label.trim(),
+        address: address.trim(),
+        isDefault: items.length === 0,
+      },
     ];
     await persist(next);
     setLabel('');
@@ -46,6 +51,14 @@ const SavedAddressesScreen = () => {
 
   const removeAddress = async (id) => {
     const next = items.filter((item) => item.id !== id);
+    await persist(next);
+  };
+
+  const setDefaultAddress = async (id) => {
+    const next = items.map((item) => ({
+      ...item,
+      isDefault: item.id === id,
+    }));
     await persist(next);
   };
 
@@ -83,8 +96,16 @@ const SavedAddressesScreen = () => {
           items.map((item) => (
             <View key={item.id} style={styles.addressCard}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.addressLabel}>{item.label}</Text>
+                <View style={styles.labelRow}>
+                  <Text style={styles.addressLabel}>{item.label}</Text>
+                  {item.isDefault ? <Text style={styles.defaultBadge}>Default</Text> : null}
+                </View>
                 <Text style={styles.addressValue}>{item.address}</Text>
+                {!item.isDefault ? (
+                  <TouchableOpacity onPress={() => setDefaultAddress(item.id)} style={styles.defaultBtn}>
+                    <Text style={styles.defaultBtnText}>Set as Default</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
               <TouchableOpacity onPress={() => removeAddress(item.id)}>
                 <Ionicons name="trash-outline" size={20} color={colors.error} />
@@ -147,6 +168,18 @@ const styles = StyleSheet.create({
   },
   addressLabel: { fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: 4 },
   addressValue: { fontSize: 12, color: colors.textSecondary, lineHeight: 18 },
+  labelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  defaultBadge: {
+    fontSize: 10,
+    color: colors.success,
+    backgroundColor: 'rgba(22, 163, 74, 0.12)',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    fontWeight: '700',
+  },
+  defaultBtn: { marginTop: 10, alignSelf: 'flex-start' },
+  defaultBtnText: { fontSize: 11, fontWeight: '700', color: colors.primary },
 });
 
 export default SavedAddressesScreen;

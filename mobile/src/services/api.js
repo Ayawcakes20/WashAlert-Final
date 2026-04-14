@@ -366,6 +366,35 @@ const parseDateLabel = (isoDate) => {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
+const formatDateForApi = (dateLike) => {
+  const date = dateLike instanceof Date ? dateLike : new Date(dateLike || Date.now());
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toSlotRangeLabel = (slotStartTime, slotEndTime) => {
+  const makeDisplay = (value) => {
+    const [rawH = '0', rawM = '0'] = String(value || '00:00:00').split(':');
+    let hour = Number(rawH);
+    const minute = Number(rawM);
+    const suffix = hour >= 12 ? 'PM' : 'AM';
+    if (hour === 0) hour = 12;
+    if (hour > 12) hour -= 12;
+    return `${hour}:${String(minute).padStart(2, '0')} ${suffix}`;
+  };
+  return `${makeDisplay(slotStartTime)} - ${makeDisplay(slotEndTime)}`;
+};
+
+const parseServiceModeFromInstructions = (notes = '') => {
+  const source = String(notes || '').toLowerCase();
+  if (source.includes('booking mode: drop-off only')) return 'DROP_OFF_ONLY';
+  if (source.includes('booking mode: pick-up only')) return 'PICKUP_ONLY';
+  if (source.includes('booking mode: full service')) return 'FULL_SERVICE';
+  return null;
+};
+
 const mapJobOrderToMobile = (jobOrder, previous = {}) => ({
   id: String(jobOrder.id ?? jobOrder.trackingNumber ?? previous.id),
   trackingNumber: jobOrder.trackingNumber ?? previous.trackingNumber,
@@ -377,6 +406,10 @@ const mapJobOrderToMobile = (jobOrder, previous = {}) => ({
       : jobOrder.serviceType === 'DROP_OFF'
       ? 'Drop Off'
       : previous.serviceType ?? 'Wash & Dry',
+  serviceMode:
+    previous.serviceMode ||
+    parseServiceModeFromInstructions(jobOrder.specialInstructions) ||
+    (jobOrder.serviceType === 'DROP_OFF' ? 'DROP_OFF_ONLY' : 'FULL_SERVICE'),
   loadKg: Number(jobOrder.estimatedWeightKg ?? previous.loadKg ?? 0),
   detergent: jobOrder.detergentPreference ?? previous.detergent ?? 'None',
   conditioner: jobOrder.fabricConditionerPreference ?? previous.conditioner ?? 'None',
@@ -399,6 +432,12 @@ const mapJobOrderToMobile = (jobOrder, previous = {}) => ({
       ? {
           address: jobOrder.deliveryAddress || previous.delivery?.address || '',
           driver: previous.delivery?.driver || 'Assigned Driver',
+          driverPhone: previous.delivery?.driverPhone || '',
+          driverPhotoUrl: previous.delivery?.driverPhotoUrl || null,
+          driverVehicle: previous.delivery?.driverVehicle || null,
+          eta: previous.delivery?.eta || null,
+          pickupProofUrl: previous.delivery?.pickupProofUrl || null,
+          dropoffProofUrl: previous.delivery?.dropoffProofUrl || null,
         }
       : null,
   timeline:
@@ -468,14 +507,62 @@ const refreshOrderStatus = async (order) => {
         `/api/deliveries/track/${encodeURIComponent(order.trackingNumber)}`
       );
       if (delivery?.status) {
-        console.log('[Orders] Delivery status tracking=', order.trackingNumber, 'status=', delivery.status);
-        updated.status = toMobileOrderStatus(delivery.status);
+        console.log(
+          '[Orders] Delivery status tracking=',
+          order.trackingNumber,
+          'status=',
+          delivery.status,
+          'workflow=',
+          delivery.workflowStatus || '(none)'
+        );
+        updated.status = toMobileOrderStatusFromWorkflow(
+          delivery.workflowStatus,
+          toMobileOrderStatus(delivery.status)
+        );
+        updated.deliveryWorkflowStatus = delivery.workflowStatus || null;
         updated.delivery = {
           address: delivery.deliveryAddress || updated.delivery?.address || '',
           driver: delivery.driverName || 'Assigned Driver',
+          driverPhone: delivery.driverPhone || '',
+          driverPhotoUrl: delivery.driverPhotoUrl || null,
+          driverVehicle: delivery.driverVehicle || null,
+          eta: delivery.estimatedArrivalAt || null,
+          pickupProofUrl: delivery.pickupProofUrl || null,
+          dropoffProofUrl: delivery.dropoffProofUrl || null,
         };
         if (updated.status === 'delivering') updated.estimatedTime = 'On the way';
         if (updated.status === 'delivered') updated.estimatedTime = 'Completed';
+
+        const deliveryTimeline = [];
+        if (delivery.workflowStatus) {
+          deliveryTimeline.push({
+            step: toWorkflowLabel(delivery.workflowStatus),
+            time: delivery.updatedAt ? new Date(delivery.updatedAt).toLocaleString() : '',
+            done: true,
+            icon: 'navigate-outline',
+          });
+        }
+        if (delivery.pickupProofUrl) {
+          deliveryTimeline.push({
+            step: 'Pickup Proof Uploaded',
+            time: delivery.updatedAt ? new Date(delivery.updatedAt).toLocaleString() : '',
+            done: true,
+            icon: 'camera-outline',
+            photoUrl: delivery.pickupProofUrl,
+          });
+        }
+        if (delivery.dropoffProofUrl) {
+          deliveryTimeline.push({
+            step: 'Drop-off Proof Uploaded',
+            time: delivery.updatedAt ? new Date(delivery.updatedAt).toLocaleString() : '',
+            done: true,
+            icon: 'camera-outline',
+            photoUrl: delivery.dropoffProofUrl,
+          });
+        }
+        if (deliveryTimeline.length) {
+          updated.timeline = [...updated.timeline, ...deliveryTimeline];
+        }
       }
     } catch {
       // Delivery may not exist for non-delivery bookings.
@@ -505,12 +592,14 @@ const refreshOrderStatus = async (order) => {
 };
 
 const toIsoDate = (label) => {
-  const date = new Date();
-  if (label === 'Tomorrow') {
-    date.setDate(date.getDate() + 1);
-  } else if (label === 'Other Day') {
-    // Default to 2 days from now for 'Other Day'
-    date.setDate(date.getDate() + 2);
+  const date = label instanceof Date ? new Date(label.getTime()) : new Date();
+  if (!(label instanceof Date)) {
+    if (label === 'Tomorrow') {
+      date.setDate(date.getDate() + 1);
+    } else if (label === 'Other Day') {
+      // Default to 2 days from now for 'Other Day'
+      date.setDate(date.getDate() + 2);
+    }
   }
   // Use local timezone instead of UTC to avoid date shift in UTC+8
   const year = date.getFullYear();
@@ -534,26 +623,58 @@ const getLoadSize = (kg) => {
   return 'LARGE';
 };
 
-const toMobileDeliveryStatus = (status) => {
+const toWorkflowLabel = (workflowStatus) =>
+  String(workflowStatus || '')
+    .replaceAll('_', ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const toMobileDeliveryStatus = (status, workflowStatus) => {
+  const workflow = String(workflowStatus || '').toUpperCase();
   const normalized = String(status || '').toUpperCase();
   if (normalized === 'PENDING_PICKUP') return 'pending';
-  if (normalized === 'PICKED_UP' || normalized === 'IN_TRANSIT') return 'in_progress';
+  if (normalized === 'EN_ROUTE_TO_PICKUP') return 'en_route';
+  if (normalized === 'PICKED_UP') return 'picked_up';
+  if (normalized === 'IN_TRANSIT') return 'in_progress';
   if (normalized === 'DELIVERED') return 'completed';
   if (normalized === 'FAILED') return 'failed';
+  if (workflow === 'COMPLETED') return 'completed';
+  if (workflow === 'CANCELLED') return 'failed';
+  if (workflow === 'PICKED_UP') return 'picked_up';
+  if (workflow === 'PICKING_UP') return 'en_route';
+  if (['AT_SHOP', 'READY'].includes(workflow)) return 'in_progress';
   return 'pending';
+};
+
+const toMobileOrderStatusFromWorkflow = (workflowStatus, fallbackStatus) => {
+  const workflow = String(workflowStatus || '').toUpperCase();
+  if (workflow === 'COMPLETED') return 'delivered';
+  if (workflow === 'CANCELLED') return 'cancelled';
+  if (workflow) return 'delivering';
+  return fallbackStatus;
 };
 
 const mapDelivery = (delivery) => ({
   id: String(delivery.id),
   orderNumber: delivery.trackingNumber,
   customerName: delivery.customerName || 'Customer',
-  customerPhone: delivery.driverPhone || '',
+  customerPhone: delivery.customerPhone || '',
   deliveryAddress: delivery.deliveryAddress || '',
   branchName: delivery.branch || '',
   leg: delivery.leg || 'DELIVERY_TO_CUSTOMER',
-  status: toMobileDeliveryStatus(delivery.status),
+  status: toMobileDeliveryStatus(delivery.status, delivery.workflowStatus),
+  workflowStatus: delivery.workflowStatus || null,
+  workflowLabel: toWorkflowLabel(delivery.workflowStatus),
   driverName: delivery.driverName || '',
+  driverPhone: delivery.driverPhone || '',
+  driverPhotoUrl: delivery.driverPhotoUrl || null,
+  driverVehicle: delivery.driverVehicle || null,
+  paymentMethod: delivery.paymentMethod || '',
+  isPaid: Boolean(delivery.isPaid),
+  amountToCollect: Number(delivery.amountToCollect ?? delivery.totalPrice ?? 0),
   estimatedDelivery: delivery.estimatedArrivalAt || null,
+  pickupProofUrl: delivery.pickupProofUrl || null,
+  dropoffProofUrl: delivery.dropoffProofUrl || null,
   notes: delivery.notes || '',
   updatedAt: delivery.updatedAt || null,
   currentLatitude: delivery.currentLatitude,
@@ -628,19 +749,28 @@ export const createOrder = async (orderData) => {
   const user = userRaw ? JSON.parse(userRaw) : null;
   const branch = BRANCH_CATALOG.find((item) => item.id === orderData.branchId);
 
+  const serviceTypeBackend =
+    orderData.serviceTypeBackend || (orderData.delivery ? 'PICKUP_DELIVERY' : 'DROP_OFF');
+  const serviceModeLabel = orderData.serviceModeLabel || 'Full Service';
+  const normalizedInstruction = String(orderData.instructions || '').trim();
+  const bookingModeNote = `Booking Mode: ${serviceModeLabel}`;
+  const mergedInstructions = normalizedInstruction
+    ? `${bookingModeNote}\n${normalizedInstruction}`
+    : bookingModeNote;
+
   const payload = {
     customerName: user?.fullName || 'Mobile Customer',
     branch: branch?.name || 'Light Residences',
     customerPhone: user?.phone || '09170000000',
     customerEmail: user?.email || '',
-    serviceType: orderData.delivery ? 'PICKUP_DELIVERY' : 'DROP_OFF',
+    serviceType: serviceTypeBackend,
     preferredDate: toIsoDate(orderData.scheduleDate),
     preferredSlotStartTime: toSlotStartTime(orderData.scheduleTime),
     detergentPreference: orderData.detergent || 'None',
     fabricConditionerPreference: orderData.conditioner || 'None',
     loadSize: getLoadSize(Number(orderData.loadKg || 0)),
     estimatedWeightKg: Number(orderData.loadKg || 1),
-    specialInstructions: orderData.instructions || '',
+    specialInstructions: mergedInstructions,
     deliveryAddress: orderData.delivery ? orderData.deliveryAddress || 'To be provided' : null,
     serviceName: orderData.serviceName || 'Wash & Dry',
     isRush: !!orderData.isRush,
@@ -663,7 +793,8 @@ export const createOrder = async (orderData) => {
     estimatedTime: '2-4 hours',
     scheduleDate: orderData.scheduleDate,
     scheduleTime: orderData.scheduleTime,
-    instructions: orderData.instructions || '',
+    instructions: mergedInstructions,
+    serviceMode: orderData.serviceMode || 'FULL_SERVICE',
     delivery: orderData.delivery
       ? { address: orderData.deliveryAddress || 'To be provided', driver: 'Assigned Driver' }
       : null,
@@ -688,6 +819,18 @@ export const laundry = {
 
 export const bookings = {
   cancel: async (id) => await apiRequest(`/api/bookings/${id}/cancel`, { method: 'PATCH' }),
+  getAvailableSlots: async (branch, dateLike) => {
+    const date = formatDateForApi(dateLike);
+    const path = `/api/bookings/slots?branch=${encodeURIComponent(branch)}&date=${encodeURIComponent(date)}`;
+    const slots = await apiRequest(path);
+    return (slots || []).map((slot) => ({
+      slotStartTime: slot.slotStartTime,
+      slotEndTime: slot.slotEndTime,
+      label: toSlotRangeLabel(slot.slotStartTime, slot.slotEndTime),
+      available: Boolean(slot.available),
+      slotsRemaining: Number(slot.slotsRemaining || 0),
+    }));
+  },
   getMyBookings: async (status = 'all', limit = 20) => {
     const stored = await getLocalOrders();
     const refreshed = await Promise.all(stored.map(refreshOrderStatus));
@@ -746,6 +889,7 @@ export const bookings = {
 export const branches = {
   getAll: async () => ({ branches: BRANCH_CATALOG }),
   getById: async (id) => BRANCH_CATALOG.find((b) => Number(b.id) === Number(id)) || null,
+  getAvailableSlots: async (branch, dateLike) => bookings.getAvailableSlots(branch, dateLike),
 };
 
 export const deliveries = {
@@ -775,6 +919,28 @@ export const deliveries = {
 
   /** Legacy alias kept so existing code doesn't break during transition */
   getAssigned: async (status = 'all') => deliveries.getMy(status),
+
+  getAvailable: async () => {
+    try {
+      const rows = await apiRequest('/api/deliveries/available');
+      return { orders: rows || [] };
+    } catch (error) {
+      if (!DEMO_MODE_ENABLED) {
+        rethrowAccessAware(
+          error,
+          'Available delivery bookings are restricted for this account role.'
+        );
+      }
+      return { orders: [] };
+    }
+  },
+
+  acceptBooking: async (trackingNumber) => {
+    const payload = await apiRequest(`/api/deliveries/accept/${encodeURIComponent(trackingNumber)}`, {
+      method: 'POST',
+    });
+    return mapDelivery(payload);
+  },
 
   getById: async (id) => {
     try {
@@ -816,6 +982,34 @@ export const deliveries = {
       }
       return { success: true };
     }
+  },
+  updateLocation: async (id, { latitude, longitude, estimatedArrivalAt = null, notes = null }) => {
+    await apiRequest(`/api/deliveries/${id}/location`, {
+      method: 'PUT',
+      body: {
+        latitude,
+        longitude,
+        estimatedArrivalAt,
+        notes,
+      },
+    });
+    return { success: true };
+  },
+  uploadProof: async (id, proofType, proofUrl) => {
+    const payload = await apiRequest(`/api/deliveries/${id}/proof`, {
+      method: 'PUT',
+      body: {
+        proofType,
+        proofUrl,
+      },
+    });
+    return mapDelivery(payload);
+  },
+  collectCodPayment: async (id) => {
+    await apiRequest(`/api/deliveries/${id}/collect-cod`, {
+      method: 'PATCH',
+    });
+    return { success: true };
   },
 };
 
@@ -873,6 +1067,9 @@ export const payments = {
     const checkoutUrl = payload?.checkout_url || payload?.checkoutUrl || payload?.url || null;
     console.log('[Payments] Checkout URL=', checkoutUrl || '(missing)');
     return checkoutUrl;
+  },
+  collectCodPayment: async (id) => {
+    return deliveries.collectCodPayment(id);
   },
 };
 

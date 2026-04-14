@@ -150,11 +150,12 @@ public class PaymentService {
                 .formatted(saved.getJobOrder().getTrackingNumber())
                 : "Payment for order %s was rejected. Please review and resubmit."
                 .formatted(saved.getJobOrder().getTrackingNumber());
+        String pushType = Boolean.TRUE.equals(req.approved()) ? "PAYMENT_VERIFIED" : "PAYMENT_STATUS";
         notificationService.enqueuePushToUserEmail(
                 saved.getJobOrder().getCustomerEmail(),
                 Boolean.TRUE.equals(req.approved()) ? "Payment Confirmed" : "Payment Rejected",
                 paymentBody,
-                "PAYMENT_STATUS",
+                pushType,
                 saved.getJobOrder().getTrackingNumber() + ":" + saved.getStatus().name()
         );
         return toResponse(saved);

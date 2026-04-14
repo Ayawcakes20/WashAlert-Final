@@ -8,15 +8,20 @@ import {
   Linking,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { MapView, Marker, Polyline, PROVIDER_GOOGLE, MapViewDirections } from '../../components/SafeMap';
+import * as ImagePicker from 'expo-image-picker';
+import { MapView, Marker, PROVIDER_GOOGLE, MapViewDirections } from '../../components/SafeMap';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { deliveries as deliveriesApi } from '../../services/api';
+import { GOOGLE_MAPS_API_KEY } from '../../config/env';
+import { useAuth } from '../../context/AuthContext';
+import { uploadImageAsync } from '../../services/storageService';
 
 const STATUS_STEPS = [
   { id: 'pending', label: 'Assigned' },
@@ -37,44 +42,36 @@ const getStatusLabel = (status) => {
 };
 
 const DeliveryDetailScreen = ({ route, navigation }) => {
+  const { user, firebaseIdToken } = useAuth();
   const deliveryId = route?.params?.deliveryId;
   const [delivery, setDelivery] = useState(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [uploadingProofType, setUploadingProofType] = useState('');
   const [error, setError] = useState('');
   const [showConfirm, setShowConfirm] = useState(null);
   const [isSimulating, setIsSimulating] = useState(false);
 
-  const [trackingLocation, setTrackingLocation] = useState(false);
   const [driverCoords, setDriverCoords] = useState(null);
   const [mapRegion, setMapRegion] = useState(null);
-
-  const GOOGLE_MAPS_API_KEY = 'AIzaSyAzAGBAijqpEZki3ZZBYe-9rxtzjF55RSY';
-  const LOCATION_TRACKING_TASK = 'LOCATION_TRACKING_TASK';
 
   useEffect(() => {
     loadDelivery();
   }, [deliveryId]);
 
   useEffect(() => {
-    let locationSubscription = null;
     let updateInterval = null;
+    let active = true;
 
     const startTracking = async () => {
       try {
         const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
-        const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
-        
-        if (fgStatus !== 'granted' || bgStatus !== 'granted') {
-          console.warn('Location permissions denied (foreground or background)');
-          // Fallback to foreground only if background is denied
+        if (fgStatus !== 'granted') {
+          console.warn('[DriverTracking] Foreground location permission denied');
+          return;
         }
-
-        setTrackingLocation(true);
-
-        // Foreground interval for UI updates
         updateInterval = setInterval(async () => {
-          if (isSimulating) return;
+          if (!active || isSimulating) return;
           try {
             const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
             const coords = {
@@ -85,53 +82,45 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             setDriverCoords(coords);
             if (delivery?.orderNumber) {
               const deliveryRef = doc(db, 'deliveries', delivery.orderNumber);
-              await setDoc(deliveryRef, {
-                currentLatitude: coords.latitude,
-                currentLongitude: coords.longitude,
-                heading: coords.heading,
-                lastUpdated: serverTimestamp(),
-              }, { merge: true });
+              await setDoc(
+                deliveryRef,
+                {
+                  currentLatitude: coords.latitude,
+                  currentLongitude: coords.longitude,
+                  heading: coords.heading,
+                  lastUpdated: serverTimestamp(),
+                },
+                { merge: true }
+              );
             }
-          } catch (err) { console.error(err); }
+            if (delivery?.id) {
+              await deliveriesApi.updateLocation(delivery.id, {
+                latitude: coords.latitude,
+                longitude: coords.longitude,
+              });
+            }
+            console.log('[DriverTracking] location synced deliveryId=', delivery?.id);
+          } catch (err) {
+            console.warn('[DriverTracking] location sync failed:', err?.message || err);
+          }
         }, 10000);
-
-        // Actual Background Tracking
-        if (bgStatus === 'granted') {
-          await Location.startLocationUpdatesAsync(LOCATION_TRACKING_TASK, {
-            accuracy: Location.Accuracy.Balanced,
-            timeInterval: 10000,
-            distanceInterval: 10,
-            foregroundService: {
-              notificationTitle: "WashAlert Delivery",
-              notificationBody: "Tracking your delivery location in background.",
-              notificationColor: colors.primary,
-            },
-          });
-        }
-
       } catch (err) {
-        console.error('Failed to start tracking:', err);
+        console.warn('[DriverTracking] Unable to start tracking:', err?.message || err);
       }
     };
 
-    const stopTracking = async () => {
-       if (updateInterval) clearInterval(updateInterval);
-       const isStarted = await Location.hasStartedLocationUpdatesAsync(LOCATION_TRACKING_TASK);
-       if (isStarted) {
-         await Location.stopLocationUpdatesAsync(LOCATION_TRACKING_TASK);
-       }
-       setTrackingLocation(false);
+    const stopTracking = () => {
+      active = false;
+      if (updateInterval) clearInterval(updateInterval);
     };
 
     if (delivery?.status === 'in_progress' && !isSimulating) {
-      startTracking();
+      void startTracking();
     } else {
       stopTracking();
     }
 
-    return () => {
-      stopTracking();
-    };
+    return () => stopTracking();
   }, [delivery?.status, delivery?.orderNumber, isSimulating]);
 
   // Simulation Effect
@@ -202,6 +191,50 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
     }
   };
 
+  const handleUploadProof = async (proofType) => {
+    if (!delivery?.id || !firebaseIdToken || uploadingProofType) return;
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission?.granted) {
+        Alert.alert('Permission Required', 'Allow photo access to upload proof images.');
+        return;
+      }
+
+      const picker = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+      if (picker?.canceled || !picker?.assets?.length) return;
+
+      setUploadingProofType(proofType);
+      console.log(
+        '[DriverProof] Upload start deliveryId=',
+        delivery.id,
+        'tracking=',
+        delivery.orderNumber,
+        'proofType=',
+        proofType,
+        'driverId=',
+        user?.id
+      );
+      const upload = await uploadImageAsync(picker.assets[0].uri, {
+        idToken: firebaseIdToken,
+        folder: `deliveries/${delivery.orderNumber || delivery.id}/proofs`,
+        fileName: `${proofType.toLowerCase()}_${Date.now()}.jpg`,
+      });
+
+      await deliveriesApi.uploadProof(delivery.id, proofType, upload.downloadURL);
+      await loadDelivery();
+      Alert.alert('Proof Uploaded', `${proofType === 'PICKUP' ? 'Pickup' : 'Drop-off'} proof uploaded.`);
+    } catch (error) {
+      console.error('[DriverProof] Upload failed:', error);
+      Alert.alert('Upload Failed', error?.message || 'Unable to upload proof right now.');
+    } finally {
+      setUploadingProofType('');
+    }
+  };
+
   const getTargetCoords = () => {
     if (!delivery) return null;
     if (delivery.leg === 'PICKUP_FROM_CUSTOMER') {
@@ -241,6 +274,36 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
     Linking.openURL(
       `https://www.google.com/maps/dir/?api=1&destination=${target.latitude},${target.longitude}`
     );
+  };
+
+  const openPhone = async (phoneNumber) => {
+    const phone = String(phoneNumber || '').replace(/[^0-9+]/g, '');
+    if (!phone) {
+      Alert.alert('No Contact', 'Phone number is not available for this delivery.');
+      return;
+    }
+    const url = `tel:${phone}`;
+    const canOpen = await Linking.canOpenURL(url);
+    if (!canOpen) {
+      Alert.alert('Unable to Call', 'This device cannot open the dialer.');
+      return;
+    }
+    await Linking.openURL(url);
+  };
+
+  const openMessage = async (phoneNumber) => {
+    const phone = String(phoneNumber || '').replace(/[^0-9+]/g, '');
+    if (!phone) {
+      Alert.alert('No Contact', 'Phone number is not available for this delivery.');
+      return;
+    }
+    const url = `sms:${phone}`;
+    const canOpen = await Linking.canOpenURL(url);
+    if (!canOpen) {
+      Alert.alert('Unable to Message', 'This device cannot open messaging.');
+      return;
+    }
+    await Linking.openURL(url);
   };
 
   const statusIndex = STATUS_STEPS.findIndex((step) => step.id === delivery?.status);
@@ -351,6 +414,16 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             <Text style={styles.infoKey}>Phone</Text>
             <Text style={styles.infoVal}>{delivery.customerPhone || 'N/A'}</Text>
           </View>
+          <View style={styles.contactActionRow}>
+            <TouchableOpacity style={styles.contactActionBtn} onPress={() => void openPhone(delivery.customerPhone)}>
+              <Ionicons name="call-outline" size={14} color={colors.primary} />
+              <Text style={styles.contactActionText}>Call Customer</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.contactActionBtn} onPress={() => void openMessage(delivery.customerPhone)}>
+              <Ionicons name="chatbubble-ellipses-outline" size={14} color={colors.primary} />
+              <Text style={styles.contactActionText}>Message Customer</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoKey}>Driver</Text>
             <Text style={styles.infoVal}>{delivery.driverName || 'Unassigned'}</Text>
@@ -388,6 +461,44 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
               );
             })}
           </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Photo Proof</Text>
+          <View style={styles.proofActionRow}>
+            <TouchableOpacity
+              style={styles.proofBtn}
+              onPress={() => handleUploadProof('PICKUP')}
+              disabled={!!uploadingProofType}
+            >
+              <Ionicons name="camera-outline" size={16} color={colors.primary} />
+              <Text style={styles.proofBtnText}>
+                {uploadingProofType === 'PICKUP' ? 'Uploading...' : 'Upload Pickup'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.proofBtn}
+              onPress={() => handleUploadProof('DROPOFF')}
+              disabled={!!uploadingProofType}
+            >
+              <Ionicons name="camera-outline" size={16} color={colors.primary} />
+              <Text style={styles.proofBtnText}>
+                {uploadingProofType === 'DROPOFF' ? 'Uploading...' : 'Upload Drop-off'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          {delivery.pickupProofUrl ? (
+            <View style={styles.proofPreview}>
+              <Text style={styles.proofLabel}>Pickup Proof</Text>
+              <Image source={{ uri: delivery.pickupProofUrl }} style={styles.proofImage} />
+            </View>
+          ) : null}
+          {delivery.dropoffProofUrl ? (
+            <View style={styles.proofPreview}>
+              <Text style={styles.proofLabel}>Drop-off Proof</Text>
+              <Image source={{ uri: delivery.dropoffProofUrl }} style={styles.proofImage} />
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.actionsBox}>
@@ -491,13 +602,25 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
               </TouchableOpacity>
             ))}
 
-          {delivery.status === 'in_progress' && delivery.paymentMethod === 'Cash' && !delivery.isPaid && (
+          {delivery.status === 'in_progress' && String(delivery.paymentMethod || '').toUpperCase().includes('CASH') && !delivery.isPaid && (
             <TouchableOpacity 
               style={[styles.actionBtnSuccess, { backgroundColor: '#eab308' }]} 
               onPress={() => {
                 Alert.alert('Payment Collected', 'Are you sure you have collected the cash payment?', [
                   { text: 'Cancel', style: 'cancel' },
-                  { text: 'Yes, Collected', onPress: () => handleAction('DELIVERED') }
+                  {
+                    text: 'Yes, Collected',
+                    onPress: async () => {
+                      try {
+                        console.log('[Driver][COD] Collecting payment deliveryId=', delivery.id);
+                        await deliveriesApi.collectCodPayment(delivery.id);
+                        await loadDelivery();
+                        Alert.alert('Success', 'Cash payment marked as collected.');
+                      } catch (e) {
+                        Alert.alert('Payment Update Failed', e?.message || 'Unable to mark COD as collected.');
+                      }
+                    },
+                  }
                 ]);
               }}
             >
@@ -564,6 +687,29 @@ const styles = StyleSheet.create({
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   infoKey: { fontSize: 14, color: colors.textSecondary },
   infoVal: { fontSize: 14, fontWeight: '500', color: colors.text, maxWidth: '60%', textAlign: 'right' },
+  contactActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: -4,
+    marginBottom: 12,
+  },
+  contactActionBtn: {
+    flex: 1,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  contactActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
 
   instructionsBox: {
     backgroundColor: 'hsla(16, 100%, 56%, 0.1)',
@@ -590,6 +736,44 @@ const styles = StyleSheet.create({
   timelineStep: { fontSize: 14, fontWeight: '500' },
   timelineStepActive: { color: colors.text },
   timelineStepInactive: { color: colors.textSecondary },
+
+  proofActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+  proofBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  proofBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  proofPreview: {
+    marginTop: 8,
+  },
+  proofLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    marginBottom: 6,
+  },
+  proofImage: {
+    width: '100%',
+    height: 130,
+    borderRadius: 10,
+    backgroundColor: colors.border,
+  },
 
   actionsBox: { gap: 12 },
   mapBtn: {

@@ -223,12 +223,21 @@ public class JobOrderService {
                     "ORDER_STATUS",
                     String.valueOf(jo.getId())
             );
+            String pushTitle = "Order Status Updated";
+            String pushBody = "Order %s is now %s."
+                    .formatted(jo.getTrackingNumber(), jo.getStatus().name().replace('_', ' '));
+            String pushType = "ORDER_STATUS";
+            if (jo.getStatus() == JobOrderStatus.READY) {
+                pushTitle = "Laundry Ready";
+                pushBody = "Your laundry for order %s is ready for pickup or delivery."
+                        .formatted(jo.getTrackingNumber());
+                pushType = "LAUNDRY_READY";
+            }
             notificationService.enqueuePushToUserEmail(
                     jo.getCustomerEmail(),
-                    "Order Status Updated",
-                    "Order %s is now %s."
-                            .formatted(jo.getTrackingNumber(), jo.getStatus().name().replace('_', ' ')),
-                    "ORDER_STATUS",
+                    pushTitle,
+                    pushBody,
+                    pushType,
                     jo.getTrackingNumber() + ":" + jo.getStatus().name()
             );
         }

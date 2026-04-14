@@ -173,6 +173,8 @@ export default function OrderManagementPage() {
   const [statusUpdatingId, setStatusUpdatingId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterBranch, setFilterBranch] = useState(isAdmin ? "" : staffBranch);
+  const [filterPaymentStatus, setFilterPaymentStatus] = useState("");
+  const [filterPaymentMethod, setFilterPaymentMethod] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showHelp, setShowHelp] = useState(false);
@@ -444,9 +446,16 @@ export default function OrderManagementPage() {
         o.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         o.orderId.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesBranch = !filterBranch || o.branch?.toLowerCase() === filterBranch.toLowerCase();
-      return matchesSearch && matchesBranch;
+      const paymentStatus = resolvePaymentStatusLabel(o);
+      const matchesPaymentStatus = !filterPaymentStatus || paymentStatus === filterPaymentStatus;
+      const method = normalizePaymentMethod(o.paymentMethod);
+      const matchesPaymentMethod =
+        !filterPaymentMethod ||
+        (filterPaymentMethod === "GCASH" && isOnlinePaymentMethod(method)) ||
+        (filterPaymentMethod === "CASH" && isCashPaymentMethod(method));
+      return matchesSearch && matchesBranch && matchesPaymentStatus && matchesPaymentMethod;
     });
-  }, [orders, searchQuery, filterBranch]);
+  }, [orders, searchQuery, filterBranch, filterPaymentStatus, filterPaymentMethod]);
 
   const uniqueBranches = useMemo(
     () => [...new Set(orders.map((o) => o.branch).filter(Boolean))].sort(),
@@ -643,6 +652,32 @@ export default function OrderManagementPage() {
             </select>
           </div>
         )}
+        <div className="flex items-center gap-2 bg-muted/50 rounded-xl px-4 py-2.5">
+          <Filter className="h-4 w-4 text-muted-foreground" />
+          <select
+            value={filterPaymentStatus}
+            onChange={(e) => setFilterPaymentStatus(e.target.value)}
+            className="bg-transparent text-sm outline-none text-foreground"
+          >
+            <option value="">All Payment Statuses</option>
+            <option value="PENDING">Pending</option>
+            <option value="VERIFIED">Verified</option>
+            <option value="PAID">Paid</option>
+            <option value="REJECTED">Rejected</option>
+          </select>
+        </div>
+        <div className="flex items-center gap-2 bg-muted/50 rounded-xl px-4 py-2.5">
+          <Filter className="h-4 w-4 text-muted-foreground" />
+          <select
+            value={filterPaymentMethod}
+            onChange={(e) => setFilterPaymentMethod(e.target.value)}
+            className="bg-transparent text-sm outline-none text-foreground"
+          >
+            <option value="">All Payment Methods</option>
+            <option value="GCASH">GCash / E-Wallet</option>
+            <option value="CASH">Cash / COD</option>
+          </select>
+        </div>
       </motion.div>
 
       {/* Laundry Progress Board */}

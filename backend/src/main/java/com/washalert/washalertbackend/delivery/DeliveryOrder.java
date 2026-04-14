@@ -75,6 +75,12 @@ public class DeliveryOrder {
     @Column(name = "estimated_arrival_at")
     private LocalDateTime estimatedArrivalAt;
 
+    @Column(name = "pickup_proof_url", length = 1000)
+    private String pickupProofUrl;
+
+    @Column(name = "dropoff_proof_url", length = 1000)
+    private String dropoffProofUrl;
+
     @Column(length = 300)
     private String notes;
 

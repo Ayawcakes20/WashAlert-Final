@@ -22,6 +22,39 @@ const BRANCH_OPTIONS = [
   "St. Nino",
 ];
 
+const DELAY_PRESETS: Array<{
+  id: string;
+  label: string;
+  title: string;
+  message: string;
+  type: AnnouncementType;
+}> = [
+  {
+    id: "weather",
+    label: "Weather Delay",
+    title: "Weather Delay Advisory",
+    message:
+      "Service may be delayed due to weather conditions. We are prioritizing safety and will update your order status as soon as possible.",
+    type: "GENERAL",
+  },
+  {
+    id: "volume",
+    label: "Heavy Volume",
+    title: "High Order Volume Notice",
+    message:
+      "We are currently experiencing a high volume of orders. Some bookings may take longer than usual today.",
+    type: "GENERAL",
+  },
+  {
+    id: "early",
+    label: "Early Ready",
+    title: "Laundry Ready Earlier Than Expected",
+    message:
+      "Good news. Selected orders are ready earlier than expected. Please check your order status for pickup or delivery updates.",
+    type: "GENERAL",
+  },
+];
+
 const typeLabel: Record<AnnouncementType, string> = {
   CLOSURE: "Closure",
   HOLIDAY: "Holiday",
@@ -117,6 +150,20 @@ export default function AnnouncementsPage() {
     }
   };
 
+  const applyPreset = (presetId: string) => {
+    const preset = DELAY_PRESETS.find((item) => item.id === presetId);
+    if (!preset) {
+      setForm((prev) => ({ ...prev, title: "", message: "", type: "GENERAL" }));
+      return;
+    }
+    setForm((prev) => ({
+      ...prev,
+      type: preset.type,
+      title: preset.title,
+      message: preset.message,
+    }));
+  };
+
   return (
     <motion.div
       initial="hidden"
@@ -166,6 +213,31 @@ export default function AnnouncementsPage() {
               </select>
             </div>
           ) : null}
+        </div>
+
+        <div className="space-y-2">
+          <Label>Delay Presets</Label>
+          <div className="flex flex-wrap gap-2">
+            {DELAY_PRESETS.map((preset) => (
+              <Button
+                key={preset.id}
+                type="button"
+                variant="outline"
+                className="h-8 rounded-lg"
+                onClick={() => applyPreset(preset.id)}
+              >
+                {preset.label}
+              </Button>
+            ))}
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-8 rounded-lg"
+              onClick={() => applyPreset("custom")}
+            >
+              Custom
+            </Button>
+          </div>
         </div>
 
         {(isStaff || form.targetScope === "BRANCH") ? (

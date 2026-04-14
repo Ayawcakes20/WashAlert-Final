@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,6 +17,7 @@ import { deliveries as deliveriesApi } from '../../services/api';
 
 const TABS = [
   { label: 'All', value: 'all' },
+  { label: 'Available', value: 'available' },
   { label: 'Pending', value: 'pending' },
   { label: 'In Progress', value: 'in_progress' },
   { label: 'Completed', value: 'completed' },
@@ -55,17 +57,27 @@ const getStatusLabel = (status) => {
 const DriverDeliveriesScreen = ({ navigation }) => {
   const [tab, setTab] = useState('all');
   const [deliveries, setDeliveries] = useState([]);
+  const [availableOrders, setAvailableOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [acceptingTracking, setAcceptingTracking] = useState('');
 
   const loadDeliveries = useCallback(async () => {
     try {
       setError('');
-      const data = await deliveriesApi.getAssigned(tab);
-      setDeliveries(data.deliveries || []);
+      if (tab === 'available') {
+        const data = await deliveriesApi.getAvailable();
+        setAvailableOrders(data.orders || []);
+        setDeliveries([]);
+      } else {
+        const data = await deliveriesApi.getAssigned(tab);
+        setDeliveries(data.deliveries || []);
+        setAvailableOrders([]);
+      }
     } catch (e) {
       setDeliveries([]);
+      setAvailableOrders([]);
       setError(e?.message || 'Unable to load deliveries right now.');
     } finally {
       setLoading(false);
@@ -88,6 +100,35 @@ const DriverDeliveriesScreen = ({ navigation }) => {
   const onChangeTab = useCallback((nextTab) => {
     setTab(nextTab);
   }, []);
+
+  const handleAcceptBooking = useCallback(
+    (trackingNumber) => {
+      if (!trackingNumber || acceptingTracking) return;
+      Alert.alert(
+        'Accept Booking',
+        `Accept booking ${trackingNumber}?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Accept',
+            onPress: async () => {
+              try {
+                setAcceptingTracking(trackingNumber);
+                await deliveriesApi.acceptBooking(trackingNumber);
+                Alert.alert('Accepted', 'Booking accepted successfully.');
+                setTab('pending');
+              } catch (error) {
+                Alert.alert('Accept Failed', error?.message || 'Unable to accept booking.');
+              } finally {
+                setAcceptingTracking('');
+              }
+            },
+          },
+        ]
+      );
+    },
+    [acceptingTracking]
+  );
 
   if (loading) {
     return (
@@ -122,13 +163,15 @@ const DriverDeliveriesScreen = ({ navigation }) => {
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-        {deliveries.length === 0 ? (
+        {(tab === 'available' ? availableOrders.length === 0 : deliveries.length === 0) ? (
           <ScrollView
             contentContainerStyle={styles.emptyState}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           >
             <Ionicons name="bicycle-outline" size={64} color={colors.border} />
-            <Text style={styles.emptyText}>No deliveries found</Text>
+            <Text style={styles.emptyText}>
+              {tab === 'available' ? 'No available bookings right now' : 'No deliveries found'}
+            </Text>
           </ScrollView>
         ) : (
           <ScrollView
@@ -136,7 +179,37 @@ const DriverDeliveriesScreen = ({ navigation }) => {
             contentContainerStyle={styles.listContent}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           >
-            {deliveries.map((delivery) => {
+            {tab === 'available'
+              ? availableOrders.map((order) => (
+                  <View key={order.trackingNumber} style={styles.deliveryCard}>
+                    <View style={styles.cardHeader}>
+                      <Text style={styles.customerName}>{order.customerName || 'Customer'}</Text>
+                      <View style={[styles.badge, { backgroundColor: 'hsla(16, 100%, 56%, 0.1)' }]}>
+                        <Text style={[styles.badgeText, { color: colors.warning }]}>Available</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.addressRow}>
+                      <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
+                      <Text style={styles.addressText}>{order.deliveryAddress || 'No address provided'}</Text>
+                    </View>
+
+                    <View style={styles.cardFooter}>
+                      <Text style={styles.orderId}>Order: {order.trackingNumber}</Text>
+                      <TouchableOpacity
+                        style={styles.viewBtn}
+                        onPress={() => handleAcceptBooking(order.trackingNumber)}
+                        disabled={acceptingTracking === order.trackingNumber}
+                      >
+                        <Text style={styles.viewBtnText}>
+                          {acceptingTracking === order.trackingNumber ? 'Accepting...' : 'Accept'}
+                        </Text>
+                        <Ionicons name="checkmark-circle-outline" size={14} color={colors.primary} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))
+              : deliveries.map((delivery) => {
               const statusColor = getStatusColor(delivery.status);
               return (
                 <View key={delivery.id} style={styles.deliveryCard}>

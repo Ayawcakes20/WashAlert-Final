@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Animated, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
-import { bookings as bookingsApi, payments } from '../../services/api';
+import { bookings as bookingsApi, branches as branchesApi, payments } from '../../services/api';
 import { Button } from '../../components';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
@@ -73,6 +73,7 @@ const OrderDetailScreen = ({ route, navigation }) => {
   const { orderId } = route.params;
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [branchPhones, setBranchPhones] = useState({});
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   // Pulse animation for live indicator
@@ -90,6 +91,23 @@ const OrderDetailScreen = ({ route, navigation }) => {
   useEffect(() => {
     loadOrderDetails();
   }, [orderId]);
+
+  useEffect(() => {
+    const loadBranchPhones = async () => {
+      try {
+        const all = await branchesApi.getAll();
+        const next = (all?.branches || []).reduce((acc, item) => {
+          const key = String(item?.name || '').trim().toLowerCase();
+          if (key && item?.phone) acc[key] = String(item.phone);
+          return acc;
+        }, {});
+        setBranchPhones(next);
+      } catch {
+        setBranchPhones({});
+      }
+    };
+    void loadBranchPhones();
+  }, []);
 
   // Real-time Firestore listener: when staff updates status on web Kanban,
   // Firestore is synced and this listener fires immediately — no refresh needed.
@@ -142,6 +160,46 @@ const OrderDetailScreen = ({ route, navigation }) => {
       setLoading(false);
     }
   };
+
+  const getBranchPhone = () => {
+    const branchName = String(order?.branchName || order?.branch || '').trim().toLowerCase();
+    return branchPhones[branchName] || '09170000000';
+  };
+
+  const toDialable = (value) => String(value || '').replace(/[^0-9+]/g, '');
+
+  const openPhoneNumber = async (phoneRaw) => {
+    const phone = toDialable(phoneRaw);
+    if (!phone) {
+      Alert.alert('No Contact', 'Phone number is not available.');
+      return;
+    }
+    const url = `tel:${phone}`;
+    const canOpen = await Linking.canOpenURL(url);
+    if (!canOpen) {
+      Alert.alert('Unable to Call', 'This device cannot open the dialer.');
+      return;
+    }
+    await Linking.openURL(url);
+  };
+
+  const openMessageNumber = async (phoneRaw) => {
+    const phone = toDialable(phoneRaw);
+    if (!phone) {
+      Alert.alert('No Contact', 'Phone number is not available.');
+      return;
+    }
+    const url = `sms:${phone}`;
+    const canOpen = await Linking.canOpenURL(url);
+    if (!canOpen) {
+      Alert.alert('Unable to Message', 'This device cannot open messaging.');
+      return;
+    }
+    await Linking.openURL(url);
+  };
+
+  const openPhone = async () => openPhoneNumber(getBranchPhone());
+  const openMessage = async () => openMessageNumber(getBranchPhone());
 
   if (loading) {
     return (
@@ -315,6 +373,28 @@ const OrderDetailScreen = ({ route, navigation }) => {
             <Text style={styles.cardTitle}>Delivery Information</Text>
             <View style={styles.infoRow}><Text style={styles.infoKey}>Address</Text><Text style={[styles.infoVal, { maxWidth: '60%', textAlign: 'right' }]}>{order.delivery.address}</Text></View>
             <View style={styles.infoRow}><Text style={styles.infoKey}>Driver</Text><Text style={styles.infoVal}>{order.delivery.driver}</Text></View>
+            {order.delivery.driverPhotoUrl ? (
+              <Image source={{ uri: order.delivery.driverPhotoUrl }} style={styles.driverPhoto} />
+            ) : null}
+            <View style={styles.infoRow}><Text style={styles.infoKey}>Phone</Text><Text style={styles.infoVal}>{order.delivery.driverPhone || 'N/A'}</Text></View>
+            <View style={styles.infoRow}><Text style={styles.infoKey}>Vehicle</Text><Text style={styles.infoVal}>{order.delivery.driverVehicle || 'Not provided'}</Text></View>
+            <View style={styles.infoRow}><Text style={styles.infoKey}>ETA</Text><Text style={styles.infoVal}>{order.delivery.eta ? new Date(order.delivery.eta).toLocaleString() : 'Calculating'}</Text></View>
+            <View style={styles.btnRow}>
+              <TouchableOpacity
+                style={styles.callBtn}
+                onPress={() => void openPhoneNumber(order.delivery.driverPhone)}
+              >
+                <Ionicons name="call-outline" size={16} color={colors.primary} />
+                <Text style={styles.callText}>Call Driver</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.trackOrderBtn}
+                onPress={() => void openMessageNumber(order.delivery.driverPhone)}
+              >
+                <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.card} />
+                <Text style={styles.trackOrderText}>Message Driver</Text>
+              </TouchableOpacity>
+            </View>
             
             <TouchableOpacity 
               style={styles.trackBtn}
@@ -341,6 +421,7 @@ const OrderDetailScreen = ({ route, navigation }) => {
                 <View style={styles.vertContent}>
                   <Text style={[styles.vertStep, t.done ? styles.vertStepActive : styles.vertStepInactive]}>{t.step}</Text>
                   {t.time ? <Text style={styles.vertTime}>{t.time}</Text> : null}
+                  {t.photoUrl ? <Image source={{ uri: t.photoUrl }} style={styles.timelineProofImage} /> : null}
                 </View>
               </View>
             ))}
@@ -349,15 +430,19 @@ const OrderDetailScreen = ({ route, navigation }) => {
 
         {/* Buttons */}
         <View style={styles.btnRow}>
-          <TouchableOpacity style={styles.callBtn}>
+          <TouchableOpacity style={styles.callBtn} onPress={() => void openPhone()}>
             <Ionicons name="call-outline" size={16} color={colors.primary} />
             <Text style={styles.callText}>Call Branch</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.trackOrderBtn} onPress={() => navigation.navigate('Tracking', { orderId: order.id })}>
-            <Ionicons name="location-outline" size={16} color={colors.card} />
-            <Text style={styles.trackOrderText}>Track Order</Text>
+          <TouchableOpacity style={styles.trackOrderBtn} onPress={() => void openMessage()}>
+            <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.card} />
+            <Text style={styles.trackOrderText}>Message Branch</Text>
           </TouchableOpacity>
         </View>
+        <TouchableOpacity style={[styles.trackBtn, { marginTop: 12 }]} onPress={() => navigation.navigate('Tracking', { orderId: order.id })}>
+          <Ionicons name="location-outline" size={16} color={colors.card} />
+          <Text style={styles.trackBtnText}>Track Order</Text>
+        </TouchableOpacity>
 
         {normalizedStatus === 'pending' && (
           <TouchableOpacity 
@@ -462,6 +547,14 @@ const styles = StyleSheet.create({
   infoKey: { fontSize: 14, color: colors.textSecondary },
   infoVal: { fontSize: 14, fontWeight: '500', color: colors.text },
   amountVal: { fontSize: 14, fontWeight: 'bold', color: colors.primary },
+  driverPhoto: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignSelf: 'center',
+    marginBottom: 10,
+    backgroundColor: colors.border,
+  },
 
   trackBtn: { width: '100%', height: 44, backgroundColor: colors.accent, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 12 },
   trackBtnText: { color: colors.card, fontSize: 14, fontWeight: '600', marginLeft: 8 },
@@ -483,6 +576,13 @@ const styles = StyleSheet.create({
   vertStepActive: { color: colors.text },
   vertStepInactive: { color: colors.textSecondary },
   vertTime: { fontSize: 10, color: colors.textSecondary, marginTop: 2 },
+  timelineProofImage: {
+    marginTop: 8,
+    width: '100%',
+    height: 120,
+    borderRadius: 10,
+    backgroundColor: colors.border,
+  },
 
   btnRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
   callBtn: { flex: 1, height: 48, borderWidth: 1, borderColor: colors.primary, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },

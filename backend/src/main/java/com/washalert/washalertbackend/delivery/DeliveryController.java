@@ -2,14 +2,17 @@ package com.washalert.washalertbackend.delivery;
 
 import com.washalert.washalertbackend.delivery.dto.CreateDeliveryRequest;
 import com.washalert.washalertbackend.delivery.dto.DeliveryResponse;
+import com.washalert.washalertbackend.delivery.dto.DriverAvailableOrderResponse;
 import com.washalert.washalertbackend.delivery.dto.UpdateDeliveryAssignmentRequest;
 import com.washalert.washalertbackend.delivery.dto.UpdateDeliveryLocationRequest;
 import com.washalert.washalertbackend.delivery.dto.UpdateDeliveryStatusRequest;
+import com.washalert.washalertbackend.delivery.dto.UploadDeliveryProofRequest;
 import com.washalert.washalertbackend.security.AuthUserDetails;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -79,6 +82,21 @@ public class DeliveryController {
         return deliveryService.listMy(principal);
     }
 
+    @GetMapping("/available")
+    @PreAuthorize("hasRole('DRIVER')")
+    public List<DriverAvailableOrderResponse> listAvailable(@AuthenticationPrincipal AuthUserDetails principal) {
+        return deliveryService.listAvailableForDriver(principal);
+    }
+
+    @PostMapping("/accept/{trackingNumber}")
+    @PreAuthorize("hasRole('DRIVER')")
+    public DeliveryResponse accept(
+            @PathVariable String trackingNumber,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return deliveryService.acceptPendingBooking(trackingNumber, principal);
+    }
+
     @PutMapping("/{deliveryId}/assign-rider")
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public DeliveryResponse updateAssignment(
@@ -90,12 +108,31 @@ public class DeliveryController {
     }
 
     @PutMapping("/{deliveryId}/location")
-    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','DRIVER')")
     public DeliveryResponse updateLocation(
             @PathVariable Long deliveryId,
             @Valid @RequestBody UpdateDeliveryLocationRequest req,
             @AuthenticationPrincipal AuthUserDetails principal
     ) {
         return deliveryService.updateLocation(deliveryId, req, principal);
+    }
+
+    @PutMapping("/{deliveryId}/proof")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','DRIVER')")
+    public DeliveryResponse uploadProof(
+            @PathVariable Long deliveryId,
+            @Valid @RequestBody UploadDeliveryProofRequest req,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return deliveryService.uploadProof(deliveryId, req, principal);
+    }
+
+    @PatchMapping("/{deliveryId}/collect-cod")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','DRIVER')")
+    public DeliveryResponse collectCodPayment(
+            @PathVariable Long deliveryId,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return deliveryService.collectCodPayment(deliveryId, principal);
     }
 }

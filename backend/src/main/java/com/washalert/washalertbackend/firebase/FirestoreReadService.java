@@ -3,7 +3,9 @@ package com.washalert.washalertbackend.firebase;
 import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.QuerySnapshot;
+import com.washalert.washalertbackend.delivery.DeliveryLeg;
 import com.washalert.washalertbackend.delivery.DeliveryStatus;
+import com.washalert.washalertbackend.delivery.DeliveryWorkflowStatus;
 import com.washalert.washalertbackend.delivery.dto.DeliveryResponse;
 import com.washalert.washalertbackend.inventory.dto.InventoryItemResponse;
 import com.washalert.washalertbackend.machines.MachineStatus;
@@ -248,14 +250,23 @@ public class FirestoreReadService {
                 trackingNumber,
                 asString(data.get("branch")),
                 asString(data.get("customerName")),
+                asString(data.get("customerPhone")),
                 asString(data.get("deliveryAddress")),
                 asString(data.get("driverName")),
                 asString(data.get("driverPhone")),
-                asEnum(data.get("leg"), com.washalert.washalertbackend.delivery.DeliveryLeg.class),
+                asString(data.get("driverPhotoUrl")),
+                asString(data.get("driverVehicle")),
+                asString(data.get("paymentMethod")),
+                asBoolean(data.get("isPaid")),
+                asBigDecimal(data.get("amountToCollect")),
+                asEnum(data.get("workflowStatus"), DeliveryWorkflowStatus.class),
+                asEnum(data.get("leg"), DeliveryLeg.class),
                 status,
                 asDouble(data.get("currentLatitude")),
                 asDouble(data.get("currentLongitude")),
                 asLocalDateTime(data.get("estimatedArrivalAt")),
+                asString(data.get("pickupProofUrl")),
+                asString(data.get("dropoffProofUrl")),
                 asString(data.get("notes")),
                 asLocalDateTime(data.get("updatedAt")),
                 asDouble(data.get("branchLatitude")),

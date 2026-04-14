@@ -3,21 +3,30 @@ package com.washalert.washalertbackend.delivery;
 import com.washalert.washalertbackend.common.DataReadProperties;
 import com.washalert.washalertbackend.delivery.dto.CreateDeliveryRequest;
 import com.washalert.washalertbackend.delivery.dto.DeliveryResponse;
+import com.washalert.washalertbackend.delivery.dto.DriverAvailableOrderResponse;
 import com.washalert.washalertbackend.delivery.dto.UpdateDeliveryAssignmentRequest;
 import com.washalert.washalertbackend.delivery.dto.UpdateDeliveryLocationRequest;
 import com.washalert.washalertbackend.delivery.dto.UpdateDeliveryStatusRequest;
+import com.washalert.washalertbackend.delivery.dto.UploadDeliveryProofRequest;
 import com.washalert.washalertbackend.firebase.FirestoreReadService;
 import com.washalert.washalertbackend.firebase.FirestoreSyncService;
 import com.washalert.washalertbackend.notification.NotificationService;
 import com.washalert.washalertbackend.orders.JobOrder;
 import com.washalert.washalertbackend.orders.JobOrderRepository;
 import com.washalert.washalertbackend.orders.JobOrderStatus;
+import com.washalert.washalertbackend.orders.JobOrderTimelineService;
 import com.washalert.washalertbackend.orders.ServiceType;
+import com.washalert.washalertbackend.payment.PaymentMethod;
+import com.washalert.washalertbackend.payment.PaymentRecord;
+import com.washalert.washalertbackend.payment.PaymentRecordRepository;
+import com.washalert.washalertbackend.payment.PaymentStatus;
 import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
 import com.washalert.washalertbackend.user.UserRepository;
 import jakarta.transaction.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -26,11 +35,14 @@ import java.util.Optional;
 
 @Service
 public class DeliveryService {
+    private static final Logger log = LoggerFactory.getLogger(DeliveryService.class);
 
     private final DeliveryOrderRepository deliveryRepository;
     private final JobOrderRepository orderRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final PaymentRecordRepository paymentRecordRepository;
+    private final JobOrderTimelineService timelineService;
     private final FirestoreSyncService firestoreSyncService;
     private final FirestoreReadService firestoreReadService;
     private final DataReadProperties dataReadProperties;
@@ -40,6 +52,8 @@ public class DeliveryService {
             JobOrderRepository orderRepository,
             UserRepository userRepository,
             NotificationService notificationService,
+            PaymentRecordRepository paymentRecordRepository,
+            JobOrderTimelineService timelineService,
             FirestoreSyncService firestoreSyncService,
             FirestoreReadService firestoreReadService,
             DataReadProperties dataReadProperties
@@ -48,6 +62,8 @@ public class DeliveryService {
         this.orderRepository = orderRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
+        this.paymentRecordRepository = paymentRecordRepository;
+        this.timelineService = timelineService;
         this.firestoreSyncService = firestoreSyncService;
         this.firestoreReadService = firestoreReadService;
         this.dataReadProperties = dataReadProperties;
@@ -89,7 +105,7 @@ public class DeliveryService {
                 throw new IllegalArgumentException("Selected user is not a driver.");
             }
             resolvedName = driverUser.getFullName();
-            resolvedPhone = driverUser.getEmail() != null ? driverUser.getEmail() : "-";
+            resolvedPhone = resolveDriverContact(driverUser);
         } else {
             if (req.driverName() == null || req.driverName().isBlank()) {
                 throw new IllegalArgumentException("Driver name or driverId is required.");
@@ -110,6 +126,7 @@ public class DeliveryService {
                 .build();
 
         DeliveryOrder saved = deliveryRepository.save(delivery);
+        timelineService.log(order, order.getStatus(), actor.getEmail(), "Delivery assigned for " + saved.getLeg());
 
         // Notify Customer by email
         String customerEmail = saved.getJobOrder().getCustomerEmail();
@@ -128,10 +145,10 @@ public class DeliveryService {
         );
         notificationService.enqueuePushToUserEmail(
                 customerEmail,
-                "Driver Assigned",
-                "A driver is assigned for order %s.".formatted(saved.getJobOrder().getTrackingNumber()),
-                "DELIVERY_ASSIGNED_CUSTOMER",
-                saved.getJobOrder().getTrackingNumber() + ":assigned"
+                "Driver Accepted",
+                "A driver accepted order %s.".formatted(saved.getJobOrder().getTrackingNumber()),
+                "DRIVER_ACCEPTED",
+                saved.getJobOrder().getTrackingNumber() + ":driver-accepted"
         );
 
         // Notify Driver by push — use linked User account if available, otherwise fallback to name lookup
@@ -152,6 +169,92 @@ public class DeliveryService {
 
         firestoreSyncService.upsert("deliveries", saved.getJobOrder().getTrackingNumber(), toResponse(saved));
         return toResponse(saved);
+    }
+
+    @Transactional
+    public DeliveryResponse acceptPendingBooking(String trackingNumber, AuthUserDetails principal) {
+        User driver = principal.getUser();
+        if (driver.getRole() != Role.DRIVER) {
+            throw new IllegalArgumentException("Only drivers can accept bookings.");
+        }
+
+        String normalizedTracking = normalizeTracking(trackingNumber);
+        JobOrder order = orderRepository.findByTrackingNumberIgnoreCase(normalizedTracking)
+                .orElseThrow(() -> new IllegalArgumentException("Order not found."));
+
+        if (order.getServiceType() != ServiceType.PICKUP_DELIVERY) {
+            throw new IllegalArgumentException("Only pickup and delivery orders are available for drivers.");
+        }
+        if (order.getStatus() != JobOrderStatus.PENDING) {
+            throw new IllegalStateException("Only pending bookings can be accepted.");
+        }
+        if (driver.getBranch() != null && !sameBranch(driver.getBranch(), order.getBranch())) {
+            throw new IllegalStateException("This booking belongs to a different branch.");
+        }
+
+        Optional<DeliveryOrder> existingPickup = deliveryRepository.findByJobOrder_TrackingNumberAndLeg(
+                order.getTrackingNumber(),
+                DeliveryLeg.PICKUP_FROM_CUSTOMER
+        );
+        if (existingPickup.isPresent()) {
+            DeliveryOrder assigned = existingPickup.get();
+            if (assigned.getDriverUser() != null && assigned.getDriverUser().getId().equals(driver.getId())) {
+                return toResponse(assigned);
+            }
+            throw new IllegalStateException("This booking was already accepted by another driver.");
+        }
+
+        DeliveryOrder delivery = DeliveryOrder.builder()
+                .jobOrder(order)
+                .driverUser(driver)
+                .driverName(driver.getFullName())
+                .driverPhone(resolveDriverContact(driver))
+                .leg(DeliveryLeg.PICKUP_FROM_CUSTOMER)
+                .status(DeliveryStatus.PENDING_PICKUP)
+                .notes("Driver accepted booking.")
+                .build();
+
+        DeliveryOrder saved = deliveryRepository.save(delivery);
+        timelineService.log(order, order.getStatus(), driver.getEmail(), "Driver accepted booking.");
+
+        notificationService.enqueuePushToUserEmail(
+                order.getCustomerEmail(),
+                "Driver Accepted",
+                "Driver %s accepted order %s."
+                        .formatted(saved.getDriverName(), order.getTrackingNumber()),
+                "DRIVER_ACCEPTED",
+                order.getTrackingNumber() + ":driver-accepted"
+        );
+
+        firestoreSyncService.upsert("deliveries", saved.getJobOrder().getTrackingNumber(), toResponse(saved));
+        return toResponse(saved);
+    }
+
+    public List<DriverAvailableOrderResponse> listAvailableForDriver(AuthUserDetails principal) {
+        User driver = principal.getUser();
+        if (driver.getRole() != Role.DRIVER) {
+            throw new IllegalArgumentException("Only drivers can view available bookings.");
+        }
+
+        return orderRepository.findByStatusAndServiceTypeOrderByCreatedAtDesc(JobOrderStatus.PENDING, ServiceType.PICKUP_DELIVERY)
+                .stream()
+                .filter(order -> driver.getBranch() == null || sameBranch(driver.getBranch(), order.getBranch()))
+                .filter(order -> deliveryRepository.findByJobOrder_TrackingNumberAndLeg(
+                        order.getTrackingNumber(),
+                        DeliveryLeg.PICKUP_FROM_CUSTOMER
+                ).isEmpty())
+                .map(order -> new DriverAvailableOrderResponse(
+                        order.getId(),
+                        order.getTrackingNumber(),
+                        order.getBranch(),
+                        order.getCustomerName(),
+                        order.getCustomerPhone(),
+                        order.getDeliveryAddress(),
+                        order.getPaymentMethod(),
+                        order.getTotalPrice(),
+                        order.getCreatedAt()
+                ))
+                .toList();
     }
 
     /** Driver-only: returns all deliveries assigned to the calling driver's account. */
@@ -235,7 +338,7 @@ public class DeliveryService {
                 .orElseThrow(() -> new IllegalArgumentException("Delivery not found."));
 
         User actor = principal.getUser();
-        enforceStaffBranchScope(actor, delivery.getJobOrder().getBranch());
+        enforceDeliveryWriteScope(actor, delivery);
 
         if (delivery.getStatus() != req.status() && !isValidTransition(delivery.getStatus(), req.status())) {
             throw new IllegalStateException("Invalid delivery status transition from " + delivery.getStatus() + " to " + req.status() + ".");
@@ -246,23 +349,7 @@ public class DeliveryService {
         }
 
         DeliveryOrder saved = deliveryRepository.save(delivery);
-        
-        // Sync with Job Order status based on Leg
-        JobOrder jobOrder = saved.getJobOrder();
-        if (saved.getLeg() == DeliveryLeg.PICKUP_FROM_CUSTOMER) {
-            if (saved.getStatus() == DeliveryStatus.PICKED_UP) {
-                jobOrder.setStatus(JobOrderStatus.PICKED_UP); // In driver's hands
-            } else if (saved.getStatus() == DeliveryStatus.DELIVERED) {
-                jobOrder.setStatus(JobOrderStatus.WASHING); // Arrived at shop, ready to wash
-            }
-        } else if (saved.getLeg() == DeliveryLeg.DELIVERY_TO_CUSTOMER) {
-            if (saved.getStatus() == DeliveryStatus.PICKED_UP) {
-                jobOrder.setStatus(JobOrderStatus.PICKED_UP); // Out for delivery
-            } else if (saved.getStatus() == DeliveryStatus.DELIVERED) {
-                jobOrder.setStatus(JobOrderStatus.DELIVERED); // Finished entirely
-            }
-        }
-        orderRepository.save(jobOrder);
+        applyJobOrderStatusFromDelivery(saved, actor);
 
         // Notify Customer
         notificationService.enqueueEmail(
@@ -311,7 +398,7 @@ public class DeliveryService {
                 .orElseThrow(() -> new IllegalArgumentException("Delivery not found."));
 
         User actor = principal.getUser();
-        enforceStaffBranchScope(actor, delivery.getJobOrder().getBranch());
+        enforceDeliveryWriteScope(actor, delivery);
 
         delivery.setDriverName(req.driverName().trim());
         delivery.setDriverPhone(req.driverPhone().trim());
@@ -323,6 +410,7 @@ public class DeliveryService {
         }
 
         DeliveryOrder saved = deliveryRepository.save(delivery);
+        timelineService.log(saved.getJobOrder(), saved.getJobOrder().getStatus(), actor.getEmail(), "Driver assignment updated.");
         if (saved.getDriverUser() != null) {
             notificationService.enqueuePushToUser(
                     saved.getDriverUser(),
@@ -355,8 +443,89 @@ public class DeliveryService {
         if (req.notes() != null) delivery.setNotes(blankToNull(req.notes()));
 
         DeliveryOrder saved = deliveryRepository.save(delivery);
+        log.info(
+                "[DeliveryLocation] tracking={} deliveryId={} lat={} lng={} actor={}",
+                saved.getJobOrder().getTrackingNumber(),
+                saved.getId(),
+                saved.getCurrentLatitude(),
+                saved.getCurrentLongitude(),
+                actor.getEmail()
+        );
         firestoreSyncService.upsert("deliveries", saved.getJobOrder().getTrackingNumber(), toResponse(saved));
         return toResponse(saved);
+    }
+
+    @Transactional
+    public DeliveryResponse uploadProof(Long deliveryId, UploadDeliveryProofRequest req, AuthUserDetails principal) {
+        DeliveryOrder delivery = deliveryRepository.findById(deliveryId)
+                .orElseThrow(() -> new IllegalArgumentException("Delivery not found."));
+        User actor = principal.getUser();
+        enforceDeliveryWriteScope(actor, delivery);
+
+        String proofUrl = req.proofUrl().trim();
+        if (req.proofType() == DeliveryProofType.PICKUP) {
+            delivery.setPickupProofUrl(proofUrl);
+            timelineService.log(delivery.getJobOrder(), delivery.getJobOrder().getStatus(), actor.getEmail(), "Pickup proof uploaded.");
+        } else {
+            delivery.setDropoffProofUrl(proofUrl);
+            timelineService.log(delivery.getJobOrder(), delivery.getJobOrder().getStatus(), actor.getEmail(), "Drop-off proof uploaded.");
+        }
+
+        DeliveryOrder saved = deliveryRepository.save(delivery);
+        log.info(
+                "[DeliveryProof] tracking={} deliveryId={} proofType={} actor={}",
+                saved.getJobOrder().getTrackingNumber(),
+                saved.getId(),
+                req.proofType(),
+                actor.getEmail()
+        );
+        firestoreSyncService.upsert("deliveries", saved.getJobOrder().getTrackingNumber(), toResponse(saved));
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public DeliveryResponse collectCodPayment(Long deliveryId, AuthUserDetails principal) {
+        DeliveryOrder delivery = deliveryRepository.findById(deliveryId)
+                .orElseThrow(() -> new IllegalArgumentException("Delivery not found."));
+
+        User actor = principal.getUser();
+        enforceStaffBranchScope(actor, delivery.getJobOrder().getBranch());
+
+        if (actor.getRole() == Role.DRIVER
+                && (delivery.getDriverUser() == null || !delivery.getDriverUser().getId().equals(actor.getId()))) {
+            throw new IllegalArgumentException("You can only collect COD for your assigned deliveries.");
+        }
+
+        JobOrder order = delivery.getJobOrder();
+        String method = order.getPaymentMethod() == null ? "" : order.getPaymentMethod().trim().toUpperCase();
+        if (!method.contains("CASH")) {
+            throw new IllegalStateException("COD collection is only available for cash orders.");
+        }
+
+        order.setPaid(true);
+        orderRepository.save(order);
+
+        PaymentRecord payment = paymentRecordRepository.findByJobOrder_TrackingNumber(order.getTrackingNumber())
+                .orElseGet(() -> PaymentRecord.builder().jobOrder(order).build());
+        payment.setMethod(PaymentMethod.CASH);
+        payment.setAmount(order.getTotalPrice());
+        payment.setStatus(PaymentStatus.PAID);
+        payment.setVerifiedAt(LocalDateTime.now());
+        payment.setVerifiedBy(actor.getEmail());
+        payment.setNotes("COD collected by " + actor.getFullName());
+        paymentRecordRepository.save(payment);
+
+        notificationService.enqueuePushToUserEmail(
+                order.getCustomerEmail(),
+                "Payment Confirmed",
+                "Cash payment for order %s was received."
+                        .formatted(order.getTrackingNumber()),
+                "PAYMENT_VERIFIED",
+                order.getTrackingNumber() + ":cod-paid"
+        );
+
+        firestoreSyncService.upsert("deliveries", delivery.getJobOrder().getTrackingNumber(), toResponse(delivery));
+        return toResponse(delivery);
     }
 
     private List<DeliveryResponse> listFromMysql(String effectiveBranch) {
@@ -396,26 +565,111 @@ public class DeliveryService {
         }
     }
 
+    private void enforceDeliveryWriteScope(User actor, DeliveryOrder delivery) {
+        if (actor.getRole() == Role.DRIVER) {
+            if (delivery.getDriverUser() == null || !delivery.getDriverUser().getId().equals(actor.getId())) {
+                throw new IllegalArgumentException("You can only update your assigned deliveries.");
+            }
+            return;
+        }
+        enforceStaffBranchScope(actor, delivery.getJobOrder().getBranch());
+    }
+
+    private void applyJobOrderStatusFromDelivery(DeliveryOrder delivery, User actor) {
+        JobOrder order = delivery.getJobOrder();
+        if (order.getStatus() == JobOrderStatus.CANCELLED || order.getStatus() == JobOrderStatus.DELIVERED) {
+            return;
+        }
+
+        JobOrderStatus previous = order.getStatus();
+        if (delivery.getLeg() == DeliveryLeg.PICKUP_FROM_CUSTOMER) {
+            if (delivery.getStatus() == DeliveryStatus.PICKED_UP) {
+                order.setStatus(JobOrderStatus.PICKED_UP);
+            } else if (delivery.getStatus() == DeliveryStatus.DELIVERED) {
+                order.setStatus(JobOrderStatus.WASHING);
+            }
+        } else if (delivery.getLeg() == DeliveryLeg.DELIVERY_TO_CUSTOMER) {
+            if (delivery.getStatus() == DeliveryStatus.DELIVERED) {
+                order.setStatus(JobOrderStatus.DELIVERED);
+            }
+        }
+
+        if (order.getStatus() != previous) {
+            orderRepository.save(order);
+            timelineService.log(
+                    order,
+                    order.getStatus(),
+                    actor.getEmail(),
+                    "Order status updated from delivery workflow."
+            );
+        }
+    }
+
+    private DeliveryWorkflowStatus deriveWorkflowStatus(JobOrder order, DeliveryOrder delivery) {
+        if (order.getStatus() == JobOrderStatus.CANCELLED) return DeliveryWorkflowStatus.CANCELLED;
+        if (order.getStatus() == JobOrderStatus.DELIVERED) return DeliveryWorkflowStatus.COMPLETED;
+        if (order.getStatus() == JobOrderStatus.READY) return DeliveryWorkflowStatus.READY;
+        if (order.getStatus() == JobOrderStatus.WASHING || order.getStatus() == JobOrderStatus.DRYING) {
+            return DeliveryWorkflowStatus.AT_SHOP;
+        }
+
+        if (delivery == null) return DeliveryWorkflowStatus.PENDING;
+
+        if (delivery.getLeg() == DeliveryLeg.PICKUP_FROM_CUSTOMER) {
+            return switch (delivery.getStatus()) {
+                case PENDING_PICKUP -> DeliveryWorkflowStatus.DRIVER_ACCEPTED;
+                case EN_ROUTE_TO_PICKUP -> DeliveryWorkflowStatus.PICKING_UP;
+                case PICKED_UP -> DeliveryWorkflowStatus.PICKED_UP;
+                case IN_TRANSIT, DELIVERED -> DeliveryWorkflowStatus.AT_SHOP;
+                case FAILED -> DeliveryWorkflowStatus.CANCELLED;
+            };
+        }
+
+        return switch (delivery.getStatus()) {
+            case PENDING_PICKUP -> DeliveryWorkflowStatus.READY;
+            case EN_ROUTE_TO_PICKUP -> DeliveryWorkflowStatus.PICKING_UP;
+            case PICKED_UP, IN_TRANSIT -> DeliveryWorkflowStatus.PICKED_UP;
+            case DELIVERED -> DeliveryWorkflowStatus.COMPLETED;
+            case FAILED -> DeliveryWorkflowStatus.CANCELLED;
+        };
+    }
+
     private DeliveryResponse toResponse(DeliveryOrder d) {
+        JobOrder order = d.getJobOrder();
+        User driverUser = d.getDriverUser();
+        String driverPhone = (driverUser != null && driverUser.getMobileNumber() != null && !driverUser.getMobileNumber().isBlank())
+                ? driverUser.getMobileNumber()
+                : d.getDriverPhone();
+        String driverPhotoUrl = driverUser != null ? driverUser.getProfileImageUrl() : null;
+        String driverVehicle = extractVehicleFromNotes(d.getNotes());
         return new DeliveryResponse(
                 d.getId(),
-                d.getJobOrder().getTrackingNumber(),
-                d.getJobOrder().getBranch(),
-                d.getJobOrder().getCustomerName(),
-                d.getJobOrder().getDeliveryAddress(),
+                order.getTrackingNumber(),
+                order.getBranch(),
+                order.getCustomerName(),
+                order.getCustomerPhone(),
+                order.getDeliveryAddress(),
                 d.getDriverName(),
-                d.getDriverPhone(),
+                driverPhone,
+                driverPhotoUrl,
+                driverVehicle,
+                order.getPaymentMethod(),
+                order.isPaid(),
+                order.getTotalPrice(),
+                deriveWorkflowStatus(order, d),
                 d.getLeg(),
                 d.getStatus(),
                 d.getCurrentLatitude(),
                 d.getCurrentLongitude(),
                 d.getEstimatedArrivalAt(),
+                d.getPickupProofUrl(),
+                d.getDropoffProofUrl(),
                 d.getNotes(),
                 d.getUpdatedAt(),
-                d.getJobOrder().getBranchLatitude(),
-                d.getJobOrder().getBranchLongitude(),
-                d.getJobOrder().getDeliveryLatitude(),
-                d.getJobOrder().getDeliveryLongitude()
+                order.getBranchLatitude(),
+                order.getBranchLongitude(),
+                order.getDeliveryLatitude(),
+                order.getDeliveryLongitude()
         );
     }
 
@@ -443,10 +697,31 @@ public class DeliveryService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    private String resolveDriverContact(User driver) {
+        if (driver == null) return "-";
+        if (driver.getMobileNumber() != null && !driver.getMobileNumber().isBlank()) {
+            return driver.getMobileNumber().trim();
+        }
+        if (driver.getEmail() != null && !driver.getEmail().isBlank()) {
+            return driver.getEmail().trim();
+        }
+        return "-";
+    }
+
+    private String extractVehicleFromNotes(String notes) {
+        String value = blankToNull(notes);
+        if (value == null) return null;
+        String lower = value.toLowerCase();
+        int idx = lower.indexOf("vehicle:");
+        if (idx < 0) return null;
+        String extracted = value.substring(idx + "vehicle:".length()).trim();
+        return extracted.isEmpty() ? null : extracted;
+    }
+
     private boolean isValidTransition(DeliveryStatus from, DeliveryStatus to) {
         return switch (from) {
-            case PENDING_PICKUP -> to == DeliveryStatus.EN_ROUTE_TO_PICKUP || to == DeliveryStatus.PICKED_UP || to == DeliveryStatus.IN_TRANSIT || to == DeliveryStatus.FAILED;
-            case EN_ROUTE_TO_PICKUP -> to == DeliveryStatus.PICKED_UP || to == DeliveryStatus.IN_TRANSIT || to == DeliveryStatus.FAILED;
+            case PENDING_PICKUP -> to == DeliveryStatus.EN_ROUTE_TO_PICKUP || to == DeliveryStatus.FAILED;
+            case EN_ROUTE_TO_PICKUP -> to == DeliveryStatus.PICKED_UP || to == DeliveryStatus.FAILED;
             case PICKED_UP -> to == DeliveryStatus.IN_TRANSIT || to == DeliveryStatus.DELIVERED || to == DeliveryStatus.FAILED;
             case IN_TRANSIT -> to == DeliveryStatus.DELIVERED || to == DeliveryStatus.FAILED;
             case DELIVERED, FAILED -> false;

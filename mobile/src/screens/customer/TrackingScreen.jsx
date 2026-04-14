@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Linking, Alert, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { MapView, Marker, PROVIDER_GOOGLE, AnimatedRegion, MapViewDirections } from '../../components/SafeMap';
@@ -8,8 +8,7 @@ import { db } from '../../services/firebase';
 import { colors } from '../../theme/colors';
 import { bookings as bookingsApi } from '../../services/api';
 import { WashingMachineLoader } from '../../components';
-
-const GOOGLE_MAPS_API_KEY = 'AIzaSyAzAGBAijqpEZki3ZZBYe-9rxtzjF55RSY';
+import { GOOGLE_MAPS_API_KEY } from '../../config/env';
 
 const SILVER_MAP_STYLE = [
   { "elementType": "geometry", "stylers": [{ "color": "#f5f5f5" }] },
@@ -40,6 +39,14 @@ const STEPS = [
   { id: 'delivering', label: "Out for Delivery", icon: "bicycle-outline", desc: "Your driver is on the way to deliver." },
   { id: 'delivered', label: "Delivered", icon: "checkmark-done-outline", desc: "Your laundry has been delivered. Enjoy!" },
 ];
+
+const mapWorkflowToOrderStatus = (workflowStatus, fallback = 'pending') => {
+  const normalized = String(workflowStatus || '').toUpperCase();
+  if (normalized === 'COMPLETED') return 'delivered';
+  if (normalized === 'CANCELLED') return 'cancelled';
+  if (normalized) return 'delivering';
+  return fallback;
+};
 
 const TrackingScreen = ({ route, navigation }) => {
   const { orderId } = route.params;
@@ -140,32 +147,57 @@ const TrackingScreen = ({ route, navigation }) => {
 
   useEffect(() => {
     if (order?.trackingNumber) {
-      const unsub = onSnapshot(doc(db, 'deliveries', order.trackingNumber), (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          setDeliveryData(data);
-          if (data.currentLatitude && data.currentLongitude) {
-            const newCoord = {
-              latitude: data.currentLatitude,
-              longitude: data.currentLongitude,
-            };
-            setDriverLocation(newCoord);
-            if (driverCoordAnimated) {
-              driverCoordAnimated.timing({
-                ...newCoord,
-                duration: 10000, // Matched with driver's 10s broadcast interval for smooth glide
-                useNativeDriver: false
-              }).start();
-            }
-            if (mapRef) {
-              mapRef.fitToCoordinates([newCoord, destinationLoc], {
-                edgePadding: { top: 120, right: 80, bottom: 250, left: 80 },
-                animated: true,
-              });
+      const unsub = onSnapshot(
+        doc(db, 'deliveries', order.trackingNumber),
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+            console.log('[Tracking] Firestore delivery update tracking=', order.trackingNumber, 'status=', data?.status);
+            setDeliveryData(data);
+            setOrder((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    status: mapWorkflowToOrderStatus(data?.workflowStatus, prev.status),
+                    delivery: {
+                      ...(prev.delivery || {}),
+                      driver: data?.driverName || prev.delivery?.driver || 'Assigned Driver',
+                      driverPhone: data?.driverPhone || prev.delivery?.driverPhone || '',
+                      driverPhotoUrl: data?.driverPhotoUrl || prev.delivery?.driverPhotoUrl || null,
+                      driverVehicle: data?.driverVehicle || prev.delivery?.driverVehicle || null,
+                      eta: data?.estimatedArrivalAt || prev.delivery?.eta || null,
+                    },
+                  }
+                : prev
+            );
+            if (data.currentLatitude && data.currentLongitude) {
+              const newCoord = {
+                latitude: data.currentLatitude,
+                longitude: data.currentLongitude,
+              };
+              setDriverLocation(newCoord);
+              if (driverCoordAnimated) {
+                driverCoordAnimated.timing({
+                  ...newCoord,
+                  duration: 10000, // Matched with driver's 10s broadcast interval for smooth glide
+                  useNativeDriver: false
+                }).start();
+              }
+              if (mapRef) {
+                mapRef.fitToCoordinates([newCoord, destinationLoc], {
+                  edgePadding: { top: 120, right: 80, bottom: 250, left: 80 },
+                  animated: true,
+                });
+              }
+            } else {
+              console.log('[Tracking] Delivery update has no coordinates yet tracking=', order.trackingNumber);
             }
           }
+        },
+        (error) => {
+          console.warn('[Tracking] Firestore listener failed:', error?.message || error);
         }
-      });
+      );
       return () => unsub();
     }
   }, [order?.trackingNumber, mapRef, destinationLoc.latitude, destinationLoc.longitude]);
@@ -197,6 +229,36 @@ const TrackingScreen = ({ route, navigation }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const openPhoneDriver = async () => {
+    const phone = String(order?.delivery?.driverPhone || '').replace(/[^0-9+]/g, '');
+    if (!phone) {
+      Alert.alert('No Contact', 'Driver phone number is not available yet.');
+      return;
+    }
+    const url = `tel:${phone}`;
+    const canOpen = await Linking.canOpenURL(url);
+    if (!canOpen) {
+      Alert.alert('Unable to Call', 'This device cannot open the dialer.');
+      return;
+    }
+    await Linking.openURL(url);
+  };
+
+  const openMessageDriver = async () => {
+    const phone = String(order?.delivery?.driverPhone || '').replace(/[^0-9+]/g, '');
+    if (!phone) {
+      Alert.alert('No Contact', 'Driver phone number is not available yet.');
+      return;
+    }
+    const url = `sms:${phone}`;
+    const canOpen = await Linking.canOpenURL(url);
+    if (!canOpen) {
+      Alert.alert('Unable to Message', 'This device cannot open messaging.');
+      return;
+    }
+    await Linking.openURL(url);
   };
 
   if (loading) {
@@ -336,11 +398,48 @@ const TrackingScreen = ({ route, navigation }) => {
           </View>
           <TouchableOpacity 
             style={styles.callBox}
-            onPress={() => Linking.openURL(`tel:${order?.delivery?.driverPhone || '09170000000'}`)}
+            onPress={() => void openPhoneDriver()}
           >
             <Ionicons name="call" size={24} color={colors.primary} />
           </TouchableOpacity>
         </View>
+
+        {order?.delivery ? (
+          <View style={styles.driverCard}>
+            <Text style={styles.timelineTitle}>Driver Details</Text>
+            {order.delivery.driverPhotoUrl ? (
+              <Image source={{ uri: order.delivery.driverPhotoUrl }} style={styles.driverPhoto} />
+            ) : null}
+            <View style={styles.infoRow}>
+              <Text style={styles.infoKey}>Name</Text>
+              <Text style={styles.infoValue}>{order.delivery.driver || 'Assigned Driver'}</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoKey}>Phone</Text>
+              <Text style={styles.infoValue}>{order.delivery.driverPhone || 'N/A'}</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoKey}>Vehicle</Text>
+              <Text style={styles.infoValue}>{order.delivery.driverVehicle || 'Not provided'}</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoKey}>ETA</Text>
+              <Text style={styles.infoValue}>
+                {order.delivery.eta ? new Date(order.delivery.eta).toLocaleString() : etaData.duration}
+              </Text>
+            </View>
+            <View style={styles.contactRow}>
+              <TouchableOpacity style={styles.contactBtn} onPress={() => void openPhoneDriver()}>
+                <Ionicons name="call-outline" size={14} color={colors.primary} />
+                <Text style={styles.contactBtnText}>Call</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.contactBtn} onPress={() => void openMessageDriver()}>
+                <Ionicons name="chatbubble-ellipses-outline" size={14} color={colors.primary} />
+                <Text style={styles.contactBtnText}>Message</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
 
         <View style={styles.timelineCard}>
           <Text style={styles.timelineTitle}>Status Timeline</Text>
@@ -529,6 +628,60 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  driverCard: {
+    backgroundColor: colors.card,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 20,
+    marginBottom: 20,
+  },
+  driverPhoto: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignSelf: 'center',
+    marginBottom: 12,
+    backgroundColor: colors.border,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  infoKey: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  infoValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+    maxWidth: '65%',
+    textAlign: 'right',
+  },
+  contactRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+  contactBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  contactBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
   },
   timelineCard: {
     backgroundColor: colors.card,

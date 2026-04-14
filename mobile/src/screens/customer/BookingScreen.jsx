@@ -12,6 +12,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { MapView, Marker, PROVIDER_GOOGLE } from '../../components/SafeMap';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
@@ -19,18 +20,33 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { colors } from '../../theme/colors';
 import { Card, Button } from '../../components';
-import { branches, laundry, createOrder, estimatePrice, payments } from '../../services/api';
+import { branches, bookings, laundry, createOrder, estimatePrice, payments } from '../../services/api';
 import { GOOGLE_MAPS_API_KEY } from '../../config/env';
+import { getDefaultSavedAddress } from '../../services/savedAddresses';
 
 const { width } = Dimensions.get('window');
 
-const TIME_SLOTS = [
-  "8:00 AM - 10:00 AM",
-  "10:00 AM - 12:00 PM",
-  "1:00 PM - 3:00 PM",
-  "3:00 PM - 5:00 PM",
-  "5:00 PM - 7:00 PM",
+const SERVICE_MODES = [
+  { id: 'FULL_SERVICE', label: 'Full Service', hint: 'Pickup + Laundry + Delivery', backendServiceType: 'PICKUP_DELIVERY', needsAddress: true },
+  { id: 'DROP_OFF_ONLY', label: 'Drop-off Only', hint: 'You bring and pick up at branch', backendServiceType: 'DROP_OFF', needsAddress: false },
+  { id: 'PICKUP_ONLY', label: 'Pick-up Only', hint: 'Pickup from your address', backendServiceType: 'PICKUP_DELIVERY', needsAddress: true },
 ];
+
+const formatDateChipLabel = (date) =>
+  date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+const formatDateSummary = (date) =>
+  date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+const createDateOptions = (days = 7) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Array.from({ length: days }, (_, idx) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() + idx);
+    return date;
+  });
+};
 
 const SERVICE_ICON_BY_ID = {
   wash: 'washing-machine',
@@ -89,8 +105,17 @@ const BookingScreen = ({ route, navigation }) => {
   // Form State
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [selectedService, setSelectedService] = useState(null);
-  const [scheduleDate, setScheduleDate] = useState('Today');
-  const [scheduleTime, setScheduleTime] = useState(TIME_SLOTS[0]);
+  const [serviceMode, setServiceMode] = useState('FULL_SERVICE');
+  const [scheduleDate, setScheduleDate] = useState(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+  });
+  const [scheduleTime, setScheduleTime] = useState(null);
+  const [availableSlots, setAvailableSlots] = useState([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotError, setSlotError] = useState('');
+  const [defaultSavedAddress, setDefaultSavedAddress] = useState(null);
   const [loadKg, setLoadKg] = useState('5');
   const [selectedDetergent, setSelectedDetergent] = useState('None');
   const [selectedConditioner, setSelectedConditioner] = useState('None');
@@ -117,10 +142,23 @@ const BookingScreen = ({ route, navigation }) => {
     longitudeDelta: 0.005,
   });
   const hasMapsApiKey = !!String(GOOGLE_MAPS_API_KEY || '').trim();
+  const dateOptions = createDateOptions(7);
+  const selectedServiceMode = SERVICE_MODES.find((item) => item.id === serviceMode) || SERVICE_MODES[0];
+  const serviceModeNeedsAddress = selectedServiceMode.needsAddress;
 
   useEffect(() => {
     loadInitialData();
   }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const loadAddresses = async () => {
+        const defaultAddress = await getDefaultSavedAddress();
+        setDefaultSavedAddress(defaultAddress);
+      };
+      void loadAddresses();
+    }, [])
+  );
 
   useEffect(() => {
     console.log(`GOOGLE MAPS KEY LOADED: ${hasMapsApiKey ? 'YES' : 'NO'}`);
@@ -160,10 +198,39 @@ const BookingScreen = ({ route, navigation }) => {
   }, [selectedService, loadKg, isRush, selectedDetergent, selectedConditioner, requestDelivery, selectedBranch]);
 
   useEffect(() => {
-    if (!requestDelivery) {
+    setRequestDelivery(serviceModeNeedsAddress);
+    if (!serviceModeNeedsAddress) {
       setDeliveryLocationError('');
     }
-  }, [requestDelivery]);
+  }, [serviceModeNeedsAddress]);
+
+  useEffect(() => {
+    const loadAvailableSlots = async () => {
+      if (!selectedBranch || !scheduleDate) {
+        setAvailableSlots([]);
+        setScheduleTime(null);
+        return;
+      }
+      try {
+        setSlotsLoading(true);
+        setSlotError('');
+        const slots = await bookings.getAvailableSlots(selectedBranch.name, scheduleDate);
+        const openSlots = slots.filter((slot) => slot.available);
+        setAvailableSlots(openSlots);
+        if (!openSlots.find((slot) => slot.label === scheduleTime)) {
+          setScheduleTime(openSlots[0]?.label || null);
+        }
+      } catch (error) {
+        console.warn('[Booking][Schedule] Failed to load slots:', error?.message || error);
+        setAvailableSlots([]);
+        setScheduleTime(null);
+        setSlotError('No available time slots found for this date.');
+      } finally {
+        setSlotsLoading(false);
+      }
+    };
+    void loadAvailableSlots();
+  }, [selectedBranch, scheduleDate]);
 
   const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Radius of the earth in km
@@ -253,7 +320,63 @@ const BookingScreen = ({ route, navigation }) => {
     }
   };
 
+  const ensureAddressGateBeforePayment = () => {
+    if (!serviceModeNeedsAddress) return true;
+    if (defaultSavedAddress) return true;
+
+    Alert.alert(
+      'Saved Address Required',
+      'Add and set a default address before continuing to payment.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Manage Addresses',
+          onPress: () => navigation.navigate('SavedAddresses'),
+        },
+      ]
+    );
+    return false;
+  };
+
+  const applyDefaultSavedAddress = async () => {
+    if (!defaultSavedAddress?.address) {
+      Alert.alert('No Default Address', 'Please set a default address first.');
+      return;
+    }
+    try {
+      console.log('[Booking][Address] Applying default saved address label=', defaultSavedAddress.label);
+      const geocoded = await Location.geocodeAsync(defaultSavedAddress.address);
+      const first = geocoded?.[0];
+      if (first?.latitude && first?.longitude) {
+        setMapRegion((prev) => ({
+          ...prev,
+          latitude: first.latitude,
+          longitude: first.longitude,
+        }));
+        await syncAddressFromCoordinates(first.latitude, first.longitude, 'default_saved_address');
+      } else {
+        setDeliveryCoords((prev) => ({
+          ...prev,
+          address: defaultSavedAddress.address,
+        }));
+        setDeliveryLocationError('');
+      }
+    } catch (error) {
+      console.warn('[Booking][Address] Failed to geocode default saved address:', error?.message || error);
+      setDeliveryCoords((prev) => ({
+        ...prev,
+        address: defaultSavedAddress.address,
+      }));
+      setDeliveryLocationError('');
+    }
+  };
+
   const handleStep3Continue = () => {
+    if (!ensureAddressGateBeforePayment()) return;
+    if (serviceModeNeedsAddress && !deliveryCoords?.address && defaultSavedAddress?.address) {
+      void applyDefaultSavedAddress();
+      return;
+    }
     if (!isDeliveryLocationValid()) {
       setDeliveryLocationError('Delivery location is required. Please pin or search your delivery address before continuing.');
       return;
@@ -263,6 +386,10 @@ const BookingScreen = ({ route, navigation }) => {
   };
 
   const handleConfirmBooking = async () => {
+    if (!ensureAddressGateBeforePayment()) {
+      setStep(3);
+      return;
+    }
     if (!isDeliveryLocationValid()) {
       setStep(3);
       setDeliveryLocationError('Delivery location is required before placing this booking.');
@@ -276,21 +403,24 @@ const BookingScreen = ({ route, navigation }) => {
         branchId: selectedBranch.id,
         serviceId: selectedService.id,
         serviceType: selectedService.name,
+        serviceMode,
+        serviceModeLabel: selectedServiceMode.label,
+        serviceTypeBackend: selectedServiceMode.backendServiceType,
         scheduleDate: scheduleDate,
         scheduleTime: scheduleTime,
         loadKg: parseFloat(loadKg),
         detergent: selectedDetergent,
         conditioner: selectedConditioner,
-        delivery: requestDelivery,
+        delivery: serviceModeNeedsAddress,
         isRush: isRush,
         instructions: specialInstructions,
         paymentMethod: paymentMethod,
         total: priceDetails.totalPrice,
         serviceName: selectedService.name,
         distanceKm: priceDetails.calculatedDistance || (requestDelivery ? (selectedBranch?.distance || 0) : 0),
-        deliveryLatitude: requestDelivery ? deliveryCoords.latitude : null,
-        deliveryLongitude: requestDelivery ? deliveryCoords.longitude : null,
-        deliveryAddress: requestDelivery ? deliveryCoords.address : null,
+        deliveryLatitude: serviceModeNeedsAddress ? deliveryCoords.latitude : null,
+        deliveryLongitude: serviceModeNeedsAddress ? deliveryCoords.longitude : null,
+        deliveryAddress: serviceModeNeedsAddress ? deliveryCoords.address : null,
         branchLatitude: selectedBranch?.latitude || null,
         branchLongitude: selectedBranch?.longitude || null,
       };
@@ -438,6 +568,20 @@ const BookingScreen = ({ route, navigation }) => {
             </View>
 
             <Text style={styles.sectionTitle}>Service Type</Text>
+            <View style={styles.modeGrid}>
+              {SERVICE_MODES.map((mode) => (
+                <TouchableOpacity
+                  key={mode.id}
+                  style={[styles.modeCard, serviceMode === mode.id && styles.modeCardActive]}
+                  onPress={() => setServiceMode(mode.id)}
+                >
+                  <Text style={[styles.modeTitle, serviceMode === mode.id && styles.modeTitleActive]}>{mode.label}</Text>
+                  <Text style={[styles.modeHint, serviceMode === mode.id && styles.modeHintActive]}>{mode.hint}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.sectionTitle}>Laundry Package</Text>
             <View style={styles.serviceGrid}>
               {availableServices.map((service) => (
                 <TouchableOpacity
@@ -478,40 +622,63 @@ const BookingScreen = ({ route, navigation }) => {
         {step === 2 && (
           <View style={styles.stepContent}>
             <Text style={styles.sectionTitle}>Select Date</Text>
-            <View style={styles.dateSelector}>
-              {['Today', 'Tomorrow', 'Other Day'].map((d) => (
-                <TouchableOpacity
-                  key={d}
-                  style={[styles.dateBtn, scheduleDate === d && styles.dateBtnActive]}
-                  onPress={() => setScheduleDate(d)}
-                >
-                  <Text style={[styles.dateBtnText, scheduleDate === d && styles.dateBtnTextActive]}>{d}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <Text style={styles.scheduleSummaryText}>{formatDateSummary(scheduleDate)}</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateSelector}>
+              {dateOptions.map((dateOption) => {
+                const isSelected = scheduleDate.toDateString() === dateOption.toDateString();
+                return (
+                  <TouchableOpacity
+                    key={dateOption.toISOString()}
+                    style={[styles.dateBtn, isSelected && styles.dateBtnActive]}
+                    onPress={() => setScheduleDate(dateOption)}
+                  >
+                    <Text style={[styles.dateBtnText, isSelected && styles.dateBtnTextActive]}>
+                      {formatDateChipLabel(dateOption)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
 
             <Text style={styles.sectionTitle}>Available Time Slots</Text>
+            {slotsLoading ? (
+              <View style={styles.slotLoadingWrap}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={styles.slotLoadingText}>Loading available slots...</Text>
+              </View>
+            ) : null}
+            {!!slotError && !slotsLoading ? <Text style={styles.deliveryErrorText}>{slotError}</Text> : null}
             <View style={styles.timeGrid}>
-              {TIME_SLOTS.map((t) => (
+              {availableSlots.map((slot) => (
                 <TouchableOpacity
-                  key={t}
-                  style={[styles.timeCard, scheduleTime === t && styles.selectedTimeCard]}
-                  onPress={() => setScheduleTime(t)}
+                  key={`${slot.slotStartTime}-${slot.slotEndTime}`}
+                  style={[styles.timeCard, scheduleTime === slot.label && styles.selectedTimeCard]}
+                  onPress={() => setScheduleTime(slot.label)}
                 >
                   <Ionicons 
                     name="time-outline" 
                     size={20} 
-                    color={scheduleTime === t ? colors.primary : colors.textSecondary} 
+                    color={scheduleTime === slot.label ? colors.primary : colors.textSecondary} 
                   />
-                  <Text style={[styles.timeText, scheduleTime === t && styles.selectedTimeText]}>{t}</Text>
-                  {scheduleTime === t && <Ionicons name="checkmark-circle" size={18} color={colors.primary} />}
+                  <Text style={[styles.timeText, scheduleTime === slot.label && styles.selectedTimeText]}>
+                    {slot.label}
+                  </Text>
+                  {scheduleTime === slot.label && <Ionicons name="checkmark-circle" size={18} color={colors.primary} />}
                 </TouchableOpacity>
               ))}
             </View>
+            {!slotsLoading && !availableSlots.length ? (
+              <Text style={styles.slotHintText}>No open slots for this date. Pick another day.</Text>
+            ) : null}
 
             <View style={styles.buttonRow}>
               <Button title="Back" variant="ghost" onPress={() => setStep(1)} style={styles.halfButton} />
-              <Button title="Continue" onPress={() => setStep(3)} style={styles.halfButton} />
+              <Button
+                title="Continue"
+                onPress={() => setStep(3)}
+                disabled={!scheduleTime || slotsLoading}
+                style={styles.halfButton}
+              />
             </View>
           </View>
         )}
@@ -557,18 +724,11 @@ const BookingScreen = ({ route, navigation }) => {
                 </TouchableOpacity>
               ))}
             </ScrollView>
-
             <View style={styles.deliveryToggleRow}>
               <View>
-                <Text style={styles.toggleTitle}>Request Delivery?</Text>
-                <Text style={styles.toggleSub}>Flat rate ₱50.00 fee applies.</Text>
+                <Text style={styles.toggleTitle}>Selected Mode: {selectedServiceMode.label}</Text>
+                <Text style={styles.toggleSub}>{selectedServiceMode.hint}</Text>
               </View>
-              <TouchableOpacity
-                onPress={() => setRequestDelivery(!requestDelivery)}
-                style={[styles.toggleSwitch, requestDelivery && styles.toggleSwitchActive]}
-              >
-                <View style={[styles.toggleCircle, requestDelivery && styles.toggleCircleActive]} />
-              </TouchableOpacity>
             </View>
 
             <View style={styles.deliveryToggleRow}>
@@ -594,10 +754,39 @@ const BookingScreen = ({ route, navigation }) => {
               placeholder="e.g. Separate whites, use delicate mode..."
             />
 
-            {requestDelivery && (
+            {serviceModeNeedsAddress && (
                <View style={styles.addressSection}>
                  <Text style={styles.sectionTitle}>Pin Delivery Location</Text>
                  <Text style={styles.addressTip}>Search for your address or drag the pin to your exact spot.</Text>
+                 {!defaultSavedAddress ? (
+                  <View style={styles.savedAddressGateCard}>
+                    <Text style={styles.savedAddressGateTitle}>Default saved address required</Text>
+                    <Text style={styles.savedAddressGateText}>
+                      Set a default address before continuing to payment.
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.savedAddressActionBtn}
+                      onPress={() => navigation.navigate('SavedAddresses')}
+                    >
+                      <Text style={styles.savedAddressActionText}>Manage Saved Addresses</Text>
+                    </TouchableOpacity>
+                  </View>
+                 ) : (
+                  <View style={styles.savedAddressCard}>
+                    <Text style={styles.savedAddressLabel}>Default Address</Text>
+                    <Text style={styles.savedAddressValue}>
+                      {defaultSavedAddress.label}: {defaultSavedAddress.address}
+                    </Text>
+                    <View style={styles.savedAddressActionRow}>
+                      <TouchableOpacity style={styles.savedAddressActionBtn} onPress={() => void applyDefaultSavedAddress()}>
+                        <Text style={styles.savedAddressActionText}>Use Default Address</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.savedAddressActionBtnAlt} onPress={() => navigation.navigate('SavedAddresses')}>
+                        <Text style={styles.savedAddressActionTextAlt}>Change</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                 )}
                  {!hasMapsApiKey && (
                   <Text style={styles.deliveryErrorText}>
                     Google Maps API key is not configured. Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY to enable autocomplete.
@@ -652,14 +841,15 @@ const BookingScreen = ({ route, navigation }) => {
                     }}
                     textInputProps={{
                       placeholderTextColor: colors.textTertiary,
-                      editable: hasMapsApiKey,
+                      editable: hasMapsApiKey && !!defaultSavedAddress,
                     }}
                  />
 
-                 <TouchableOpacity 
-                  style={styles.locationBtn} 
-                  onPress={handleUseCurrentLocation}
-                 >
+                  <TouchableOpacity 
+                   style={styles.locationBtn} 
+                   onPress={handleUseCurrentLocation}
+                   disabled={!defaultSavedAddress}
+                  >
                    <Ionicons name="locate" size={18} color={colors.primary} />
                    <Text style={styles.locationBtnText}>Use My Current Location</Text>
                  </TouchableOpacity>
@@ -795,8 +985,13 @@ const BookingScreen = ({ route, navigation }) => {
               </View>
 
               <View style={styles.receiptRow}>
+                <Text style={styles.receiptLabel}>Mode</Text>
+                <Text style={styles.receiptValue}>{selectedServiceMode.label}</Text>
+              </View>
+
+              <View style={styles.receiptRow}>
                 <Text style={styles.receiptLabel}>Schedule</Text>
-                <Text style={styles.receiptValue}>{scheduleDate} | {scheduleTime}</Text>
+                <Text style={styles.receiptValue}>{formatDateSummary(scheduleDate)} | {scheduleTime}</Text>
               </View>
 
               <View style={styles.receiptRow}>
@@ -821,7 +1016,7 @@ const BookingScreen = ({ route, navigation }) => {
                 <Text style={styles.receiptValue}>₱{priceDetails.suppliesPrice?.toFixed(2)}</Text>
               </View>
 
-              {requestDelivery && (
+              {serviceModeNeedsAddress && (
                 <View style={styles.receiptRow}>
                   <Text style={styles.receiptLabel}>Delivery Fee</Text>
                   <Text style={styles.receiptValue}>₱{priceDetails.deliveryPrice?.toFixed(2)}</Text>
@@ -964,6 +1159,37 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
+  modeGrid: {
+    gap: 10,
+  },
+  modeCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  modeCardActive: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(26, 86, 219, 0.05)',
+  },
+  modeTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  modeTitleActive: {
+    color: colors.primary,
+  },
+  modeHint: {
+    marginTop: 3,
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  modeHintActive: {
+    color: colors.primary,
+  },
   serviceGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1005,6 +1231,11 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 16,
   },
+  scheduleSummaryText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 10,
+  },
   dateBtn: {
     flex: 1,
     paddingVertical: 12,
@@ -1028,6 +1259,21 @@ const styles = StyleSheet.create({
   },
   timeGrid: {
     gap: 12,
+  },
+  slotLoadingWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  slotLoadingText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  slotHintText: {
+    marginTop: 10,
+    fontSize: 12,
+    color: colors.textSecondary,
   },
   timeCard: {
     flexDirection: 'row',
@@ -1137,6 +1383,72 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginBottom: 4,
+  },
+  savedAddressCard: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: colors.card,
+    gap: 8,
+  },
+  savedAddressLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  savedAddressValue: {
+    fontSize: 13,
+    color: colors.text,
+    lineHeight: 18,
+  },
+  savedAddressActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  savedAddressActionBtn: {
+    borderRadius: 10,
+    backgroundColor: colors.primary,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  savedAddressActionText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  savedAddressActionBtnAlt: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: colors.background,
+  },
+  savedAddressActionTextAlt: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  savedAddressGateCard: {
+    borderWidth: 1,
+    borderColor: colors.warning,
+    backgroundColor: 'rgba(234, 179, 8, 0.08)',
+    borderRadius: 12,
+    padding: 12,
+    gap: 6,
+  },
+  savedAddressGateTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  savedAddressGateText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
   autocompleteContainer: {
     flex: 0,
