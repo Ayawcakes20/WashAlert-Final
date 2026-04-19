@@ -6,6 +6,7 @@ import Constants from 'expo-constants';
 // and the API URL is just for local development.
 const FALLBACK_API_BASE_URL = 'https://stimulant-bobcat-glare.ngrok-free.dev';
 const FALLBACK_FIREBASE_API_KEY = 'AIzaSyAfLyeQqG7qYbjEqrEgik6XjVoDbUcbS-g';
+const FALLBACK_GOOGLE_MAPS_API_KEY = 'AIzaSyAzAGBAijqpEZki3ZZBYe-9rxtzjF55RSY';
 
 const emulatorFallback =
   Platform.OS === 'android' ? 'http://10.0.2.2:8081' : 'http://localhost:8081';
@@ -28,7 +29,8 @@ const mapsApiKeyFromExpoConfig =
   Constants?.expoConfig?.ios?.config?.googleMapsApiKey ||
   '';
 export const GOOGLE_MAPS_API_KEY =
-  (process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || mapsApiKeyFromExpoConfig || '').trim();
+  (process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || FALLBACK_GOOGLE_MAPS_API_KEY || mapsApiKeyFromExpoConfig || '').trim();
+
 
 export const DEMO_MODE_ENABLED = String(process.env.EXPO_PUBLIC_ENABLE_DEMO_MODE || 'false').toLowerCase() === 'true';
 

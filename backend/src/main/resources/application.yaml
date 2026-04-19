@@ -20,7 +20,7 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: false
-    open-in-view: false
+    open-in-view: true
 
   mail:
     host: ${MAIL_HOST:smtp.resend.com}
