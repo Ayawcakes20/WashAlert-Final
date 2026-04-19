@@ -16,6 +16,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "package": "com.washalert.mobile",
+      "usesCleartextTraffic": true,
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
@@ -85,9 +86,8 @@
     },
     "extra": {
       "eas": {
-        "projectId": "845aec17-c683-45c6-82ad-37b352f6bc08"
+        "projectId": "63a01be6-d1e9-42eb-9ec5-3909f71c1a45"
       }
-    },
-    "owner": "ayawcakes20"
+    }
   }
 }

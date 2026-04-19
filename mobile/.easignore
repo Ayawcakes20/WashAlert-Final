@@ -1,0 +1,23 @@
+# .easignore
+# This file is used by EAS Build instead of .gitignore if it exists.
+# We want to include google-services.json so EAS can build the app,
+# even though it's ignored in .gitignore for security.
+
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+# google-services.json (Removed from ignore so EAS can see it)
+GoogleService-Info.plist
+.DS_Store
+*.pem
+.env*.local
+*.tsbuildinfo
