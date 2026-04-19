@@ -16,7 +16,6 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "package": "com.washalert.mobile",
-      "usesCleartextTraffic": true,
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
@@ -78,6 +77,14 @@
           "icon": "./assets/images/icon.png",
           "color": "#1d4ed8",
           "defaultChannel": "washalert-updates"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
         }
       ]
     ],
