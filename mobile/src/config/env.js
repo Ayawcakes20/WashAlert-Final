@@ -4,7 +4,7 @@ import Constants from 'expo-constants';
 // ── Fallback values for EAS cloud builds (where .env is not available) ──
 // These are safe to hardcode: Firebase web API keys are public,
 // and the API URL is just for local development.
-const FALLBACK_API_BASE_URL = 'http://192.168.1.4:8081';
+const FALLBACK_API_BASE_URL = 'https://stimulant-bobcat-glare.ngrok-free.dev';
 const FALLBACK_FIREBASE_API_KEY = 'AIzaSyAfLyeQqG7qYbjEqrEgik6XjVoDbUcbS-g';
 
 const emulatorFallback =
