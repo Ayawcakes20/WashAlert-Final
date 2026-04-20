@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "41267840316",
+    "project_id": "washalert-b8ce8",
+    "storage_bucket": "washalert-b8ce8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:41267840316:android:292ec20afab25e403fca39",
+        "android_client_info": {
+          "package_name": "com.washalert.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAi-ScPD1pQZBH-2QbC_TvQXW1-xmHV1zw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
