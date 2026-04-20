@@ -1,0 +1,378 @@
+package com.washalert.washalertbackend.support;
+
+import com.washalert.washalertbackend.delivery.DeliveryService;
+import com.washalert.washalertbackend.notification.NotificationService;
+import com.washalert.washalertbackend.orders.JobOrderService;
+import com.washalert.washalertbackend.orders.dto.OrderTrackingResponse;
+import com.washalert.washalertbackend.payment.PaymentService;
+import com.washalert.washalertbackend.security.AuthUserDetails;
+import com.washalert.washalertbackend.support.dto.ChatHistoryMessageResponse;
+import com.washalert.washalertbackend.support.dto.ChatHistoryResponse;
+import com.washalert.washalertbackend.support.dto.ChatSupportRequest;
+import com.washalert.washalertbackend.support.dto.ChatSupportResponse;
+import com.washalert.washalertbackend.support.dto.SupportTicketResponse;
+import com.washalert.washalertbackend.user.Role;
+import jakarta.transaction.Transactional;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+@Service
+public class ChatSupportService {
+
+    private static final Pattern TRACKING_PATTERN = Pattern.compile("WA-\\d+", Pattern.CASE_INSENSITIVE);
+    private static final DateTimeFormatter TICKET_TIME = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+
+    private final JobOrderService jobOrderService;
+    private final DeliveryService deliveryService;
+    private final PaymentService paymentService;
+    private final ChatSupportMessageRepository messageRepository;
+    private final SupportTicketRepository supportTicketRepository;
+    private final OpenAiChatClient openAiChatClient;
+    private final NotificationService notificationService;
+
+    public ChatSupportService(
+            JobOrderService jobOrderService,
+            DeliveryService deliveryService,
+            PaymentService paymentService,
+            ChatSupportMessageRepository messageRepository,
+            SupportTicketRepository supportTicketRepository,
+            OpenAiChatClient openAiChatClient,
+            NotificationService notificationService
+    ) {
+        this.jobOrderService = jobOrderService;
+        this.deliveryService = deliveryService;
+        this.paymentService = paymentService;
+        this.messageRepository = messageRepository;
+        this.supportTicketRepository = supportTicketRepository;
+        this.openAiChatClient = openAiChatClient;
+        this.notificationService = notificationService;
+    }
+
+    @Transactional
+    public ChatSupportResponse reply(ChatSupportRequest req) {
+        String sessionId = normalizeSessionId(req.sessionId());
+        String userMessage = req.message().trim();
+
+        saveMessage(sessionId, ChatResponderType.USER, userMessage, "user", null);
+        ChatSupportResponse response = buildReply(req, userMessage, sessionId);
+        saveMessage(
+                sessionId,
+                response.escalated() ? ChatResponderType.HUMAN : ChatResponderType.AI,
+                response.reply(),
+                response.category(),
+                response.escalationTicket()
+        );
+
+        return response;
+    }
+
+    public ChatHistoryResponse history(String sessionId) {
+        String normalizedSessionId = normalizeSessionId(sessionId);
+
+        var messages = messageRepository.findTop200BySessionIdOrderByCreatedAtAsc(normalizedSessionId).stream()
+                .map(m -> new ChatHistoryMessageResponse(
+                        m.getId(),
+                        m.getSenderType().name(),
+                        m.getMessage(),
+                        m.getCategory(),
+                        m.getEscalationTicket(),
+                        m.getCreatedAt()
+                ))
+                .toList();
+
+        var tickets = supportTicketRepository.findTop50BySessionIdOrderByCreatedAtDesc(normalizedSessionId).stream()
+                .map(t -> new SupportTicketResponse(
+                        t.getTicketNumber(),
+                        t.getIssue(),
+                        t.getStatus().name(),
+                        t.getCreatedAt(),
+                        t.getUpdatedAt()
+                ))
+                .toList();
+
+        return new ChatHistoryResponse(messages, tickets);
+    }
+
+    public List<SupportTicketResponse> allTickets(AuthUserDetails principal) {
+        String staffBranch = principal.getUser().getRole() == Role.STAFF ? principal.getUser().getBranch() : null;
+
+        List<SupportTicket> tickets = (staffBranch == null || staffBranch.isBlank())
+                ? supportTicketRepository.findTop100ByOrderByCreatedAtDesc()
+                : supportTicketRepository.findTop100ByBranchIgnoreCaseOrderByCreatedAtDesc(staffBranch);
+
+        return tickets.stream()
+                .map(t -> new SupportTicketResponse(
+                        t.getTicketNumber(),
+                        t.getIssue(),
+                        t.getStatus().name(),
+                        t.getCreatedAt(),
+                        t.getUpdatedAt()
+                ))
+                .toList();
+    }
+
+    @Transactional
+    public SupportTicketResponse resolveTicket(String ticketNumber, AuthUserDetails principal) {
+        SupportTicket ticket = supportTicketRepository.findByTicketNumber(ticketNumber)
+                .orElseThrow(() -> new IllegalArgumentException("Ticket not found: " + ticketNumber));
+
+        if (principal.getUser().getRole() == Role.STAFF
+                && !sameBranch(principal.getUser().getBranch(), ticket.getBranch())) {
+            throw new IllegalArgumentException("You can only resolve tickets for your assigned branch.");
+        }
+
+        ticket.setStatus(SupportTicketStatus.RESOLVED);
+        SupportTicket saved = supportTicketRepository.save(ticket);
+        return new SupportTicketResponse(
+                saved.getTicketNumber(),
+                saved.getIssue(),
+                saved.getStatus().name(),
+                saved.getCreatedAt(),
+                saved.getUpdatedAt()
+        );
+    }
+
+    private ChatSupportResponse buildReply(ChatSupportRequest req, String message, String sessionId) {
+        String lower = message.toLowerCase(Locale.ROOT);
+
+        if (lower.contains("track") || lower.contains("status") || lower.contains("where")) {
+            String tracking = resolveTrackingNumber(req.trackingNumber(), message);
+            if (tracking == null) {
+                return new ChatSupportResponse(
+                        "tracking",
+                        "Please provide your tracking number (example: WA-10021) so I can check your order.",
+                        false,
+                        null,
+                        null
+                );
+            }
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            OrderTrackingResponse order;
+            try {
+                order = jobOrderService.trackByTrackingNumber(tracking);
+            } catch (IllegalArgumentException ex) {
+                return new ChatSupportResponse(
+                        "tracking",
+                        "I could not find an order with tracking number " + tracking + ". Please double-check and try again.",
+                        false,
+                        null,
+                        null
+                );
+            }
+            data.put("order", order);
+
+            try {
+                data.put("delivery", deliveryService.trackByTrackingNumber(tracking));
+            } catch (IllegalArgumentException ignored) {
+                // Delivery may not exist for non-delivery orders.
+            }
+
+            try {
+                data.put("payment", paymentService.trackByTrackingNumber(tracking));
+            } catch (IllegalArgumentException ignored) {
+                // Payment may not be submitted yet.
+            }
+
+            return new ChatSupportResponse(
+                    "tracking",
+                    "Here is your latest order status and related updates.",
+                    false,
+                    null,
+                    data
+            );
+        }
+
+        if (lower.contains("complaint")
+                || lower.contains("issue")
+                || lower.contains("problem")
+                || lower.contains("talk to staff")
+                || lower.contains("human")) {
+            String ticket = createTicket(sessionId, message, resolveTrackingNumber(req.trackingNumber(), message));
+            return new ChatSupportResponse(
+                    "complaint",
+                    "Your concern has been logged and escalated to staff. Please keep this ticket number.",
+                    true,
+                    ticket,
+                    null
+            );
+        }
+
+        if (lower.contains("payment") || lower.contains("gcash") || lower.contains("maya")) {
+            return new ChatSupportResponse(
+                    "faq_payment",
+                    "You can pay via GCash or Maya, then submit proof using the payment upload flow. Staff will verify it shortly.",
+                    false,
+                    null,
+                    null
+            );
+        }
+
+        if (lower.contains("pickup") || lower.contains("delivery")) {
+            return new ChatSupportResponse(
+                    "faq_delivery",
+                    "For pickup and delivery orders, we provide live delivery status and ETA once a driver is assigned.",
+                    false,
+                    null,
+                    null
+            );
+        }
+
+        return buildAiAssistedFaqReply(message, sessionId);
+    }
+
+    private ChatSupportResponse buildAiAssistedFaqReply(String message, String sessionId) {
+        if (!openAiChatClient.isConfigured()) {
+            return new ChatSupportResponse(
+                    "ai_configuration",
+                    "AI support is unavailable because OPENAI_API_KEY is not configured on the server. "
+                            + "I can still help with tracking (WA-xxxxx), payments, delivery updates, and ticket escalation.",
+                    false,
+                    null,
+                    null
+            );
+        }
+
+        List<ChatSupportMessage> context = new ArrayList<>(
+                messageRepository.findTop20BySessionIdOrderByCreatedAtDesc(sessionId)
+        );
+        context.sort(Comparator.comparing(ChatSupportMessage::getCreatedAt));
+        if (!context.isEmpty()) {
+            ChatSupportMessage latest = context.get(context.size() - 1);
+            if (latest.getSenderType() == ChatResponderType.USER
+                    && latest.getMessage() != null
+                    && latest.getMessage().trim().equalsIgnoreCase(message.trim())) {
+                context.remove(context.size() - 1);
+            }
+        }
+
+        OpenAiSupportDecision aiDecision;
+        try {
+            aiDecision = openAiChatClient.generateReply(message, context);
+        } catch (IllegalStateException ex) {
+            return new ChatSupportResponse(
+                    "ai_unavailable",
+                    ex.getMessage() + " You can type 'talk to staff' any time to open a support ticket.",
+                    false,
+                    null,
+                    null
+            );
+        }
+
+        if (aiDecision.escalate()) {
+            String ticket = createTicket(sessionId, message, null);
+            return new ChatSupportResponse(
+                    aiDecision.category(),
+                    aiDecision.reply(),
+                    true,
+                    ticket,
+                    null
+            );
+        }
+
+        return new ChatSupportResponse(
+                aiDecision.category(),
+                aiDecision.reply(),
+                false,
+                null,
+                null
+        );
+    }
+
+    private void saveMessage(
+            String sessionId,
+            ChatResponderType senderType,
+            String message,
+            String category,
+            String escalationTicket
+    ) {
+        if (message == null || message.isBlank()) return;
+
+        ChatSupportMessage entry = ChatSupportMessage.builder()
+                .sessionId(sessionId)
+                .senderType(senderType)
+                .message(message.trim())
+                .category(category)
+                .escalationTicket(escalationTicket)
+                .build();
+
+        messageRepository.save(entry);
+    }
+
+    private String createTicket(String sessionId, String issue, String trackingNumber) {
+        String ticketNumber = "SUP-" + LocalDateTime.now().format(TICKET_TIME)
+                + "-" + ThreadLocalRandom.current().nextInt(100, 1000);
+
+        SupportTicket ticket = SupportTicket.builder()
+                .ticketNumber(ticketNumber)
+                .sessionId(sessionId)
+                .branch(resolveBranchFromTracking(trackingNumber))
+                .issue(issue)
+                .status(SupportTicketStatus.OPEN)
+                .build();
+        supportTicketRepository.save(ticket);
+
+        notificationService.enqueuePushToRoles(
+                List.of(Role.ADMIN, Role.STAFF),
+                ticket.getBranch(),
+                "Escalated Support Ticket",
+                "Ticket %s needs manual response. Issue: %s"
+                        .formatted(ticketNumber, truncate(issue, 100)),
+                "SUPPORT_ESCALATION",
+                ticketNumber
+        );
+
+        return ticketNumber;
+    }
+
+    private String normalizeSessionId(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return "default-session";
+        }
+        return sessionId.trim();
+    }
+
+    private String resolveTrackingNumber(String explicitTracking, String message) {
+        if (explicitTracking != null && !explicitTracking.isBlank()) {
+            return explicitTracking.trim().toUpperCase();
+        }
+
+        Matcher matcher = TRACKING_PATTERN.matcher(message);
+        if (matcher.find()) {
+            return matcher.group().toUpperCase();
+        }
+
+        return null;
+    }
+
+    private String resolveBranchFromTracking(String trackingNumber) {
+        if (trackingNumber == null || trackingNumber.isBlank()) {
+            return null;
+        }
+        try {
+            return jobOrderService.trackByTrackingNumber(trackingNumber).branch();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private boolean sameBranch(String a, String b) {
+        return a != null && b != null && a.trim().equalsIgnoreCase(b.trim());
+    }
+
+    private String truncate(String value, int max) {
+        if (value == null) return "";
+        return value.length() <= max ? value : value.substring(0, max);
+    }
+}

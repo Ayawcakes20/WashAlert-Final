@@ -1,0 +1,19 @@
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Firebase / service account keys
+firebase-service-account.json
+*-service-account.json
+serviceAccountKey.json
+**/firebase-service-account.json
+**/*-service-account.json
