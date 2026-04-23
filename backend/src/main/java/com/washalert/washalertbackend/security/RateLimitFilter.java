@@ -46,6 +46,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
         // Only rate-limit these endpoints
         return !(path.equals("/api/auth/login")
                 || path.equals("/api/auth/resend-otp")
+                || path.equals("/api/auth/firebase-login-otp/request")
+                || path.equals("/api/auth/firebase-login-otp/resend")
+                || path.equals("/api/auth/firebase-login-otp/verify")
                 || path.equals("/api/auth/forgot-password")
                 || path.equals("/api/auth/reset-password"));
     }
@@ -66,6 +69,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
         int limit = switch (path) {
             case "/api/auth/login" -> LOGIN_LIMIT;
             case "/api/auth/resend-otp" -> OTP_LIMIT;
+            case "/api/auth/firebase-login-otp/request" -> OTP_LIMIT;
+            case "/api/auth/firebase-login-otp/resend" -> OTP_LIMIT;
+            case "/api/auth/firebase-login-otp/verify" -> LOGIN_LIMIT;
             case "/api/auth/forgot-password" -> FORGOT_LIMIT;
             case "/api/auth/reset-password" -> RESET_LIMIT;
             default -> 100;

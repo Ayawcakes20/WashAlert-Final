@@ -13,7 +13,7 @@ import { colors } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
 
 const OTPVerificationScreen = ({ navigation, route }) => {
-  const { verifyOTP, verifyResetOTP, requestOTP, requestResetOTP } = useAuth();
+  const { verifyOTP, verifyLoginOTP, verifyResetOTP, requestOTP, requestLoginOTP, requestResetOTP } = useAuth();
   const email = route?.params?.email || 'user@example.com';
   const type = route?.params?.type || 'registration';
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -75,6 +75,8 @@ const OTPVerificationScreen = ({ navigation, route }) => {
     let result;
     if (type === 'password_reset') {
       result = await verifyResetOTP(email, code);
+    } else if (type === 'login_otp') {
+      result = await verifyLoginOTP(code);
     } else {
       result = await verifyOTP(code, email);
     }
@@ -111,6 +113,8 @@ const OTPVerificationScreen = ({ navigation, route }) => {
     let result;
     if (type === 'password_reset') {
       result = await requestResetOTP(email);
+    } else if (type === 'login_otp') {
+      result = await requestLoginOTP();
     } else {
       result = await requestOTP(email);
     }

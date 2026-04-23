@@ -67,6 +67,63 @@ public class AuthController {
         }
     }
 
+    @PostMapping({"/firebase-login-otp/request", "/firebase-login-otp/resend"})
+    public ResponseEntity<?> requestFirebaseLoginOtp(
+            @Valid @RequestBody FirebaseLoginOtpRequest req,
+            HttpServletRequest request
+    ) {
+        User user;
+        try {
+            user = authService.resolveFirebaseUserForLoginChallenge(req.idToken(), req.platform(), req.selectedBranch());
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.status(403).body(apiError(request, 403, ex.getMessage()));
+        }
+
+        try {
+            otpService.sendForLogin(user);
+            return ResponseEntity.ok(new FirebaseLoginOtpChallengeResponse(
+                    maskEmail(user.getEmail()),
+                    "Login OTP sent to email.",
+                    otpService.getTtlMinutes() * 60,
+                    otpService.getResendCooldownSeconds()
+            ));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
+        } catch (Exception mailEx) {
+            return ResponseEntity.status(503).body(apiError(
+                    request,
+                    503,
+                    mailFailureMessage(
+                            mailEx,
+                            "Login OTP email could not be sent. Please retry in a moment."
+                    )
+            ));
+        }
+    }
+
+    @PostMapping("/firebase-login-otp/verify")
+    public ResponseEntity<?> verifyFirebaseLoginOtp(
+            @Valid @RequestBody FirebaseLoginOtpVerifyRequest req,
+            HttpServletRequest request
+    ) {
+        User user;
+        try {
+            user = authService.resolveFirebaseUserForLoginChallenge(req.idToken(), req.platform(), req.selectedBranch());
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.status(403).body(apiError(request, 403, ex.getMessage()));
+        }
+
+        try {
+            otpService.verifyLoginCode(user.getEmail(), req.code());
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
+        }
+
+        User finalizedUser = authService.markLoginSuccess(user.getId());
+        establishSession(finalizedUser, request);
+        return ResponseEntity.ok(authService.toSessionResponse(finalizedUser, req.platform().trim().toUpperCase()));
+    }
+
     @PostMapping("/mobile/register-profile")
     public ResponseEntity<?> registerMobileProfile(
             @Valid @RequestBody MobileCustomerProfileRequest req,
