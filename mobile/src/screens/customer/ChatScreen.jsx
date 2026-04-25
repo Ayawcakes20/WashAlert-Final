@@ -1,9 +1,18 @@
+<<<<<<< HEAD
 import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+=======
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Platform, Keyboard, Image } from 'react-native';
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
 import { support } from '../../services/api';
+<<<<<<< HEAD
+=======
+import AsyncStorage from '@react-native-async-storage/async-storage';
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
 
 const QUICK_REPLIES = [
   'How much is wash and dry?',
@@ -23,9 +32,57 @@ const ChatScreen = ({ navigation }) => {
   const [messages, setMessages] = useState([
     { id: 1, text: "Hi! I'm IkotAsk, your WashAlert assistant. How can I help you today?", sender: 'bot', time: 'Just now' },
   ]);
+<<<<<<< HEAD
 
   const msgId = useRef(2);
 
+=======
+  const [userProfilePic, setUserProfilePic] = useState(null);
+
+  const msgId = useRef(2);
+
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const u = await AsyncStorage.getItem('userData');
+        if (u) {
+          try {
+            const parsedU = JSON.parse(u);
+            if (parsedU.profileImageUrl) setUserProfilePic(parsedU.profileImageUrl);
+          } catch {}
+        }
+
+        const saved = await AsyncStorage.getItem('ikotask_chat_history');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.length > 0) {
+            setMessages(parsed);
+            msgId.current = Math.max(...parsed.map(m => m.id)) + 1;
+            setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 200);
+          }
+        }
+      } catch {}
+    };
+    loadHistory();
+  }, []);
+
+  useEffect(() => {
+    if (messages.length > 1) {
+      AsyncStorage.setItem('ikotask_chat_history', JSON.stringify(messages)).catch(() => {});
+    }
+  }, [messages]);
+
+  const [kbHeight, setKbHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => setKbHeight(e.endCoordinates.height));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKbHeight(0));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
   const sendMessage = async (text) => {
     const trimmed = String(text || '').trim();
     if (!trimmed) return;
@@ -62,6 +119,7 @@ const ChatScreen = ({ navigation }) => {
   };
 
   return (
+<<<<<<< HEAD
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.keyboardWrap}
@@ -145,6 +203,94 @@ const ChatScreen = ({ navigation }) => {
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
+=======
+    <View style={{ flex: 1, backgroundColor: colors.background, paddingBottom: kbHeight > 0 ? kbHeight + 15 : 0 }}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+        <View style={styles.keyboardWrap}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4 }}>
+              <Ionicons name="arrow-back" size={24} color={colors.text} />
+            </TouchableOpacity>
+            <View style={styles.headerAvatar}>
+              <Ionicons name="chatbubbles" size={20} color={colors.accent} />
+            </View>
+            <View style={styles.headerInfo}>
+              <Text style={styles.headerName}>IkotAsk</Text>
+              <Text style={styles.headerOnline}>Online</Text>
+            </View>
+          </View>
+
+          <ScrollView
+            ref={scrollRef}
+            style={styles.chatArea}
+            contentContainerStyle={styles.chatContent}
+          >
+            {messages.map((msg) => (
+              <View key={msg.id} style={[styles.msgRow, msg.sender === 'user' ? styles.msgRowUser : styles.msgRowBot]}>
+                {msg.sender === 'bot' && (
+                  <View style={[styles.avatarBox, { backgroundColor: 'hsla(174, 79%, 44%, 0.1)' }]}>
+                    <Ionicons name="chatbubbles" size={12} color={colors.accent} />
+                  </View>
+                )}
+
+                <View style={[styles.msgBubble, msg.sender === 'user' ? styles.bubbleUser : styles.bubbleBot]}>
+                  <Text style={[styles.msgText, msg.sender === 'user' ? styles.msgTextUser : styles.msgTextBot]}>{msg.text}</Text>
+                </View>
+
+                {msg.sender === 'user' && (
+                  <View style={[styles.avatarBox, { backgroundColor: 'hsla(224, 82%, 48%, 0.1)', overflow: 'hidden' }]}>
+                    {userProfilePic ? (
+                      <Image source={{ uri: userProfilePic }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                    ) : (
+                      <Ionicons name="person" size={12} color={colors.primary} />
+                    )}
+                  </View>
+                )}
+              </View>
+            ))}
+            {isTyping && (
+              <View style={[styles.msgRow, styles.msgRowBot]}>
+                <View style={[styles.avatarBox, { backgroundColor: 'hsla(174, 79%, 44%, 0.1)' }]}>
+                  <Ionicons name="chatbubbles" size={12} color={colors.accent} />
+                </View>
+                <View style={[styles.msgBubble, styles.bubbleBot]}>
+                  <Text style={styles.msgTextBot}>Typing...</Text>
+                </View>
+              </View>
+            )}
+          </ScrollView>
+
+          <View style={styles.quickRepliesWrap}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {QUICK_REPLIES.map((q) => (
+                <TouchableOpacity key={q} style={styles.qrBtn} onPress={() => void sendMessage(q)}>
+                  <Text style={styles.qrText}>{q}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          <View style={styles.inputBox}>
+            <TextInput
+              style={styles.inputField}
+              placeholder="Type a message..."
+              placeholderTextColor={colors.textSecondary}
+              value={input}
+              onChangeText={setInput}
+              onSubmitEditing={() => void sendMessage(input)}
+            />
+            <TouchableOpacity
+              style={[styles.sendBtn, !input.trim() && styles.sendBtnDisabled]}
+              disabled={!input.trim()}
+              onPress={() => void sendMessage(input)}
+            >
+              <Ionicons name="send" size={16} color={colors.card} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+    </View>
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
   );
 };
 

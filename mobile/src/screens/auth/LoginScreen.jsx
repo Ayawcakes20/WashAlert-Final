@@ -58,6 +58,16 @@ const LoginScreen = ({ navigation }) => {
     setLoading(false);
     if (!result?.success) {
       Alert.alert('Login Failed', result?.error || 'Unable to login right now.');
+<<<<<<< HEAD
+=======
+      return;
+    }
+    if (result.requiresOtp) {
+      navigation.navigate('OTPVerification', {
+        email: email.trim().toLowerCase(),
+        type: 'login_otp',
+      });
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
     }
   };
 

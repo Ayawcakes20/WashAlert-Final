@@ -41,7 +41,11 @@ const QUICK_ACTIONS = [
   },
   {
     id: 'support',
+<<<<<<< HEAD
     label: 'Support',
+=======
+    label: 'IkotAsk',
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
     icon: 'chat-processing-outline',
     screen: 'Chat',
     params: {},

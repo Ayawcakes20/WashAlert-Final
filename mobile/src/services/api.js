@@ -1075,6 +1075,7 @@ export const payments = {
 
 export const support = {
   chat: async (message, trackingNumber = null) => {
+<<<<<<< HEAD
     const sessionId = await getSupportSessionId();
     return await apiRequest('/api/support/chat', {
       method: 'POST',
@@ -1084,6 +1085,72 @@ export const support = {
         sessionId,
       },
     });
+=======
+    try {
+      const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+      if (!apiKey) {
+        console.warn("Missing EXPO_PUBLIC_GEMINI_API_KEY in .env");
+        return { reply: "Mabuhay! Ang aming AI chatbot ay kasalukuyang hindi available dahil walang nakalagay na API key." };
+      }
+
+      let orderContext = "";
+      if (trackingNumber) {
+        try {
+          const order = await bookings.getById(trackingNumber);
+          if (order) {
+             orderContext = `IMPORMASYON TUNGKOL SA ORDER '${trackingNumber}': Nakita sa system na ang status ng laundry nila ay '${order.status}'. I-update at ipaliwanag nang malinaw sa customer kung ano ang ibig sabihin ng status na ito.`;
+          } else {
+             orderContext = `Sinubukan kong hanapin ang tracking number '${trackingNumber}' sa system natin, pero HINDI ITO NAKITA. Sabihin sa customer na baka mali ang na-type niya o paki-check ulit ang resibo.`;
+          }
+        } catch (e) {
+          orderContext = `Sinubukang hanapin ang tracking number '${trackingNumber}' pero may mali sa system. Humingi ng paumanhin sa customer at paki-try ulit maya-maya.`;
+        }
+      }
+
+      const servicesText = SERVICE_CATALOG.map(s => `- ${s.name}: ₱${s.price}`).join('\n');
+      const branchesText = BRANCH_CATALOG.map(b => `- ${b.name}`).join('\n');
+
+      const prompt = `Isa kang customer service chatbot na nagngangalang 'IkotAsk' para sa WashAlert mobile app. Ang WashAlert ay isang makabagong laundry service app sa Pilipinas. 
+Laging sumagot sa wikang Tagalog, maging sobrang magalang, matulungin, at malinaw.
+Huwag kang mag-imbento ng impormasyon, gamitin lamang ang mga presyong ibinigay dito.
+
+MGA PRESYO AT SERBISYO NAMIN:
+${servicesText}
+
+MGA BRANCHES NAMIN:
+${branchesText}
+
+${orderContext}
+
+Tanong ng customer: ${message}`;
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+
+      if (!res.ok) {
+        console.error("[IkotAsk] Gemini API error:", await res.text());
+        return { reply: 'Medyo abala ako ngayon o mahina ang aking signal. Pwede mo bang subukan ulit mamaya?' };
+      }
+
+      const data = await res.json();
+      const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (!reply) {
+         return { reply: 'Pasensya na, wala akong mahagilap na sagot para diyan.' };
+      }
+      
+      return { reply };
+    } catch (e) {
+      console.error("[IkotAsk] Exception:", e);
+      return { reply: 'Nagkaproblema sa koneksyon patungo sa aking utak. Paki-try ulit mamaya.' };
+    }
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
   },
 };
 

@@ -14,6 +14,29 @@ export type MeResponse = {
   provider: string;
 };
 
+<<<<<<< HEAD
+=======
+export type AuthSessionProfile = {
+  id: number;
+  firebaseUid: string;
+  email: string;
+  fullName: string;
+  role: string;
+  status: string;
+  branchId: number | null;
+  branch: string;
+  allowedModules: string[];
+  platform: string;
+};
+
+export type FirebaseLoginOtpChallenge = {
+  email: string;
+  message: string;
+  expiresInSeconds: number;
+  resendCooldownSeconds: number;
+};
+
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
 export type JobOrderResponse = {
   id: number;
   trackingNumber: string;
@@ -170,6 +193,7 @@ export const authApi = {
   login: (payload: { email: string; password: string; rememberMe?: boolean }) =>
     apiRequest<MeResponse>("/api/auth/login", { method: "POST", body: payload }),
   firebaseSession: (payload: { idToken: string; platform: "WEB" | "MOBILE"; selectedBranch?: string }) =>
+<<<<<<< HEAD
     apiRequest<{
       id: number;
       firebaseUid: string;
@@ -182,14 +206,42 @@ export const authApi = {
       allowedModules: string[];
       platform: string;
     }>("/api/auth/firebase-session", { method: "POST", body: payload }),
+=======
+    apiRequest<AuthSessionProfile>("/api/auth/firebase-session", { method: "POST", body: payload }),
+  requestFirebaseLoginOtp: (payload: { idToken: string; platform: "WEB" | "MOBILE"; selectedBranch?: string }) =>
+    apiRequest<FirebaseLoginOtpChallenge>("/api/auth/firebase-login-otp/request", {
+      method: "POST",
+      body: payload,
+    }),
+  resendFirebaseLoginOtp: (payload: { idToken: string; platform: "WEB" | "MOBILE"; selectedBranch?: string }) =>
+    apiRequest<FirebaseLoginOtpChallenge>("/api/auth/firebase-login-otp/resend", {
+      method: "POST",
+      body: payload,
+    }),
+  verifyFirebaseLoginOtp: (payload: {
+    idToken: string;
+    platform: "WEB" | "MOBILE";
+    code: string;
+    selectedBranch?: string;
+  }) => apiRequest<AuthSessionProfile>("/api/auth/firebase-login-otp/verify", {
+    method: "POST",
+    body: payload,
+  }),
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
   completeInvitation: (payload: { idToken: string }) =>
     apiRequest<void>("/api/auth/complete-invitation", { method: "POST", body: payload }),
   register: (payload: { fullName: string; email: string; password: string }) =>
     apiRequest<void>("/api/auth/register", { method: "POST", body: payload }),
   verifyEmailOtp: (payload: { email: string; code: string }) =>
+<<<<<<< HEAD
     apiRequest<void>("/api/auth/verify-email", { method: "POST", body: payload }),
   resendOtp: (payload: { email: string }) =>
     apiRequest<void>("/api/auth/resend-otp", { method: "POST", body: payload }),
+=======
+    apiRequest<void>("/api/auth/otp/verify", { method: "POST", body: payload }),
+  resendOtp: (payload: { email: string }) =>
+    apiRequest<void>("/api/auth/otp/request", { method: "POST", body: payload }),
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
   forgotPassword: (payload: { email: string }) =>
     apiRequest<void>("/api/auth/forgot-password", { method: "POST", body: payload }),
   resetPassword: (payload: { token: string; newPassword: string }) =>

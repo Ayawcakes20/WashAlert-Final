@@ -85,6 +85,12 @@ public class SecurityConfig {
                                 "/api/auth/register",
                                 "/api/auth/login",
                                 "/api/auth/firebase-session",
+<<<<<<< HEAD
+=======
+                                "/api/auth/firebase-login-otp/request",
+                                "/api/auth/firebase-login-otp/resend",
+                                "/api/auth/firebase-login-otp/verify",
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
                                 "/api/auth/mobile/register-profile",
                                 "/api/auth/complete-invitation",
                                 "/api/auth/verify-email",

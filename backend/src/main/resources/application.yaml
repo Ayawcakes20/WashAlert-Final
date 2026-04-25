@@ -1,13 +1,19 @@
 server:
   port: ${SERVER_PORT:8081}
+<<<<<<< HEAD
   address: 0.0.0.0
+=======
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
   servlet:
     session:
       cookie:
         same-site: lax
         secure: false
         http-only: true
+<<<<<<< HEAD
       persistent: false   # prevents ClassCastException on devtools hot-restart
+=======
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
 
 spring:
   datasource:
@@ -20,6 +26,7 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: false
+<<<<<<< HEAD
     open-in-view: true
 
   mail:
@@ -27,11 +34,24 @@ spring:
     port: ${MAIL_PORT:465}
     username: ${MAIL_USERNAME}
     password: ${MAIL_PASSWORD}
+=======
+    open-in-view: false
+
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: yvesiandstuhl@gmail.com
+    password: egaqezhfzrirkfwt
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
     properties:
       mail:
         smtp:
           auth: true
+<<<<<<< HEAD
           ssl:
+=======
+          starttls:
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
             enable: true
 
   security:
@@ -47,10 +67,18 @@ spring:
             redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
 
 washalert:
+<<<<<<< HEAD
+=======
+  paymongo:
+    secret-key: ${PAYMONGO_SECRET_KEY:sk_test_r9z3bPB9Y6kUUd6DUazN8E1a}
+    public-key: ${PAYMONGO_PUBLIC_KEY:pk_test_placeholder}
+    webhook-secret: ${PAYMONGO_WEBHOOK_SECRET:change-me}
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
   data:
     read-mode: ${DATA_READ_MODE:MYSQL}
   frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:8080}
   cors:
+<<<<<<< HEAD
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081,http://192.168.1.4:8081,http://192.168.1.4:8080,http://192.168.*:*,https://stimulant-bobcat-glare.ngrok-free.dev,null}
   mail:
     from: ${MAIL_FROM}
@@ -59,6 +87,11 @@ washalert:
     ttl-minutes: ${OTP_TTL_MINUTES:15}
     resend-cooldown-seconds: ${OTP_RESEND_COOLDOWN_SECONDS:60}
     max-attempts: ${OTP_MAX_ATTEMPTS:5}
+=======
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081}
+  mail:
+    from: ${MAIL_FROM:WashAlert <noreply@washalert.local>}
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
   password-reset:
     frontend-base-url: ${PASSWORD_RESET_FRONTEND_BASE_URL:${FRONTEND_BASE_URL:http://localhost:8080}}
   staff-invitation:
@@ -79,16 +112,20 @@ washalert:
       max-attempts: ${PAYMENT_WEBHOOK_MAX_ATTEMPTS:5}
       retry-delay-minutes: ${PAYMENT_WEBHOOK_RETRY_DELAY_MINUTES:5}
       retry-interval-ms: ${PAYMENT_WEBHOOK_RETRY_INTERVAL_MS:60000}
+<<<<<<< HEAD
   paymongo:
     secret-key: ${PAYMONGO_SECRET_KEY:}
     public-key: ${PAYMONGO_PUBLIC_KEY:}
     webhook-secret: ${PAYMONGO_WEBHOOK_SECRET:}
+=======
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
   notification:
     max-attempts: ${NOTIFICATION_MAX_ATTEMPTS:5}
     retry-delay-minutes: ${NOTIFICATION_RETRY_DELAY_MINUTES:2}
     process-interval-ms: ${NOTIFICATION_PROCESS_INTERVAL_MS:60000}
   firebase:
     enabled: ${FIREBASE_ENABLED:true}
+<<<<<<< HEAD
     project-id: ${FIREBASE_PROJECT_ID:washalert-63ca5}
     service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:firebase-service-account.json}
     service-account-base64: ${FIREBASE_SERVICE_ACCOUNT_BASE64:}
@@ -97,3 +134,9 @@ washalert:
     api-key: ${OPENAI_API_KEY:}
     model: ${OPENAI_MODEL:gpt-4o-mini}
     base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+=======
+    project-id: ${FIREBASE_PROJECT_ID:washalert-b8ce8}
+    service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:./firebase-service-account.json}
+    service-account-base64: ${FIREBASE_SERVICE_ACCOUNT_BASE64:}
+    backfill-on-startup: ${FIREBASE_BACKFILL_ON_STARTUP:false}
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3

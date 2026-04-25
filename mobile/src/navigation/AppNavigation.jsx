@@ -256,7 +256,11 @@ const CustomerStack = () => (
     <Stack.Screen name="CustomerTabs"   component={CustomerTabs} />
     <Stack.Screen name="OrderDetail"    component={OrderDetailScreen}    options={stackHeader('Order Details')} />
     <Stack.Screen name="Tracking"       component={TrackingScreen}       options={stackHeader('Track Order')} />
+<<<<<<< HEAD
     <Stack.Screen name="Chat"           component={ChatScreen}           options={stackHeader('Support')} />
+=======
+    <Stack.Screen name="Chat"           component={ChatScreen}           options={{ headerShown: false }} />
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
     <Stack.Screen name="EditProfile"    component={EditProfileScreen}    options={stackHeader('Edit Profile')} />
     <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={stackHeader('Change Password')} />
     <Stack.Screen name="SavedAddresses" component={SavedAddressesScreen} options={stackHeader('Saved Addresses')} />
@@ -335,7 +339,11 @@ const DriverStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="DriverTabs"     component={DriverTabs} />
     <Stack.Screen name="DeliveryDetail" component={DeliveryDetailScreen} options={stackHeader('Delivery Details')} />
+<<<<<<< HEAD
     <Stack.Screen name="Chat" component={ChatScreen} options={stackHeader('Support')} />
+=======
+    <Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: false }} />
+>>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
     <Stack.Screen name="TermsAndConditions" component={TermsAndConditionsScreen} options={stackHeader('Terms & Conditions')} />
     <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={stackHeader('Privacy Policy')} />
   </Stack.Navigator>
