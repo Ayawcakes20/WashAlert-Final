@@ -1,6 +1,7 @@
 package com.washalert.washalertbackend.orders;
 
 import com.washalert.washalertbackend.common.DataReadProperties;
+import com.washalert.washalertbackend.delivery.DeliveryService;
 import com.washalert.washalertbackend.firebase.FirestoreReadService;
 import com.washalert.washalertbackend.firebase.FirestoreSyncService;
 import com.washalert.washalertbackend.notification.NotificationService;
@@ -38,6 +39,7 @@ public class JobOrderService {
     private final FirestoreReadService firestoreReadService;
     private final DataReadProperties dataReadProperties;
     private final PaymentRecordRepository paymentRepository;
+    private final DeliveryService deliveryService;
 
     public JobOrderService(
             JobOrderRepository repo,
@@ -47,7 +49,8 @@ public class JobOrderService {
             FirestoreSyncService firestoreSyncService,
             FirestoreReadService firestoreReadService,
             DataReadProperties dataReadProperties,
-            PaymentRecordRepository paymentRepository
+            PaymentRecordRepository paymentRepository,
+            DeliveryService deliveryService
     ) {
         this.repo = repo;
         this.historyRepository = historyRepository;
@@ -57,6 +60,7 @@ public class JobOrderService {
         this.firestoreReadService = firestoreReadService;
         this.dataReadProperties = dataReadProperties;
         this.paymentRepository = paymentRepository;
+        this.deliveryService = deliveryService;
     }
 
     public List<JobOrderResponse> listAll(AuthUserDetails principal) {
@@ -240,6 +244,10 @@ public class JobOrderService {
                     pushType,
                     jo.getTrackingNumber() + ":" + jo.getStatus().name()
             );
+
+            if (jo.getStatus() == JobOrderStatus.READY) {
+                deliveryService.initializePhaseB(jo);
+            }
         }
 
         JobOrder saved = repo.save(jo);
@@ -435,6 +443,9 @@ public class JobOrderService {
                 effectivePaymentStatus,
                 jo.getDeliveryLatitude(),
                 jo.getDeliveryLongitude(),
+                jo.getDeliveryUnitFloor(),
+                jo.getDeliveryContactName(),
+                jo.getDeliveryContactPhone(),
                 jo.getBranchLatitude(),
                 jo.getBranchLongitude()
         );
@@ -471,6 +482,9 @@ public class JobOrderService {
                 effectivePaymentStatus,
                 response.deliveryLatitude(),
                 response.deliveryLongitude(),
+                response.deliveryUnitFloor(),
+                response.deliveryContactName(),
+                response.deliveryContactPhone(),
                 response.branchLatitude(),
                 response.branchLongitude()
         );
@@ -517,6 +531,7 @@ public class JobOrderService {
             case PICKED_UP -> to == JobOrderStatus.DELIVERED;
             case DELIVERED -> false;
             case CANCELLED -> false;
+            default -> false;
         };
     }
 }

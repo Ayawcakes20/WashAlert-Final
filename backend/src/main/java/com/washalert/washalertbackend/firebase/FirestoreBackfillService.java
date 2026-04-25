@@ -179,12 +179,14 @@ public class FirestoreBackfillService {
         }
 
         return switch (delivery.getStatus()) {
-            case PENDING_PICKUP -> DeliveryWorkflowStatus.DRIVER_ACCEPTED;
-            case EN_ROUTE_TO_PICKUP -> DeliveryWorkflowStatus.PICKING_UP;
-            case PICKED_UP -> DeliveryWorkflowStatus.PICKED_UP;
-            case IN_TRANSIT -> DeliveryWorkflowStatus.PICKING_UP;
-            case DELIVERED -> DeliveryWorkflowStatus.COMPLETED;
-            case FAILED -> DeliveryWorkflowStatus.CANCELLED;
+            case ASSIGNED_PICKUP, PENDING_PICKUP             -> DeliveryWorkflowStatus.DRIVER_ACCEPTED;
+            case ARRIVED_CUSTOMER, EN_ROUTE_TO_PICKUP        -> DeliveryWorkflowStatus.PICKING_UP;
+            case PICKED_UP, ARRIVED_BRANCH                   -> DeliveryWorkflowStatus.PICKED_UP;
+            case HANDED_TO_BRANCH, IN_TRANSIT                -> DeliveryWorkflowStatus.AT_SHOP;
+            case ASSIGNED_DELIVERY                           -> DeliveryWorkflowStatus.READY;
+            case OUT_FOR_DELIVERY, ARRIVED_DELIVERY          -> DeliveryWorkflowStatus.PICKING_UP;
+            case DELIVERED                                   -> DeliveryWorkflowStatus.COMPLETED;
+            case FAILED, CANCELLED                           -> DeliveryWorkflowStatus.CANCELLED;
         };
     }
 }

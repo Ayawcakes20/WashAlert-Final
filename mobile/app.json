@@ -2,10 +2,7 @@
   "expo": {
     "name": "WashAlertMobile",
     "slug": "WashAlertMobile",
-<<<<<<< HEAD
-=======
     "owner": "prince06122004",
->>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -26,11 +23,7 @@
           "apiKey": "AIzaSyAzAGBAijqpEZki3ZZBYe-9rxtzjF55RSY"
         }
       },
-<<<<<<< HEAD
-      "edgeToEdgeEnabled": true,
-=======
       "edgeToEdgeEnabled": false,
->>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
       "permissions": [
         "POST_NOTIFICATIONS",
         "ACCESS_BACKGROUND_LOCATION",
@@ -39,12 +32,8 @@
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION"
       ],
-<<<<<<< HEAD
-      "predictiveBackGestureEnabled": false
-=======
       "predictiveBackGestureEnabled": false,
       "softwareKeyboardLayoutMode": "pan"
->>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
     },
     "ios": {
       "supportsTablet": true,
@@ -91,17 +80,6 @@
           "color": "#1d4ed8",
           "defaultChannel": "washalert-updates"
         }
-<<<<<<< HEAD
-      ],
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "usesCleartextTraffic": true
-          }
-        }
-=======
->>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
       ]
     ],
     "experiments": {
@@ -109,11 +87,7 @@
     },
     "extra": {
       "eas": {
-<<<<<<< HEAD
-        "projectId": "63a01be6-d1e9-42eb-9ec5-3909f71c1a45"
-=======
         "projectId": "47e8951b-12af-437f-9736-06e13f767a98"
->>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
       }
     }
   }

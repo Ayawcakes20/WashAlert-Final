@@ -77,6 +77,12 @@ public record CreateBookingRequest(
 
         Double deliveryLongitude,
 
+        String deliveryUnitFloor,
+
+        String deliveryContactName,
+
+        String deliveryContactPhone,
+
         Double branchLatitude,
 
         Double branchLongitude

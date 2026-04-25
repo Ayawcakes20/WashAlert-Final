@@ -90,12 +90,30 @@ public class DeliveryOrder {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    // ── State Machine: Phase A ─────────────────────────────────────────────────
+    /** Number of laundry bags confirmed by driver at customer pickup. */
+    @Column(name = "bag_count")
+    private Integer bagCount;
+
+    /** Photo proof of bags handed over at the laundry branch counter. */
+    @Column(name = "branch_handover_photo_url", length = 1000)
+    private String branchHandoverPhotoUrl;
+
+    // ── State Machine: Phase B ─────────────────────────────────────────────────
+    /** Auto-generated 4-digit code sent to customer; driver must confirm at final delivery. */
+    @Column(name = "confirmation_code", length = 10)
+    private String confirmationCode;
+
+    /** Photo proof of clean laundry handed to customer at final delivery. */
+    @Column(name = "final_delivery_photo_url", length = 1000)
+    private String finalDeliveryPhotoUrl;
+
     @PrePersist
     void onCreate() {
         LocalDateTime now = LocalDateTime.now();
         if (createdAt == null) createdAt = now;
         if (updatedAt == null) updatedAt = now;
-        if (status == null) status = DeliveryStatus.PENDING_PICKUP;
+        if (status == null) status = DeliveryStatus.ASSIGNED_PICKUP;
     }
 
     @PreUpdate
@@ -103,3 +121,4 @@ public class DeliveryOrder {
         updatedAt = LocalDateTime.now();
     }
 }
+

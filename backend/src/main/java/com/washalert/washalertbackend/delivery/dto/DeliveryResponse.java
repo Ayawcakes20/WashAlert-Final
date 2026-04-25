@@ -34,6 +34,14 @@ public record DeliveryResponse(
         Double branchLatitude,
         Double branchLongitude,
         Double deliveryLatitude,
-        Double deliveryLongitude
+        Double deliveryLongitude,
+        String deliveryUnitFloor,
+        String deliveryContactName,
+        String deliveryContactPhone,
+        // ── State Machine Fields ────────────────────────────────────────────────
+        Integer bagCount,
+        String confirmationCode,
+        String branchHandoverPhotoUrl,
+        String finalDeliveryPhotoUrl
 ) {
 }

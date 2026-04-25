@@ -1,9 +1,12 @@
 package com.washalert.washalertbackend.delivery;
 
 import com.washalert.washalertbackend.common.DataReadProperties;
+import com.washalert.washalertbackend.delivery.dto.BranchHandoverRequest;
 import com.washalert.washalertbackend.delivery.dto.CreateDeliveryRequest;
 import com.washalert.washalertbackend.delivery.dto.DeliveryResponse;
 import com.washalert.washalertbackend.delivery.dto.DriverAvailableOrderResponse;
+import com.washalert.washalertbackend.delivery.dto.FinalHandoverRequest;
+import com.washalert.washalertbackend.delivery.dto.PickupCompleteRequest;
 import com.washalert.washalertbackend.delivery.dto.UpdateDeliveryAssignmentRequest;
 import com.washalert.washalertbackend.delivery.dto.UpdateDeliveryLocationRequest;
 import com.washalert.washalertbackend.delivery.dto.UpdateDeliveryStatusRequest;
@@ -28,6 +31,8 @@ import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import java.security.SecureRandom;
+import java.util.ArrayList;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -36,6 +41,7 @@ import java.util.Optional;
 @Service
 public class DeliveryService {
     private static final Logger log = LoggerFactory.getLogger(DeliveryService.class);
+    private static final SecureRandom random = new SecureRandom();
 
     private final DeliveryOrderRepository deliveryRepository;
     private final JobOrderRepository orderRepository;
@@ -236,13 +242,36 @@ public class DeliveryService {
             throw new IllegalArgumentException("Only drivers can view available bookings.");
         }
 
-        return orderRepository.findByStatusAndServiceTypeOrderByCreatedAtDesc(JobOrderStatus.PENDING, ServiceType.PICKUP_DELIVERY)
+        // Phase A: Jobs that are PENDING and haven't been picked up by a driver yet
+        List<JobOrder> phaseAOrders = orderRepository.findByStatusAndServiceTypeOrderByCreatedAtDesc(JobOrderStatus.PENDING, ServiceType.PICKUP_DELIVERY)
                 .stream()
                 .filter(order -> driver.getBranch() == null || sameBranch(driver.getBranch(), order.getBranch()))
                 .filter(order -> deliveryRepository.findByJobOrder_TrackingNumberAndLeg(
                         order.getTrackingNumber(),
                         DeliveryLeg.PICKUP_FROM_CUSTOMER
                 ).isEmpty())
+                .toList();
+
+        // Phase B: Jobs that are READY and don't have an ASSIGNED driver for the return leg yet
+        List<JobOrder> phaseBOrders = orderRepository.findByStatusAndServiceTypeOrderByCreatedAtDesc(JobOrderStatus.READY, ServiceType.PICKUP_DELIVERY)
+                .stream()
+                .filter(order -> driver.getBranch() == null || sameBranch(driver.getBranch(), order.getBranch()))
+                .filter(order -> {
+                    Optional<DeliveryOrder> outbound = deliveryRepository.findByJobOrder_TrackingNumberAndLeg(
+                            order.getTrackingNumber(),
+                            DeliveryLeg.DELIVERY_TO_CUSTOMER
+                    );
+                    // Available if no record OR it exists but has no driver
+                    return outbound.isEmpty() || outbound.get().getDriverUser() == null;
+                })
+                .toList();
+
+        List<JobOrder> combined = new ArrayList<>();
+        combined.addAll(phaseAOrders);
+        combined.addAll(phaseBOrders);
+
+        return combined.stream()
+                .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
                 .map(order -> new DriverAvailableOrderResponse(
                         order.getId(),
                         order.getTrackingNumber(),
@@ -254,7 +283,43 @@ public class DeliveryService {
                         order.getTotalPrice(),
                         order.getCreatedAt()
                 ))
+                .limit(50)
                 .toList();
+    }
+
+    /**
+     * Initializes a Phase B delivery record when an order becomes READY.
+     * Generates a 4-digit confirmation code for the final delivery handover.
+     */
+    @Transactional
+    public void initializePhaseB(JobOrder order) {
+        if (order.getServiceType() != ServiceType.PICKUP_DELIVERY) return;
+
+        Optional<DeliveryOrder> existing = deliveryRepository.findByJobOrder_TrackingNumberAndLeg(
+                order.getTrackingNumber(),
+                DeliveryLeg.DELIVERY_TO_CUSTOMER
+        );
+
+        DeliveryOrder outbound = existing.orElse(new DeliveryOrder());
+        outbound.setJobOrder(order);
+        outbound.setLeg(DeliveryLeg.DELIVERY_TO_CUSTOMER);
+
+        // Only set status to ASSIGNED_DELIVERY if it's new
+        if (outbound.getStatus() == null) {
+            outbound.setStatus(DeliveryStatus.ASSIGNED_DELIVERY);
+        }
+
+        if (outbound.getConfirmationCode() == null) {
+            outbound.setConfirmationCode(generateConfirmationCode());
+        }
+
+        DeliveryOrder saved = deliveryRepository.save(outbound);
+        firestoreSyncService.upsert("deliveries", order.getTrackingNumber(), toResponse(saved));
+        log.info("[DeliveryService] Initialized Phase B for order {}, code: {}", order.getTrackingNumber(), saved.getConfirmationCode());
+    }
+
+    private String generateConfirmationCode() {
+        return String.format("%04d", random.nextInt(10000));
     }
 
     /** Driver-only: returns all deliveries assigned to the calling driver's account. */
@@ -617,20 +682,27 @@ public class DeliveryService {
 
         if (delivery.getLeg() == DeliveryLeg.PICKUP_FROM_CUSTOMER) {
             return switch (delivery.getStatus()) {
-                case PENDING_PICKUP -> DeliveryWorkflowStatus.DRIVER_ACCEPTED;
-                case EN_ROUTE_TO_PICKUP -> DeliveryWorkflowStatus.PICKING_UP;
-                case PICKED_UP -> DeliveryWorkflowStatus.PICKED_UP;
-                case IN_TRANSIT, DELIVERED -> DeliveryWorkflowStatus.AT_SHOP;
-                case FAILED -> DeliveryWorkflowStatus.CANCELLED;
+                case ASSIGNED_PICKUP, PENDING_PICKUP           -> DeliveryWorkflowStatus.DRIVER_ACCEPTED;
+                case ARRIVED_CUSTOMER, EN_ROUTE_TO_PICKUP      -> DeliveryWorkflowStatus.PICKING_UP;
+                case PICKED_UP, ARRIVED_BRANCH                 -> DeliveryWorkflowStatus.PICKED_UP;
+                case HANDED_TO_BRANCH, IN_TRANSIT              -> DeliveryWorkflowStatus.AT_SHOP;
+                case ASSIGNED_DELIVERY                         -> DeliveryWorkflowStatus.READY;
+                case OUT_FOR_DELIVERY, ARRIVED_DELIVERY        -> DeliveryWorkflowStatus.PICKING_UP;
+                case DELIVERED                                 -> DeliveryWorkflowStatus.COMPLETED;
+                case FAILED, CANCELLED                         -> DeliveryWorkflowStatus.CANCELLED;
+                default -> DeliveryWorkflowStatus.PENDING;
             };
         }
 
         return switch (delivery.getStatus()) {
-            case PENDING_PICKUP -> DeliveryWorkflowStatus.READY;
-            case EN_ROUTE_TO_PICKUP -> DeliveryWorkflowStatus.PICKING_UP;
-            case PICKED_UP, IN_TRANSIT -> DeliveryWorkflowStatus.PICKED_UP;
-            case DELIVERED -> DeliveryWorkflowStatus.COMPLETED;
-            case FAILED -> DeliveryWorkflowStatus.CANCELLED;
+            case ASSIGNED_DELIVERY, PENDING_PICKUP             -> DeliveryWorkflowStatus.READY;
+            case OUT_FOR_DELIVERY, ARRIVED_DELIVERY, EN_ROUTE_TO_PICKUP -> DeliveryWorkflowStatus.PICKING_UP;
+            case DELIVERED                                     -> DeliveryWorkflowStatus.COMPLETED;
+            case ASSIGNED_PICKUP, ARRIVED_CUSTOMER             -> DeliveryWorkflowStatus.DRIVER_ACCEPTED;
+            case PICKED_UP, IN_TRANSIT, ARRIVED_BRANCH         -> DeliveryWorkflowStatus.PICKED_UP;
+            case HANDED_TO_BRANCH                              -> DeliveryWorkflowStatus.AT_SHOP;
+            case FAILED, CANCELLED                             -> DeliveryWorkflowStatus.CANCELLED;
+            default -> DeliveryWorkflowStatus.PENDING;
         };
     }
 
@@ -669,8 +741,152 @@ public class DeliveryService {
                 order.getBranchLatitude(),
                 order.getBranchLongitude(),
                 order.getDeliveryLatitude(),
-                order.getDeliveryLongitude()
+                order.getDeliveryLongitude(),
+                order.getDeliveryUnitFloor(),
+                order.getDeliveryContactName(),
+                order.getDeliveryContactPhone(),
+                d.getBagCount(),
+                d.getConfirmationCode(),
+                d.getBranchHandoverPhotoUrl(),
+                d.getFinalDeliveryPhotoUrl()
         );
+    }
+
+    // ── State Machine Service Methods ─────────────────────────────────────────
+
+    @Transactional
+    public DeliveryResponse arriveAtCustomer(Long deliveryId, AuthUserDetails principal) {
+        DeliveryOrder d = findDeliveryOrThrow(deliveryId);
+        enforceDriverOwnership(d, principal);
+        requireStatus(d, DeliveryStatus.ASSIGNED_PICKUP, "arrive at customer");
+        d.setStatus(DeliveryStatus.ARRIVED_CUSTOMER);
+        DeliveryOrder saved = deliveryRepository.save(d);
+        syncToFirestore(saved);
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public DeliveryResponse completePickup(Long deliveryId, PickupCompleteRequest req, AuthUserDetails principal) {
+        DeliveryOrder d = findDeliveryOrThrow(deliveryId);
+        enforceDriverOwnership(d, principal);
+        requireStatus(d, DeliveryStatus.ARRIVED_CUSTOMER, "complete pickup");
+        d.setBagCount(req.bagCount());
+        if (req.pickupPhotoUrl() != null) d.setPickupProofUrl(req.pickupPhotoUrl());
+        d.setStatus(DeliveryStatus.PICKED_UP);
+        DeliveryOrder saved = deliveryRepository.save(d);
+        syncToFirestore(saved);
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public DeliveryResponse arriveAtBranch(Long deliveryId, AuthUserDetails principal) {
+        DeliveryOrder d = findDeliveryOrThrow(deliveryId);
+        enforceDriverOwnership(d, principal);
+        requireStatus(d, DeliveryStatus.PICKED_UP, "arrive at branch");
+        d.setStatus(DeliveryStatus.ARRIVED_BRANCH);
+        DeliveryOrder saved = deliveryRepository.save(d);
+        syncToFirestore(saved);
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public DeliveryResponse branchHandover(Long deliveryId, BranchHandoverRequest req, AuthUserDetails principal) {
+        DeliveryOrder d = findDeliveryOrThrow(deliveryId);
+        enforceDriverOwnership(d, principal);
+        requireStatus(d, DeliveryStatus.ARRIVED_BRANCH, "branch handover");
+        d.setBranchHandoverPhotoUrl(req.branchHandoverPhotoUrl());
+        d.setStatus(DeliveryStatus.HANDED_TO_BRANCH);
+        DeliveryOrder saved = deliveryRepository.save(d);
+        syncToFirestore(saved);
+        // Update job order status to AT_SHOP
+        JobOrder order = saved.getJobOrder();
+        if (order.getStatus() == JobOrderStatus.PENDING || order.getStatus() == JobOrderStatus.PICKED_UP) {
+            order.setStatus(JobOrderStatus.WASHING);
+            orderRepository.save(order);
+        }
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public DeliveryResponse startDelivery(Long deliveryId, AuthUserDetails principal) {
+        DeliveryOrder d = findDeliveryOrThrow(deliveryId);
+        // Allow any driver to pick from pool, or assigned driver
+        User actor = principal.getUser();
+        if (d.getDriverUser() == null) {
+            // Assign this driver to the delivery from the pool
+            d.setDriverUser(actor);
+            d.setDriverName(actor.getFullName() != null ? actor.getFullName() : actor.getEmail());
+            d.setDriverPhone(resolveDriverContact(actor));
+        } else {
+            enforceDriverOwnership(d, principal);
+        }
+        requireStatus(d, DeliveryStatus.ASSIGNED_DELIVERY, "start delivery");
+        d.setStatus(DeliveryStatus.OUT_FOR_DELIVERY);
+        DeliveryOrder saved = deliveryRepository.save(d);
+        syncToFirestore(saved);
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public DeliveryResponse arriveForDelivery(Long deliveryId, AuthUserDetails principal) {
+        DeliveryOrder d = findDeliveryOrThrow(deliveryId);
+        enforceDriverOwnership(d, principal);
+        requireStatus(d, DeliveryStatus.OUT_FOR_DELIVERY, "arrive for delivery");
+        d.setStatus(DeliveryStatus.ARRIVED_DELIVERY);
+        DeliveryOrder saved = deliveryRepository.save(d);
+        syncToFirestore(saved);
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public DeliveryResponse finalHandover(Long deliveryId, FinalHandoverRequest req, AuthUserDetails principal) {
+        DeliveryOrder d = findDeliveryOrThrow(deliveryId);
+        enforceDriverOwnership(d, principal);
+        requireStatus(d, DeliveryStatus.ARRIVED_DELIVERY, "final handover");
+        // Verify confirmation code
+        if (d.getConfirmationCode() != null && !d.getConfirmationCode().equalsIgnoreCase(req.confirmationCode().trim())) {
+            throw new IllegalArgumentException("Confirmation code does not match. Please verify with the customer.");
+        }
+        if (req.finalDeliveryPhotoUrl() != null) d.setFinalDeliveryPhotoUrl(req.finalDeliveryPhotoUrl());
+        d.setStatus(DeliveryStatus.DELIVERED);
+        DeliveryOrder saved = deliveryRepository.save(d);
+        syncToFirestore(saved);
+        // Mark job order as delivered
+        JobOrder order = saved.getJobOrder();
+        order.setStatus(JobOrderStatus.DELIVERED);
+        orderRepository.save(order);
+        return toResponse(saved);
+    }
+
+    // ── State Machine Helpers ─────────────────────────────────────────────────
+    
+    private DeliveryOrder findDeliveryOrThrow(Long id) {
+        return deliveryRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Delivery booking not found with ID: " + id));
+    }
+
+    private void requireStatus(DeliveryOrder d, DeliveryStatus required, String action) {
+        if (d.getStatus() != required) {
+            throw new IllegalStateException(
+                    "Cannot " + action + ": delivery is in state " + d.getStatus() + " (expected " + required + ")."
+            );
+        }
+    }
+
+    private void enforceDriverOwnership(DeliveryOrder d, AuthUserDetails principal) {
+        User actor = principal.getUser();
+        if (actor.getRole() == Role.ADMIN || actor.getRole() == Role.STAFF) return;
+        if (d.getDriverUser() != null && !d.getDriverUser().getId().equals(actor.getId())) {
+            throw new IllegalArgumentException("This delivery is not assigned to you.");
+        }
+    }
+
+    private void syncToFirestore(DeliveryOrder saved) {
+        try {
+            firestoreSyncService.upsert("deliveries", saved.getJobOrder().getTrackingNumber(), toResponse(saved));
+        } catch (Exception ex) {
+            log.warn("[StateMachine] Firestore sync failed for delivery {}: {}", saved.getId(), ex.getMessage());
+        }
     }
 
     private String normalizeTracking(String trackingNumber) {
@@ -720,11 +936,22 @@ public class DeliveryService {
 
     private boolean isValidTransition(DeliveryStatus from, DeliveryStatus to) {
         return switch (from) {
-            case PENDING_PICKUP -> to == DeliveryStatus.EN_ROUTE_TO_PICKUP || to == DeliveryStatus.FAILED;
+            // ── Phase A ───────────────────────────────────────────────────────
+            case ASSIGNED_PICKUP    -> to == DeliveryStatus.ARRIVED_CUSTOMER || to == DeliveryStatus.CANCELLED;
+            case ARRIVED_CUSTOMER   -> to == DeliveryStatus.PICKED_UP || to == DeliveryStatus.CANCELLED;
+            case PICKED_UP          -> to == DeliveryStatus.ARRIVED_BRANCH || to == DeliveryStatus.CANCELLED;
+            case ARRIVED_BRANCH     -> to == DeliveryStatus.HANDED_TO_BRANCH || to == DeliveryStatus.CANCELLED;
+            case HANDED_TO_BRANCH   -> to == DeliveryStatus.ASSIGNED_DELIVERY; // auto-transition to Phase B
+            // ── Phase B ───────────────────────────────────────────────────────
+            case ASSIGNED_DELIVERY  -> to == DeliveryStatus.OUT_FOR_DELIVERY || to == DeliveryStatus.CANCELLED;
+            case OUT_FOR_DELIVERY   -> to == DeliveryStatus.ARRIVED_DELIVERY || to == DeliveryStatus.CANCELLED;
+            case ARRIVED_DELIVERY   -> to == DeliveryStatus.DELIVERED || to == DeliveryStatus.CANCELLED;
+            case DELIVERED, CANCELLED, FAILED -> false;
+            // ── Legacy ────────────────────────────────────────────────────────
+            case PENDING_PICKUP     -> to == DeliveryStatus.EN_ROUTE_TO_PICKUP || to == DeliveryStatus.FAILED;
             case EN_ROUTE_TO_PICKUP -> to == DeliveryStatus.PICKED_UP || to == DeliveryStatus.FAILED;
-            case PICKED_UP -> to == DeliveryStatus.IN_TRANSIT || to == DeliveryStatus.DELIVERED || to == DeliveryStatus.FAILED;
-            case IN_TRANSIT -> to == DeliveryStatus.DELIVERED || to == DeliveryStatus.FAILED;
-            case DELIVERED, FAILED -> false;
+            case IN_TRANSIT         -> to == DeliveryStatus.DELIVERED || to == DeliveryStatus.FAILED;
+            default -> false;
         };
     }
 }

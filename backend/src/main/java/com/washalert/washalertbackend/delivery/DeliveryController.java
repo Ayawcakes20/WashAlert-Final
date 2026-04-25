@@ -1,8 +1,11 @@
 package com.washalert.washalertbackend.delivery;
 
+import com.washalert.washalertbackend.delivery.dto.BranchHandoverRequest;
 import com.washalert.washalertbackend.delivery.dto.CreateDeliveryRequest;
 import com.washalert.washalertbackend.delivery.dto.DeliveryResponse;
 import com.washalert.washalertbackend.delivery.dto.DriverAvailableOrderResponse;
+import com.washalert.washalertbackend.delivery.dto.FinalHandoverRequest;
+import com.washalert.washalertbackend.delivery.dto.PickupCompleteRequest;
 import com.washalert.washalertbackend.delivery.dto.UpdateDeliveryAssignmentRequest;
 import com.washalert.washalertbackend.delivery.dto.UpdateDeliveryLocationRequest;
 import com.washalert.washalertbackend.delivery.dto.UpdateDeliveryStatusRequest;
@@ -134,5 +137,80 @@ public class DeliveryController {
             @AuthenticationPrincipal AuthUserDetails principal
     ) {
         return deliveryService.collectCodPayment(deliveryId, principal);
+    }
+
+    // ── State Machine Action Endpoints ────────────────────────────────────────
+
+    /** Phase A: Driver swipes "Arrive" at customer. ASSIGNED_PICKUP → ARRIVED_CUSTOMER */
+    @PostMapping("/{deliveryId}/arrive-customer")
+    @PreAuthorize("hasRole('DRIVER')")
+    public DeliveryResponse arriveAtCustomer(
+            @PathVariable Long deliveryId,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return deliveryService.arriveAtCustomer(deliveryId, principal);
+    }
+
+    /** Phase A: Driver verifies bag count + photo. ARRIVED_CUSTOMER → PICKED_UP */
+    @PostMapping("/{deliveryId}/pickup-complete")
+    @PreAuthorize("hasRole('DRIVER')")
+    public DeliveryResponse completePickup(
+            @PathVariable Long deliveryId,
+            @Valid @RequestBody PickupCompleteRequest req,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return deliveryService.completePickup(deliveryId, req, principal);
+    }
+
+    /** Phase A: Driver swipes "Arrived at Branch". PICKED_UP → ARRIVED_BRANCH */
+    @PostMapping("/{deliveryId}/arrive-branch")
+    @PreAuthorize("hasRole('DRIVER')")
+    public DeliveryResponse arriveAtBranch(
+            @PathVariable Long deliveryId,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return deliveryService.arriveAtBranch(deliveryId, principal);
+    }
+
+    /** Phase A: Driver uploads handover photo. ARRIVED_BRANCH → HANDED_TO_BRANCH */
+    @PostMapping("/{deliveryId}/branch-handover")
+    @PreAuthorize("hasRole('DRIVER')")
+    public DeliveryResponse branchHandover(
+            @PathVariable Long deliveryId,
+            @Valid @RequestBody BranchHandoverRequest req,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return deliveryService.branchHandover(deliveryId, req, principal);
+    }
+
+    /** Phase B: Driver accepts from pool. ASSIGNED_DELIVERY → OUT_FOR_DELIVERY */
+    @PostMapping("/{deliveryId}/start-delivery")
+    @PreAuthorize("hasRole('DRIVER')")
+    public DeliveryResponse startDelivery(
+            @PathVariable Long deliveryId,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return deliveryService.startDelivery(deliveryId, principal);
+    }
+
+    /** Phase B: Driver swipes "Arrived" at customer for return. OUT_FOR_DELIVERY → ARRIVED_DELIVERY */
+    @PostMapping("/{deliveryId}/arrive-delivery")
+    @PreAuthorize("hasRole('DRIVER')")
+    public DeliveryResponse arriveForDelivery(
+            @PathVariable Long deliveryId,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return deliveryService.arriveForDelivery(deliveryId, principal);
+    }
+
+    /** Phase B: Driver confirms code + photo. ARRIVED_DELIVERY → DELIVERED */
+    @PostMapping("/{deliveryId}/final-handover")
+    @PreAuthorize("hasRole('DRIVER')")
+    public DeliveryResponse finalHandover(
+            @PathVariable Long deliveryId,
+            @Valid @RequestBody FinalHandoverRequest req,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return deliveryService.finalHandover(deliveryId, req, principal);
     }
 }

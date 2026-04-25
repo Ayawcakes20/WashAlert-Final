@@ -140,6 +140,9 @@ public class BookingService {
                 .customerEmail(trimToNull(req.customerEmail()))
                 .serviceType(req.serviceType())
                 .deliveryAddress(trimToNull(req.deliveryAddress()))
+                .deliveryUnitFloor(trimToNull(req.deliveryUnitFloor()))
+                .deliveryContactName(trimToNull(req.deliveryContactName()))
+                .deliveryContactPhone(trimToNull(req.deliveryContactPhone()))
                 .deliveryLatitude(req.deliveryLatitude())
                 .deliveryLongitude(req.deliveryLongitude())
                 .branchLatitude(req.branchLatitude())
@@ -313,6 +316,9 @@ public class BookingService {
                 jo.isPaid() ? PaymentStatus.PAID : null,
                 jo.getDeliveryLatitude(),
                 jo.getDeliveryLongitude(),
+                jo.getDeliveryUnitFloor(),
+                jo.getDeliveryContactName(),
+                jo.getDeliveryContactPhone(),
                 jo.getBranchLatitude(),
                 jo.getBranchLongitude()
         );

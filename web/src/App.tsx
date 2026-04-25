@@ -9,10 +9,6 @@ import PublicAboutPage from "./pages/public/AboutPage";
 import BranchesPage from "./pages/public/BranchesPage";
 import DownloadPage from "./pages/public/DownloadPage";
 import LoginPage from "./pages/LoginPage";
-<<<<<<< HEAD
-=======
-import LoginOtpPage from "./pages/LoginOtpPage";
->>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import SetPasswordPage from "./pages/SetPasswordPage";
@@ -62,10 +58,6 @@ const App = () => (
           <Route path="/branches-public" element={<BranchesPage />} />
           <Route path="/download" element={<DownloadPage />} />
           <Route path="/login" element={<LoginPage />} />
-<<<<<<< HEAD
-=======
-          <Route path="/login-otp" element={<LoginOtpPage />} />
->>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
           <Route path="/signup" element={<StaffAccountNoticePage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />

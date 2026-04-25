@@ -32,20 +32,38 @@ const SILVER_MAP_STYLE = [
 ];
 
 const STEPS = [
-  { id: 'pending', label: "Order Received", icon: "cube-outline", desc: "Your order has been received by the branch." },
-  { id: 'washing', label: "Washing", icon: "water-outline", desc: "Your clothes are being washed with care." },
-  { id: 'drying', label: "Drying", icon: "bonfire-outline", desc: "Your clothes are in the dryer now." },
-  { id: 'ready', label: "Ready for Pickup", icon: "checkmark-circle-outline", desc: "Your laundry is clean and ready!" },
-  { id: 'delivering', label: "Out for Delivery", icon: "bicycle-outline", desc: "Your driver is on the way to deliver." },
-  { id: 'delivered', label: "Delivered", icon: "checkmark-done-outline", desc: "Your laundry has been delivered. Enjoy!" },
+  { id: 'pending',          label: 'Order Received',          icon: 'cube-outline',            desc: 'Your order has been received by the branch.' },
+  { id: 'pickup_heading',   label: 'Rider Heading to You',    icon: 'bicycle-outline',          desc: 'Your rider is on the way to collect your laundry.' },
+  { id: 'pickup_arrived',   label: 'Rider at Your Door',      icon: 'location-outline',         desc: 'Your rider has arrived! Please hand over your laundry.' },
+  { id: 'at_shop',          label: 'Laundry at Branch',       icon: 'storefront-outline',       desc: 'Your laundry is at the branch and being processed.' },
+  { id: 'washing',          label: 'Washing',                 icon: 'water-outline',            desc: 'Your clothes are being washed with care.' },
+  { id: 'drying',           label: 'Drying',                  icon: 'bonfire-outline',          desc: 'Your clothes are in the dryer now.' },
+  { id: 'ready',            label: 'Ready for Delivery',      icon: 'checkmark-circle-outline', desc: 'Your laundry is clean and ready!' },
+  { id: 'delivering',       label: 'Out for Delivery',        icon: 'bicycle-outline',          desc: 'Your rider is on the way to deliver your clean laundry.' },
+  { id: 'delivery_arrived', label: 'Rider at Your Door',      icon: 'location-outline',         desc: 'Your clean laundry has arrived!' },
+  { id: 'delivered',        label: 'Delivered',               icon: 'checkmark-done-outline',   desc: 'Your laundry has been delivered. Enjoy!' },
 ];
 
+// Maps all 9 driver workflow statuses to a customer-facing order status
 const mapWorkflowToOrderStatus = (workflowStatus, fallback = 'pending') => {
-  const normalized = String(workflowStatus || '').toUpperCase();
-  if (normalized === 'COMPLETED') return 'delivered';
-  if (normalized === 'CANCELLED') return 'cancelled';
-  if (normalized) return 'delivering';
-  return fallback;
+  const normalized = String(workflowStatus || '').toLowerCase();
+  switch (normalized) {
+    // Phase A — driver picking up from customer
+    case 'accepted':           return 'pickup_heading';   // Rider heading to you
+    case 'at_customer':        return 'pickup_arrived';   // Rider at your door
+    case 'picked_up':          return 'at_shop';          // On the way to branch
+    case 'at_branch':          return 'at_shop';          // At branch
+    case 'handed_over':        return 'washing';          // Being processed
+    // Phase B — driver delivering clean laundry
+    case 'ready_for_dispatch': return 'ready';            // Ready to deliver
+    case 'en_route':           return 'delivering';       // On the way to you
+    case 'at_delivery':        return 'delivery_arrived'; // Driver at your door
+    case 'completed':          return 'delivered';
+    case 'cancelled':          return 'cancelled';
+    default:
+      if (normalized) return fallback;
+      return fallback;
+  }
 };
 
 const TrackingScreen = ({ route, navigation }) => {
@@ -123,20 +141,19 @@ const TrackingScreen = ({ route, navigation }) => {
   };
 
   const getDeliveryStatusMessage = () => {
-    if (deliveryData?.leg) {
-      if (deliveryData.leg === 'PICKUP_FROM_CUSTOMER') {
-        if (deliveryData.status === 'EN_ROUTE_TO_PICKUP' || deliveryData.status === 'PENDING_PICKUP') {
-           return "Rider is coming to pick up your laundry.";
-        }
-        return "Rider is delivering your laundry back to the shop.";
-      } else if (deliveryData.leg === 'DELIVERY_TO_CUSTOMER') {
-        if (deliveryData.status === 'EN_ROUTE_TO_PICKUP' || deliveryData.status === 'PENDING_PICKUP') {
-           return "Rider is picking up clean laundry from the shop.";
-        }
-        return "Rider is delivering your clean clothes!";
-      }
+    const wf = String(deliveryData?.status || '').toLowerCase();
+    switch (wf) {
+      case 'accepted':           return '🏍️  Rider is heading to pick up your laundry.';
+      case 'at_customer':        return '📦  Rider has arrived at your location!';
+      case 'picked_up':          return '🚀  Laundry picked up — heading to the branch.';
+      case 'at_branch':          return '🏬  Laundry arrived at the branch.';
+      case 'handed_over':        return '🧺  Your laundry is being processed at the branch.';
+      case 'ready_for_dispatch': return '✅  Clean laundry is ready — waiting for dispatch!';
+      case 'en_route':           return '🏍️  Rider is on the way to deliver your clean laundry!';
+      case 'at_delivery':        return '🎉  Rider has arrived at your door!';
+      case 'completed':          return '✅  Delivered successfully. Enjoy!';
+      default:                   return '📍  Tracking your laundry order...';
     }
-    return "Driver is on the way.";
   };
 
   const destinationLoc = getDestination();
@@ -146,61 +163,71 @@ const TrackingScreen = ({ route, navigation }) => {
   }, [orderId]);
 
   useEffect(() => {
-    if (order?.trackingNumber) {
-      const unsub = onSnapshot(
-        doc(db, 'deliveries', order.trackingNumber),
-        (snapshot) => {
-          if (snapshot.exists()) {
-            const data = snapshot.data();
-            console.log('[Tracking] Firestore delivery update tracking=', order.trackingNumber, 'status=', data?.status);
-            setDeliveryData(data);
-            setOrder((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    status: mapWorkflowToOrderStatus(data?.workflowStatus, prev.status),
-                    delivery: {
-                      ...(prev.delivery || {}),
-                      driver: data?.driverName || prev.delivery?.driver || 'Assigned Driver',
-                      driverPhone: data?.driverPhone || prev.delivery?.driverPhone || '',
-                      driverPhotoUrl: data?.driverPhotoUrl || prev.delivery?.driverPhotoUrl || null,
-                      driverVehicle: data?.driverVehicle || prev.delivery?.driverVehicle || null,
-                      eta: data?.estimatedArrivalAt || prev.delivery?.eta || null,
-                    },
-                  }
-                : prev
-            );
-            if (data.currentLatitude && data.currentLongitude) {
-              const newCoord = {
-                latitude: data.currentLatitude,
-                longitude: data.currentLongitude,
-              };
-              setDriverLocation(newCoord);
-              if (driverCoordAnimated) {
-                driverCoordAnimated.timing({
-                  ...newCoord,
-                  duration: 10000, // Matched with driver's 10s broadcast interval for smooth glide
-                  useNativeDriver: false
-                }).start();
-              }
-              if (mapRef) {
-                mapRef.fitToCoordinates([newCoord, destinationLoc], {
-                  edgePadding: { top: 120, right: 80, bottom: 250, left: 80 },
-                  animated: true,
-                });
-              }
-            } else {
-              console.log('[Tracking] Delivery update has no coordinates yet tracking=', order.trackingNumber);
+    // Try trackingNumber first, fall back to order.id — both may be used as Firestore doc key
+    const firestoreKey = order?.trackingNumber || order?.id;
+    if (!firestoreKey) return;
+
+    console.log('[Tracking] Attaching Firestore listener key=', firestoreKey);
+    const unsub = onSnapshot(
+      doc(db, 'deliveries', String(firestoreKey)),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          console.log('[Tracking] Firestore update key=', firestoreKey, 'status=', data?.status, 'workflow=', data?.workflowStatus, 'lat=', data?.currentLatitude);
+          setDeliveryData(data);
+          setOrder((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  // Use workflowStatus if present, otherwise fall back to Firestore status field
+                  status: mapWorkflowToOrderStatus(
+                    data?.workflowStatus || data?.status,
+                    prev.status
+                  ),
+                  delivery: {
+                    ...(prev.delivery || {}),
+                    driver: data?.driverName || prev.delivery?.driver || 'Assigned Driver',
+                    driverPhone: data?.driverPhone || prev.delivery?.driverPhone || '',
+                    driverPhotoUrl: data?.driverPhotoUrl || prev.delivery?.driverPhotoUrl || null,
+                    driverVehicle: data?.driverVehicle || prev.delivery?.driverVehicle || null,
+                    eta: data?.estimatedArrivalAt || prev.delivery?.eta || null,
+                  },
+                }
+              : prev
+          );
+          if (data.currentLatitude && data.currentLongitude) {
+            const newCoord = {
+              latitude: data.currentLatitude,
+              longitude: data.currentLongitude,
+            };
+            setDriverLocation(newCoord);
+            if (driverCoordAnimated) {
+              driverCoordAnimated.timing({
+                ...newCoord,
+                duration: 2000, // Faster glide (2s) for more responsive feel
+                useNativeDriver: false
+              }).start();
+            }
+            
+            // Only auto-fit once or when significantly moved to avoid camera jitter
+            if (mapRef && !prev.driverLocation) {
+              mapRef.fitToCoordinates([newCoord, destinationLoc], {
+                edgePadding: { top: 120, right: 80, bottom: 250, left: 80 },
+                animated: true,
+              });
             }
           }
-        },
-        (error) => {
-          console.warn('[Tracking] Firestore listener failed:', error?.message || error);
+        } else {
+          console.log('[Tracking] Firestore doc does not exist yet key=', firestoreKey);
         }
-      );
-      return () => unsub();
-    }
-  }, [order?.trackingNumber, mapRef, destinationLoc.latitude, destinationLoc.longitude]);
+      },
+      (error) => {
+        console.warn('[Tracking] Firestore listener failed:', error?.message || error);
+      }
+    );
+    return () => unsub();
+  }, [order?.trackingNumber, order?.id, mapRef, destinationLoc.latitude, destinationLoc.longitude]);
+
 
   // ETA Refresh Loop (Every 30 seconds)
   useEffect(() => {
@@ -284,35 +311,34 @@ const TrackingScreen = ({ route, navigation }) => {
   const activeStep = currentStepIndex !== -1 ? STEPS[currentStepIndex] : STEPS[0];
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={20} color={colors.text} />
-          <Text style={styles.backText}>Back</Text>
-        </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>Live Tracking</Text>
-        <Text style={styles.orderNumber}>{order.trackingNumber}</Text>
 
         <View style={styles.trackContent}>
-          {order.status === 'delivering' && driverLocation ? (
-            <View>
-              <View style={styles.messageBanner}>
-                 <Ionicons name="information-circle" size={20} color={colors.primary} />
-                 <Text style={styles.messageBannerText}>{getDeliveryStatusMessage()}</Text>
-              </View>
-              <View style={styles.mapContainer}>
-               <MapView
+          {/* Status message banner — always visible */}
+          {deliveryData && (
+            <View style={styles.messageBanner}>
+              <Text style={styles.messageBannerText}>{getDeliveryStatusMessage()}</Text>
+            </View>
+          )}
+
+          {/* Map — always show when we have any coordinate reference */}
+          {(driverLocation || destinationLoc) ? (
+            <View style={styles.mapContainer}>
+              <MapView
                 ref={(ref) => setMapRef(ref)}
                 provider={PROVIDER_GOOGLE}
+                googleMapsApiKey={GOOGLE_MAPS_API_KEY}
                 style={styles.map}
                 customMapStyle={SILVER_MAP_STYLE}
                 initialRegion={{
-                  ...driverLocation,
-                  latitudeDelta: 0.01,
-                  longitudeDelta: 0.01,
+                  ...(driverLocation || destinationLoc),
+                  latitudeDelta: 0.015,
+                  longitudeDelta: 0.015,
                 }}
-               >
+              >
+                {/* Route polyline — only when driver is moving */}
+                {driverLocation && (
                   <MapViewDirections
                     origin={driverLocation}
                     destination={destinationLoc}
@@ -332,46 +358,83 @@ const TrackingScreen = ({ route, navigation }) => {
                       }
                     }}
                   />
-                 <Marker 
+                )}
+
+                {/* Destination pin */}
+                <Marker
                   coordinate={destinationLoc}
                   title={destinationLoc.label}
                   description={destinationLoc.address}
-                 >
-                   <View style={[
-                     styles.destinationMarker, 
-                     destinationLoc.type === 'branch' && { backgroundColor: colors.primary }
-                   ]}>
-                     <Ionicons 
-                      name={destinationLoc.type === 'branch' ? "business" : "home"} 
-                      size={22} 
-                      color="#FFF" 
-                     />
-                   </View>
-                 </Marker>
-                 <Marker.Animated
-                  coordinate={driverCoordAnimated}
-                  title="Driver"
-                  flat
-                  anchor={{ x: 0.5, y: 0.5 }}
                 >
-                  <View style={[styles.driverMarkerBox, { transform: [{ rotate: `${deliveryData?.heading || 0}deg` }] }]}>
-                    <MaterialCommunityIcons name="motorbike" size={28} color="#FFF" />
+                  <View style={[
+                    styles.destinationMarker,
+                    destinationLoc.type === 'branch' && { backgroundColor: colors.primary }
+                  ]}>
+                    <Ionicons
+                      name={destinationLoc.type === 'branch' ? 'business' : 'home'}
+                      size={22}
+                      color="#FFF"
+                    />
                   </View>
-                </Marker.Animated>
-               </MapView>
-              <View style={styles.mapOverlay}>
-                <Ionicons name="timer-outline" size={14} color="#FFF" />
-                <Text style={styles.mapOverlayText}> {etaData.duration} • {etaData.distance}</Text>
+                </Marker>
+
+                {/* Driver marker — animated when moving */}
+                {driverLocation && (
+                  <Marker.Animated
+                    coordinate={driverCoordAnimated}
+                    title="Driver"
+                    flat
+                    anchor={{ x: 0.5, y: 0.5 }}
+                  >
+                    <View style={[styles.driverMarkerBox, { transform: [{ rotate: `${deliveryData?.heading || 0}deg` }] }]}>
+                      <MaterialCommunityIcons name="motorbike" size={28} color="#FFF" />
+                    </View>
+                  </Marker.Animated>
+                )}
+              </MapView>
+
+              {/* Order number chip — top left */}
+              <View style={styles.orderChip}>
+                <Ionicons name="receipt-outline" size={12} color={colors.primary} />
+                <Text style={styles.orderChipText}>{order.trackingNumber}</Text>
               </View>
-             </View>
+
+              {/* Live ETA overlay — top right */}
+              {driverLocation && (
+                <View style={styles.mapOverlay}>
+                  <Ionicons name="timer-outline" size={14} color="#FFF" />
+                  <Text style={styles.mapOverlayText}>
+                    {' '}{etaData.duration}  •  {etaData.distance}
+                  </Text>
+                </View>
+              )}
+
+              {/* Driver name chip — bottom */}
+              {order?.delivery?.driver && (
+                <View style={styles.driverChip}>
+                  <View style={styles.driverChipAvatar}>
+                    <Ionicons name="person" size={12} color={colors.primary} />
+                  </View>
+                  <Text style={styles.driverChipText}>{order.delivery.driver}</Text>
+                  {order.delivery.driverPhone ? (
+                    <TouchableOpacity
+                      style={styles.driverChipCall}
+                      onPress={() => void openPhoneDriver()}
+                    >
+                      <Ionicons name="call" size={12} color="#FFF" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              )}
             </View>
           ) : (
+            /* Fallback animation when no coordinates at all */
             <View style={styles.animationSection}>
-              {order.status === 'washing' || order.status === 'drying' ? (
+              {order.status === 'washing' || order.status === 'drying' || order.status === 'at_shop' ? (
                 <WashingMachineLoader size={120} />
               ) : (
                 <View style={styles.statusIconBox}>
-                    <Ionicons name={activeStep.icon} size={80} color={colors.primary} />
+                  <Ionicons name={activeStep.icon} size={80} color={colors.primary} />
                 </View>
               )}
               <Text style={styles.activeStatusText}>{activeStep.label}</Text>
@@ -493,13 +556,9 @@ const TrackingScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   scrollContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24 },
-  backBtn: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  backText: { fontSize: 14, fontWeight: '600', color: colors.text, marginLeft: 8 },
-  headerTitle: { fontSize: 22, fontWeight: '800', color: colors.text, marginBottom: 4 },
-  orderNumber: { fontSize: 14, color: colors.textSecondary, marginBottom: 24, fontWeight: '500' },
   trackContent: { marginBottom: 20 },
   mapContainer: {
-    height: 300,
+    height: 440,
     borderRadius: 24,
     overflow: 'hidden',
     backgroundColor: colors.card,
@@ -522,10 +581,28 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   map: { ...StyleSheet.absoluteFillObject },
-  mapOverlay: {
+  orderChip: {
     position: 'absolute',
     top: 16,
     left: 16,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  orderChipText: { fontSize: 12, fontWeight: '700', color: colors.primary },
+  mapOverlay: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
     backgroundColor: 'rgba(26, 86, 219, 0.9)',
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -539,6 +616,46 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   mapOverlayText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
+  driverChip: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    right: 16,
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  driverChipAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  driverChipText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0D1B2A',
+  },
+  driverChipCall: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   driverMarkerBox: {
     backgroundColor: colors.primary,
     padding: 6,

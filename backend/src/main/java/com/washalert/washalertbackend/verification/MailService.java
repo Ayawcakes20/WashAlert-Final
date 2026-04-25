@@ -73,33 +73,6 @@ public class MailService {
         }
     }
 
-<<<<<<< HEAD
-=======
-    public void sendLoginOtpEmail(String to, String code) {
-        validateMailBasics();
-        try {
-            log.info("[MAIL][LOGIN_OTP] Dispatching login OTP email to {}", maskEmail(to));
-            SimpleMailMessage msg = new SimpleMailMessage();
-            msg.setFrom(from);
-            msg.setTo(to);
-            msg.setSubject("WashAlert Login Verification Code");
-            msg.setText("""
-                    Your WashAlert login code is:
-
-                    %s
-
-                    This code expires soon and can only be used once.
-                    If you did not attempt to sign in, ignore this email.
-                    """.formatted(code));
-
-            mailSender.send(msg);
-            log.info("[MAIL][LOGIN_OTP] Login OTP email dispatch succeeded to {}", maskEmail(to));
-        } catch (RuntimeException ex) {
-            throw toMailDispatchException("LOGIN_OTP", to, ex);
-        }
-    }
-
->>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
     public void sendPasswordResetEmail(String to, String resetLink) {
         validateMailBasics();
         try {

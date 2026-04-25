@@ -13,11 +13,7 @@ import { colors } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
 
 const OTPVerificationScreen = ({ navigation, route }) => {
-<<<<<<< HEAD
   const { verifyOTP, verifyResetOTP, requestOTP, requestResetOTP } = useAuth();
-=======
-  const { verifyOTP, verifyLoginOTP, verifyResetOTP, requestOTP, requestLoginOTP, requestResetOTP } = useAuth();
->>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
   const email = route?.params?.email || 'user@example.com';
   const type = route?.params?.type || 'registration';
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -79,11 +75,6 @@ const OTPVerificationScreen = ({ navigation, route }) => {
     let result;
     if (type === 'password_reset') {
       result = await verifyResetOTP(email, code);
-<<<<<<< HEAD
-=======
-    } else if (type === 'login_otp') {
-      result = await verifyLoginOTP(code);
->>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
     } else {
       result = await verifyOTP(code, email);
     }
@@ -120,11 +111,6 @@ const OTPVerificationScreen = ({ navigation, route }) => {
     let result;
     if (type === 'password_reset') {
       result = await requestResetOTP(email);
-<<<<<<< HEAD
-=======
-    } else if (type === 'login_otp') {
-      result = await requestLoginOTP();
->>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
     } else {
       result = await requestOTP(email);
     }

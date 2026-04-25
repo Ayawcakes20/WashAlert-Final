@@ -85,12 +85,6 @@ public class SecurityConfig {
                                 "/api/auth/register",
                                 "/api/auth/login",
                                 "/api/auth/firebase-session",
-<<<<<<< HEAD
-=======
-                                "/api/auth/firebase-login-otp/request",
-                                "/api/auth/firebase-login-otp/resend",
-                                "/api/auth/firebase-login-otp/verify",
->>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
                                 "/api/auth/mobile/register-profile",
                                 "/api/auth/complete-invitation",
                                 "/api/auth/verify-email",
@@ -138,11 +132,19 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
-        cfg.setAllowedOrigins(allowedOrigins);
+        // allowedOriginPatterns supports wildcards like http://192.168.*:*
+        // Also add "null" string to support React Native / mobile fetch (no browser origin)
+        List<String> patterns = new java.util.ArrayList<>(allowedOrigins);
+        if (!patterns.contains("*")) {
+            patterns.add("http://192.168.*");
+            patterns.add("http://10.*");
+        }
+        cfg.setAllowedOriginPatterns(patterns);
         cfg.setAllowedMethods(List.of(
                 "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
         ));
         cfg.setAllowedHeaders(List.of("*"));
+        cfg.setExposedHeaders(List.of("Set-Cookie"));
         cfg.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

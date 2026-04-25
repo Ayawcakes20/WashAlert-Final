@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   View,
@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Image,
   Dimensions,
+  Animated,
 } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,7 +19,7 @@ import { useAuth } from '../../context/AuthContext';
 import { branches as branchesApi, bookings as bookingsApi } from '../../services/api';
 import { typography } from '../../theme/typography';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 const QUICK_ACTIONS = [
   {
@@ -27,8 +28,9 @@ const QUICK_ACTIONS = [
     icon: 'washing-machine',
     screen: 'Book',
     params: { serviceId: 'wash-dry' },
-    iconColor: colors.primary,
-    iconBg: colors.primaryLight,
+    iconColor: '#FFFFFF',
+    gradientA: '#2563EB',
+    gradientB: '#3B82F6',
   },
   {
     id: 'wash-fold',
@@ -36,21 +38,19 @@ const QUICK_ACTIONS = [
     icon: 'tshirt-crew-outline',
     screen: 'Book',
     params: { serviceId: 'wash-fold' },
-    iconColor: colors.success,
-    iconBg: colors.successLight,
+    iconColor: '#FFFFFF',
+    gradientA: '#10B981',
+    gradientB: '#34D399',
   },
   {
     id: 'support',
-<<<<<<< HEAD
     label: 'Support',
-=======
-    label: 'IkotAsk',
->>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
     icon: 'chat-processing-outline',
     screen: 'Chat',
     params: {},
-    iconColor: colors.accent,
-    iconBg: colors.accentLight,
+    iconColor: '#FFFFFF',
+    gradientA: '#0EA5E9',
+    gradientB: '#38BDF8',
   },
   {
     id: 'updates',
@@ -58,8 +58,9 @@ const QUICK_ACTIONS = [
     icon: 'bell-ring-outline',
     screen: 'Notifications',
     params: {},
-    iconColor: colors.warning,
-    iconBg: colors.warningLight,
+    iconColor: '#FFFFFF',
+    gradientA: '#F59E0B',
+    gradientB: '#FCD34D',
   },
 ];
 
@@ -72,7 +73,7 @@ const STATUS_LABELS = {
   ready: 'Ready for Pickup / Delivery',
 };
 
-const STATUS_BORDER_COLOR = {
+const STATUS_COLOR = {
   pending: colors.warning,
   received: colors.info,
   washing: colors.accent,
@@ -84,18 +85,36 @@ const STATUS_BORDER_COLOR = {
   cancelled: colors.error,
 };
 
+const getGreeting = () => {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+};
+
 const HomeScreen = ({ navigation }) => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [branches, setBranches] = useState([]);
   const [recentOrders, setRecentOrders] = useState([]);
   const [activeOrder, setActiveOrder] = useState(null);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useFocusEffect(
     React.useCallback(() => {
       loadData();
+      startPulse();
     }, [])
   );
+
+  const startPulse = () => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.3, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
+      ])
+    ).start();
+  };
 
   const loadData = async () => {
     try {
@@ -108,7 +127,7 @@ const HomeScreen = ({ navigation }) => {
       const allOrders = ordersRes.bookings || [];
       setRecentOrders(allOrders.slice(0, 3));
       const active = allOrders.find(
-        (order) => ['pending', 'received', 'washing', 'drying', 'ready'].includes(order.status)
+        (order) => ['pending', 'received', 'washing', 'drying', 'ready', 'delivering'].includes(order.status)
       );
       setActiveOrder(active || null);
     } catch (error) {
@@ -126,47 +145,46 @@ const HomeScreen = ({ navigation }) => {
   };
 
   const renderBranchCard = ({ item }) => (
-    <Card style={styles.branchCard}>
-      <View style={styles.branchRow}>
-        <View style={styles.branchIconBox}>
-          <MaterialCommunityIcons name="store-outline" size={20} color={colors.primary} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.branchName}>{item.name}</Text>
-          <Text style={styles.branchCity}>{item.city}</Text>
-        </View>
-        <View style={styles.distancePill}>
-          <MaterialCommunityIcons name="map-marker-outline" size={12} color={colors.warning} />
-          <Text style={styles.distanceText}>{item.distance} km</Text>
-        </View>
+    <TouchableOpacity
+      style={styles.branchCard}
+      activeOpacity={0.8}
+      onPress={() => {}}
+    >
+      <View style={styles.branchIconBox}>
+        <MaterialCommunityIcons name="store-outline" size={22} color={colors.primary} />
       </View>
-      <Text style={styles.branchAddress}>{item.address}</Text>
-      <View style={styles.branchFooter}>
-        <View style={styles.hoursRow}>
-          <MaterialCommunityIcons name="clock-outline" size={13} color={colors.textSecondary} />
-          <Text style={styles.hoursText}>{item.hours}</Text>
-        </View>
-        <TouchableOpacity>
-          <MaterialCommunityIcons name="phone-outline" size={18} color={colors.accent} />
-        </TouchableOpacity>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.branchName} numberOfLines={1}>{item.name}</Text>
+        <Text style={styles.branchCity} numberOfLines={1}>{item.city}</Text>
       </View>
-    </Card>
+      <View style={styles.distancePill}>
+        <MaterialCommunityIcons name="map-marker" size={11} color={colors.warning} />
+        <Text style={styles.distanceText}>{item.distance} km</Text>
+      </View>
+    </TouchableOpacity>
   );
 
   const renderOrderCard = ({ item }) => (
     <TouchableOpacity
       onPress={() => navigation.navigate('OrderDetail', { orderId: item.id })}
-      activeOpacity={0.7}
+      activeOpacity={0.75}
+      style={styles.orderCard}
     >
-      <View style={[styles.orderCard, { borderLeftColor: STATUS_BORDER_COLOR[item.status] || colors.border }]}>
+      <View style={[styles.orderStatusBar, { backgroundColor: STATUS_COLOR[item.status] || colors.border }]} />
+      <View style={styles.orderCardInner}>
         <View style={styles.orderCardRow}>
-          <View>
-            <Text style={styles.orderId}>{item.id}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.orderId} numberOfLines={1}>{item.id}</Text>
             <Text style={styles.orderDate}>{item.date}</Text>
           </View>
           <StatusBadge status={item.status} />
         </View>
-        <Text style={styles.orderAmount}>₱{item.amount}</Text>
+        <View style={styles.orderCardFooter}>
+          <Text style={styles.orderAmount}>₱{item.amount}</Text>
+          <View style={styles.orderChevron}>
+            <Ionicons name="chevron-forward" size={14} color={colors.primary} />
+          </View>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -174,107 +192,122 @@ const HomeScreen = ({ navigation }) => {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <LoadingSkeleton width="70%" height={32} count={1} />
+        <View style={styles.heroBanner}>
+          <LoadingSkeleton width="60%" height={28} count={1} />
         </View>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <LoadingSkeleton width="100%" height={120} count={3} gap={16} />
+          <LoadingSkeleton width="100%" height={130} count={3} gap={16} />
         </ScrollView>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
 
-      {/* ── Top Header Bar ─────────────────────────────────────────────── */}
-      <View style={styles.topBar}>
-        <View style={styles.topBarLeft}>
+      {/* ── Hero Header ─────────────────────────────────────────────────── */}
+      <View style={styles.heroBanner}>
+        <View style={styles.heroLeft}>
           <Image
             source={require('../../../assets/images/icon.png')}
-            style={styles.topLogo}
+            style={styles.heroLogo}
             resizeMode="contain"
           />
           <View>
-            <Text style={styles.greeting}>
-              Hello, {user?.fullName?.split(' ')[0] || 'Customer'} 👋
-            </Text>
-            <Text style={styles.greetingSub}>Ready for clean laundry?</Text>
+            <Text style={styles.heroGreeting}>{getGreeting()}, {user?.fullName?.split(' ')[0] || 'Customer'} 👋</Text>
+            <Text style={styles.heroSub}>Ready for fresh clean laundry?</Text>
           </View>
         </View>
         <TouchableOpacity
           style={styles.notifBtn}
           onPress={() => navigation.navigate('Notifications')}
         >
-          <Ionicons name="notifications-outline" size={20} color={colors.primary} />
+          <Ionicons name="notifications-outline" size={22} color={colors.primary} />
         </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
-        {/* ── Active Order ─────────────────────────────────────────────── */}
+        {/* ── Active Order Banner ───────────────────────────────────────── */}
         {activeOrder ? (
           <View style={styles.activeOrderCard}>
-            <View style={styles.activeOrderTopRow}>
-              <View style={styles.activeOrderBadge}>
-                <View style={styles.activeDot} />
-                <Text style={styles.activeOrderBadgeText}>Active Order</Text>
+            {/* Gradient-like top strip */}
+            <View style={styles.activeOrderStrip} />
+
+            <View style={styles.activeOrderBody}>
+              <View style={styles.activeOrderTopRow}>
+                <View style={styles.activeOrderBadge}>
+                  <Animated.View style={[styles.activeDot, { transform: [{ scale: pulseAnim }] }]} />
+                  <Text style={styles.activeOrderBadgeText}>ACTIVE ORDER</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.trackBtn}
+                  onPress={() => navigation.navigate('Tracking', { orderId: activeOrder.id })}
+                >
+                  <Ionicons name="navigate" size={12} color="#FFF" />
+                  <Text style={styles.trackBtnText}>Track Live</Text>
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={styles.trackBtn}
-                onPress={() => navigation.navigate('Tracking', { orderId: activeOrder.id })}
-              >
-                <Ionicons name="navigate-outline" size={13} color={colors.primary} />
-                <Text style={styles.trackBtnText}>Track</Text>
-              </TouchableOpacity>
-            </View>
 
-            <Text style={styles.activeOrderId}>{activeOrder.id}</Text>
-            <Text style={styles.activeOrderStatus}>
-              {STATUS_LABELS[activeOrder.status] || activeOrder.status}
-            </Text>
+              <Text style={styles.activeOrderId}>{activeOrder.id}</Text>
+              <Text style={styles.activeOrderStatus}>
+                {STATUS_LABELS[activeOrder.status] || activeOrder.status}
+              </Text>
 
-            {/* Step progress */}
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, {
-                width: `${getStatusProgress(activeOrder.status) * 100}%`,
-              }]} />
-            </View>
-            <View style={styles.progressLabels}>
-              {STATUS_STEPS.map((s, i) => (
-                <Text
-                  key={s}
-                  style={[
+              {/* Progress steps */}
+              <View style={styles.progressRow}>
+                {STATUS_STEPS.map((s, i) => {
+                  const idx = STATUS_STEPS.indexOf(activeOrder.status);
+                  const done = i < idx;
+                  const current = i === idx;
+                  return (
+                    <React.Fragment key={s}>
+                      <View style={[
+                        styles.stepDot,
+                        (done || current) && styles.stepDotActive,
+                        current && styles.stepDotCurrent,
+                      ]}>
+                        {done && <Ionicons name="checkmark" size={8} color="#FFF" />}
+                      </View>
+                      {i < STATUS_STEPS.length - 1 && (
+                        <View style={[styles.stepLine, done && styles.stepLineActive]} />
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </View>
+              <View style={styles.progressLabels}>
+                {STATUS_STEPS.map((s, i) => (
+                  <Text key={s} style={[
                     styles.progressStep,
                     STATUS_STEPS.indexOf(activeOrder.status) >= i && styles.progressStepActive,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {s.charAt(0).toUpperCase() + s.slice(1)}
-                </Text>
-              ))}
-            </View>
+                  ]} numberOfLines={1}>
+                    {s.charAt(0).toUpperCase() + s.slice(1)}
+                  </Text>
+                ))}
+              </View>
 
-            <View style={styles.activeOrderActions}>
-              <Button
-                title="View Details"
-                variant="secondary"
-                size="sm"
-                onPress={() => navigation.navigate('OrderDetail', { orderId: activeOrder.id })}
-                style={styles.actionButton}
-              />
-              <Button
-                title="Chat Support"
-                variant="ghost"
-                size="sm"
-                onPress={() => navigation.navigate('Chat')}
-                style={styles.actionButton}
-              />
+              <View style={styles.activeOrderActions}>
+                <TouchableOpacity
+                  style={styles.actionPillOutline}
+                  onPress={() => navigation.navigate('OrderDetail', { orderId: activeOrder.id })}
+                >
+                  <Ionicons name="document-text-outline" size={14} color={colors.primary} />
+                  <Text style={styles.actionPillOutlineText}>View Details</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionPillOutline}
+                  onPress={() => navigation.navigate('Chat')}
+                >
+                  <Ionicons name="chatbubble-ellipses-outline" size={14} color={colors.primary} />
+                  <Text style={styles.actionPillOutlineText}>Chat Support</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         ) : null}
 
-        {/* ── Quick Actions ────────────────────────────────────────────── */}
+        {/* ── Quick Actions ─────────────────────────────────────────────── */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionsGrid}>
           {QUICK_ACTIONS.map((action) => (
@@ -282,17 +315,17 @@ const HomeScreen = ({ navigation }) => {
               key={action.id}
               style={styles.actionTile}
               onPress={() => navigation.navigate(action.screen, action.params)}
-              activeOpacity={0.75}
+              activeOpacity={0.8}
             >
-              <View style={[styles.actionIconBox, { backgroundColor: action.iconBg }]}>
-                <MaterialCommunityIcons name={action.icon} size={24} color={action.iconColor} />
+              <View style={[styles.actionIconBox, { backgroundColor: action.gradientA }]}>
+                <MaterialCommunityIcons name={action.icon} size={26} color={action.iconColor} />
               </View>
               <Text style={styles.actionLabel}>{action.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* ── Nearby Branches ──────────────────────────────────────────── */}
+        {/* ── Nearby Branches ───────────────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Nearby Branches</Text>
@@ -341,15 +374,12 @@ const HomeScreen = ({ navigation }) => {
           )}
         </View>
 
-        <View style={{ marginTop: 8, marginBottom: 8 }}>
-          <Button
-            title="Refresh"
-            variant="ghost"
-            size="sm"
-            onPress={handleRefresh}
-            icon={<MaterialCommunityIcons name="refresh" size={16} color={colors.primary} />}
-          />
-        </View>
+        <TouchableOpacity style={styles.refreshRow} onPress={handleRefresh}>
+          <MaterialCommunityIcons name="refresh" size={15} color={colors.textTertiary} />
+          <Text style={styles.refreshText}>Refresh</Text>
+        </TouchableOpacity>
+
+        <View style={{ height: 110 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -358,130 +388,171 @@ const HomeScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
 
-  // ── Header ──────────────────────────────────────────────────────────────
-  topBar: {
+  // ── Hero Header ──────────────────────────────────────────────────────────
+  heroBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  topBarLeft: {
+  heroLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
+    flex: 1,
   },
-  topLogo: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+  heroLogo: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
   },
-  greeting: {
-    fontSize: 15,
-    fontWeight: '700',
+  heroGreeting: {
+    fontSize: 16,
+    fontWeight: '800',
     color: colors.text,
+    letterSpacing: -0.3,
   },
-  greetingSub: {
+  heroSub: {
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 1,
+    fontWeight: '500',
   },
   notifBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 42,
+    height: 42,
+    borderRadius: 13,
     backgroundColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
+    marginLeft: 12,
   },
 
   content: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 110, // extra room for floating tab bar
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 30,
   },
 
-  // ── Active Order ────────────────────────────────────────────────────────
+  // ── Active Order Card ────────────────────────────────────────────────────
   activeOrderCard: {
+    borderRadius: 20,
     backgroundColor: colors.surface,
-    borderRadius: 18,
-    padding: 18,
-    marginBottom: 20,
+    marginBottom: 24,
+    overflow: 'hidden',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 6,
     borderWidth: 1,
     borderColor: colors.border,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.primary,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 3,
+  },
+  activeOrderStrip: {
+    height: 4,
+    backgroundColor: colors.primary,
+  },
+  activeOrderBody: {
+    padding: 18,
   },
   activeOrderTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   activeOrderBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
     backgroundColor: colors.primaryLight,
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 20,
   },
   activeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
     backgroundColor: colors.primary,
   },
   activeOrderBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 10,
+    fontWeight: '800',
     color: colors.primary,
+    letterSpacing: 0.8,
   },
   trackBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
+    gap: 5,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 3,
   },
   trackBtnText: {
     fontSize: 12,
     fontWeight: '700',
-    color: colors.primary,
+    color: '#FFF',
   },
   activeOrderId: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '800',
     color: colors.text,
     marginBottom: 2,
+    letterSpacing: -0.3,
   },
   activeOrderStatus: {
     fontSize: 13,
     color: colors.textSecondary,
-    marginBottom: 14,
+    marginBottom: 16,
+    fontWeight: '500',
   },
-  progressTrack: {
-    height: 6,
-    backgroundColor: colors.surfaceVariant,
-    borderRadius: 3,
+
+  // Step progress dots
+  progressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 6,
   },
-  progressFill: {
-    height: '100%',
+  stepDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepDotActive: {
     backgroundColor: colors.primary,
-    borderRadius: 3,
+  },
+  stepDotCurrent: {
+    backgroundColor: colors.primary,
+    borderWidth: 2,
+    borderColor: colors.primaryLight,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  stepLine: {
+    flex: 1,
+    height: 2,
+    backgroundColor: colors.border,
+  },
+  stepLineActive: {
+    backgroundColor: colors.primary,
   },
   progressLabels: {
     flexDirection: 'row',
@@ -501,78 +572,110 @@ const styles = StyleSheet.create({
   },
   activeOrderActions: {
     flexDirection: 'row',
-    gap: 8,
-  },
-  actionButton: { flex: 1 },
-
-  // ── Quick Actions ───────────────────────────────────────────────────────
-  actionsGrid: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 24,
-  },
-  actionTile: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-    alignItems: 'center',
     gap: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
+    marginTop: 4,
   },
-  actionIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+  actionPillOutline: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    borderRadius: 12,
+    paddingVertical: 10,
+    backgroundColor: colors.primaryLight,
+  },
+  actionPillOutlineText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+
+  // ── Quick Actions ────────────────────────────────────────────────────────
+  actionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 28,
+  },
+  actionTile: {
+    width: (width - 52) / 4,
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    paddingVertical: 16,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  actionIconBox: {
+    width: 50,
+    height: 50,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
   },
   actionLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
     color: colors.text,
     textAlign: 'center',
   },
 
-  // ── Sections ────────────────────────────────────────────────────────────
-  section: { marginBottom: 24 },
+  // ── Sections ─────────────────────────────────────────────────────────────
+  section: { marginBottom: 28 },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '800',
     color: colors.text,
-    marginBottom: 12,
+    marginBottom: 14,
+    letterSpacing: -0.3,
   },
   seeAll: {
     fontSize: 13,
-    color: colors.accent,
-    fontWeight: '600',
+    color: colors.primary,
+    fontWeight: '700',
   },
 
-  // ── Branch Card ─────────────────────────────────────────────────────────
-  branchCard: { marginBottom: 0 },
-  branchRow: {
+  // ── Branch Card ───────────────────────────────────────────────────────────
+  branchCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 8,
+    gap: 12,
+    padding: 14,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
   branchIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
+    width: 42,
+    height: 42,
+    borderRadius: 12,
     backgroundColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
@@ -585,61 +688,83 @@ const styles = StyleSheet.create({
   branchCity: {
     fontSize: 12,
     color: colors.textSecondary,
-    marginTop: 1,
+    marginTop: 2,
+    fontWeight: '500',
   },
   distancePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
     backgroundColor: colors.warningLight,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 10,
   },
   distanceText: {
     fontSize: 11,
     color: colors.warning,
     fontWeight: '700',
   },
-  branchAddress: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginBottom: 10,
-    marginLeft: 48,
-  },
-  branchFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  hoursRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  hoursText: { fontSize: 12, color: colors.textSecondary },
 
-  // ── Order Card ──────────────────────────────────────────────────────────
+  // ── Order Card ────────────────────────────────────────────────────────────
   orderCard: {
     backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 16,
+    overflow: 'hidden',
+    flexDirection: 'row',
     borderWidth: 1,
     borderColor: colors.border,
-    borderLeftWidth: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  orderStatusBar: {
+    width: 4,
+    borderTopLeftRadius: 16,
+    borderBottomLeftRadius: 16,
+  },
+  orderCardInner: {
+    flex: 1,
+    padding: 14,
   },
   orderCardRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    marginBottom: 10,
   },
   orderId: { fontSize: 14, fontWeight: '700', color: colors.text },
-  orderDate: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
-  orderAmount: { fontSize: 18, fontWeight: '800', color: colors.primary },
+  orderDate: { fontSize: 11, color: colors.textSecondary, marginTop: 2, fontWeight: '500' },
+  orderCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  orderAmount: { fontSize: 20, fontWeight: '900', color: colors.primary, letterSpacing: -0.5 },
+  orderChevron: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
-  // loading header
-  header: { paddingHorizontal: 16, paddingTop: 12, marginBottom: 8 },
+  // ── Refresh ───────────────────────────────────────────────────────────────
+  refreshRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+  },
+  refreshText: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    fontWeight: '600',
+  },
 });
 
 export default HomeScreen;

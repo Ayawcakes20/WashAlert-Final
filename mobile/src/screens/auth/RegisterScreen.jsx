@@ -17,7 +17,7 @@ import { colors } from '../../theme/colors';
 import { WashingMachineLoader } from '../../components';
 
 const RegisterScreen = ({ navigation }) => {
-  const { register } = useAuth();
+  const { register, requestOTP } = useAuth();
   const [form, setForm] = useState({ fullName: '', email: '', phone: '', password: '', confirm: '' });
   const [showPw, setShowPw] = useState(false);
   const [agreed, setAgreed] = useState(false);
@@ -78,6 +78,39 @@ const RegisterScreen = ({ navigation }) => {
 
     if (!result?.success) {
       const errorMessage = result?.error || 'Please try again.';
+
+      // EMAIL_EXISTS means Firebase already has the account from a previous
+      // failed attempt (e.g. OTP email didn't send). Resend the OTP and
+      // redirect them to verify — no need to show a dead-end error.
+      if (errorMessage.includes('already in use') || errorMessage.includes('EMAIL_EXISTS')) {
+        setLoading(true);
+        const resendResult = await requestOTP(normalizedEmail);
+        setLoading(false);
+
+        if (resendResult?.success) {
+          Alert.alert(
+            'Verification Code Sent',
+            `Your account is already registered. We've resent a verification code to ${normalizedEmail}.\n\nCheck your inbox (and spam folder).`,
+            [
+              {
+                text: 'Continue to Verify',
+                onPress: () => navigation.navigate('OTPVerification', { email: normalizedEmail, type: 'registration' }),
+              },
+            ]
+          );
+        } else {
+          Alert.alert(
+            'Account Already Exists',
+            `This email is already registered. If you haven't verified yet, please log in first and request a new OTP.\n\nIf you already verified, go back and log in.`,
+            [
+              { text: 'Go to Login', onPress: () => navigation.goBack() },
+              { text: 'Try OTP Verify', onPress: () => navigation.navigate('OTPVerification', { email: normalizedEmail, type: 'registration' }) },
+            ]
+          );
+        }
+        return;
+      }
+
       Alert.alert('Registration Failed', errorMessage);
       return;
     }

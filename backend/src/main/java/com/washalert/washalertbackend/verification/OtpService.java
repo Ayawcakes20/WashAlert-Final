@@ -13,10 +13,6 @@ import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
-<<<<<<< HEAD
-=======
-import java.util.function.BiConsumer;
->>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
 
 @Service
 public class OtpService {
@@ -57,47 +53,8 @@ public class OtpService {
     }
 
     public void generateAndSend(User user) {
-<<<<<<< HEAD
         String normalizedEmail = normalizeEmail(user.getEmail());
         log.info("[OTP] Generating OTP for userId={} email={}", user.getId(), maskEmail(normalizedEmail));
-=======
-        generateAndSendInternal(user, "VERIFY", mail::sendOtpEmail);
-    }
-
-    public void sendForLogin(User user) {
-        if (user == null) {
-            throw new IllegalArgumentException("User not found");
-        }
-        if (!user.isEnabled()) {
-            throw new IllegalArgumentException("Your account is not active.");
-        }
-        generateAndSendInternal(user, "LOGIN", mail::sendLoginOtpEmail);
-    }
-
-    public void verifyLoginCode(String email, String code) {
-        User user = users.findByEmail(normalizeEmail(email))
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
-
-        if (!user.isEnabled()) {
-            throw new IllegalArgumentException("Your account is not active.");
-        }
-
-        verifyCodeOnly(user, code);
-        otps.deleteByUser(user);
-    }
-
-    public int getTtlMinutes() {
-        return ttlMinutes;
-    }
-
-    public int getResendCooldownSeconds() {
-        return resendCooldownSeconds;
-    }
-
-    private void generateAndSendInternal(User user, String flow, BiConsumer<String, String> dispatcher) {
-        String normalizedEmail = normalizeEmail(user.getEmail());
-        log.info("[OTP][{}] Generating OTP for userId={} email={}", flow, user.getId(), maskEmail(normalizedEmail));
->>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
 
         String code = generateNumericCode(otpLength);
         EmailOtp otp = otps.findByUser(user).orElse(null);
@@ -121,12 +78,7 @@ public class OtpService {
 
         EmailOtp savedOtp = otps.save(otp);
         log.info(
-<<<<<<< HEAD
                 "[OTP] OTP persisted for userId={} otpId={} expiresAt={} lastSentAt={}",
-=======
-                "[OTP][{}] OTP persisted for userId={} otpId={} expiresAt={} lastSentAt={}",
-                flow,
->>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
                 user.getId(),
                 savedOtp.getId(),
                 savedOtp.getExpiresAt(),
@@ -134,20 +86,11 @@ public class OtpService {
         );
 
         try {
-<<<<<<< HEAD
             mail.sendOtpEmail(normalizedEmail, code);
             log.info("[OTP] Email dispatch succeeded for userId={} email={}", user.getId(), maskEmail(normalizedEmail));
         } catch (Exception ex) {
             log.error(
                     "[OTP] Email dispatch failed for userId={} email={}. OTP remains persisted for retry.",
-=======
-            dispatcher.accept(normalizedEmail, code);
-            log.info("[OTP][{}] Email dispatch succeeded for userId={} email={}", flow, user.getId(), maskEmail(normalizedEmail));
-        } catch (Exception ex) {
-            log.error(
-                    "[OTP][{}] Email dispatch failed for userId={} email={}. OTP remains persisted for retry.",
-                    flow,
->>>>>>> 13002db20003c175d5e263fc45ec83e946f8cbc3
                     user.getId(),
                     maskEmail(normalizedEmail),
                     ex

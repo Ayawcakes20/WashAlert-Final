@@ -110,6 +110,9 @@ public class DashboardService {
                     jo.isPaid() ? PaymentStatus.PAID : null,
                     jo.getDeliveryLatitude(),
                     jo.getDeliveryLongitude(),
+                    jo.getDeliveryUnitFloor(),
+                    jo.getDeliveryContactName(),
+                    jo.getDeliveryContactPhone(),
                     jo.getBranchLatitude(),
                     jo.getBranchLongitude()
             );

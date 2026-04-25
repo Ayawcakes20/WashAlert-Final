@@ -235,6 +235,9 @@ public class FirestoreReadService {
                 asEnum(data.get("paymentStatus"), PaymentStatus.class),
                 asDouble(data.get("deliveryLatitude")),
                 asDouble(data.get("deliveryLongitude")),
+                asString(data.get("deliveryUnitFloor")),
+                asString(data.get("deliveryContactName")),
+                asString(data.get("deliveryContactPhone")),
                 asDouble(data.get("branchLatitude")),
                 asDouble(data.get("branchLongitude"))
         );
@@ -272,7 +275,14 @@ public class FirestoreReadService {
                 asDouble(data.get("branchLatitude")),
                 asDouble(data.get("branchLongitude")),
                 asDouble(data.get("deliveryLatitude")),
-                asDouble(data.get("deliveryLongitude"))
+                asDouble(data.get("deliveryLongitude")),
+                asString(data.get("deliveryUnitFloor")),
+                asString(data.get("deliveryContactName")),
+                asString(data.get("deliveryContactPhone")),
+                asLong(data.get("bagCount")) != null ? asLong(data.get("bagCount")).intValue() : null,
+                asString(data.get("confirmationCode")),
+                asString(data.get("branchHandoverPhotoUrl")),
+                asString(data.get("finalDeliveryPhotoUrl"))
         );
     }
 

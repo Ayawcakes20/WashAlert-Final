@@ -17,12 +17,21 @@ import { useAuth } from '../../context/AuthContext';
 import { deliveries as deliveriesApi } from '../../services/api';
 
 const STATUS_CONFIG = {
-  pending:     { label: 'Pending Pickup', color: colors.warning,   bg: colors.warningLight },
-  en_route:    { label: 'En Route',       color: colors.info,      bg: '#DBEAFE' },
-  picked_up:   { label: 'Picked Up',      color: colors.accent,    bg: colors.accentLight },
-  in_progress: { label: 'In Transit',     color: colors.primary,   bg: colors.primaryLight },
-  completed:   { label: 'Completed',      color: colors.success,   bg: colors.successLight },
-  failed:      { label: 'Failed',         color: colors.error,     bg: colors.errorLight },
+  // Phase A — Inbound
+  accepted:           { label: 'Heading to Pickup',  color: '#3B82F6',      bg: 'hsla(214,88%,57%,0.1)' },
+  at_customer:        { label: 'At Customer',        color: '#F59E0B',      bg: 'hsla(38,96%,58%,0.1)' },
+  picked_up:          { label: 'Picked Up',          color: colors.accent,  bg: colors.accentLight },
+  at_branch:          { label: 'At Branch',          color: '#7C3AED',      bg: 'hsla(263,70%,58%,0.1)' },
+  handed_over:        { label: 'Handed Over',        color: '#7C3AED',      bg: 'hsla(263,70%,58%,0.1)' },
+  // Phase B — Outbound
+  ready_for_dispatch: { label: 'Ready to Deliver',   color: colors.success, bg: colors.successLight },
+  en_route:           { label: 'Out for Delivery',   color: '#3B82F6',      bg: 'hsla(214,88%,57%,0.1)' },
+  at_delivery:        { label: 'At Customer',        color: '#F59E0B',      bg: 'hsla(38,96%,58%,0.1)' },
+  // Generic
+  pending:            { label: 'New Order',          color: colors.warning, bg: colors.warningLight },
+  in_progress:        { label: 'In Transit',         color: colors.primary, bg: colors.primaryLight },
+  completed:          { label: 'Completed',          color: colors.success, bg: colors.successLight },
+  failed:             { label: 'Failed',             color: colors.error,   bg: colors.errorLight },
 };
 
 const getStatusCfg = (status) =>
@@ -57,6 +66,9 @@ const DriverDashboardScreen = ({ navigation }) => {
     useCallback(() => {
       setLoading(true);
       loadData();
+      // Poll every 30 s while screen is focused — catches new order assignments
+      const poll = setInterval(loadData, 30000);
+      return () => clearInterval(poll);
     }, [loadData])
   );
 
@@ -65,9 +77,11 @@ const DriverDashboardScreen = ({ navigation }) => {
     loadData();
   }, [loadData]);
 
-  const pending   = deliveries.filter((d) => d.status === 'pending' || d.status === 'en_route').length;
+  // All statuses that mean a delivery is actively in-flight
+  const ACTIVE_STATUSES = ['accepted', 'at_customer', 'picked_up', 'at_branch', 'handed_over', 'ready_for_dispatch', 'en_route', 'at_delivery', 'in_progress'];
+  const pending   = deliveries.filter((d) => d.status === 'pending').length;
   const completed = deliveries.filter((d) => d.status === 'completed').length;
-  const active    = deliveries.find((d) => d.status === 'in_progress' || d.status === 'picked_up');
+  const active    = deliveries.find((d) => ACTIVE_STATUSES.includes(d.status));
 
   if (loading) {
     return (
@@ -128,7 +142,9 @@ const DriverDashboardScreen = ({ navigation }) => {
                 <View style={styles.activeDot} />
               </View>
               <View>
-                <Text style={styles.activeBannerLabel}>Active Delivery</Text>
+                <Text style={styles.activeBannerLabel}>
+                  {getStatusCfg(active.status).label.toUpperCase()}
+                </Text>
                 <Text style={styles.activeBannerCustomer}>{active.customerName}</Text>
                 <View style={styles.addressRow}>
                   <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
@@ -138,12 +154,34 @@ const DriverDashboardScreen = ({ navigation }) => {
             </View>
             <TouchableOpacity
               style={styles.goBtn}
-              onPress={() => navigation.navigate('Deliveries')}
+              onPress={() => navigation.navigate('DeliveryDetail', { deliveryId: active.id })}
             >
-              <Text style={styles.goBtnText}>Go</Text>
+              <Text style={styles.goBtnText}>Resume</Text>
               <Ionicons name="arrow-forward" size={14} color="#fff" />
             </TouchableOpacity>
           </View>
+        ) : pending > 0 ? (
+          <TouchableOpacity
+            style={[styles.activeBanner, styles.pendingBanner]}
+            onPress={() => navigation.navigate('Deliveries')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.activeBannerLeft}>
+              <View style={[styles.activePulse, { backgroundColor: colors.warningLight }]}>
+                <Ionicons name="notifications" size={14} color={colors.warning} />
+              </View>
+              <View>
+                <Text style={[styles.activeBannerLabel, { color: colors.warning }]}>
+                  {pending} NEW ORDER{pending > 1 ? 'S' : ''} AVAILABLE
+                </Text>
+                <Text style={styles.activeBannerCustomer}>Tap to view & accept</Text>
+              </View>
+            </View>
+            <View style={[styles.goBtn, { backgroundColor: colors.warning }]}>
+              <Text style={styles.goBtnText}>View</Text>
+              <Ionicons name="arrow-forward" size={14} color="#fff" />
+            </View>
+          </TouchableOpacity>
         ) : null}
 
         {/* ── Today's deliveries list ──────────────────────────────────── */}
@@ -272,6 +310,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  pendingBanner: {
+    borderLeftColor: colors.warning,
   },
   activeBannerLeft: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, flex: 1 },
   activePulse: {

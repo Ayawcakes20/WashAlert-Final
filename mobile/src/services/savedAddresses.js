@@ -1,23 +1,29 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const SAVED_ADDRESSES_STORAGE_KEY = 'washalert_saved_addresses_v1';
+export const SAVED_ADDRESSES_STORAGE_KEY = 'washalert_saved_addresses_v2';
 
 const normalizeAddress = (item = {}) => ({
   id: String(item.id || Date.now()),
   label: String(item.label || '').trim(),
   address: String(item.address || '').trim(),
+  // Optional detail fields
+  unitFloor: String(item.unitFloor || '').trim(),
+  contactName: String(item.contactName || '').trim(),
+  phone: String(item.phone || '').trim(),
+  // Coords — stored for fast map navigation without geocoding
+  latitude: item.latitude ? Number(item.latitude) : null,
+  longitude: item.longitude ? Number(item.longitude) : null,
   isDefault: Boolean(item.isDefault),
 });
 
 const ensureSingleDefault = (items = []) => {
-  const normalized = items.map(normalizeAddress).filter((entry) => entry.label && entry.address);
+  const normalized = items.map(normalizeAddress).filter((e) => e.label && e.address);
   if (!normalized.length) return [];
-
-  const defaultIndex = normalized.findIndex((entry) => entry.isDefault);
+  const defaultIndex = normalized.findIndex((e) => e.isDefault);
   if (defaultIndex === -1) {
-    return normalized.map((entry, index) => ({ ...entry, isDefault: index === 0 }));
+    return normalized.map((e, i) => ({ ...e, isDefault: i === 0 }));
   }
-  return normalized.map((entry, index) => ({ ...entry, isDefault: index === defaultIndex }));
+  return normalized.map((e, i) => ({ ...e, isDefault: i === defaultIndex }));
 };
 
 export const loadSavedAddresses = async () => {
@@ -38,5 +44,5 @@ export const saveSavedAddresses = async (items) => {
 
 export const getDefaultSavedAddress = async () => {
   const addresses = await loadSavedAddresses();
-  return addresses.find((entry) => entry.isDefault) || null;
+  return addresses.find((e) => e.isDefault) || null;
 };

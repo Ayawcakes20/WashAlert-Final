@@ -395,14 +395,34 @@ const OrderDetailScreen = ({ route, navigation }) => {
                 <Text style={styles.trackOrderText}>Message Driver</Text>
               </TouchableOpacity>
             </View>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={styles.trackBtn}
               onPress={() => navigation.navigate('Tracking', { orderId: order.id })}
             >
               <Ionicons name="location" size={16} color={colors.card} />
               <Text style={styles.trackBtnText}>Track Delivery</Text>
             </TouchableOpacity>
+          </View>
+        )}
+
+        {/* 🔒 Delivery Confirmation Code — shown when driver is en route to deliver */}
+        {normalizedStatus === 'delivering' && order.confirmationCode && (
+          <View style={styles.confirmCodeCard}>
+            <View style={styles.confirmCodeHeader}>
+              <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
+              <Text style={styles.confirmCodeTitle}>Delivery Confirmation Code</Text>
+            </View>
+            <Text style={styles.confirmCodeSubtitle}>
+              Show this PIN to your rider when they arrive.
+            </Text>
+            <View style={styles.confirmCodePinRow}>
+              {String(order.confirmationCode).split('').map((digit, i) => (
+                <View key={i} style={styles.confirmCodeDigit}>
+                  <Text style={styles.confirmCodeDigitText}>{digit}</Text>
+                </View>
+              ))}
+            </View>
           </View>
         )}
 
@@ -589,6 +609,59 @@ const styles = StyleSheet.create({
   callText: { color: colors.primary, fontSize: 14, fontWeight: '600', marginLeft: 8 },
   trackOrderBtn: { flex: 1, height: 48, backgroundColor: colors.primary, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   trackOrderText: { color: colors.card, fontSize: 14, fontWeight: '600', marginLeft: 8 },
+
+  // ── Delivery Confirmation Code Card ──
+  confirmCodeCard: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    gap: 10,
+  },
+  confirmCodeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  confirmCodeTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  confirmCodeSubtitle: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  confirmCodePinRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 4,
+  },
+  confirmCodeDigit: {
+    width: 52,
+    height: 64,
+    borderRadius: 14,
+    backgroundColor: '#FFF',
+    borderWidth: 2,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  confirmCodeDigitText: {
+    fontSize: 30,
+    fontWeight: '900',
+    color: colors.primary,
+    letterSpacing: 2,
+  },
 });
 
 export default OrderDetailScreen;

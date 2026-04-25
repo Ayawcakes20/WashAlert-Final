@@ -26,31 +26,43 @@ const TABS = [
 
 const getStatusColor = (status) => {
   switch (status) {
-    case 'pending':
-      return { bg: 'hsla(16, 100%, 56%, 0.1)', text: colors.warning };
-    case 'in_progress':
-      return { bg: 'hsla(174, 79%, 44%, 0.1)', text: colors.accent };
-    case 'completed':
-      return { bg: 'hsla(156, 87%, 34%, 0.1)', text: colors.success };
-    case 'failed':
-      return { bg: 'hsla(0, 84%, 60%, 0.1)', text: colors.error };
-    default:
-      return { bg: colors.border, text: colors.textSecondary };
+    // Phase A — Inbound
+    case 'accepted':           return { bg: 'hsla(214, 88%, 57%, 0.12)', text: '#3B82F6' };
+    case 'at_customer':        return { bg: 'hsla(38, 96%, 58%, 0.12)',  text: '#F59E0B' };
+    case 'picked_up':          return { bg: 'hsla(158, 77%, 44%, 0.12)', text: colors.accent };
+    case 'at_branch':          return { bg: 'hsla(263, 70%, 58%, 0.12)', text: '#7C3AED' };
+    case 'handed_over':        return { bg: 'hsla(263, 70%, 58%, 0.12)', text: '#7C3AED' };
+    // Phase B — Outbound
+    case 'ready_for_dispatch': return { bg: 'hsla(158, 77%, 44%, 0.12)', text: colors.success };
+    case 'en_route':           return { bg: 'hsla(214, 88%, 57%, 0.12)', text: '#3B82F6' };
+    case 'at_delivery':        return { bg: 'hsla(38, 96%, 58%, 0.12)',  text: '#F59E0B' };
+    // Legacy / generic
+    case 'pending':            return { bg: 'hsla(16, 100%, 56%, 0.1)',  text: colors.warning };
+    case 'in_progress':        return { bg: 'hsla(174, 79%, 44%, 0.1)', text: colors.accent };
+    case 'completed':          return { bg: 'hsla(156, 87%, 34%, 0.1)', text: colors.success };
+    case 'failed':             return { bg: 'hsla(0, 84%, 60%, 0.1)',   text: colors.error };
+    default:                   return { bg: colors.border, text: colors.textSecondary };
   }
 };
 
 const getStatusLabel = (status) => {
   switch (status) {
-    case 'pending':
-      return 'Pending';
-    case 'in_progress':
-      return 'In Progress';
-    case 'completed':
-      return 'Completed';
-    case 'failed':
-      return 'Failed';
-    default:
-      return 'Pending';
+    // Phase A — Inbound
+    case 'accepted':           return 'Heading to Pickup';
+    case 'at_customer':        return 'At Customer';
+    case 'picked_up':          return 'Picked Up';
+    case 'at_branch':          return 'At Branch';
+    case 'handed_over':        return 'Handed Over';
+    // Phase B — Outbound
+    case 'ready_for_dispatch': return 'Ready to Deliver';
+    case 'en_route':           return 'Out for Delivery';
+    case 'at_delivery':        return 'At Customer';
+    // Generic
+    case 'pending':            return 'New Order';
+    case 'in_progress':        return 'In Progress';
+    case 'completed':          return 'Completed';
+    case 'failed':             return 'Failed';
+    default:                   return status ?? 'Unknown';
   }
 };
 

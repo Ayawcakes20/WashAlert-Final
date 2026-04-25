@@ -1,4 +1,15 @@
-import React, { useEffect, useState } from 'react';
+/**
+ * DeliveryDetailScreen — WashAlert Driver App
+ *
+ * Architecture: Full-screen dark Google Maps with overlay header + ETA strip
+ * + Bottom Sheet state machine panel (Grab/Lalamove style).
+ *
+ * State Machine Flow:
+ *   Phase A (Inbound):  accepted → at_customer → picked_up → at_branch → handed_over
+ *   Phase B (Outbound): ready_for_dispatch → en_route → at_delivery → completed
+ */
+
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,913 +19,1841 @@ import {
   Linking,
   Alert,
   ActivityIndicator,
-  Image,
+  TextInput,
+  Dimensions,
+  Animated as RNAnimated,
+  StatusBar,
+  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import * as ImagePicker from 'expo-image-picker';
 import { MapView, Marker, PROVIDER_GOOGLE, MapViewDirections } from '../../components/SafeMap';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { deliveries as deliveriesApi } from '../../services/api';
 import { GOOGLE_MAPS_API_KEY } from '../../config/env';
 import { useAuth } from '../../context/AuthContext';
-import { uploadImageAsync } from '../../services/storageService';
+import SwipeSlider from '../../components/SwipeSlider';
+import PhotoProofCapture from '../../components/PhotoProofCapture';
 
-const STATUS_STEPS = [
-  { id: 'pending', label: 'Assigned' },
-  { id: 'en_route', label: 'En Route' },
-  { id: 'picked_up', label: 'Picked Up' },
-  { id: 'in_progress', label: 'In Transit' },
-  { id: 'completed', label: 'Delivered' },
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// ─── Google Maps Dark / Night Style ──────────────────────────────────────────
+const DARK_MAP_STYLE = [
+  { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a3646' }] },
+  { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ color: '#4b6878' }] },
+  { featureType: 'administrative.land_parcel', elementType: 'labels.text.fill', stylers: [{ color: '#64779e' }] },
+  { featureType: 'administrative.province', elementType: 'geometry.stroke', stylers: [{ color: '#4b6878' }] },
+  { featureType: 'landscape.man_made', elementType: 'geometry.stroke', stylers: [{ color: '#334e87' }] },
+  { featureType: 'landscape.natural', elementType: 'geometry', stylers: [{ color: '#023e58' }] },
+  { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#283d6a' }] },
+  { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#6f9ba5' }] },
+  { featureType: 'poi', elementType: 'labels.text.stroke', stylers: [{ color: '#1d2c4d' }] },
+  { featureType: 'poi.park', elementType: 'geometry.fill', stylers: [{ color: '#023e58' }] },
+  { featureType: 'poi.park', elementType: 'labels.text.fill', stylers: [{ color: '#3C7680' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#304a7d' }] },
+  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#98a5be' }] },
+  { featureType: 'road', elementType: 'labels.text.stroke', stylers: [{ color: '#1d2c4d' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#2c6675' }] },
+  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#255763' }] },
+  { featureType: 'road.highway', elementType: 'labels.text.fill', stylers: [{ color: '#b0d5ce' }] },
+  { featureType: 'road.highway', elementType: 'labels.text.stroke', stylers: [{ color: '#023e58' }] },
+  { featureType: 'transit', elementType: 'labels.text.fill', stylers: [{ color: '#98a5be' }] },
+  { featureType: 'transit', elementType: 'labels.text.stroke', stylers: [{ color: '#1d2c4d' }] },
+  { featureType: 'transit.line', elementType: 'geometry.fill', stylers: [{ color: '#283d6a' }] },
+  { featureType: 'transit.station', elementType: 'geometry', stylers: [{ color: '#3a4762' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0e1626' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#4e6d70' }] },
+  { featureType: 'water', elementType: 'labels.text.stroke', stylers: [{ color: '#17263c' }] },
 ];
 
-const getStatusLabel = (status) => {
-  if (status === 'pending') return 'Pending Pickup';
-  if (status === 'en_route') return 'En Route to Pickup';
-  if (status === 'picked_up') return 'Picked Up';
-  if (status === 'in_progress') return 'In Transit';
-  if (status === 'completed') return 'Delivered';
-  if (status === 'failed') return 'Failed';
-  return 'Pending';
+// ─── Metro Manila fallback (map never blank) ──────────────────────────────────
+const METRO_MANILA = {
+  latitude: 14.5995,
+  longitude: 120.9842,
+  latitudeDelta: 0.04,
+  longitudeDelta: 0.04,
 };
 
+// ─── State Machine Config ─────────────────────────────────────────────────────
+const STATE_CONFIG = {
+  // Phase A
+  accepted:           { statusLabel: 'Heading to Pickup',    destination: 'customer', phase: 'A', routeColor: '#60A5FA' },
+  at_customer:        { statusLabel: 'At Customer location', destination: 'customer', phase: 'A', routeColor: '#FBBF24' },
+  picked_up:          { statusLabel: 'Heading to Branch',    destination: 'branch',   phase: 'A', routeColor: '#34D399' },
+  at_branch:          { statusLabel: 'At Branch — Handover', destination: 'branch',   phase: 'A', routeColor: '#A78BFA' },
+  handed_over:        { statusLabel: 'Laundry In Shop',      destination: null,       phase: 'A', routeColor: '#34D399' },
+  // Phase B
+  ready_for_dispatch: { statusLabel: 'Ready for Return',     destination: 'branch',   phase: 'B', routeColor: '#34D399' },
+  en_route:           { statusLabel: 'Out for Delivery',     destination: 'customer', phase: 'B', routeColor: '#60A5FA' },
+  at_delivery:        { statusLabel: 'At Customer (Return)', destination: 'customer', phase: 'B', routeColor: '#FBBF24' },
+  completed:          { statusLabel: 'Order Completed',      destination: null,       phase: 'B', routeColor: '#34D399' },
+  // Fallback
+  pending:            { statusLabel: 'Waiting',              destination: null,       phase: null, routeColor: '#94A3B8' },
+  failed:             { statusLabel: 'Cancelled',            destination: null,       phase: null, routeColor: '#F87171' },
+};
+
+// ─── Phase B Step Definitions ─────────────────────────────────────────────────
+const PHASE_B_STEPS = [
+  { key: 'ready_for_dispatch', label: 'Ready for Pickup' },
+  { key: 'en_route',           label: 'Out for Delivery' },
+  { key: 'at_delivery',        label: 'Arrived at Customer' },
+  { key: 'completed',          label: 'Delivered' },
+];
+
+// ─── Component ────────────────────────────────────────────────────────────────
 const DeliveryDetailScreen = ({ route, navigation }) => {
-  const { user, firebaseIdToken } = useAuth();
+  useAuth(); // Auth context
+  const insets = useSafeAreaInsets();
+
   const deliveryId = route?.params?.deliveryId;
+  const mockDelivery = route?.params?._mockDelivery; // DEV: test panel
+  const mapRef = useRef(null);
+
   const [delivery, setDelivery] = useState(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
-  const [uploadingProofType, setUploadingProofType] = useState('');
   const [error, setError] = useState('');
-  const [showConfirm, setShowConfirm] = useState(null);
-  const [isSimulating, setIsSimulating] = useState(false);
 
+  // Phase-specific form state
+  const [bagCount, setBagCount] = useState('3');
+  const [pickupPhoto, setPickupPhoto] = useState(null);
+  const [handoverPhoto, setHandoverPhoto] = useState(null);
+  const [deliveryPhoto, setDeliveryPhoto] = useState(null);
+  const [confCode, setConfCode] = useState('');
+
+  // Map / GPS state
+  const [mapRegion, setMapRegion] = useState(METRO_MANILA);
   const [driverCoords, setDriverCoords] = useState(null);
-  const [mapRegion, setMapRegion] = useState(null);
+  const [etaInfo, setEtaInfo] = useState({ distance: null, duration: null });
 
+  // Driver "You" pulse ring animation
+  const pulseAnim = useRef(new RNAnimated.Value(1)).current;
+  const pulseOpacity = useRef(new RNAnimated.Value(0.6)).current;
+
+  // ─── Pulse loop ────────────────────────────────────────────────────────────
   useEffect(() => {
-    loadDelivery();
+    RNAnimated.loop(
+      RNAnimated.parallel([
+        RNAnimated.sequence([
+          RNAnimated.timing(pulseAnim, { toValue: 2.2, duration: 1200, useNativeDriver: true }),
+          RNAnimated.timing(pulseAnim, { toValue: 1, duration: 0, useNativeDriver: true }),
+        ]),
+        RNAnimated.sequence([
+          RNAnimated.timing(pulseOpacity, { toValue: 0, duration: 1200, useNativeDriver: true }),
+          RNAnimated.timing(pulseOpacity, { toValue: 0.6, duration: 0, useNativeDriver: true }),
+        ]),
+      ])
+    ).start();
+  }, []);
+
+  // ─── Boot: load delivery or mock ───────────────────────────────────────────
+  useEffect(() => {
+    if (mockDelivery) {
+      hydrateMock(mockDelivery);
+    } else {
+      loadDelivery();
+    }
   }, [deliveryId]);
 
+  const hydrateMock = (data) => {
+    setDelivery(data);
+    if (data.bagCount) setBagCount(String(data.bagCount));
+    const coords = pickBestCoords(data);
+    if (coords) setMapRegion({ ...coords, latitudeDelta: 0.018, longitudeDelta: 0.018 });
+    if (data.currentLatitude) {
+      setDriverCoords({ latitude: data.currentLatitude, longitude: data.currentLongitude });
+    }
+    setLoading(false);
+  };
+
+  // ─── Live GPS tracking (High-Accuracy Real-Time) ───────────────────────────
   useEffect(() => {
-    let updateInterval = null;
+    let subscription = null;
     let active = true;
 
     const startTracking = async () => {
       try {
-        const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
-        if (fgStatus !== 'granted') {
-          console.warn('[DriverTracking] Foreground location permission denied');
-          return;
-        }
-        updateInterval = setInterval(async () => {
-          if (!active || isSimulating) return;
-          try {
-            const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-            const coords = {
-              latitude: loc.coords.latitude,
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+
+        // Watch position instead of polling — this is "Real-Time"
+        subscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            distanceInterval: 5, // Update every 5 meters
+            timeInterval: 5000,  // Or every 5 seconds
+          },
+          async (loc) => {
+            if (!active || !delivery) return;
+            
+            const coords = { 
+              latitude: loc.coords.latitude, 
               longitude: loc.coords.longitude,
-              heading: loc.coords.heading || 0,
+              heading: loc.coords.heading || 0
             };
+            
             setDriverCoords(coords);
-            if (delivery?.orderNumber) {
-              const deliveryRef = doc(db, 'deliveries', delivery.orderNumber);
+
+            // Firestore real-time sync (Complete Payload)
+            if (delivery.orderNumber) {
               await setDoc(
-                deliveryRef,
-                {
-                  currentLatitude: coords.latitude,
+                doc(db, 'deliveries', delivery.orderNumber),
+                { 
+                  currentLatitude: coords.latitude, 
                   currentLongitude: coords.longitude,
                   heading: coords.heading,
-                  lastUpdated: serverTimestamp(),
+                  status: delivery.status,
+                  driverName: delivery.driverName,
+                  driverPhone: delivery.driverPhone,
+                  lastUpdated: serverTimestamp() 
                 },
                 { merge: true }
               );
             }
-            if (delivery?.id) {
-              await deliveriesApi.updateLocation(delivery.id, {
-                latitude: coords.latitude,
-                longitude: coords.longitude,
-              });
+            
+            // Backend SQL sync (Debounced via SQL server if needed, but keeping direct for now)
+            if (!mockDelivery) {
+              deliveriesApi.updateLocation(delivery.id, coords).catch(() => {});
             }
-            console.log('[DriverTracking] location synced deliveryId=', delivery?.id);
-          } catch (err) {
-            console.warn('[DriverTracking] location sync failed:', err?.message || err);
           }
-        }, 10000);
+        );
       } catch (err) {
-        console.warn('[DriverTracking] Unable to start tracking:', err?.message || err);
+        console.warn('[GPS] Tracking error:', err);
       }
     };
 
-    const stopTracking = () => {
-      active = false;
-      if (updateInterval) clearInterval(updateInterval);
-    };
-
-    if (delivery?.status === 'in_progress' && !isSimulating) {
-      void startTracking();
-    } else {
-      stopTracking();
+    const TRACKABLE = ['accepted', 'at_customer', 'picked_up', 'at_branch', 'en_route', 'at_delivery'];
+    if (delivery && TRACKABLE.includes(delivery.status)) {
+      startTracking();
     }
 
-    return () => stopTracking();
-  }, [delivery?.status, delivery?.orderNumber, isSimulating]);
-
-  // Simulation Effect
-  useEffect(() => {
-    let simInterval = null;
-    if (isSimulating && delivery?.orderNumber) {
-      let step = 0;
-      // Start near standard Manila area mock coords
-      const startLat = 14.5995;
-      const startLng = 120.9842;
-      
-      simInterval = setInterval(async () => {
-        step += 1;
-        const newLat = startLat + (step * 0.0005);
-        const newLng = startLng + (step * 0.0003);
-        
-        try {
-          const deliveryRef = doc(db, 'deliveries', delivery.orderNumber);
-          await setDoc(deliveryRef, {
-            currentLatitude: newLat,
-            currentLongitude: newLng,
-            heading: 45, // Constant heading for mock
-            lastUpdated: serverTimestamp(),
-          }, { merge: true });
-        } catch (e) {
-          console.error('Simulation update failed:', e);
-        }
-      }, 5000);
-    }
     return () => {
-      if (simInterval) clearInterval(simInterval);
+      active = false;
+      if (subscription) subscription.remove();
     };
-  }, [isSimulating, delivery?.orderNumber]);
+  }, [delivery?.id, delivery?.status, delivery?.orderNumber]);
 
+  // ─── Load from backend ─────────────────────────────────────────────────────
   const loadDelivery = async () => {
     try {
       setLoading(true);
-      setError('');
       const data = await deliveriesApi.getById(deliveryId);
       setDelivery(data);
-      if (data) {
-        setMapRegion({
-          latitude: data.currentLatitude || 14.5995,
-          longitude: data.currentLongitude || 120.9842,
-          latitudeDelta: 0.015,
-          longitudeDelta: 0.015,
-        });
-      }
+      if (data?.bagCount) setBagCount(String(data.bagCount));
+      const coords = pickBestCoords(data);
+      if (coords) setMapRegion({ ...coords, latitudeDelta: 0.018, longitudeDelta: 0.018 });
     } catch (e) {
-      setDelivery(null);
-      setError(e?.message || 'Unable to load delivery details.');
+      setError(e?.message || 'Unable to load delivery.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAction = async (targetStatus) => {
-    if (!delivery?.id || updating) return;
-    setShowConfirm(null);
+  // Returns best initial map center based on delivery status
+  const pickBestCoords = (data) => {
+    const cfg = STATE_CONFIG[data?.status];
+    if (cfg?.destination === 'customer' && data?.deliveryLatitude)
+      return { latitude: data.deliveryLatitude, longitude: data.deliveryLongitude };
+    if (cfg?.destination === 'branch' && data?.branchLatitude)
+      return { latitude: data.branchLatitude, longitude: data.branchLongitude };
+    if (data?.deliveryLatitude)
+      return { latitude: data.deliveryLatitude, longitude: data.deliveryLongitude };
+    return null;
+  };
+
+  // ─── Global action handler ─────────────────────────────────────────────────
+  const handleAction = async (method, args = null) => {
+    if (updating) return;
+
+    // DEV mock mode — local state transitions
+    if (mockDelivery) {
+      const MOCK_NEXT = {
+        arriveAtCustomer:  'at_customer',
+        completePickup:    'picked_up',
+        arriveAtBranch:    'at_branch',
+        branchHandover:    'handed_over',
+        startDelivery:     'en_route',
+        arriveForDelivery: 'at_delivery',
+        finalHandover:     'completed',
+        collectCodPayment: delivery?.status,
+      };
+      const next = MOCK_NEXT[method];
+      if (next) {
+        setDelivery(prev => ({
+          ...prev,
+          status: next,
+          bagCount: args?.bagCount || prev.bagCount,
+        }));
+        setEtaInfo({ distance: null, duration: null }); // reset ETA on transition
+      }
+      return;
+    }
+
     try {
       setUpdating(true);
-      await deliveriesApi.updateStatus(delivery.id, targetStatus);
-      await loadDelivery();
+      const updated = await deliveriesApi[method](delivery.id, args);
+      setDelivery(updated);
+      setEtaInfo({ distance: null, duration: null }); // reset ETA on transition
     } catch (e) {
-      Alert.alert('Update Failed', e?.message || 'Unable to update delivery status.');
+      Alert.alert('Action Failed', e?.message || 'Something went wrong. Try again.');
     } finally {
       setUpdating(false);
     }
   };
 
-  const handleUploadProof = async (proofType) => {
-    if (!delivery?.id || !firebaseIdToken || uploadingProofType) return;
-    try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission?.granted) {
-        Alert.alert('Permission Required', 'Allow photo access to upload proof images.');
-        return;
-      }
-
-      const picker = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.8,
-      });
-      if (picker?.canceled || !picker?.assets?.length) return;
-
-      setUploadingProofType(proofType);
-      console.log(
-        '[DriverProof] Upload start deliveryId=',
-        delivery.id,
-        'tracking=',
-        delivery.orderNumber,
-        'proofType=',
-        proofType,
-        'driverId=',
-        user?.id
-      );
-      const upload = await uploadImageAsync(picker.assets[0].uri, {
-        idToken: firebaseIdToken,
-        folder: `deliveries/${delivery.orderNumber || delivery.id}/proofs`,
-        fileName: `${proofType.toLowerCase()}_${Date.now()}.jpg`,
-      });
-
-      await deliveriesApi.uploadProof(delivery.id, proofType, upload.downloadURL);
-      await loadDelivery();
-      Alert.alert('Proof Uploaded', `${proofType === 'PICKUP' ? 'Pickup' : 'Drop-off'} proof uploaded.`);
-    } catch (error) {
-      console.error('[DriverProof] Upload failed:', error);
-      Alert.alert('Upload Failed', error?.message || 'Unable to upload proof right now.');
-    } finally {
-      setUploadingProofType('');
-    }
-  };
-
+  // ─── Helpers ───────────────────────────────────────────────────────────────
   const getTargetCoords = () => {
     if (!delivery) return null;
-    if (delivery.leg === 'PICKUP_FROM_CUSTOMER') {
-      if (delivery.status === 'pending' || delivery.status === 'en_route') {
-        return {
-          latitude: delivery.deliveryLatitude || 14.5995,
-          longitude: delivery.deliveryLongitude || 120.9842,
-          label: 'Pickup from: ' + delivery.customerName
-        };
-      } else {
-        return {
-          latitude: delivery.branchLatitude || 14.5995,
-          longitude: delivery.branchLongitude || 120.9842,
-          label: 'Deliver to: ' + (delivery.branchName || "Branch")
-        };
-      }
-    } else {
-      if (delivery.status === 'pending' || delivery.status === 'en_route') {
-        return {
-          latitude: delivery.branchLatitude || 14.5995,
-          longitude: delivery.branchLongitude || 120.9842,
-          label: 'Pickup from: ' + (delivery.branchName || "Branch")
-        };
-      } else {
-        return {
-          latitude: delivery.deliveryLatitude || 14.5995,
-          longitude: delivery.deliveryLongitude || 120.9842,
-          label: 'Deliver to: ' + delivery.customerName
-        };
-      }
-    }
+    const cfg = STATE_CONFIG[delivery.status];
+    if (cfg?.destination === 'customer' && delivery.deliveryLatitude)
+      return { latitude: delivery.deliveryLatitude, longitude: delivery.deliveryLongitude };
+    if (cfg?.destination === 'branch' && delivery.branchLatitude)
+      return { latitude: delivery.branchLatitude, longitude: delivery.branchLongitude };
+    return null;
   };
 
-  const openMaps = () => {
-    const target = getTargetCoords();
-    if (!target) return;
-    Linking.openURL(
-      `https://www.google.com/maps/dir/?api=1&destination=${target.latitude},${target.longitude}`
+  const openExternalNav = () => {
+    const t = getTargetCoords();
+    if (!t) return Alert.alert('No GPS', 'This order has no saved coordinates.');
+    Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${t.latitude},${t.longitude}&travelmode=driving`);
+  };
+
+  const handleCancel = () => {
+    Alert.alert(
+      'Cancel Order',
+      'Are you sure you want to cancel this pickup?',
+      [{ text: 'Keep Order', style: 'cancel' }, { text: 'Cancel Order', style: 'destructive', onPress: () => navigation.goBack() }]
     );
   };
 
-  const openPhone = async (phoneNumber) => {
-    const phone = String(phoneNumber || '').replace(/[^0-9+]/g, '');
-    if (!phone) {
-      Alert.alert('No Contact', 'Phone number is not available for this delivery.');
-      return;
-    }
-    const url = `tel:${phone}`;
-    const canOpen = await Linking.canOpenURL(url);
-    if (!canOpen) {
-      Alert.alert('Unable to Call', 'This device cannot open the dialer.');
-      return;
-    }
-    await Linking.openURL(url);
-  };
-
-  const openMessage = async (phoneNumber) => {
-    const phone = String(phoneNumber || '').replace(/[^0-9+]/g, '');
-    if (!phone) {
-      Alert.alert('No Contact', 'Phone number is not available for this delivery.');
-      return;
-    }
-    const url = `sms:${phone}`;
-    const canOpen = await Linking.canOpenURL(url);
-    if (!canOpen) {
-      Alert.alert('Unable to Message', 'This device cannot open messaging.');
-      return;
-    }
-    await Linking.openURL(url);
-  };
-
-  const statusIndex = STATUS_STEPS.findIndex((step) => step.id === delivery?.status);
-
-  if (loading) {
+  // ─── Step Tracker (Phase B) ────────────────────────────────────────────────
+  const renderStepTracker = () => {
+    const currentIdx = PHASE_B_STEPS.findIndex(s => s.key === delivery.status);
+    const isCompleted = delivery.status === 'completed';
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      </SafeAreaView>
+      <View style={styles.stepTracker}>
+        {PHASE_B_STEPS.map((step, idx) => {
+          const done = isCompleted ? true : idx < currentIdx;
+          const active = !isCompleted && idx === currentIdx;
+          return (
+            <View key={step.key} style={styles.stepRow}>
+              <View style={styles.stepLeft}>
+                <View style={[styles.stepDot, done && styles.stepDotDone, active && styles.stepDotActive]}>
+                  {done ? <Ionicons name="checkmark" size={9} color="#FFF" /> : null}
+                  {active && !done ? <View style={styles.stepDotCoreDot} /> : null}
+                </View>
+                {idx < PHASE_B_STEPS.length - 1 && (
+                  <View style={[styles.stepConnector, done && styles.stepConnectorDone]} />
+                )}
+              </View>
+              <View style={styles.stepInfo}>
+                <Text style={[styles.stepLabelText, done && styles.stepLabelDone, active && styles.stepLabelActive]}>
+                  {step.label}
+                </Text>
+                {active && (
+                  <View style={styles.activePill}>
+                    <Text style={styles.activePillText}>ACTIVE</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          );
+        })}
+      </View>
     );
-  }
+  };
 
-  if (!delivery) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.emptyWrap}>
-          <Text style={styles.errorText}>{error || 'Delivery not found.'}</Text>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.mapBtn}>
-            <Text style={styles.mapBtnText}>Go Back</Text>
+  // ─── Bottom Sheet Content per State ───────────────────────────────────────
+  const renderSheetContent = () => {
+    if (!delivery) return null;
+    const { status, customerName, customerPhone, deliveryAddress, branchAddress, bagCount: bags } = delivery;
+
+    // ── ACCEPTED: Heading to Customer ────────────────────────────────────────
+    if (status === 'accepted') {
+      return (
+        <View style={styles.sheetInner}>
+          <Text style={styles.sheetTitle}>Phase 1: Pickup — Go to {customerName}</Text>
+
+          {/* Customer Profile Card */}
+          <View style={styles.profileCard}>
+            <View style={styles.profileAvatar}>
+              <Ionicons name="person" size={22} color={colors.textTertiary} />
+            </View>
+            <View style={styles.profileInfo}>
+              <Text style={styles.profileSubLabel}>Customer Profile</Text>
+              <Text style={styles.profileName}>{customerName}</Text>
+              {deliveryAddress ? (
+                <Text style={styles.profileAddress} numberOfLines={1}>{deliveryAddress}</Text>
+              ) : null}
+            </View>
+            <TouchableOpacity
+              style={styles.callBtn}
+              onPress={() => Linking.openURL(`tel:${customerPhone}`)}
+            >
+              <Ionicons name="call" size={15} color="#FFF" />
+              <Text style={styles.callBtnText}>Call</Text>
+            </TouchableOpacity>
+          </View>
+
+          <SwipeSlider
+            label="Swipe to Arrive"
+            color={colors.primary}
+            onComplete={() => handleAction('arriveAtCustomer')}
+          />
+
+          <TouchableOpacity style={styles.cancelLink} onPress={handleCancel}>
+            <Text style={styles.cancelLinkText}>Cancel Order</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
-    );
-  }
+      );
+    }
 
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={20} color={colors.text} />
-          <Text style={styles.backText}>Back</Text>
+    // ── AT_CUSTOMER: Bag Count + Photo + Confirm ──────────────────────────────
+    if (status === 'at_customer') {
+      return (
+        <View style={styles.sheetInner}>
+          <Text style={styles.sheetTitle}>Arrived at {customerName}'s Location</Text>
+
+          {/* Bag count */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.inputLabel}>BAG COUNT (EST)</Text>
+            <TextInput
+              style={styles.bagCountInput}
+              value={bagCount}
+              onChangeText={setBagCount}
+              keyboardType="number-pad"
+              placeholder="3"
+              placeholderTextColor={colors.textTertiary}
+            />
+          </View>
+
+          {/* Photo proof card */}
+          <View style={styles.photoCard}>
+            <Text style={styles.photoCardTitle}>Proof of Pickup Photo Required</Text>
+            <PhotoProofCapture label="Take Photo" value={pickupPhoto} onCapture={setPickupPhoto} />
+          </View>
+
+          <Text style={styles.mandatoryHint}>Mandatory items for processing.</Text>
+
+          <SwipeSlider
+            label="✓  Verify & Complete Pickup"
+            color={colors.primary}
+            disabled={!bagCount || !pickupPhoto}
+            onComplete={() => handleAction('completePickup', {
+              bagCount: parseInt(bagCount) || 1,
+              pickupPhotoUrl: pickupPhoto,
+            })}
+          />
+        </View>
+      );
+    }
+
+    // ── PICKED_UP: Inventory Confirmed → Head to Branch ───────────────────────
+    if (status === 'picked_up') {
+      return (
+        <View style={styles.sheetInner}>
+          <View style={styles.inventoryBanner}>
+            <MaterialCommunityIcons name="check-decagram" size={30} color={colors.success} />
+            <View style={styles.inventoryBannerText}>
+              <Text style={styles.inventoryBannerTitle}>Pickup Complete!</Text>
+              <Text style={styles.inventoryBannerSub}>
+                Carrying <Text style={{ fontWeight: '900' }}>{bags || bagCount} bags</Text> for {customerName}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.destinationRow}>
+            <View style={[styles.destIcon, { backgroundColor: '#EDE9FE' }]}>
+              <MaterialCommunityIcons name="storefront-outline" size={15} color="#7C3AED" />
+            </View>
+            <Text style={styles.destText} numberOfLines={2}>
+              {branchAddress || 'Head to the Laundry Branch for drop-off'}
+            </Text>
+          </View>
+
+          <SwipeSlider
+            label="Arrived at Branch"
+            color="#7C3AED"
+            onComplete={() => handleAction('arriveAtBranch')}
+          />
+        </View>
+      );
+    }
+
+    // ── AT_BRANCH: Handover Mode ──────────────────────────────────────────────
+    if (status === 'at_branch') {
+      return (
+        <View style={[styles.sheetInner, styles.handoverSheetInner]}>
+          <View style={styles.handoverHeaderRow}>
+            <MaterialCommunityIcons name="storefront" size={20} color="#FFF" />
+            <Text style={styles.handoverTitle}>Branch Handover Mode</Text>
+          </View>
+          <Text style={styles.handoverSubtext}>
+            Place the {bags || bagCount} bags on the counter. Take a clear photo as proof.
+          </Text>
+
+          <View style={[styles.photoCard, { backgroundColor: 'rgba(255,255,255,0.12)', borderColor: 'rgba(255,255,255,0.2)' }]}>
+            <Text style={[styles.photoCardTitle, { color: '#E9D5FF' }]}>Branch Counter Photo Required</Text>
+            <PhotoProofCapture label="Take Photo" value={handoverPhoto} onCapture={setHandoverPhoto} />
+          </View>
+
+          <SwipeSlider
+            label="Confirm Branch Handover"
+            color="#7C3AED"
+            disabled={!handoverPhoto}
+            onComplete={() => handleAction('branchHandover', { branchHandoverPhotoUrl: handoverPhoto })}
+          />
+        </View>
+      );
+    }
+
+    // ── HANDED_OVER: Waiting for Phase B ─────────────────────────────────────
+    if (status === 'handed_over') {
+      return (
+        <View style={styles.centerPanel}>
+          <MaterialCommunityIcons name="washing-machine" size={48} color={colors.accent} />
+          <Text style={styles.waitTitle}>Phase 1 Complete!</Text>
+          <Text style={styles.waitSub}>
+            Laundry is being processed at the branch. You'll be notified when clean laundry is ready.
+          </Text>
+          <View style={styles.freeBadge}>
+            <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+            <Text style={styles.freeBadgeText}>You are free to take other orders!</Text>
+          </View>
+        </View>
+      );
+    }
+
+    // ── READY_FOR_DISPATCH: Phase 2 Start ────────────────────────────────────
+    if (status === 'ready_for_dispatch') {
+      return (
+        <View style={styles.sheetInner}>
+          <View style={styles.readyBanner}>
+            <MaterialCommunityIcons name="check-circle-outline" size={26} color={colors.success} />
+            <View style={styles.readyBannerText}>
+              <Text style={styles.readyBannerTitle}>Phase 2: Clean Laundry Ready!</Text>
+              <Text style={styles.readyBannerSub}>
+                {bags || '?'} bags for {customerName} — waiting at branch
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.destinationRow}>
+            <View style={[styles.destIcon, { backgroundColor: colors.primaryLight }]}>
+              <Ionicons name="location-outline" size={15} color={colors.primary} />
+            </View>
+            <Text style={styles.destText} numberOfLines={2}>
+              {deliveryAddress || 'Customer delivery address not set'}
+            </Text>
+          </View>
+
+          <SwipeSlider
+            label="Start Return Delivery"
+            color={colors.accent}
+            onComplete={() => handleAction('startDelivery')}
+          />
+        </View>
+      );
+    }
+
+    // ── EN_ROUTE: Out for Delivery ────────────────────────────────────────────
+    if (status === 'en_route') {
+      return (
+        <View style={styles.sheetInner}>
+          <Text style={styles.sheetTitle}>Phase 2: Return Journey</Text>
+
+          {renderStepTracker()}
+
+          <View style={styles.profileCard}>
+            <View style={styles.profileAvatar}>
+              <Ionicons name="person" size={22} color={colors.textTertiary} />
+            </View>
+            <View style={styles.profileInfo}>
+              <Text style={styles.profileSubLabel} numberOfLines={1}>{deliveryAddress}</Text>
+              <Text style={styles.profileName}>{customerName}</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.callBtn}
+              onPress={() => Linking.openURL(`tel:${customerPhone}`)}
+            >
+              <Ionicons name="call" size={15} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+
+          <SwipeSlider
+            label="Swipe to Arrive"
+            color={colors.primary}
+            onComplete={() => handleAction('arriveForDelivery')}
+          />
+        </View>
+      );
+    }
+
+    // ── AT_DELIVERY: Final Handover ───────────────────────────────────────────
+    if (status === 'at_delivery') {
+      return (
+        <View style={styles.sheetInner}>
+          <Text style={styles.sheetTitle}>Arrived at Customer for Final Delivery</Text>
+
+          {/* Call + Message row */}
+          <View style={styles.contactRow}>
+            <TouchableOpacity
+              style={styles.contactBtn}
+              onPress={() => Linking.openURL(`tel:${customerPhone}`)}
+            >
+              <Ionicons name="call" size={16} color="#FFF" />
+              <Text style={styles.contactBtnText}>Call{'\n'}Customer</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.contactBtn, { backgroundColor: '#334e87' }]}
+              onPress={() => Linking.openURL(`sms:${customerPhone}`)}
+            >
+              <Ionicons name="chatbubble-ellipses" size={16} color="#FFF" />
+              <Text style={styles.contactBtnText}>Message{'\n'}Customer</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.mandatoryHint}>Mandatory items for final processing.</Text>
+
+          {/* Confirmation code card */}
+          <View style={styles.codeCard}>
+            <Text style={styles.inputLabel}>DELIVERY CONFIRMATION CODE</Text>
+            <TextInput
+              style={styles.codeInput}
+              value={confCode}
+              onChangeText={setConfCode}
+              placeholder="Ask customer — e.g. 9876"
+              placeholderTextColor={colors.textTertiary}
+              keyboardType="number-pad"
+              maxLength={4}
+            />
+          </View>
+
+          {/* Photo proof */}
+          <View style={styles.photoCard}>
+            <PhotoProofCapture label="Take Photo" value={deliveryPhoto} onCapture={setDeliveryPhoto} />
+          </View>
+
+          <SwipeSlider
+            label="✓  Handover & Order Completed  ✦"
+            color={colors.primary}
+            disabled={confCode.length < 4 || !deliveryPhoto}
+            onComplete={() => handleAction('finalHandover', {
+              confirmationCode: confCode,
+              finalDeliveryPhotoUrl: deliveryPhoto,
+            })}
+          />
+        </View>
+      );
+    }
+
+    // ── COMPLETED: Done ───────────────────────────────────────────────────────
+    if (status === 'completed') {
+      return (
+        <View style={styles.centerPanel}>
+          <MaterialCommunityIcons name="check-decagram" size={60} color={colors.success} />
+          <Text style={styles.doneTitle}>Trip Completed! 🎉</Text>
+          <Text style={styles.doneSub}>
+            Clean laundry delivered to{' '}
+            <Text style={{ fontWeight: '800' }}>{customerName}</Text>.
+            {'\n'}Great work!
+          </Text>
+          <TouchableOpacity style={styles.doneBtn} onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={16} color="#FFF" />
+            <Text style={styles.doneBtnText}>Back to Deliveries</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // ── PENDING: New Order Incoming ───────────────────────────────────────────
+    return (
+      <View style={styles.sheetInner}>
+        {/* Header row with animated badge */}
+        <View style={styles.newOrderHeader}>
+          <View style={styles.newOrderBadge}>
+            <View style={styles.newOrderBadgeDot} />
+            <Text style={styles.newOrderBadgeText}>NEW ORDER</Text>
+          </View>
+          <Text style={styles.newOrderSubhead}>Review & Accept</Text>
+        </View>
+
+        {/* Customer info card */}
+        <View style={styles.newOrderCard}>
+          <View style={styles.newOrderCardTop}>
+            <View style={styles.newOrderAvatar}>
+              <Ionicons name="person" size={22} color={colors.primary} />
+            </View>
+            <View style={styles.newOrderCardInfo}>
+              <Text style={styles.newOrderCustomerName}>{customerName}</Text>
+              <Text style={styles.newOrderAddress} numberOfLines={2}>
+                {deliveryAddress || 'Customer address not set'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.callBtn}
+              onPress={() => Linking.openURL(`tel:${customerPhone}`)}
+            >
+              <Ionicons name="call" size={15} color="#FFF" />
+              <Text style={styles.callBtnText}>Call</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Distance & ETA chips */}
+          <View style={styles.newOrderChipsRow}>
+            <View style={styles.newOrderChip}>
+              <Ionicons name="navigate-outline" size={13} color={colors.primary} />
+              <Text style={styles.newOrderChipText}>
+                {etaInfo.distance ? `${etaInfo.distance} km` : 'Calculating...'}
+              </Text>
+            </View>
+            <View style={styles.newOrderChip}>
+              <Ionicons name="time-outline" size={13} color={colors.accent} />
+              <Text style={[styles.newOrderChipText, { color: colors.accent }]}>
+                {etaInfo.duration ? `~${etaInfo.duration} min` : 'Getting ETA'}
+              </Text>
+            </View>
+            <View style={[styles.newOrderChip, { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }]}>
+              <MaterialCommunityIcons name="washing-machine" size={13} color={colors.success} />
+              <Text style={[styles.newOrderChipText, { color: colors.success }]}>Laundry Pickup</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Route preview — pickup address */}
+        <View style={styles.newOrderRouteCard}>
+          <View style={styles.routeRow}>
+            <View style={[styles.routeDot, { backgroundColor: colors.primary }]} />
+            <View style={styles.routeInfo}>
+              <Text style={styles.routeLabel}>PICKUP FROM</Text>
+              <Text style={styles.routeValue} numberOfLines={1}>{customerName}</Text>
+              <Text style={styles.routeAddress} numberOfLines={1}>{deliveryAddress || '—'}</Text>
+            </View>
+          </View>
+          <View style={styles.routeLine} />
+          <View style={styles.routeRow}>
+            <View style={[styles.routeDot, { backgroundColor: '#7C3AED' }]} />
+            <View style={styles.routeInfo}>
+              <Text style={styles.routeLabel}>DROP-OFF AT</Text>
+              <Text style={styles.routeValue} numberOfLines={1}>
+                {delivery.branchAddress?.split(',')[0] || 'Laundry Branch'}
+              </Text>
+              <Text style={styles.routeAddress} numberOfLines={1}>{branchAddress || '—'}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Accept CTA */}
+        <TouchableOpacity
+          style={[styles.acceptBtn, updating && styles.acceptBtnDisabled]}
+          onPress={async () => {
+            if (updating) return;
+            try {
+              setUpdating(true);
+              
+              // Kung wala pang driver (Pool Order), kailangan i-accept.
+              // Kung may driver na (Assigned Job), deretso na sa arriveAtCustomer logic.
+              if (delivery.status === 'pending' && !delivery.driverName) {
+                const accepted = await deliveriesApi.acceptBooking(delivery.orderNumber);
+                setDelivery(accepted);
+              } else {
+                // Pre-assigned job — just transition to the first active state
+                const updated = await deliveriesApi.arriveAtCustomer(delivery.id);
+                setDelivery(updated);
+              }
+            } catch (e) {
+              console.error('[AcceptError]', e);
+              Alert.alert('Action Failed', e?.message || 'Please try again.');
+            } finally {
+              setUpdating(false);
+            }
+          }}
+          disabled={updating}
+          activeOpacity={0.85}
+        >
+          {updating ? (
+            <ActivityIndicator size="small" color="#FFF" />
+          ) : (
+            <>
+              <Ionicons name="checkmark-circle" size={20} color="#FFF" />
+              <Text style={styles.acceptBtnText}>Accept & Start Pickup</Text>
+            </>
+          )}
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>{delivery.customerName}</Text>
-        <Text style={styles.orderId}>{delivery.orderNumber}</Text>
-        <Text style={styles.statusLabel}>{getStatusLabel(delivery.status)}</Text>
+        <TouchableOpacity style={styles.cancelLink} onPress={handleCancel}>
+          <Text style={styles.cancelLinkText}>Decline Order</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
-        <View style={styles.mapCard}>
-           <MapView
-             provider={PROVIDER_GOOGLE}
-             style={styles.map}
-             region={mapRegion}
-             onRegionChangeComplete={setMapRegion}
-           >
-             {driverCoords && (
-               <Marker
-                 coordinate={driverCoords}
-                 title="You"
-                 rotation={driverCoords.heading}
-               >
-                 <View style={styles.driverMarker}>
-                   <Ionicons name="bicycle" size={24} color={colors.primary} />
-                 </View>
-               </Marker>
-             )}
-             {driverCoords && getTargetCoords() && (
-               <MapViewDirections
-                 origin={driverCoords}
-                 destination={getTargetCoords()}
-                 apikey={GOOGLE_MAPS_API_KEY}
-                 strokeWidth={4}
-                 strokeColor={colors.primary}
-                 optimizeWaypoints={true}
-                 mode="DRIVING"
-                 onReady={(result) => {
-                    // Optionally adjust map to fit the whole route
-                 }}
-               />
-             )}
-             {getTargetCoords() && (
-               <Marker
-                 coordinate={getTargetCoords()}
-                 title="Destination"
-                 pinColor={colors.accent}
-               />
-             )}
-           </MapView>
-           <View style={styles.mapOverlay}>
-              <Text style={styles.mapOverlayText}>{getTargetCoords()?.label}</Text>
-           </View>
-        </View>
+  // ─── Loading / Error states ────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <View style={styles.fullDark}>
+        <ActivityIndicator size="large" color="#60A5FA" />
+        <Text style={styles.darkLoadText}>Loading order...</Text>
+      </View>
+    );
+  }
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Delivery Address</Text>
-          <View style={styles.addressRowBlock}>
-            <Ionicons name="location" size={16} color={colors.primary} style={{ marginTop: 2 }} />
-            <Text style={styles.addressText}>{delivery.deliveryAddress || 'No address provided'}</Text>
-            <TouchableOpacity style={styles.copyBtn} onPress={() => Alert.alert('Info', 'Address copied.')}>
-              <Ionicons name="copy-outline" size={14} color={colors.primary} />
-              <Text style={styles.copyText}>Copy</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+  if (!delivery && error) {
+    return (
+      <View style={styles.fullDark}>
+        <Ionicons name="alert-circle-outline" size={48} color="#F87171" />
+        <Text style={[styles.darkLoadText, { color: '#F87171' }]}>{error}</Text>
+        <TouchableOpacity style={styles.doneBtn} onPress={() => navigation.goBack()}>
+          <Text style={styles.doneBtnText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Order Details</Text>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoKey}>Order #</Text>
-            <Text style={styles.infoVal}>{delivery.orderNumber}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoKey}>Branch</Text>
-            <Text style={styles.infoVal}>{delivery.branchName || 'N/A'}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoKey}>Phone</Text>
-            <Text style={styles.infoVal}>{delivery.customerPhone || 'N/A'}</Text>
-          </View>
-          <View style={styles.contactActionRow}>
-            <TouchableOpacity style={styles.contactActionBtn} onPress={() => void openPhone(delivery.customerPhone)}>
-              <Ionicons name="call-outline" size={14} color={colors.primary} />
-              <Text style={styles.contactActionText}>Call Customer</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.contactActionBtn} onPress={() => void openMessage(delivery.customerPhone)}>
-              <Ionicons name="chatbubble-ellipses-outline" size={14} color={colors.primary} />
-              <Text style={styles.contactActionText}>Message Customer</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoKey}>Driver</Text>
-            <Text style={styles.infoVal}>{delivery.driverName || 'Unassigned'}</Text>
-          </View>
-          {delivery.notes ? (
-            <View style={styles.instructionsBox}>
-              <View style={styles.insRow}>
-                <Ionicons name="information-circle-outline" size={14} color={colors.warning} />
-                <Text style={styles.insTitle}>Notes</Text>
+  if (!delivery) return null;
+
+  // ─── Live values ───────────────────────────────────────────────────────────
+  const cfg = STATE_CONFIG[delivery.status] || STATE_CONFIG['pending'];
+  const targetCoords = getTargetCoords();
+  const hasCoords = !!(targetCoords && driverCoords);
+  const isHandover = delivery.status === 'at_branch';
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+  return (
+    <View style={styles.screen}>
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+
+      {/* ── FULL SCREEN DARK MAP ─────────────────────────────────────────── */}
+      <MapView
+        ref={mapRef}
+        provider={PROVIDER_GOOGLE}
+        googleMapsApiKey={GOOGLE_MAPS_API_KEY}
+        style={StyleSheet.absoluteFillObject}
+        region={mapRegion}
+        onRegionChangeComplete={setMapRegion}
+        customMapStyle={DARK_MAP_STYLE}
+        showsUserLocation={false}
+        showsMyLocationButton={false}
+        showsCompass={false}
+        showsTraffic={false}
+      >
+        {/* Driver "You" marker with pulse ring */}
+        {driverCoords && (
+          <Marker coordinate={driverCoords} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
+            <View style={styles.driverWrap}>
+              <RNAnimated.View
+                style={[
+                  styles.driverPulse,
+                  { transform: [{ scale: pulseAnim }], opacity: pulseOpacity },
+                ]}
+              />
+              <View style={styles.driverCore}>
+                <Ionicons name="car-sport" size={14} color={colors.primary} />
               </View>
-              <Text style={styles.insBody}>{delivery.notes}</Text>
+              <View style={styles.driverTag}>
+                <Text style={styles.driverTagText}>You</Text>
+              </View>
             </View>
-          ) : null}
-        </View>
+          </Marker>
+        )}
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Delivery Status</Text>
-          <View style={styles.timelineCol}>
-            {STATUS_STEPS.map((step, index) => {
-              const done = statusIndex >= index || delivery.status === 'completed';
-              return (
-                <View key={step.id} style={styles.timelineRow}>
-                  <View style={styles.timelineIconArea}>
-                    <View style={[styles.timeDot, done ? styles.timeDotActive : styles.timeDotInactive]} />
-                    {index < STATUS_STEPS.length - 1 && (
-                      <View style={[styles.timeLine, done ? styles.timeLineActive : styles.timeLineInactive]} />
-                    )}
-                  </View>
-                  <View style={styles.timelineContent}>
-                    <Text style={[styles.timelineStep, done ? styles.timelineStepActive : styles.timelineStepInactive]}>
-                      {step.label}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        </View>
+        {/* Customer destination pin */}
+        {delivery.deliveryLatitude && cfg.destination === 'customer' && (
+          <Marker
+            coordinate={{ latitude: delivery.deliveryLatitude, longitude: delivery.deliveryLongitude }}
+            anchor={{ x: 0.5, y: 1 }}
+            tracksViewChanges={false}
+          >
+            <View style={styles.pinWrap}>
+              <View style={styles.calloutBubble}>
+                <Text style={styles.calloutText}>
+                  {delivery.status === 'at_delivery'
+                    ? `Customer (Delivery)`
+                    : `Customer: ${delivery.customerName}`}
+                </Text>
+              </View>
+              <View style={styles.calloutArrow} />
+              <View style={styles.redDot} />
+            </View>
+          </Marker>
+        )}
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Photo Proof</Text>
-          <View style={styles.proofActionRow}>
-            <TouchableOpacity
-              style={styles.proofBtn}
-              onPress={() => handleUploadProof('PICKUP')}
-              disabled={!!uploadingProofType}
-            >
-              <Ionicons name="camera-outline" size={16} color={colors.primary} />
-              <Text style={styles.proofBtnText}>
-                {uploadingProofType === 'PICKUP' ? 'Uploading...' : 'Upload Pickup'}
+        {/* Branch pin — always visible as reference point */}
+        {delivery.branchLatitude && (
+          <Marker
+            coordinate={{ latitude: delivery.branchLatitude, longitude: delivery.branchLongitude }}
+            anchor={{ x: 0, y: 0.5 }}
+            tracksViewChanges={false}
+          >
+            <View style={styles.branchTag}>
+              <View style={[
+                styles.branchSquare,
+                { backgroundColor: cfg.destination === 'branch' ? '#7C3AED' : '#1E3A5F' },
+              ]} />
+              <Text style={styles.branchTagText}>
+                {delivery.branchAddress?.split(',')[0] || 'Branch'}
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.proofBtn}
-              onPress={() => handleUploadProof('DROPOFF')}
-              disabled={!!uploadingProofType}
-            >
-              <Ionicons name="camera-outline" size={16} color={colors.primary} />
-              <Text style={styles.proofBtnText}>
-                {uploadingProofType === 'DROPOFF' ? 'Uploading...' : 'Upload Drop-off'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-          {delivery.pickupProofUrl ? (
-            <View style={styles.proofPreview}>
-              <Text style={styles.proofLabel}>Pickup Proof</Text>
-              <Image source={{ uri: delivery.pickupProofUrl }} style={styles.proofImage} />
             </View>
-          ) : null}
-          {delivery.dropoffProofUrl ? (
-            <View style={styles.proofPreview}>
-              <Text style={styles.proofLabel}>Drop-off Proof</Text>
-              <Image source={{ uri: delivery.dropoffProofUrl }} style={styles.proofImage} />
-            </View>
-          ) : null}
-        </View>
+          </Marker>
+        )}
 
-        <View style={styles.actionsBox}>
-          <TouchableOpacity style={styles.mapBtn} onPress={openMaps}>
-            <Ionicons name="navigate" size={20} color={colors.primary} />
-            <Text style={styles.mapBtnText}>Open in Maps</Text>
+        {/* Route polyline */}
+        {driverCoords && targetCoords && (
+          <MapViewDirections
+            origin={driverCoords}
+            destination={targetCoords}
+            apikey={GOOGLE_MAPS_API_KEY}
+            strokeWidth={4}
+            strokeColor={cfg.routeColor}
+            mode="DRIVING"
+            onReady={(result) => {
+              setEtaInfo({
+                distance: result.distance.toFixed(1),
+                duration: Math.round(result.duration),
+              });
+              // Auto-fit camera to show the full route
+              if (mapRef.current && result.coordinates?.length > 1) {
+                mapRef.current.fitToCoordinates(result.coordinates, {
+                  edgePadding: { top: 160, right: 60, bottom: 320, left: 60 },
+                  animated: true,
+                });
+              }
+            }}
+          />
+        )}
+      </MapView>
+
+      {/* ── HEADER OVERLAY ───────────────────────────────────────────────── */}
+      <View
+        style={[
+          styles.headerOverlay,
+          { paddingTop: insets.top + (Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0) },
+        ]}
+      >
+        <View style={styles.headerRow}>
+          <TouchableOpacity style={styles.headerCircle} onPress={() => navigation.goBack()}>
+            <Ionicons name="chevron-back" size={20} color="#0D1B2A" />
           </TouchableOpacity>
 
-          {delivery.status === 'pending' &&
-            (showConfirm === 'en_route' ? (
-              <View style={styles.confirmBox}>
-                <Text style={styles.confirmTitle}>Start journey to pickup location?</Text>
-                <View style={styles.confirmRowBtn}>
-                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowConfirm(null)}>
-                    <Text style={styles.cancelBtnText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.primaryConfirmBtn}
-                    onPress={() => handleAction('en_route')}
-                    disabled={updating}
-                  >
-                    <Text style={styles.primaryConfirmBtnText}>Start Journey</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={styles.actionBtnPrimary}
-                onPress={() => setShowConfirm('en_route')}
-                disabled={updating}
-              >
-                <Ionicons name="map" size={20} color={colors.card} />
-                <Text style={styles.actionBtnTextPrimary}>Start Journey</Text>
-              </TouchableOpacity>
-            ))}
+          <Text style={styles.headerTitle}>WashAlert Driver App</Text>
 
-          {delivery.status === 'en_route' &&
-            (showConfirm === 'pickup' ? (
-              <View style={styles.confirmBox}>
-                <Text style={styles.confirmTitle}>Confirm arrived and items picked up?</Text>
-                <View style={styles.confirmRowBtn}>
-                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowConfirm(null)}>
-                    <Text style={styles.cancelBtnText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.primaryConfirmBtn}
-                    onPress={() => handleAction('picked_up')}
-                    disabled={updating}
-                  >
-                    <Text style={styles.primaryConfirmBtnText}>Confirm Picked Up</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={styles.actionBtnPrimary}
-                onPress={() => setShowConfirm('pickup')}
-                disabled={updating}
-              >
-                <Ionicons name="cube" size={20} color={colors.card} />
-                <Text style={styles.actionBtnTextPrimary}>Items Picked Up</Text>
-              </TouchableOpacity>
-            ))}
-
-          {delivery.status === 'picked_up' &&
-             <TouchableOpacity
-                style={[styles.actionBtnPrimary, { backgroundColor: colors.accent }]}
-                onPress={() => handleAction('in_progress')}
-                disabled={updating}
-             >
-                <Ionicons name="bicycle" size={20} color={colors.card} />
-                <Text style={styles.actionBtnTextPrimary}>Start Delivery Route</Text>
-             </TouchableOpacity>
-          }
-
-          {delivery.status === 'in_progress' &&
-            (showConfirm === 'deliver' ? (
-              <View style={styles.confirmBoxSuccess}>
-                <Text style={styles.confirmTitle}>Confirm delivery completed?</Text>
-                <View style={styles.confirmRowBtn}>
-                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowConfirm(null)}>
-                    <Text style={styles.cancelBtnText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.successConfirmBtn}
-                    onPress={() => handleAction('completed')}
-                    disabled={updating}
-                  >
-                    <Text style={styles.primaryConfirmBtnText}>Confirm Delivery</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={styles.actionBtnSuccess}
-                onPress={() => setShowConfirm('deliver')}
-                disabled={updating}
-              >
-                <Ionicons name="checkmark-done" size={20} color={colors.card} />
-                <Text style={styles.actionBtnTextPrimary}>Complete Delivery</Text>
-              </TouchableOpacity>
-            ))}
-
-          {delivery.status === 'in_progress' && String(delivery.paymentMethod || '').toUpperCase().includes('CASH') && !delivery.isPaid && (
-            <TouchableOpacity 
-              style={[styles.actionBtnSuccess, { backgroundColor: '#eab308' }]} 
-              onPress={() => {
-                Alert.alert('Payment Collected', 'Are you sure you have collected the cash payment?', [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Yes, Collected',
-                    onPress: async () => {
-                      try {
-                        console.log('[Driver][COD] Collecting payment deliveryId=', delivery.id);
-                        await deliveriesApi.collectCodPayment(delivery.id);
-                        await loadDelivery();
-                        Alert.alert('Success', 'Cash payment marked as collected.');
-                      } catch (e) {
-                        Alert.alert('Payment Update Failed', e?.message || 'Unable to mark COD as collected.');
-                      }
-                    },
-                  }
-                ]);
-              }}
-            >
-              <Ionicons name="cash-outline" size={20} color={colors.card} />
-              <Text style={styles.actionBtnTextPrimary}>Collect Cash Payment</Text>
-            </TouchableOpacity>
-          )}
-
-          {delivery.status === 'in_progress' && (
-            <TouchableOpacity 
-              style={[styles.simBtn, isSimulating && styles.simBtnActive]} 
-              onPress={() => setIsSimulating(!isSimulating)}
-            >
-              <Ionicons name={isSimulating ? "stop-circle" : "play-circle"} size={20} color={isSimulating ? colors.error : colors.success} />
-              <Text style={[styles.simBtnText, isSimulating && { color: colors.error }]}>
-                {isSimulating ? (isSimulating ? "Stop Simulation" : "Simulate Movement") : "Simulate Movement"}
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {delivery.status === 'completed' && (
-            <View style={styles.completedBox}>
-              <Ionicons name="checkmark" size={20} color={colors.success} />
-              <Text style={styles.completedBoxText}>Delivered Successfully</Text>
-            </View>
-          )}
+          <TouchableOpacity style={styles.headerCircle} onPress={openExternalNav}>
+            <Ionicons name="navigate" size={18} color={colors.primary} />
+          </TouchableOpacity>
         </View>
-      </ScrollView>
-    </SafeAreaView>
+
+        {/* ETA Status strip */}
+        <View style={styles.etaStrip}>
+          <View style={styles.etaStatusDot} />
+          <Text style={styles.etaText}>
+            {'Status: '}
+            <Text style={styles.etaBold}>{cfg.statusLabel}</Text>
+            {etaInfo.duration
+              ? `  |  ETA: ${etaInfo.duration} min  |  ${etaInfo.distance} km`
+              : ''}
+          </Text>
+        </View>
+      </View>
+
+      {/* ── BOTTOM SHEET ─────────────────────────────────────────────────── */}
+      <View
+        style={[
+          styles.bottomSheet,
+          isHandover && styles.bottomSheetHandover,
+          { paddingBottom: insets.bottom > 0 ? insets.bottom : 16 },
+        ]}
+      >
+        {/* Drag handle */}
+        <View style={styles.dragHandle} />
+
+        {/* No GPS warning */}
+        {!targetCoords && !['handed_over', 'completed', 'pending'].includes(delivery.status) && (
+          <View style={styles.noGpsBar}>
+            <Ionicons name="warning-outline" size={13} color="#92400E" />
+            <Text style={styles.noGpsText}>
+              No GPS saved for this order — navigation unavailable.
+            </Text>
+          </View>
+        )}
+
+        {/* State-specific content */}
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.sheetScrollContent}
+        >
+          {renderSheetContent()}
+        </ScrollView>
+
+        {/* COD banner — persistent reminder */}
+        {!delivery.isPaid && delivery.paymentMethod?.toLowerCase().includes('cash') &&
+         delivery.status !== 'completed' && (
+          <TouchableOpacity
+            style={styles.codBanner}
+            onPress={() => Alert.alert(
+              'Collect Cash',
+              `Have you received ₱${delivery.amountToCollect?.toLocaleString()} from ${delivery.customerName}?`,
+              [
+                { text: 'Not yet', style: 'cancel' },
+                { text: 'Yes — Collected ✓', onPress: () => handleAction('collectCodPayment') },
+              ]
+            )}
+          >
+            <Ionicons name="wallet-outline" size={14} color="#FFF" />
+            <Text style={styles.codBannerText}>
+              COD:  ₱{delivery.amountToCollect?.toLocaleString()}  ·  Tap to mark collected
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* ── UPDATING OVERLAY ─────────────────────────────────────────────── */}
+      {updating && (
+        <View style={styles.updatingOverlay}>
+          <ActivityIndicator size="large" color="#FFF" />
+          <Text style={styles.updatingText}>Updating status...</Text>
+        </View>
+      )}
+    </View>
   );
 };
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 },
-  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
-  errorText: { fontSize: 13, color: colors.error, marginBottom: 16, textAlign: 'center' },
-
-  backBtn: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  backText: { fontSize: 14, fontWeight: '500', color: colors.text, marginLeft: 8 },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: colors.text, marginBottom: 4 },
-  orderId: { fontSize: 14, color: colors.textSecondary },
-  statusLabel: { marginBottom: 24, marginTop: 4, fontSize: 12, fontWeight: '700', color: colors.primary },
-
-  card: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  cardTitle: { fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: 12 },
-  addressRowBlock: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  addressText: { flex: 1, fontSize: 14, color: colors.text, lineHeight: 20 },
-  copyBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent' },
-  copyText: { fontSize: 12, fontWeight: '500', color: colors.primary, marginLeft: 4 },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  infoKey: { fontSize: 14, color: colors.textSecondary },
-  infoVal: { fontSize: 14, fontWeight: '500', color: colors.text, maxWidth: '60%', textAlign: 'right' },
-  contactActionRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: -4,
-    marginBottom: 12,
-  },
-  contactActionBtn: {
+  screen: {
     flex: 1,
-    height: 36,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  contactActionText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.primary,
+    backgroundColor: '#1d2c4d',
   },
 
-  instructionsBox: {
-    backgroundColor: 'hsla(16, 100%, 56%, 0.1)',
-    borderWidth: 1,
-    borderColor: 'hsla(16, 100%, 56%, 0.2)',
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 12,
-  },
-  insRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  insTitle: { fontSize: 12, fontWeight: 'bold', color: colors.warning, marginLeft: 6 },
-  insBody: { fontSize: 12, color: colors.text },
-
-  timelineCol: { paddingTop: 8 },
-  timelineRow: { flexDirection: 'row' },
-  timelineIconArea: { width: 24, alignItems: 'center', marginRight: 12 },
-  timeDot: { width: 12, height: 12, borderRadius: 6 },
-  timeDotActive: { backgroundColor: colors.primary },
-  timeDotInactive: { backgroundColor: colors.border },
-  timeLine: { width: 2, height: 24 },
-  timeLineActive: { backgroundColor: colors.primary },
-  timeLineInactive: { backgroundColor: colors.border },
-  timelineContent: { paddingBottom: 16 },
-  timelineStep: { fontSize: 14, fontWeight: '500' },
-  timelineStepActive: { color: colors.text },
-  timelineStepInactive: { color: colors.textSecondary },
-
-  proofActionRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 10,
-  },
-  proofBtn: {
+  // ── Loading / Error ──
+  fullDark: {
     flex: 1,
-    height: 38,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-    flexDirection: 'row',
-    alignItems: 'center',
+    backgroundColor: '#1d2c4d',
     justifyContent: 'center',
-    gap: 6,
-  },
-  proofBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  proofPreview: {
-    marginTop: 8,
-  },
-  proofLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textSecondary,
-    marginBottom: 6,
-  },
-  proofImage: {
-    width: '100%',
-    height: 130,
-    borderRadius: 10,
-    backgroundColor: colors.border,
-  },
-
-  actionsBox: { gap: 12 },
-  mapBtn: {
-    height: 52,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: 12,
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 12,
+    padding: 32,
   },
-  mapBtnText: { color: colors.primary, fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
-  actionBtnPrimary: {
-    height: 52,
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionBtnSuccess: {
-    height: 52,
-    backgroundColor: colors.success,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionBtnTextPrimary: { color: colors.card, fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
-
-  confirmBox: {
-    backgroundColor: 'hsla(16, 100%, 56%, 0.1)',
-    borderWidth: 1,
-    borderColor: 'hsla(16, 100%, 56%, 0.2)',
-    borderRadius: 12,
-    padding: 16,
-  },
-  confirmBoxSuccess: {
-    backgroundColor: 'hsla(156, 87%, 34%, 0.1)',
-    borderWidth: 1,
-    borderColor: 'hsla(156, 87%, 34%, 0.2)',
-    borderRadius: 12,
-    padding: 16,
-  },
-  confirmTitle: { fontSize: 14, fontWeight: 'bold', color: colors.text, marginBottom: 12, textAlign: 'center' },
-  confirmRowBtn: { flexDirection: 'row', gap: 12 },
-  cancelBtn: {
-    flex: 1,
-    height: 40,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelBtnText: { color: colors.text, fontSize: 14, fontWeight: '500' },
-  primaryConfirmBtn: {
-    flex: 1,
-    height: 40,
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  successConfirmBtn: {
-    flex: 1,
-    height: 40,
-    backgroundColor: colors.success,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryConfirmBtnText: { color: colors.card, fontSize: 14, fontWeight: 'bold' },
-  completedBox: {
-    height: 52,
-    backgroundColor: 'hsla(156, 87%, 34%, 0.1)',
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  completedBoxText: { color: colors.success, fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
-  simBtn: {
-    height: 48,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f8fafc',
-    marginTop: 8,
-  },
-  simBtnActive: {
-    borderColor: colors.error,
-    backgroundColor: 'rgba(239, 68, 68, 0.05)',
-  },
-  simBtnText: {
+  darkLoadText: {
+    color: '#8ec3b9',
     fontSize: 14,
     fontWeight: '600',
-    color: colors.textSecondary,
-    marginLeft: 8,
   },
-  mapCard: {
-    height: 220,
-    borderRadius: 20,
-    overflow: 'hidden',
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
+
+  // ── Map markers ──
+  driverWrap: {
+    alignItems: 'center',
   },
-  map: {
-    flex: 1,
-  },
-  mapOverlay: {
+  driverPulse: {
     position: 'absolute',
-    top: 12,
-    left: 12,
-    right: 12,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
-  },
-  mapOverlayText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: colors.text,
-  },
-  driverMarker: {
-    backgroundColor: 'white',
-    padding: 6,
+    width: 40,
+    height: 40,
     borderRadius: 20,
-    borderWidth: 2,
+    backgroundColor: 'rgba(30, 58, 95, 0.35)',
+  },
+  driverCore: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFF',
+    borderWidth: 2.5,
     borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  driverTag: {
+    marginTop: 3,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+  },
+  driverTagText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#0D1B2A',
+  },
+
+  pinWrap: {
+    alignItems: 'center',
+  },
+  calloutBubble: {
+    backgroundColor: '#FFF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
-    shadowRadius: 3,
+    shadowRadius: 4,
+    maxWidth: 180,
+  },
+  calloutText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#0D1B2A',
+  },
+  calloutArrow: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 7,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#FFF',
+    marginTop: -1,
+  },
+  redDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#EF4444',
+    borderWidth: 2.5,
+    borderColor: '#FFF',
+    marginTop: 2,
+    elevation: 4,
+  },
+
+  branchTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 10,
+    elevation: 3,
+  },
+  branchSquare: {
+    width: 10,
+    height: 10,
+    borderRadius: 2,
+  },
+  branchTagText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#0D1B2A',
+  },
+
+  // ── Header overlay ──
+  headerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFF',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  headerCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F0F4FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0D1B2A',
+    letterSpacing: 0.2,
+  },
+  etaStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1d2c4d',
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    gap: 7,
+  },
+  etaStatusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#34D399',
+  },
+  etaText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.75)',
+    fontWeight: '500',
+    flex: 1,
+  },
+  etaBold: {
+    color: '#FFF',
+    fontWeight: '800',
+  },
+
+  // ── Bottom sheet ──
+  bottomSheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: SCREEN_HEIGHT * 0.56,
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+  },
+  bottomSheetHandover: {
+    backgroundColor: '#1E0B4A',
+  },
+  dragHandle: {
+    width: 38,
+    height: 4,
+    backgroundColor: '#DDE6F3',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 2,
+  },
+  sheetScrollContent: {
+    paddingHorizontal: 18,
+    paddingTop: 4,
+    paddingBottom: 12,
+  },
+  sheetInner: {
+    gap: 13,
+  },
+
+  // ── Sheet: Titles ──
+  sheetTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0D1B2A',
+    lineHeight: 22,
+  },
+
+  // ── Profile card ──
+  profileCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F8FF',
+    borderRadius: 16,
+    padding: 12,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#DDE6F3',
+  },
+  profileAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#DDE6F3',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileInfo: { flex: 1 },
+  profileSubLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  profileName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0D1B2A',
+    marginTop: 1,
+  },
+  profileAddress: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  callBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 14,
+    height: 36,
+    borderRadius: 18,
+  },
+  callBtnText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+
+  // ── Destination row ──
+  destinationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F5F8FF',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#DDE6F3',
+  },
+  destIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  destText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0D1B2A',
+    lineHeight: 18,
+  },
+
+  // ── Cancel link ──
+  cancelLink: {
+    alignSelf: 'center',
+    paddingVertical: 6,
+  },
+  cancelLinkText: {
+    fontSize: 13,
+    color: colors.textTertiary,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+
+  // ── Forms ──
+  fieldGroup: {
+    gap: 4,
+  },
+  inputLabel: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: colors.textTertiary,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  bagCountInput: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#0D1B2A',
+    height: 50,
+    borderBottomWidth: 2,
+    borderBottomColor: '#DDE6F3',
+    paddingHorizontal: 0,
+  },
+
+  // ── Photo card ──
+  photoCard: {
+    backgroundColor: '#F5F8FF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#DDE6F3',
+    gap: 10,
+  },
+  photoCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0D1B2A',
+  },
+  mandatoryHint: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+
+  // ── Code card ──
+  codeCard: {
+    gap: 6,
+  },
+  codeInput: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: colors.primary,
+    borderBottomWidth: 2,
+    borderBottomColor: '#DDE6F3',
+    paddingVertical: 4,
+    paddingHorizontal: 0,
+    letterSpacing: 6,
+  },
+
+  // ── Contact row (at_delivery) ──
+  contactRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  contactBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.primary,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+  },
+  contactBtnText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+
+  // ── Inventory banner (picked_up) ──
+  inventoryBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#F0FDF4',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#BBF7D0',
+  },
+  inventoryBannerText: { flex: 1 },
+  inventoryBannerTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.success,
+  },
+  inventoryBannerSub: {
+    fontSize: 12,
+    color: '#065F46',
+    marginTop: 2,
+  },
+
+  // ── Handover mode (at_branch dark) ──
+  handoverSheetInner: {
+    backgroundColor: '#1E0B4A',
+  },
+  handoverHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  handoverTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#FFF',
+  },
+  handoverSubtext: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.72)',
+    lineHeight: 19,
+  },
+
+  // ── Ready banner (ready_for_dispatch) ──
+  readyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#F0FDF4',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#BBF7D0',
+  },
+  readyBannerText: { flex: 1 },
+  readyBannerTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.success,
+  },
+  readyBannerSub: {
+    fontSize: 12,
+    color: '#065F46',
+    marginTop: 2,
+  },
+
+  // ── Step tracker ──
+  stepTracker: {
+    backgroundColor: '#F5F8FF',
+    borderRadius: 14,
+    padding: 14,
+    gap: 0,
+    borderWidth: 1,
+    borderColor: '#DDE6F3',
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    minHeight: 36,
+  },
+  stepLeft: {
+    alignItems: 'center',
+    width: 22,
+    marginRight: 12,
+  },
+  stepDot: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#DDE6F3',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#DDE6F3',
+  },
+  stepDotDone: {
+    backgroundColor: colors.success,
+    borderColor: colors.success,
+  },
+  stepDotActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  stepDotCoreDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FFF',
+  },
+  stepConnector: {
+    width: 2,
+    flex: 1,
+    backgroundColor: '#DDE6F3',
+    marginVertical: 2,
+    minHeight: 14,
+  },
+  stepConnectorDone: {
+    backgroundColor: colors.success,
+  },
+  stepInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: 16,
+    gap: 8,
+    paddingTop: 1,
+  },
+  stepLabelText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  stepLabelDone: {
+    color: colors.success,
+    fontWeight: '700',
+  },
+  stepLabelActive: {
+    color: colors.primary,
+    fontWeight: '800',
+  },
+  activePill: {
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  activePillText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: colors.primary,
+    letterSpacing: 0.5,
+  },
+
+  // ── New Order (pending) panel ──
+  newOrderHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  newOrderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+  },
+  newOrderBadgeDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#F59E0B',
+  },
+  newOrderBadgeText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#92400E',
+    letterSpacing: 0.8,
+  },
+  newOrderSubhead: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  newOrderCard: {
+    backgroundColor: '#F5F8FF',
+    borderRadius: 16,
+    padding: 14,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#DDE6F3',
+  },
+  newOrderCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  newOrderAvatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  newOrderCardInfo: {
+    flex: 1,
+  },
+  newOrderCustomerName: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0D1B2A',
+  },
+  newOrderAddress: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  newOrderChipsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  newOrderChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.primaryLight,
+    borderWidth: 1,
+    borderColor: '#C7D7F5',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  newOrderChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  newOrderRouteCard: {
+    backgroundColor: '#F5F8FF',
+    borderRadius: 14,
+    padding: 14,
+    gap: 0,
+    borderWidth: 1,
+    borderColor: '#DDE6F3',
+  },
+  routeRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingVertical: 4,
+  },
+  routeDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginTop: 4,
+  },
+  routeLine: {
+    width: 2,
+    height: 18,
+    backgroundColor: '#DDE6F3',
+    marginLeft: 5,
+  },
+  routeInfo: {
+    flex: 1,
+  },
+  routeLabel: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: colors.textTertiary,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  routeValue: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0D1B2A',
+    marginTop: 1,
+  },
+  routeAddress: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  acceptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: colors.success,
+    paddingVertical: 16,
+    borderRadius: 18,
+    elevation: 4,
+    shadowColor: colors.success,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+  },
+  acceptBtnDisabled: {
+    opacity: 0.6,
+  },
+  acceptBtnText: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#FFF',
+    letterSpacing: 0.3,
+  },
+
+  // ── Center panels (waiting / done) ──
+  centerPanel: {
+    alignItems: 'center',
+    paddingVertical: 16,
+    gap: 10,
+  },
+  waitTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#0D1B2A',
+    textAlign: 'center',
+  },
+  waitSub: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 19,
+    paddingHorizontal: 16,
+  },
+  freeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    marginTop: 6,
+  },
+  freeBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.success,
+  },
+  doneTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: colors.success,
+    textAlign: 'center',
+  },
+  doneSub: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 19,
+  },
+  doneBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 28,
+    paddingVertical: 13,
+    borderRadius: 14,
+    marginTop: 6,
+  },
+  doneBtnText: {
+    color: '#FFF',
+    fontWeight: '800',
+    fontSize: 14,
+  },
+
+  // ── No GPS bar ──
+  noGpsBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: '#FEF9C3',
+    marginHorizontal: 16,
+    marginTop: 4,
+    marginBottom: 2,
+    padding: 10,
+    borderRadius: 10,
+  },
+  noGpsText: {
+    flex: 1,
+    fontSize: 11,
+    color: '#92400E',
+    fontWeight: '600',
+    lineHeight: 15,
+  },
+
+  // ── COD banner ──
+  codBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#854D0E',
+    marginHorizontal: 16,
+    marginBottom: 6,
+    padding: 11,
+    borderRadius: 12,
+  },
+  codBannerText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
+    flex: 1,
+  },
+
+  // ── Updating overlay ──
+  updatingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(13,27,42,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 999,
+  },
+  updatingText: {
+    color: '#FFF',
+    marginTop: 12,
+    fontWeight: '700',
+    fontSize: 14,
   },
 });
 

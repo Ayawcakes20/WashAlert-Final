@@ -13,9 +13,6 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import * as Location from 'expo-location';
-import { MapView, Marker, PROVIDER_GOOGLE } from '../../components/SafeMap';
-import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { colors } from '../../theme/colors';
@@ -23,14 +20,53 @@ import { Card, Button } from '../../components';
 import { branches, bookings, laundry, createOrder, estimatePrice, payments } from '../../services/api';
 import { GOOGLE_MAPS_API_KEY } from '../../config/env';
 import { getDefaultSavedAddress } from '../../services/savedAddresses';
+import AddressPickerSheet from '../../components/AddressPickerSheet';
 
 const { width } = Dimensions.get('window');
 
+// ─── Constants ───────────────────────────────────────────────────────────────
+
 const SERVICE_MODES = [
-  { id: 'FULL_SERVICE', label: 'Full Service', hint: 'Pickup + Laundry + Delivery', backendServiceType: 'PICKUP_DELIVERY', needsAddress: true },
-  { id: 'DROP_OFF_ONLY', label: 'Drop-off Only', hint: 'You bring and pick up at branch', backendServiceType: 'DROP_OFF', needsAddress: false },
-  { id: 'PICKUP_ONLY', label: 'Pick-up Only', hint: 'Pickup from your address', backendServiceType: 'PICKUP_DELIVERY', needsAddress: true },
+  {
+    id: 'FULL_SERVICE',
+    label: 'Full Service',
+    hint: 'Pickup → Laundry → Delivery back to you',
+    icon: 'washing-machine',
+    backendServiceType: 'PICKUP_DELIVERY',
+    needsAddress: true,
+  },
+  {
+    id: 'DROP_OFF_ONLY',
+    label: 'Drop-off Only',
+    hint: 'You bring & pick up at the branch',
+    icon: 'store-outline',
+    backendServiceType: 'DROP_OFF',
+    needsAddress: false,
+  },
+  {
+    id: 'PICKUP_ONLY',
+    label: 'Pickup Only',
+    hint: 'We pick up — you get at branch',
+    icon: 'truck-outline',
+    backendServiceType: 'PICKUP_DELIVERY',
+    needsAddress: true,
+  },
 ];
+
+const SERVICE_ICON_BY_ID = {
+  wash: 'washing-machine',
+  dry: 'tumble-dryer',
+  'ecowash-full': 'leaf',
+  'basic-full-7': 'tshirt-crew-outline',
+  'basic-full-8': 'tshirt-crew-outline',
+  'premium-full-7': 'star-four-points-outline',
+  'premium-full-8': 'star-four-points-outline',
+  handwash: 'hand-wash',
+};
+
+const STEP_LABELS = ['Branch', 'Address', 'Schedule', 'Prefs', 'Pay', 'Confirm'];
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const formatDateChipLabel = (date) =>
   date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -46,17 +82,6 @@ const createDateOptions = (days = 7) => {
     date.setDate(today.getDate() + idx);
     return date;
   });
-};
-
-const SERVICE_ICON_BY_ID = {
-  wash: 'washing-machine',
-  dry: 'tumble-dryer',
-  'ecowash-full': 'leaf',
-  'basic-full-7': 'tshirt-crew-outline',
-  'basic-full-8': 'tshirt-crew-outline',
-  'premium-full-7': 'star-four-points-outline',
-  'premium-full-8': 'star-four-points-outline',
-  handwash: 'hand-wash',
 };
 
 const resolveServiceIcon = (service = {}) => {
@@ -76,36 +101,47 @@ const normalizeCheckoutUrl = (payload) => {
   return String(candidate).trim();
 };
 
-const formatAddressFromGeo = (geo = {}, fallbackLat, fallbackLng) => {
-  const parts = [
-    geo.name,
-    geo.street,
-    geo.subregion,
-    geo.city,
-    geo.region,
-  ].filter(Boolean);
-  if (parts.length) return parts.join(', ');
-  return `Pinned location (${fallbackLat.toFixed(6)}, ${fallbackLng.toFixed(6)})`;
+const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 const BookingScreen = ({ route, navigation }) => {
   const insets = useSafeAreaInsets();
   const preSelectedServiceId = route.params?.serviceId;
 
+  // ── Step (1–6) ─────────────────────────────────────────────────────────
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  // Data from API
+  // ── API data ───────────────────────────────────────────────────────────
   const [availableBranches, setAvailableBranches] = useState([]);
   const [availableServices, setAvailableServices] = useState([]);
   const [availableDetergents, setAvailableDetergents] = useState([]);
   const [availableConditioners, setAvailableConditioners] = useState([]);
 
-  // Form State
+  // ── Step 1: Branch & service ───────────────────────────────────────────
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [selectedService, setSelectedService] = useState(null);
   const [serviceMode, setServiceMode] = useState('FULL_SERVICE');
+
+  // ── Step 2: Address ────────────────────────────────────────────────────
+  const [addressSheetVisible, setAddressSheetVisible] = useState(false);
+  const [deliveryAddress, setDeliveryAddress] = useState(null);
+  // deliveryAddress shape: { address, unitFloor, contactName, phone, latitude, longitude, label }
+
+  // ── Step 3: Schedule ───────────────────────────────────────────────────
   const [scheduleDate, setScheduleDate] = useState(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -115,97 +151,48 @@ const BookingScreen = ({ route, navigation }) => {
   const [availableSlots, setAvailableSlots] = useState([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotError, setSlotError] = useState('');
-  const [defaultSavedAddress, setDefaultSavedAddress] = useState(null);
+
+  // ── Step 4: Preferences ────────────────────────────────────────────────
   const [loadKg, setLoadKg] = useState('5');
   const [selectedDetergent, setSelectedDetergent] = useState('None');
   const [selectedConditioner, setSelectedConditioner] = useState('None');
-  const [requestDelivery, setRequestDelivery] = useState(false);
   const [isRush, setIsRush] = useState(false);
   const [specialInstructions, setSpecialInstructions] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('gcash');
-  const [deliveryLocationError, setDeliveryLocationError] = useState('');
-  const [resolvingLocation, setResolvingLocation] = useState(false);
-  const [priceDetails, setPriceDetails] = useState({
-    deliveryPrice: 0,
-    totalPrice: 0
-  });
 
-  const [deliveryCoords, setDeliveryCoords] = useState({
-    latitude: 14.5995,
-    longitude: 120.9842,
-    address: ''
-  });
-  const [mapRegion, setMapRegion] = useState({
-    latitude: 14.5995,
-    longitude: 120.9842,
-    latitudeDelta: 0.005,
-    longitudeDelta: 0.005,
-  });
-  const hasMapsApiKey = !!String(GOOGLE_MAPS_API_KEY || '').trim();
+  // ── Step 5: Payment ────────────────────────────────────────────────────
+  const [paymentMethod, setPaymentMethod] = useState('gcash');
+
+  // ── Price  ─────────────────────────────────────────────────────────────
+  const [priceDetails, setPriceDetails] = useState({ deliveryPrice: 0, totalPrice: 0 });
+
+  // ── Default saved address (for auto-fill hint) ─────────────────────────
+  const [defaultSavedAddress, setDefaultSavedAddress] = useState(null);
+
   const dateOptions = createDateOptions(7);
-  const selectedServiceMode = SERVICE_MODES.find((item) => item.id === serviceMode) || SERVICE_MODES[0];
+  const selectedServiceMode = SERVICE_MODES.find((m) => m.id === serviceMode) || SERVICE_MODES[0];
   const serviceModeNeedsAddress = selectedServiceMode.needsAddress;
 
+  // ── Lifecycle ──────────────────────────────────────────────────────────
   useEffect(() => {
     loadInitialData();
   }, []);
 
   useFocusEffect(
     React.useCallback(() => {
-      const loadAddresses = async () => {
-        const defaultAddress = await getDefaultSavedAddress();
-        setDefaultSavedAddress(defaultAddress);
-      };
-      void loadAddresses();
+      getDefaultSavedAddress().then(setDefaultSavedAddress).catch(() => setDefaultSavedAddress(null));
     }, [])
   );
 
   useEffect(() => {
-    console.log(`GOOGLE MAPS KEY LOADED: ${hasMapsApiKey ? 'YES' : 'NO'}`);
-  }, [hasMapsApiKey]);
-
-  const loadInitialData = async () => {
-    try {
-      setLoading(true);
-      const [branchesRes, servicesRes, prefsRes] = await Promise.all([
-        branches.getAll(),
-        laundry.getServices(),
-        laundry.getPreferences(),
-      ]);
-
-      setAvailableBranches(branchesRes.branches || []);
-      setAvailableServices(servicesRes.services || []);
-      setAvailableDetergents(prefsRes.detergents || []);
-      setAvailableConditioners(prefsRes.conditioners || []);
-
-      // Handle pre-selected service from Home screen
-      if (preSelectedServiceId) {
-        const found = servicesRes.services.find(s => s.id === preSelectedServiceId);
-        if (found) setSelectedService(found);
-      }
-    } catch (error) {
-      console.error('Error loading booking data:', error);
-      Alert.alert('Error', 'Failed to load services. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
+    if (selectedService && loadKg) void handleEstimate();
+  }, [selectedService, loadKg, isRush, selectedDetergent, selectedConditioner, deliveryAddress, selectedBranch]);
 
   useEffect(() => {
-    if (selectedService && loadKg) {
-      handleEstimate();
-    }
-  }, [selectedService, loadKg, isRush, selectedDetergent, selectedConditioner, requestDelivery, selectedBranch]);
-
-  useEffect(() => {
-    setRequestDelivery(serviceModeNeedsAddress);
-    if (!serviceModeNeedsAddress) {
-      setDeliveryLocationError('');
-    }
+    if (!serviceModeNeedsAddress) setDeliveryAddress(null);
   }, [serviceModeNeedsAddress]);
 
   useEffect(() => {
-    const loadAvailableSlots = async () => {
+    const loadSlots = async () => {
       if (!selectedBranch || !scheduleDate) {
         setAvailableSlots([]);
         setScheduleTime(null);
@@ -215,13 +202,12 @@ const BookingScreen = ({ route, navigation }) => {
         setSlotsLoading(true);
         setSlotError('');
         const slots = await bookings.getAvailableSlots(selectedBranch.name, scheduleDate);
-        const openSlots = slots.filter((slot) => slot.available);
-        setAvailableSlots(openSlots);
-        if (!openSlots.find((slot) => slot.label === scheduleTime)) {
-          setScheduleTime(openSlots[0]?.label || null);
+        const open = slots.filter((s) => s.available);
+        setAvailableSlots(open);
+        if (!open.find((s) => s.label === scheduleTime)) {
+          setScheduleTime(open[0]?.label || null);
         }
       } catch (error) {
-        console.warn('[Booking][Schedule] Failed to load slots:', error?.message || error);
         setAvailableSlots([]);
         setScheduleTime(null);
         setSlotError('No available time slots found for this date.');
@@ -229,171 +215,102 @@ const BookingScreen = ({ route, navigation }) => {
         setSlotsLoading(false);
       }
     };
-    void loadAvailableSlots();
+    void loadSlots();
   }, [selectedBranch, scheduleDate]);
 
-  const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
-    const R = 6371; // Radius of the earth in km
-    const dLat = (lat2 - lat1) * (Math.PI / 180);
-    const dLon = (lon2 - lon1) * (Math.PI / 180);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; // Distance in km
+  // ── Data loaders ───────────────────────────────────────────────────────
+  const loadInitialData = async () => {
+    try {
+      setLoading(true);
+      const [branchesRes, servicesRes, prefsRes] = await Promise.all([
+        branches.getAll(),
+        laundry.getServices(),
+        laundry.getPreferences(),
+      ]);
+      setAvailableBranches(branchesRes.branches || []);
+      setAvailableServices(servicesRes.services || []);
+      setAvailableDetergents(prefsRes.detergents || []);
+      setAvailableConditioners(prefsRes.conditioners || []);
+      if (preSelectedServiceId) {
+        const found = servicesRes.services.find((s) => s.id === preSelectedServiceId);
+        if (found) setSelectedService(found);
+      }
+    } catch {
+      Alert.alert('Error', 'Failed to load services. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
+  // ── Price estimation ───────────────────────────────────────────────────
   const handleEstimate = async () => {
     try {
       let computedDistance = 0;
-      if (requestDelivery) {
-        if (selectedBranch?.latitude && deliveryCoords?.latitude) {
-          computedDistance = getDistanceFromLatLonInKm(
-            selectedBranch.latitude,
-            selectedBranch.longitude,
-            deliveryCoords.latitude,
-            deliveryCoords.longitude
-          );
-        } else {
-          computedDistance = selectedBranch?.distance || 0;
-        }
+      if (serviceModeNeedsAddress && deliveryAddress?.latitude && selectedBranch?.latitude) {
+        computedDistance = getDistanceFromLatLonInKm(
+          selectedBranch.latitude,
+          selectedBranch.longitude,
+          deliveryAddress.latitude,
+          deliveryAddress.longitude
+        );
+      } else if (serviceModeNeedsAddress) {
+        computedDistance = selectedBranch?.distance || 0;
       }
-
       const estimation = await estimatePrice({
         branch: selectedBranch?.name || 'Main',
         serviceName: selectedService?.name,
         weightKg: parseFloat(loadKg) || 0,
-        isRush: isRush,
+        isRush,
         detergent: selectedDetergent,
         fabcon: selectedConditioner,
-        distanceKm: computedDistance
+        distanceKm: computedDistance,
       });
-      setPriceDetails({
-        ...estimation,
-        calculatedDistance: computedDistance
-      });
-    } catch (error) {
-      console.error('Estimation failed:', error);
+      setPriceDetails({ ...estimation, calculatedDistance: computedDistance });
+    } catch {
+      // silent
     }
   };
 
-  const calculateTotal = () => {
-    return priceDetails.totalPrice;
-  };
+  // ── Navigation guards ──────────────────────────────────────────────────
 
-  const isDeliveryLocationValid = () => {
-    if (!requestDelivery) return true;
-    const hasCoords =
-      Number.isFinite(Number(deliveryCoords?.latitude)) &&
-      Number.isFinite(Number(deliveryCoords?.longitude));
-    const hasAddress = !!String(deliveryCoords?.address || '').trim();
-    return hasCoords && hasAddress;
-  };
-
-  const syncAddressFromCoordinates = async (latitude, longitude, reason = 'unknown') => {
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
-    try {
-      setResolvingLocation(true);
-      console.log(`[Booking][Location] Resolving address from coordinates reason=${reason} lat=${latitude} lng=${longitude}`);
-      const reverse = await Location.reverseGeocodeAsync({ latitude, longitude });
-      const first = Array.isArray(reverse) && reverse.length ? reverse[0] : null;
-      const resolvedAddress = formatAddressFromGeo(first || {}, latitude, longitude);
-      setDeliveryCoords((prev) => ({
-        ...prev,
-        latitude,
-        longitude,
-        address: resolvedAddress,
-      }));
-      setDeliveryLocationError('');
-      console.log('[Booking][Location] Address resolved=', resolvedAddress);
-    } catch (error) {
-      console.warn('[Booking][Location] Reverse geocode failed:', error?.message || error);
-      setDeliveryCoords((prev) => ({
-        ...prev,
-        latitude,
-        longitude,
-        address: prev?.address || `Pinned location (${latitude.toFixed(6)}, ${longitude.toFixed(6)})`,
-      }));
-    } finally {
-      setResolvingLocation(false);
+  /**
+   * Step 1 → 2:  Branch + service must be selected.
+   * For address-needing modes, Step 2 shows address picker.
+   * For DROP_OFF, no address needed → skip to Step 3.
+   */
+  const handleStep1Continue = () => {
+    if (!selectedBranch || !selectedService) return;
+    if (serviceModeNeedsAddress) {
+      setStep(2); // show address step
+    } else {
+      setStep(3); // skip address for drop-off
     }
   };
 
-  const ensureAddressGateBeforePayment = () => {
-    if (!serviceModeNeedsAddress) return true;
-    if (defaultSavedAddress) return true;
-
-    Alert.alert(
-      'Saved Address Required',
-      'Add and set a default address before continuing to payment.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Manage Addresses',
-          onPress: () => navigation.navigate('SavedAddresses'),
-        },
-      ]
-    );
-    return false;
-  };
-
-  const applyDefaultSavedAddress = async () => {
-    if (!defaultSavedAddress?.address) {
-      Alert.alert('No Default Address', 'Please set a default address first.');
+  /**
+   * Step 2 → 3: Address must be set.
+   * Opens address sheet if missing.
+   */
+  const handleStep2Continue = () => {
+    if (!deliveryAddress?.address) {
+      setAddressSheetVisible(true);
       return;
     }
-    try {
-      console.log('[Booking][Address] Applying default saved address label=', defaultSavedAddress.label);
-      const geocoded = await Location.geocodeAsync(defaultSavedAddress.address);
-      const first = geocoded?.[0];
-      if (first?.latitude && first?.longitude) {
-        setMapRegion((prev) => ({
-          ...prev,
-          latitude: first.latitude,
-          longitude: first.longitude,
-        }));
-        await syncAddressFromCoordinates(first.latitude, first.longitude, 'default_saved_address');
-      } else {
-        setDeliveryCoords((prev) => ({
-          ...prev,
-          address: defaultSavedAddress.address,
-        }));
-        setDeliveryLocationError('');
-      }
-    } catch (error) {
-      console.warn('[Booking][Address] Failed to geocode default saved address:', error?.message || error);
-      setDeliveryCoords((prev) => ({
-        ...prev,
-        address: defaultSavedAddress.address,
-      }));
-      setDeliveryLocationError('');
-    }
+    setStep(3);
   };
 
-  const handleStep3Continue = () => {
-    if (!ensureAddressGateBeforePayment()) return;
-    if (serviceModeNeedsAddress && !deliveryCoords?.address && defaultSavedAddress?.address) {
-      void applyDefaultSavedAddress();
-      return;
-    }
-    if (!isDeliveryLocationValid()) {
-      setDeliveryLocationError('Delivery location is required. Please pin or search your delivery address before continuing.');
-      return;
-    }
-    setDeliveryLocationError('');
-    setStep(4);
+  const handleAddressConfirmed = (addr) => {
+    setAddressSheetVisible(false);
+    setDeliveryAddress(addr);
   };
 
+  // ── Booking confirm ────────────────────────────────────────────────────
   const handleConfirmBooking = async () => {
-    if (!ensureAddressGateBeforePayment()) {
-      setStep(3);
-      return;
-    }
-    if (!isDeliveryLocationValid()) {
-      setStep(3);
-      setDeliveryLocationError('Delivery location is required before placing this booking.');
-      Alert.alert('Delivery Location Required', 'Please provide a valid delivery location before placing your booking.');
+    if (serviceModeNeedsAddress && !deliveryAddress?.address) {
+      Alert.alert('Address Required', 'Please set a pickup/delivery address before placing your booking.', [
+        { text: 'Set Address', onPress: () => { setStep(2); setAddressSheetVisible(true); } },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
       return;
     }
 
@@ -406,55 +323,50 @@ const BookingScreen = ({ route, navigation }) => {
         serviceMode,
         serviceModeLabel: selectedServiceMode.label,
         serviceTypeBackend: selectedServiceMode.backendServiceType,
-        scheduleDate: scheduleDate,
-        scheduleTime: scheduleTime,
+        scheduleDate,
+        scheduleTime,
         loadKg: parseFloat(loadKg),
         detergent: selectedDetergent,
         conditioner: selectedConditioner,
         delivery: serviceModeNeedsAddress,
-        isRush: isRush,
+        isRush,
         instructions: specialInstructions,
-        paymentMethod: paymentMethod,
+        paymentMethod,
         total: priceDetails.totalPrice,
         serviceName: selectedService.name,
-        distanceKm: priceDetails.calculatedDistance || (requestDelivery ? (selectedBranch?.distance || 0) : 0),
-        deliveryLatitude: serviceModeNeedsAddress ? deliveryCoords.latitude : null,
-        deliveryLongitude: serviceModeNeedsAddress ? deliveryCoords.longitude : null,
-        deliveryAddress: serviceModeNeedsAddress ? deliveryCoords.address : null,
+        distanceKm: priceDetails.calculatedDistance || 0,
+        // Address fields — all from deliveryAddress obj
+        deliveryLatitude: deliveryAddress?.latitude ?? null,
+        deliveryLongitude: deliveryAddress?.longitude ?? null,
+        deliveryAddress: deliveryAddress?.address ?? null,
+        deliveryUnitFloor: deliveryAddress?.unitFloor ?? null,
+        deliveryContactName: deliveryAddress?.contactName ?? null,
+        deliveryContactPhone: deliveryAddress?.phone ?? null,
         branchLatitude: selectedBranch?.latitude || null,
         branchLongitude: selectedBranch?.longitude || null,
       };
 
       const result = await createOrder(orderData);
       const trackingNumber = String(result?.trackingNumber || '').trim();
-      if (!trackingNumber) {
-        throw new Error('Booking created without a tracking number, cannot continue to payment.');
-      }
-      
+      if (!trackingNumber) throw new Error('Booking created without a tracking number.');
+
       if (paymentMethod === 'gcash') {
         try {
-          console.log('[Booking][Payment] Initiating GCash checkout tracking=', trackingNumber);
           const checkoutPayload = await payments.initiateGcashCheckout(trackingNumber);
           const checkoutUrl = normalizeCheckoutUrl(checkoutPayload);
           if (!checkoutUrl || !/^https?:\/\//i.test(checkoutUrl)) {
-            console.error('[Booking][Payment] Invalid checkout URL payload=', checkoutPayload);
             throw new Error('Missing checkout URL from backend payment response.');
           }
-          console.log('[Booking][Payment] Opening checkout URL', checkoutUrl);
           try {
-            const browserResult = await WebBrowser.openBrowserAsync(checkoutUrl);
-            console.log('[Booking][Payment] Browser launch result type=', browserResult?.type || 'unknown');
-          } catch (openError) {
-            console.warn('[Booking][Payment] WebBrowser launch failed, trying Linking.openURL');
+            await WebBrowser.openBrowserAsync(checkoutUrl);
+          } catch {
             const canOpen = await Linking.canOpenURL(checkoutUrl);
-            if (!canOpen) throw openError;
-            await Linking.openURL(checkoutUrl);
+            if (canOpen) await Linking.openURL(checkoutUrl);
           }
         } catch (payError) {
-          console.error('[Booking][Payment] Payment initiation failed:', payError);
           Alert.alert(
             'Payment Error',
-            'Booking was created but we could not open the payment gateway. Please go to Orders to pay.',
+            'Booking was created but we could not open the payment gateway. Go to Orders to pay.',
             [{ text: 'OK', onPress: () => navigation.navigate('Orders') }]
           );
           return;
@@ -462,112 +374,83 @@ const BookingScreen = ({ route, navigation }) => {
       }
 
       Alert.alert(
-        'Booking Confirmed!',
-        `Your tracking number is ${trackingNumber}. You can view the status in the Orders tab.`,
-        [{ text: 'View Order', onPress: () => {
-          setStep(1);
-          navigation.navigate('Orders');
-        }}]
+        '🧺 Booking Confirmed!',
+        `Tracking #: ${trackingNumber}\n\nWe'll pick up from:\n${deliveryAddress?.address || 'your drop-off location'}`,
+        [{ text: 'View Order', onPress: () => { setStep(1); navigation.navigate('Orders'); } }]
       );
     } catch (error) {
-      console.error('Booking failed:', error);
       Alert.alert('Error', 'Failed to place booking. Please try again.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleUseCurrentLocation = async () => {
-    try {
-      console.log('[Booking][Location] Use current location requested');
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission denied', 'Allow location access to use this feature.');
-        return;
-      }
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const newCoords = {
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-      };
-      setMapRegion((prev) => ({ ...prev, ...newCoords }));
-      await syncAddressFromCoordinates(newCoords.latitude, newCoords.longitude, 'current_location');
-      setDeliveryLocationError('');
-    } catch (e) {
-      Alert.alert('Error', 'Unable to fetch current location.');
-    }
-  };
-
+  // ── Loading state ──────────────────────────────────────────────────────
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading services...</Text>
+        <Text style={styles.loadingText}>Loading services…</Text>
       </View>
     );
   }
 
+  // ── Step indicator ─────────────────────────────────────────────────────
   const renderStepIndicator = () => (
     <View style={styles.indicatorContainer}>
-      {['Details', 'Schedule', 'Prefs', 'Pay', 'Confirm'].map((label, i) => (
-        <View key={label} style={styles.indicatorItem}>
-          <View style={[
-            styles.indicatorCircle,
-            step >= i + 1 ? styles.indicatorActive : styles.indicatorInactive
-          ]}>
-            {step > i + 1 ? (
-              <Ionicons name="checkmark" size={14} color="#FFF" />
-            ) : (
-              <Text style={[styles.indicatorText, step >= i + 1 && styles.indicatorTextActive]}>{i + 1}</Text>
-            )}
+      {STEP_LABELS.map((label, i) => {
+        const active = step >= i + 1;
+        const done = step > i + 1;
+        return (
+          <View key={label} style={styles.indicatorItem}>
+            <View style={[styles.indicatorCircle, active ? styles.indicatorActive : styles.indicatorInactive]}>
+              {done
+                ? <Ionicons name="checkmark" size={12} color="#FFF" />
+                : <Text style={[styles.indicatorText, active && styles.indicatorTextActive]}>{i + 1}</Text>}
+            </View>
+            <Text style={[styles.indicatorLabel, active && styles.indicatorLabelActive]}>{label}</Text>
           </View>
-          <Text style={[styles.indicatorLabel, step >= i + 1 && styles.indicatorLabelActive]}>{label}</Text>
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 
+  // ── Render ─────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
+      {/* Address Picker Modal */}
+      <AddressPickerSheet
+        visible={addressSheetVisible}
+        title={serviceMode === 'PICKUP_ONLY' ? 'Set Pickup Address' : 'Set Pickup & Delivery Address'}
+        onConfirm={handleAddressConfirmed}
+        onClose={() => setAddressSheetVisible(false)}
+        initialValue={deliveryAddress}
+      />
+
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingBottom: 150 + insets.bottom }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.screenTitle}>New Booking</Text>
-        
+        {/* Booking Header */}
+        <View style={styles.bookingHeader}>
+          <View>
+            <Text style={styles.screenTitle}>New Booking</Text>
+            <Text style={styles.screenSubtitle}>Step {step} of {STEP_LABELS.length}</Text>
+          </View>
+          <View style={styles.stepCountChip}>
+            <Text style={styles.stepCountText}>{step}/{STEP_LABELS.length}</Text>
+          </View>
+        </View>
         {renderStepIndicator()}
 
-        {/* STEP 1: BRANCH & SERVICE */}
+        {/* ══════════════════════════════════════════════════════════════════
+            STEP 1 — Branch & Service
+        ══════════════════════════════════════════════════════════════════ */}
         {step === 1 && (
           <View style={styles.stepContent}>
-            <Text style={styles.sectionTitle}>Select Branch</Text>
-            <View style={styles.branchGrid}>
-              {availableBranches.map((branch) => (
-                <TouchableOpacity
-                  key={branch.id}
-                  style={[
-                    styles.branchCard,
-                    selectedBranch?.id === branch.id && styles.selectedCard
-                  ]}
-                  onPress={() => setSelectedBranch(branch)}
-                >
-                  <Ionicons 
-                    name="location-outline"
-                    size={20} 
-                    color={selectedBranch?.id === branch.id ? colors.primary : colors.textSecondary} 
-                  />
-                  <View style={styles.branchInfo}>
-                    <Text style={styles.branchName}>{branch.name}</Text>
-                    <Text style={styles.branchAddress} numberOfLines={1}>{branch.address}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={styles.sectionTitle}>Service Type</Text>
+            {/* Service Mode */}
+            <Text style={styles.sectionTitle}>How can we help?</Text>
             <View style={styles.modeGrid}>
               {SERVICE_MODES.map((mode) => (
                 <TouchableOpacity
@@ -575,107 +458,316 @@ const BookingScreen = ({ route, navigation }) => {
                   style={[styles.modeCard, serviceMode === mode.id && styles.modeCardActive]}
                   onPress={() => setServiceMode(mode.id)}
                 >
-                  <Text style={[styles.modeTitle, serviceMode === mode.id && styles.modeTitleActive]}>{mode.label}</Text>
-                  <Text style={[styles.modeHint, serviceMode === mode.id && styles.modeHintActive]}>{mode.hint}</Text>
+                  <View style={styles.modeCardLeft}>
+                    <View style={[styles.modeIconBox, serviceMode === mode.id && styles.modeIconBoxActive]}>
+                      <MaterialCommunityIcons
+                        name={mode.icon}
+                        size={20}
+                        color={serviceMode === mode.id ? '#FFF' : colors.primary}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.modeTitle, serviceMode === mode.id && styles.modeTitleActive]}>
+                        {mode.label}
+                      </Text>
+                      <Text style={[styles.modeHint, serviceMode === mode.id && styles.modeHintActive]}>
+                        {mode.hint}
+                      </Text>
+                    </View>
+                  </View>
+                  {serviceMode === mode.id && (
+                    <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                  )}
                 </TouchableOpacity>
               ))}
             </View>
 
+            {/* Branch */}
+            <Text style={styles.sectionTitle}>Select Branch</Text>
+            <View style={styles.branchGrid}>
+              {availableBranches.map((branch) => (
+                <TouchableOpacity
+                  key={branch.id}
+                  style={[styles.branchCard, selectedBranch?.id === branch.id && styles.selectedCard]}
+                  onPress={() => setSelectedBranch(branch)}
+                >
+                  <View style={[styles.branchIconBox, selectedBranch?.id === branch.id && styles.branchIconBoxActive]}>
+                    <Ionicons
+                      name="storefront-outline"
+                      size={18}
+                      color={selectedBranch?.id === branch.id ? '#FFF' : colors.primary}
+                    />
+                  </View>
+                  <View style={styles.branchInfo}>
+                    <Text style={[styles.branchName, selectedBranch?.id === branch.id && styles.branchNameActive]}>
+                      {branch.name}
+                    </Text>
+                    <Text style={styles.branchAddress} numberOfLines={1}>
+                      {branch.address}
+                    </Text>
+                  </View>
+                  {selectedBranch?.id === branch.id && (
+                    <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Service / Package */}
             <Text style={styles.sectionTitle}>Laundry Package</Text>
             <View style={styles.serviceGrid}>
               {availableServices.map((service) => (
                 <TouchableOpacity
                   key={service.id}
-                  style={[
-                    styles.serviceCard,
-                    selectedService?.id === service.id && styles.selectedServiceCard
-                  ]}
+                  style={[styles.serviceCard, selectedService?.id === service.id && styles.selectedServiceCard]}
                   onPress={() => setSelectedService(service)}
                 >
-                  <MaterialCommunityIcons 
-                    name={resolveServiceIcon(service)} 
-                    size={28} 
-                    color={selectedService?.id === service.id ? colors.white : colors.primary} 
+                  <MaterialCommunityIcons
+                    name={resolveServiceIcon(service)}
+                    size={28}
+                    color={selectedService?.id === service.id ? '#FFF' : colors.primary}
                   />
-                  <Text style={[
-                    styles.serviceName,
-                    selectedService?.id === service.id && styles.selectedCardText
-                  ]}>{service.name}</Text>
-                  <Text style={[
-                    styles.servicePrice,
-                    selectedService?.id === service.id && styles.selectedCardPrice
-                  ]}>₱{service.price}/kg</Text>
+                  <Text style={[styles.serviceName, selectedService?.id === service.id && styles.selectedCardText]}>
+                    {service.name}
+                  </Text>
+                  <Text style={[styles.servicePrice, selectedService?.id === service.id && styles.selectedCardPrice]}>
+                    ₱{service.price}/kg
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
-            <Button 
-              title="Continue" 
-              onPress={() => setStep(2)} 
+            <Button
+              title="Continue"
+              onPress={handleStep1Continue}
               disabled={!selectedBranch || !selectedService}
               style={styles.nextButton}
             />
           </View>
         )}
 
-        {/* STEP 2: SELECT SCHEDULE */}
+        {/* ══════════════════════════════════════════════════════════════════
+            STEP 2 — Address (only shown if service mode needs it)
+        ══════════════════════════════════════════════════════════════════ */}
         {step === 2 && (
           <View style={styles.stepContent}>
-            <Text style={styles.sectionTitle}>Select Date</Text>
-            <Text style={styles.scheduleSummaryText}>{formatDateSummary(scheduleDate)}</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateSelector}>
-              {dateOptions.map((dateOption) => {
-                const isSelected = scheduleDate.toDateString() === dateOption.toDateString();
-                return (
-                  <TouchableOpacity
-                    key={dateOption.toISOString()}
-                    style={[styles.dateBtn, isSelected && styles.dateBtnActive]}
-                    onPress={() => setScheduleDate(dateOption)}
-                  >
-                    <Text style={[styles.dateBtnText, isSelected && styles.dateBtnTextActive]}>
-                      {formatDateChipLabel(dateOption)}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+            <Text style={styles.sectionTitle}>
+              {serviceMode === 'PICKUP_ONLY' ? 'Where should we pick up?' : 'Pickup & Delivery Address'}
+            </Text>
+            <Text style={styles.addressStepHint}>
+              {serviceMode === 'FULL_SERVICE'
+                ? "We'll pick up your laundry here and deliver it back clean to the same address."
+                : "We'll come pick up your laundry from this address."}
+            </Text>
 
-            <Text style={styles.sectionTitle}>Available Time Slots</Text>
-            {slotsLoading ? (
-              <View style={styles.slotLoadingWrap}>
-                <ActivityIndicator size="small" color={colors.primary} />
-                <Text style={styles.slotLoadingText}>Loading available slots...</Text>
-              </View>
-            ) : null}
-            {!!slotError && !slotsLoading ? <Text style={styles.deliveryErrorText}>{slotError}</Text> : null}
-            <View style={styles.timeGrid}>
-              {availableSlots.map((slot) => (
-                <TouchableOpacity
-                  key={`${slot.slotStartTime}-${slot.slotEndTime}`}
-                  style={[styles.timeCard, scheduleTime === slot.label && styles.selectedTimeCard]}
-                  onPress={() => setScheduleTime(slot.label)}
-                >
-                  <Ionicons 
-                    name="time-outline" 
-                    size={20} 
-                    color={scheduleTime === slot.label ? colors.primary : colors.textSecondary} 
-                  />
-                  <Text style={[styles.timeText, scheduleTime === slot.label && styles.selectedTimeText]}>
-                    {slot.label}
-                  </Text>
-                  {scheduleTime === slot.label && <Ionicons name="checkmark-circle" size={18} color={colors.primary} />}
-                </TouchableOpacity>
-              ))}
+            {/* Branch context pill */}
+            <View style={styles.branchContextPill}>
+              <Ionicons name="storefront-outline" size={14} color={colors.accent} />
+              <Text style={styles.branchContextText}>
+                Processing at: <Text style={{ fontWeight: '700' }}>{selectedBranch?.name}</Text>
+              </Text>
             </View>
-            {!slotsLoading && !availableSlots.length ? (
-              <Text style={styles.slotHintText}>No open slots for this date. Pick another day.</Text>
-            ) : null}
+
+            {/* Address card — empty or filled */}
+            {!deliveryAddress ? (
+              <TouchableOpacity
+                style={styles.addressEmptyCard}
+                onPress={() => setAddressSheetVisible(true)}
+                activeOpacity={0.75}
+              >
+                <View style={styles.addressEmptyIconBox}>
+                  <Ionicons name="location-outline" size={28} color={colors.primary} />
+                </View>
+                <Text style={styles.addressEmptyTitle}>Set Your Address</Text>
+                <Text style={styles.addressEmptyHint}>
+                  Search, use GPS, pin on map, or pick from saved addresses
+                </Text>
+                <View style={styles.addressEmptyBtn}>
+                  <Text style={styles.addressEmptyBtnText}>Choose Address</Text>
+                  <Ionicons name="arrow-forward" size={14} color="#FFF" />
+                </View>
+
+                {/* Quick hint for saved address */}
+                {defaultSavedAddress && (
+                  <View style={styles.savedHintBanner}>
+                    <Ionicons name="bookmark-outline" size={13} color={colors.accent} />
+                    <Text style={styles.savedHintText} numberOfLines={1}>
+                      Saved: {defaultSavedAddress.label} — {defaultSavedAddress.address}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.addressFilledCard}>
+                <View style={styles.addressFilledHeader}>
+                  <View style={styles.addressFilledIconBox}>
+                    <Ionicons name="location" size={18} color="#FFF" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.addressFilledLabel}>{deliveryAddress.label || 'Delivery Address'}</Text>
+                    <Text style={styles.addressFilledMain}>{deliveryAddress.address}</Text>
+                    {deliveryAddress.unitFloor
+                      ? <Text style={styles.addressFilledSub}>{deliveryAddress.unitFloor}</Text>
+                      : null}
+                    {deliveryAddress.contactName
+                      ? (
+                        <Text style={styles.addressFilledSub}>
+                          {deliveryAddress.contactName}
+                          {deliveryAddress.phone ? `  ·  ${deliveryAddress.phone}` : ''}
+                        </Text>
+                      ) : null}
+                  </View>
+                </View>
+
+                {/* Service mode flow reminder */}
+                {serviceMode === 'FULL_SERVICE' && (
+                  <View style={styles.flowIndicator}>
+                    <View style={styles.flowStep}>
+                      <Ionicons name="home" size={12} color={colors.primary} />
+                      <Text style={styles.flowText}>Your Address</Text>
+                    </View>
+                    <View style={styles.flowArrow}>
+                      <Ionicons name="arrow-forward" size={12} color={colors.textTertiary} />
+                    </View>
+                    <View style={styles.flowStep}>
+                      <Ionicons name="storefront-outline" size={12} color={colors.accent} />
+                      <Text style={styles.flowText}>{selectedBranch?.name || 'Branch'}</Text>
+                    </View>
+                    <View style={styles.flowArrow}>
+                      <Ionicons name="arrow-forward" size={12} color={colors.textTertiary} />
+                    </View>
+                    <View style={styles.flowStep}>
+                      <Ionicons name="home" size={12} color={colors.primary} />
+                      <Text style={styles.flowText}>Back to You</Text>
+                    </View>
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={styles.changeAddressBtn}
+                  onPress={() => setAddressSheetVisible(true)}
+                >
+                  <Ionicons name="pencil-outline" size={14} color={colors.primary} />
+                  <Text style={styles.changeAddressBtnText}>Change Address</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             <View style={styles.buttonRow}>
               <Button title="Back" variant="ghost" onPress={() => setStep(1)} style={styles.halfButton} />
               <Button
                 title="Continue"
-                onPress={() => setStep(3)}
+                onPress={handleStep2Continue}
+                disabled={!deliveryAddress}
+                style={styles.halfButton}
+              />
+            </View>
+          </View>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════════
+            STEP 3 — Schedule
+        ══════════════════════════════════════════════════════════════════ */}
+        {step === 3 && (
+          <View style={styles.stepContent}>
+            {/* ── Premium calendar header ── */}
+            <View style={styles.calendarHeader}>
+              <View>
+                <Text style={styles.calendarMonthLabel}>
+                  {scheduleDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                </Text>
+                <Text style={styles.calendarDayLabel}>
+                  {scheduleDate.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric' })}
+                </Text>
+              </View>
+              <View style={styles.calendarBadge}>
+                <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+              </View>
+            </View>
+
+            {/* ── Week strip: day name + date circle ── */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.weekStrip}
+            >
+              {dateOptions.map((dateOption) => {
+                const isSelected = scheduleDate.toDateString() === dateOption.toDateString();
+                const isToday = new Date().toDateString() === dateOption.toDateString();
+                const dayName = dateOption.toLocaleDateString('en-US', { weekday: 'short' });
+                const dayNum = dateOption.getDate();
+                return (
+                  <TouchableOpacity
+                    key={dateOption.toISOString()}
+                    style={styles.dayColumn}
+                    onPress={() => setScheduleDate(dateOption)}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[styles.dayName, isSelected && styles.dayNameActive]}>{dayName}</Text>
+                    <View style={[
+                      styles.dayCircle,
+                      isSelected && styles.dayCircleActive,
+                    ]}>
+                      <Text style={[styles.dayNum, isSelected && styles.dayNumActive]}>{dayNum}</Text>
+                    </View>
+                    {isToday && <View style={[styles.todayDot, isSelected && styles.todayDotActive]} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* ── Time slots ── */}
+            <Text style={styles.sectionTitle}>Available Time Slots</Text>
+            {slotsLoading ? (
+              <View style={styles.slotLoadingWrap}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={styles.slotLoadingText}>Loading available slots…</Text>
+              </View>
+            ) : null}
+            {!!slotError && !slotsLoading ? <Text style={styles.errorText}>{slotError}</Text> : null}
+            <View style={styles.timeGrid2Col}>
+              {availableSlots.map((slot) => {
+                const isTimeSelected = scheduleTime === slot.label;
+                return (
+                  <TouchableOpacity
+                    key={`${slot.slotStartTime}-${slot.slotEndTime}`}
+                    style={[styles.timeCard2, isTimeSelected && styles.selectedTimeCard2]}
+                    onPress={() => setScheduleTime(slot.label)}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons
+                      name="time-outline"
+                      size={18}
+                      color={isTimeSelected ? '#FFF' : colors.primary}
+                    />
+                    <Text style={[styles.timeText2, isTimeSelected && styles.selectedTimeText2]}>
+                      {slot.label}
+                    </Text>
+                    {isTimeSelected && (
+                      <Ionicons name="checkmark-circle" size={16} color="#FFF" style={{ marginLeft: 'auto' }} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            {!slotsLoading && !availableSlots.length ? (
+              <View style={styles.noSlotBox}>
+                <Ionicons name="calendar-clear-outline" size={32} color={colors.textTertiary} />
+                <Text style={styles.slotHintText}>No open slots for this date.</Text>
+                <Text style={styles.slotHintSub}>Please pick another day above.</Text>
+              </View>
+            ) : null}
+
+            <View style={styles.buttonRow}>
+              <Button
+                title="Back"
+                variant="ghost"
+                onPress={() => (serviceModeNeedsAddress ? setStep(2) : setStep(1))}
+                style={styles.halfButton}
+              />
+              <Button
+                title="Continue"
+                onPress={() => setStep(4)}
                 disabled={!scheduleTime || slotsLoading}
                 style={styles.halfButton}
               />
@@ -683,8 +775,10 @@ const BookingScreen = ({ route, navigation }) => {
           </View>
         )}
 
-        {/* STEP 3: LOAD SIZE & PREFERENCES */}
-        {step === 3 && (
+        {/* ══════════════════════════════════════════════════════════════════
+            STEP 4 — Preferences (load, detergent, conditioner, rush)
+        ══════════════════════════════════════════════════════════════════ */}
+        {step === 4 && (
           <View style={styles.stepContent}>
             <Text style={styles.sectionTitle}>Load Size (kg)</Text>
             <View style={styles.kgInputContainer}>
@@ -697,7 +791,7 @@ const BookingScreen = ({ route, navigation }) => {
               />
               <Text style={styles.kgUnit}>kg</Text>
             </View>
-            <Text style={styles.kgTip}>Standard load is 5-8 kg per machine.</Text>
+            <Text style={styles.kgTip}>Standard load is 5–8 kg per machine.</Text>
 
             <Text style={styles.sectionTitle}>Detergent</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
@@ -724,22 +818,13 @@ const BookingScreen = ({ route, navigation }) => {
                 </TouchableOpacity>
               ))}
             </ScrollView>
-            <View style={styles.deliveryToggleRow}>
-              <View>
-                <Text style={styles.toggleTitle}>Selected Mode: {selectedServiceMode.label}</Text>
-                <Text style={styles.toggleSub}>{selectedServiceMode.hint}</Text>
-              </View>
-            </View>
 
             <View style={styles.deliveryToggleRow}>
               <View>
                 <Text style={styles.toggleTitle}>Rush Service?</Text>
                 <Text style={styles.toggleSub}>₱150.00 additional fee applies.</Text>
               </View>
-              <TouchableOpacity
-                onPress={() => setIsRush(!isRush)}
-                style={[styles.toggleSwitch, isRush && styles.toggleSwitchActive]}
-              >
+              <TouchableOpacity onPress={() => setIsRush(!isRush)} style={[styles.toggleSwitch, isRush && styles.toggleSwitchActive]}>
                 <View style={[styles.toggleCircle, isRush && styles.toggleCircleActive]} />
               </TouchableOpacity>
             </View>
@@ -751,184 +836,23 @@ const BookingScreen = ({ route, navigation }) => {
               numberOfLines={4}
               value={specialInstructions}
               onChangeText={setSpecialInstructions}
-              placeholder="e.g. Separate whites, use delicate mode..."
+              placeholder="e.g. Separate whites, use delicate mode…"
             />
 
-            {serviceModeNeedsAddress && (
-               <View style={styles.addressSection}>
-                 <Text style={styles.sectionTitle}>Pin Delivery Location</Text>
-                 <Text style={styles.addressTip}>Search for your address or drag the pin to your exact spot.</Text>
-                 {!defaultSavedAddress ? (
-                  <View style={styles.savedAddressGateCard}>
-                    <Text style={styles.savedAddressGateTitle}>Default saved address required</Text>
-                    <Text style={styles.savedAddressGateText}>
-                      Set a default address before continuing to payment.
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.savedAddressActionBtn}
-                      onPress={() => navigation.navigate('SavedAddresses')}
-                    >
-                      <Text style={styles.savedAddressActionText}>Manage Saved Addresses</Text>
-                    </TouchableOpacity>
-                  </View>
-                 ) : (
-                  <View style={styles.savedAddressCard}>
-                    <Text style={styles.savedAddressLabel}>Default Address</Text>
-                    <Text style={styles.savedAddressValue}>
-                      {defaultSavedAddress.label}: {defaultSavedAddress.address}
-                    </Text>
-                    <View style={styles.savedAddressActionRow}>
-                      <TouchableOpacity style={styles.savedAddressActionBtn} onPress={() => void applyDefaultSavedAddress()}>
-                        <Text style={styles.savedAddressActionText}>Use Default Address</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.savedAddressActionBtnAlt} onPress={() => navigation.navigate('SavedAddresses')}>
-                        <Text style={styles.savedAddressActionTextAlt}>Change</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                 )}
-                 {!hasMapsApiKey && (
-                  <Text style={styles.deliveryErrorText}>
-                    Google Maps API key is not configured. Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY to enable autocomplete.
-                  </Text>
-                 )}
-                 
-                 <GooglePlacesAutocomplete
-                    placeholder='Type your neighborhood or street...'
-                    onPress={(data, details = null) => {
-                      if (details) {
-                        const loc = details.geometry.location;
-                        const newCoords = {
-                          latitude: loc.lat,
-                          longitude: loc.lng,
-                          address: data.description
-                        };
-                        console.log('[Booking][Location] Place selected address=', data.description);
-                        console.log('[Booking][Location] Autocomplete result coords=', loc.lat, loc.lng);
-                        setDeliveryCoords(newCoords);
-                        setDeliveryLocationError('');
-                        setMapRegion(prev => ({
-                          ...prev,
-                          latitude: loc.lat,
-                          longitude: loc.lng,
-                        }));
-                      } else {
-                        console.log('[Booking][Location] Autocomplete press without details payload');
-                      }
-                    }}
-                    query={{
-                      key: GOOGLE_MAPS_API_KEY,
-                      language: 'en',
-                      components: 'country:ph',
-                      types: 'geocode',
-                    }}
-                    minLength={2}
-                    debounce={250}
-                    fetchDetails={true}
-                    nearbyPlacesAPI="GooglePlacesSearch"
-                    onFail={(error) => {
-                      console.warn('[Booking][Location] Places autocomplete failed:', error);
-                    }}
-                    onNotFound={() => {
-                      console.log('[Booking][Location] Places autocomplete: no results found');
-                    }}
-                    listViewDisplayed
-                    styles={{
-                      container: styles.autocompleteContainer,
-                      textInput: styles.autocompleteInput,
-                      listView: styles.autocompleteListView,
-                      row: styles.autocompleteRow,
-                    }}
-                    textInputProps={{
-                      placeholderTextColor: colors.textTertiary,
-                      editable: hasMapsApiKey && !!defaultSavedAddress,
-                    }}
-                 />
-
-                  <TouchableOpacity 
-                   style={styles.locationBtn} 
-                   onPress={handleUseCurrentLocation}
-                   disabled={!defaultSavedAddress}
-                  >
-                   <Ionicons name="locate" size={18} color={colors.primary} />
-                   <Text style={styles.locationBtnText}>Use My Current Location</Text>
-                 </TouchableOpacity>
-
-                 <View style={styles.mapPinContainer}>
-                   <MapView
-                     style={styles.minMap}
-                     provider={PROVIDER_GOOGLE}
-                     initialRegion={mapRegion}
-                     region={mapRegion}
-                     onRegionChangeComplete={(region) => setMapRegion(region)}
-                     onMapReady={() =>
-                       console.log(
-                         '[Booking][Map] Map initialized provider=google lat=',
-                         mapRegion.latitude,
-                         'lng=',
-                         mapRegion.longitude
-                       )
-                     }
-                    onPress={(event) => {
-                      const coordinate = event?.nativeEvent?.coordinate;
-                      if (!coordinate) return;
-                      void syncAddressFromCoordinates(
-                        coordinate.latitude,
-                        coordinate.longitude,
-                        'map_press'
-                      );
-                    }}
-                   >
-                     <Marker
-                        coordinate={{
-                          latitude: deliveryCoords.latitude,
-                          longitude: deliveryCoords.longitude,
-                        }}
-                        draggable
-                        onDragEnd={(e) => {
-                          const coordinate = e?.nativeEvent?.coordinate;
-                          if (!coordinate) return;
-                          void syncAddressFromCoordinates(
-                            coordinate.latitude,
-                            coordinate.longitude,
-                            'marker_drag'
-                          );
-                        }}
-                        title="Delivery Spot"
-                        description="Drag to fine-tune"
-                     />
-                   </MapView>
-                   <View style={styles.mapOverlayCenter}>
-                      <Ionicons name="pin" size={40} color={colors.primary} />
-                   </View>
-                 </View>
-                 <Text style={styles.coordsInfo}>
-                    Pos: {deliveryCoords.latitude.toFixed(6)}, {deliveryCoords.longitude.toFixed(6)}
-                 </Text>
-                 <Text style={styles.selectedAddressText}>
-                  {deliveryCoords.address ? `Address: ${deliveryCoords.address}` : 'Address not set yet.'}
-                 </Text>
-                 {resolvingLocation && <Text style={styles.locationResolvingText}>Resolving pinned address...</Text>}
-                 {!!deliveryLocationError && <Text style={styles.deliveryErrorText}>{deliveryLocationError}</Text>}
-               </View>
-            )}
-
             <View style={styles.buttonRow}>
-              <Button title="Back" variant="ghost" onPress={() => setStep(2)} style={styles.halfButton} />
-              <Button
-                title="Continue"
-                onPress={handleStep3Continue}
-                disabled={resolvingLocation}
-                style={styles.halfButton}
-              />
+              <Button title="Back" variant="ghost" onPress={() => setStep(3)} style={styles.halfButton} />
+              <Button title="Continue" onPress={() => setStep(5)} style={styles.halfButton} />
             </View>
           </View>
         )}
 
-        {/* STEP 4: PAYMENT METHOD */}
-        {step === 4 && (
+        {/* ══════════════════════════════════════════════════════════════════
+            STEP 5 — Payment Method
+        ══════════════════════════════════════════════════════════════════ */}
+        {step === 5 && (
           <View style={styles.stepContent}>
             <Text style={styles.sectionTitle}>Choose Payment Method</Text>
+
             <TouchableOpacity
               style={[styles.paymentCard, paymentMethod === 'gcash' && styles.selectedPaymentCard]}
               onPress={() => setPaymentMethod('gcash')}
@@ -939,7 +863,7 @@ const BookingScreen = ({ route, navigation }) => {
                 </View>
                 <View>
                   <Text style={styles.paymentName}>GCash</Text>
-                  <Text style={styles.paymentDesc}>Pay instantly with GCash</Text>
+                  <Text style={styles.paymentDesc}>Pay instantly via GCash</Text>
                 </View>
               </View>
               {paymentMethod === 'gcash' && <Ionicons name="checkmark-circle" size={24} color={colors.primary} />}
@@ -955,54 +879,93 @@ const BookingScreen = ({ route, navigation }) => {
                 </View>
                 <View>
                   <Text style={styles.paymentName}>Cash on Pickup</Text>
-                  <Text style={styles.paymentDesc}>Pay at the branch counter</Text>
+                  <Text style={styles.paymentDesc}>Pay at branch or to rider</Text>
                 </View>
               </View>
               {paymentMethod === 'cash' && <Ionicons name="checkmark-circle" size={24} color={colors.primary} />}
             </TouchableOpacity>
 
             <View style={styles.buttonRow}>
-              <Button title="Back" variant="ghost" onPress={() => setStep(3)} style={styles.halfButton} />
-              <Button title="Review Order" onPress={() => setStep(5)} style={styles.halfButton} />
+              <Button title="Back" variant="ghost" onPress={() => setStep(4)} style={styles.halfButton} />
+              <Button title="Review Order" onPress={() => setStep(6)} style={styles.halfButton} />
             </View>
           </View>
         )}
 
-        {/* STEP 5: REVIEW & CONFIRM */}
-        {step === 5 && (
+        {/* ══════════════════════════════════════════════════════════════════
+            STEP 6 — Review & Confirm
+        ══════════════════════════════════════════════════════════════════ */}
+        {step === 6 && (
           <View style={styles.stepContent}>
             <Card style={styles.receiptCard}>
               <Text style={styles.receiptHeader}>Order Summary</Text>
-              
+
               <View style={styles.receiptRow}>
                 <Text style={styles.receiptLabel}>Branch</Text>
                 <Text style={styles.receiptValue}>{selectedBranch?.name}</Text>
               </View>
-              
               <View style={styles.receiptRow}>
-                <Text style={styles.receiptLabel}>Service</Text>
-                <Text style={styles.receiptValue}>{selectedService?.name}</Text>
-              </View>
-
-              <View style={styles.receiptRow}>
-                <Text style={styles.receiptLabel}>Mode</Text>
+                <Text style={styles.receiptLabel}>Service Mode</Text>
                 <Text style={styles.receiptValue}>{selectedServiceMode.label}</Text>
               </View>
-
+              <View style={styles.receiptRow}>
+                <Text style={styles.receiptLabel}>Package</Text>
+                <Text style={styles.receiptValue}>{selectedService?.name}</Text>
+              </View>
               <View style={styles.receiptRow}>
                 <Text style={styles.receiptLabel}>Schedule</Text>
                 <Text style={styles.receiptValue}>{formatDateSummary(scheduleDate)} | {scheduleTime}</Text>
               </View>
-
               <View style={styles.receiptRow}>
                 <Text style={styles.receiptLabel}>Load Size</Text>
                 <Text style={styles.receiptValue}>{loadKg} kg</Text>
               </View>
-
               <View style={styles.receiptRow}>
                 <Text style={styles.receiptLabel}>Preferences</Text>
                 <Text style={styles.receiptValue}>{selectedDetergent}, {selectedConditioner}</Text>
               </View>
+
+              {/* Address summary */}
+              {serviceModeNeedsAddress && deliveryAddress && (
+                <>
+                  <View style={styles.receiptDivider} />
+                  <View style={styles.receiptAddressBlock}>
+                    <View style={styles.receiptAddressHeader}>
+                      <Ionicons name="location" size={13} color={colors.primary} />
+                      <Text style={styles.receiptAddressTitle}>
+                        {serviceMode === 'FULL_SERVICE' ? 'Pickup & Delivery' : 'Pickup'} Address
+                      </Text>
+                    </View>
+                    <Text style={styles.receiptAddressMain}>{deliveryAddress.address}</Text>
+                    {deliveryAddress.unitFloor
+                      ? <Text style={styles.receiptAddressSub}>{deliveryAddress.unitFloor}</Text>
+                      : null}
+                    {deliveryAddress.contactName
+                      ? <Text style={styles.receiptAddressSub}>Contact: {deliveryAddress.contactName}{deliveryAddress.phone ? `  ·  ${deliveryAddress.phone}` : ''}</Text>
+                      : null}
+
+                    {/* Flow: your address → branch → your address */}
+                    {serviceMode === 'FULL_SERVICE' && (
+                      <View style={[styles.flowIndicator, { marginTop: 10 }]}>
+                        <View style={styles.flowStep}>
+                          <Ionicons name="home" size={11} color={colors.primary} />
+                          <Text style={styles.flowText}>You</Text>
+                        </View>
+                        <Ionicons name="arrow-forward" size={10} color={colors.textTertiary} />
+                        <View style={styles.flowStep}>
+                          <Ionicons name="storefront-outline" size={11} color={colors.accent} />
+                          <Text style={styles.flowText}>{selectedBranch?.name}</Text>
+                        </View>
+                        <Ionicons name="arrow-forward" size={10} color={colors.textTertiary} />
+                        <View style={styles.flowStep}>
+                          <Ionicons name="home" size={11} color={colors.primary} />
+                          <Text style={styles.flowText}>You</Text>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                </>
+              )}
 
               <View style={styles.receiptDivider} />
 
@@ -1010,12 +973,10 @@ const BookingScreen = ({ route, navigation }) => {
                 <Text style={styles.receiptLabel}>Service Fee</Text>
                 <Text style={styles.receiptValue}>₱{priceDetails.servicePrice?.toFixed(2)}</Text>
               </View>
-
               <View style={styles.receiptRow}>
                 <Text style={styles.receiptLabel}>Supplies</Text>
                 <Text style={styles.receiptValue}>₱{priceDetails.suppliesPrice?.toFixed(2)}</Text>
               </View>
-
               {serviceModeNeedsAddress && (
                 <View style={styles.receiptRow}>
                   <Text style={styles.receiptLabel}>Delivery Fee</Text>
@@ -1027,22 +988,22 @@ const BookingScreen = ({ route, navigation }) => {
 
               <View style={styles.receiptTotalRow}>
                 <Text style={styles.totalLabel}>Grand Total</Text>
-                <Text style={styles.totalValue}>₱{calculateTotal().toFixed(2)}</Text>
+                <Text style={styles.totalValue}>₱{(priceDetails.totalPrice || 0).toFixed(2)}</Text>
               </View>
 
               <View style={styles.paymentInfoRow}>
                 <Text style={styles.payInfoLabel}>Payment Method:</Text>
-                <Text style={styles.payInfoValue}>{paymentMethod === 'gcash' ? 'GCash' : 'Cash'}</Text>
+                <Text style={styles.payInfoValue}>{paymentMethod === 'gcash' ? 'GCash' : 'Cash on Pickup'}</Text>
               </View>
             </Card>
 
             <View style={styles.buttonRow}>
-              <Button title="Back" variant="ghost" onPress={() => setStep(4)} style={styles.halfButton} />
-              <Button 
-                title={submitting ? "Processing..." : "Place Booking"} 
-                onPress={handleConfirmBooking} 
+              <Button title="Back" variant="ghost" onPress={() => setStep(5)} style={styles.halfButton} />
+              <Button
+                title={submitting ? 'Processing…' : 'Place Booking'}
+                onPress={handleConfirmBooking}
                 disabled={submitting}
-                style={styles.halfButton} 
+                style={styles.halfButton}
               />
             </View>
           </View>
@@ -1052,627 +1013,293 @@ const BookingScreen = ({ route, navigation }) => {
   );
 };
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
+  container: { flex: 1, backgroundColor: colors.background },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 12, fontSize: 14, color: colors.textSecondary, fontWeight: '500' },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 16 },
+  bookingHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  screenTitle: { fontSize: 22, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
+  screenSubtitle: { fontSize: 13, color: colors.textSecondary, fontWeight: '500', marginTop: 2 },
+  stepCountChip: {
+    backgroundColor: colors.primaryLight, borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 6,
   },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-  },
-  screenTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: colors.text,
-    marginBottom: 24,
-  },
+  stepCountText: { fontSize: 13, fontWeight: '800', color: colors.primary },
+
+  // ── Indicator ────────────────────────────────────────────────────────────
   indicatorContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 32,
-    paddingHorizontal: 4,
+    flexDirection: 'row', justifyContent: 'space-between',
+    marginBottom: 32, paddingHorizontal: 4,
   },
-  indicatorItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
+  indicatorItem: { alignItems: 'center', flex: 1 },
   indicatorCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
+    width: 24, height: 24, borderRadius: 12,
+    justifyContent: 'center', alignItems: 'center', marginBottom: 6,
   },
-  indicatorActive: {
-    backgroundColor: colors.primary,
-  },
-  indicatorInactive: {
-    backgroundColor: colors.border,
-  },
-  indicatorText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: colors.textSecondary,
-  },
-  indicatorTextActive: {
-    color: '#FFF',
-  },
-  indicatorLabel: {
-    fontSize: 8,
-    fontWeight: '600',
-    color: colors.textTertiary,
-  },
-  indicatorLabelActive: {
-    color: colors.primary,
-  },
-  stepContent: {
-    gap: 8,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.text,
-    marginTop: 16,
-    marginBottom: 12,
-  },
-  branchGrid: {
-    gap: 12,
-  },
-  branchCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  selectedCard: {
-    borderColor: colors.primary,
-    backgroundColor: 'rgba(26, 86, 219, 0.04)',
-    borderWidth: 1.5,
-  },
-  branchInfo: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  branchName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  branchAddress: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  modeGrid: {
-    gap: 10,
-  },
+  indicatorActive: { backgroundColor: colors.primary },
+  indicatorInactive: { backgroundColor: colors.border },
+  indicatorText: { fontSize: 10, fontWeight: '700', color: colors.textSecondary },
+  indicatorTextActive: { color: '#FFF' },
+  indicatorLabel: { fontSize: 8, fontWeight: '600', color: colors.textTertiary },
+  indicatorLabelActive: { color: colors.primary },
+
+  stepContent: { gap: 8 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.text, marginTop: 16, marginBottom: 12 },
+
+  // ── Mode cards ───────────────────────────────────────────────────────────
+  modeGrid: { gap: 10 },
   modeCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: colors.card, padding: 14, gap: 12,
   },
-  modeCardActive: {
-    borderColor: colors.primary,
-    backgroundColor: 'rgba(26, 86, 219, 0.05)',
+  modeCardActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
+  modeCardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  modeIconBox: {
+    width: 38, height: 38, borderRadius: 10,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center',
   },
-  modeTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.text,
+  modeIconBoxActive: { backgroundColor: colors.primary },
+  modeTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
+  modeTitleActive: { color: colors.primary },
+  modeHint: { marginTop: 3, fontSize: 12, color: colors.textSecondary },
+  modeHintActive: { color: colors.primary },
+
+  // ── Branch ───────────────────────────────────────────────────────────────
+  branchGrid: { gap: 12 },
+  branchCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    padding: 14, borderRadius: 16,
+    backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.border,
   },
-  modeTitleActive: {
-    color: colors.primary,
+  selectedCard: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
+  branchIconBox: {
+    width: 38, height: 38, borderRadius: 10,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center',
   },
-  modeHint: {
-    marginTop: 3,
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
-  modeHintActive: {
-    color: colors.primary,
-  },
-  serviceGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
+  branchIconBoxActive: { backgroundColor: colors.primary },
+  branchInfo: { flex: 1 },
+  branchName: { fontSize: 14, fontWeight: '700', color: colors.text },
+  branchNameActive: { color: colors.primary },
+  branchAddress: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+
+  // ── Service grid ─────────────────────────────────────────────────────────
+  serviceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   serviceCard: {
-    width: (width - 52) / 2,
-    padding: 20,
-    borderRadius: 20,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
+    width: (width - 52) / 2, padding: 20, borderRadius: 20,
+    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
     alignItems: 'center',
   },
-  selectedServiceCard: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+  selectedServiceCard: { backgroundColor: colors.primary, borderColor: colors.primary },
+  serviceName: { fontSize: 14, fontWeight: '700', color: colors.text, marginTop: 10, marginBottom: 4 },
+  servicePrice: { fontSize: 12, fontWeight: '800', color: colors.accent },
+  selectedCardText: { color: '#FFF' },
+  selectedCardPrice: { color: colors.accentLight },
+
+  nextButton: { marginTop: 32 },
+
+  // ── Address (Step 2) ─────────────────────────────────────────────────────
+  addressStepHint: { fontSize: 13, color: colors.textSecondary, lineHeight: 20, marginBottom: 8 },
+  branchContextPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.accentLight, borderRadius: 20,
+    paddingHorizontal: 12, paddingVertical: 7,
+    alignSelf: 'flex-start',
   },
-  serviceName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.text,
-    marginTop: 10,
-    marginBottom: 4,
+  branchContextText: { fontSize: 12, color: colors.accentDark, fontWeight: '600' },
+
+  addressEmptyCard: {
+    marginTop: 8, borderRadius: 20,
+    borderWidth: 1.5, borderColor: colors.border, borderStyle: 'dashed',
+    backgroundColor: colors.surface, padding: 28,
+    alignItems: 'center', gap: 8,
   },
-  servicePrice: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: colors.accent,
+  addressEmptyIconBox: {
+    width: 56, height: 56, borderRadius: 16,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 4,
   },
-  selectedCardText: {
-    color: '#FFF',
+  addressEmptyTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  addressEmptyHint: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  addressEmptyBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.primary, borderRadius: 12,
+    paddingVertical: 12, paddingHorizontal: 24, marginTop: 8,
   },
-  selectedCardPrice: {
-    color: colors.accentLight,
+  addressEmptyBtnText: { fontSize: 14, fontWeight: '700', color: '#FFF' },
+  savedHintBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.accentLight, borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 9, marginTop: 8,
+    width: '100%',
   },
-  dateSelector: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 16,
+  savedHintText: { fontSize: 12, color: colors.accentDark, fontWeight: '600', flex: 1 },
+
+  addressFilledCard: {
+    marginTop: 8, borderRadius: 18,
+    borderWidth: 1.5, borderColor: colors.primary + '40',
+    backgroundColor: colors.surface, padding: 16, gap: 12,
   },
-  scheduleSummaryText: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginBottom: 10,
+  addressFilledHeader: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+  addressFilledIconBox: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
   },
-  dateBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 16,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
+  addressFilledLabel: { fontSize: 11, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5 },
+  addressFilledMain: { fontSize: 14, fontWeight: '600', color: colors.text, lineHeight: 20, marginTop: 2 },
+  addressFilledSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+
+  // Flow indicator (Customer → Branch → Customer)
+  flowIndicator: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.surfaceVariant, borderRadius: 10,
+    padding: 10, gap: 6, flexWrap: 'nowrap',
   },
-  dateBtnActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+  flowStep: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  flowArrow: {},
+  flowText: { fontSize: 10, fontWeight: '600', color: colors.textSecondary },
+
+  changeAddressBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    alignSelf: 'flex-start',
+    borderWidth: 1, borderColor: colors.border,
+    borderRadius: 10, paddingVertical: 7, paddingHorizontal: 12,
+    backgroundColor: colors.background,
   },
-  dateBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textSecondary,
+  changeAddressBtnText: { fontSize: 12, fontWeight: '700', color: colors.primary },
+
+  // ── Schedule — Premium Calendar ─────────────────────────────────────────
+  calendarHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: 16, marginTop: 8,
   },
-  dateBtnTextActive: {
-    color: '#FFF',
+  calendarMonthLabel: { fontSize: 18, fontWeight: '800', color: colors.text, letterSpacing: -0.3 },
+  calendarDayLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '500', marginTop: 2 },
+  calendarBadge: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center',
   },
-  timeGrid: {
-    gap: 12,
+  weekStrip: { flexDirection: 'row', gap: 8, paddingVertical: 8, marginBottom: 8 },
+  dayColumn: { alignItems: 'center', gap: 6, width: 52 },
+  dayName: { fontSize: 11, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5 },
+  dayNameActive: { color: colors.primary },
+  dayCircle: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5, borderColor: colors.border,
+    alignItems: 'center', justifyContent: 'center',
   },
-  slotLoadingWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
+  dayCircleActive: {
+    backgroundColor: colors.primary, borderColor: colors.primary,
+    shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35, shadowRadius: 8, elevation: 4,
   },
-  slotLoadingText: {
-    fontSize: 12,
-    color: colors.textSecondary,
+  dayNum: { fontSize: 16, fontWeight: '700', color: colors.text },
+  dayNumActive: { color: '#FFF' },
+  todayDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.primary },
+  todayDotActive: { backgroundColor: '#FFF' },
+  slotLoadingWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  slotLoadingText: { fontSize: 12, color: colors.textSecondary },
+  timeGrid2Col: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 4 },
+  timeCard2: {
+    width: (width - 60) / 2,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 14, paddingHorizontal: 14, borderRadius: 14,
+    backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.border,
   },
-  slotHintText: {
-    marginTop: 10,
-    fontSize: 12,
-    color: colors.textSecondary,
+  selectedTimeCard2: {
+    backgroundColor: colors.primary, borderColor: colors.primary,
+    shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25, shadowRadius: 8, elevation: 4,
   },
-  timeCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  selectedTimeCard: {
-    borderColor: colors.primary,
-    backgroundColor: 'rgba(26, 86, 219, 0.02)',
-  },
-  timeText: {
-    flex: 1,
-    marginLeft: 12,
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  selectedTimeText: {
-    color: colors.text,
-    fontWeight: '700',
-  },
-  nextButton: {
-    marginTop: 32,
-  },
+  timeText2: { fontSize: 13, fontWeight: '700', color: colors.text, flex: 1 },
+  selectedTimeText2: { color: '#FFF' },
+  noSlotBox: { alignItems: 'center', paddingVertical: 24, gap: 8 },
+  slotHintText: { fontSize: 14, fontWeight: '700', color: colors.textSecondary },
+  slotHintSub: { fontSize: 12, color: colors.textTertiary },
+
+  // ── Preferences ──────────────────────────────────────────────────────────
   kgInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 20,
-    height: 60,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card,
+    borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 20, height: 60,
   },
-  kgInput: {
-    flex: 1,
-    fontSize: 24,
-    fontWeight: '800',
-    color: colors.text,
-  },
-  kgUnit: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.textTertiary,
-  },
-  kgTip: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 8,
-  },
-  pillScroll: {
-    flexDirection: 'row',
-    marginBottom: 8,
-  },
+  kgInput: { flex: 1, fontSize: 24, fontWeight: '800', color: colors.text },
+  kgUnit: { fontSize: 18, fontWeight: '700', color: colors.textTertiary },
+  kgTip: { fontSize: 12, color: colors.textSecondary, marginTop: 8 },
+  pillScroll: { flexDirection: 'row', marginBottom: 8 },
   pill: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 100,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginRight: 10,
+    paddingHorizontal: 20, paddingVertical: 10, borderRadius: 100,
+    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginRight: 10,
   },
-  pillActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  pillText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  pillTextActive: {
-    color: '#FFF',
-  },
+  pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  pillText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  pillTextActive: { color: '#FFF' },
   deliveryToggleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: 'rgba(22, 189, 202, 0.05)',
-    padding: 20,
-    borderRadius: 20,
-    marginTop: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(22, 189, 202, 0.2)',
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: 'rgba(22, 189, 202, 0.05)', padding: 20,
+    borderRadius: 20, marginTop: 20, borderWidth: 1, borderColor: 'rgba(22, 189, 202, 0.2)',
   },
-  toggleTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  toggleSub: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  addressSection: {
-    marginTop: 24,
-    gap: 12,
-  },
-  addressTip: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  savedAddressCard: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    padding: 12,
-    backgroundColor: colors.card,
-    gap: 8,
-  },
-  savedAddressLabel: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  savedAddressValue: {
-    fontSize: 13,
-    color: colors.text,
-    lineHeight: 18,
-  },
-  savedAddressActionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  savedAddressActionBtn: {
-    borderRadius: 10,
-    backgroundColor: colors.primary,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  savedAddressActionText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  savedAddressActionBtnAlt: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: colors.background,
-  },
-  savedAddressActionTextAlt: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  savedAddressGateCard: {
-    borderWidth: 1,
-    borderColor: colors.warning,
-    backgroundColor: 'rgba(234, 179, 8, 0.08)',
-    borderRadius: 12,
-    padding: 12,
-    gap: 6,
-  },
-  savedAddressGateTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  savedAddressGateText: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    lineHeight: 18,
-  },
-  autocompleteContainer: {
-    flex: 0,
-    zIndex: 10,
-    elevation: 10,
-  },
-  autocompleteInput: {
-    height: 50,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 16,
-    fontSize: 14,
-  },
-  autocompleteListView: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    marginTop: 6,
-    zIndex: 20,
-    elevation: 20,
-  },
-  autocompleteRow: {
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-  },
-  locationBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  locationBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.primary,
-    marginLeft: 8,
-  },
-  mapPinContainer: {
-    height: 200,
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.border,
-    position: 'relative',
-  },
-  minMap: {
-    flex: 1,
-  },
-  mapOverlayCenter: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    marginLeft: -20,
-    marginTop: -40,
-    pointerEvents: 'none',
-  },
-  coordsInfo: {
-    fontSize: 11,
-    color: colors.textTertiary,
-    textAlign: 'right',
-  },
-  selectedAddressText: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    lineHeight: 18,
-  },
-  locationResolvingText: {
-    fontSize: 11,
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  deliveryErrorText: {
-    fontSize: 12,
-    color: colors.error,
-    fontWeight: '600',
-  },
-  toggleSwitch: {
-    width: 52,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: colors.border,
-    padding: 2,
-  },
-  toggleSwitchActive: {
-    backgroundColor: colors.accent,
-  },
-  toggleCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#FFF',
-  },
-  toggleCircleActive: {
-    transform: [{ translateX: 22 }],
-  },
+  toggleTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+  toggleSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  toggleSwitch: { width: 52, height: 30, borderRadius: 15, backgroundColor: colors.border, padding: 2 },
+  toggleSwitchActive: { backgroundColor: colors.accent },
+  toggleCircle: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#FFF' },
+  toggleCircleActive: { transform: [{ translateX: 22 }] },
   textArea: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-    height: 100,
-    fontSize: 14,
-    color: colors.text,
-    textAlignVertical: 'top',
+    backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+    padding: 16, height: 100, fontSize: 14, color: colors.text, textAlignVertical: 'top',
   },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 32,
-  },
-  halfButton: {
-    flex: 1,
-  },
+
+  // ── Payment ───────────────────────────────────────────────────────────────
   paymentCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 20,
-    borderRadius: 20,
-    backgroundColor: colors.card,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    marginBottom: 16,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    padding: 20, borderRadius: 20, backgroundColor: colors.card,
+    borderWidth: 1.5, borderColor: colors.border, marginBottom: 16,
   },
-  selectedPaymentCard: {
-    borderColor: colors.primary,
-    backgroundColor: 'rgba(26, 86, 219, 0.02)',
-  },
-  paymentLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  paymentIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  paymentName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  paymentDesc: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
+  selectedPaymentCard: { borderColor: colors.primary, backgroundColor: 'rgba(26, 86, 219, 0.02)' },
+  paymentLeft: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  paymentIconBox: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  paymentName: { fontSize: 16, fontWeight: '700', color: colors.text },
+  paymentDesc: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+
+  // ── Receipt / Confirm ─────────────────────────────────────────────────────
   receiptCard: {
-    padding: 24,
-    borderRadius: 24,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
+    padding: 24, borderRadius: 24, backgroundColor: colors.card,
+    borderWidth: 1, borderColor: colors.border,
   },
-  receiptHeader: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.text,
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  receiptRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  receiptLabel: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  receiptValue: {
-    fontSize: 13,
-    color: colors.text,
-    fontWeight: '700',
-    textAlign: 'right',
-    maxWidth: '60%',
-  },
-  receiptDivider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginVertical: 16,
-    borderStyle: 'dashed',
-    borderRadius: 1,
-  },
-  receiptTotalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  totalLabel: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: colors.text,
-  },
-  totalValue: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: colors.primary,
-  },
+  receiptHeader: { fontSize: 18, fontWeight: '800', color: colors.text, textAlign: 'center', marginBottom: 24 },
+  receiptRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
+  receiptLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
+  receiptValue: { fontSize: 13, color: colors.text, fontWeight: '700', textAlign: 'right', maxWidth: '60%' },
+  receiptDivider: { height: 1, backgroundColor: colors.border, marginVertical: 16 },
+  receiptAddressBlock: { gap: 4, marginBottom: 4 },
+  receiptAddressHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6 },
+  receiptAddressTitle: { fontSize: 12, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 },
+  receiptAddressMain: { fontSize: 13, fontWeight: '600', color: colors.text, lineHeight: 18 },
+  receiptAddressSub: { fontSize: 12, color: colors.textSecondary },
+  receiptTotalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  totalLabel: { fontSize: 16, fontWeight: '800', color: colors.text },
+  totalValue: { fontSize: 24, fontWeight: '900', color: colors.primary },
   paymentInfoRow: {
-    backgroundColor: colors.background,
-    padding: 12,
-    borderRadius: 12,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
+    backgroundColor: colors.background, padding: 12, borderRadius: 12,
+    flexDirection: 'row', justifyContent: 'center', gap: 6,
   },
-  payInfoLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
-  payInfoValue: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.text,
-  },
+  payInfoLabel: { fontSize: 12, color: colors.textSecondary },
+  payInfoValue: { fontSize: 12, fontWeight: '700', color: colors.text },
+
+  // ── Shared ────────────────────────────────────────────────────────────────
+  buttonRow: { flexDirection: 'row', gap: 12, marginTop: 32 },
+  halfButton: { flex: 1 },
+  errorText: { fontSize: 12, color: colors.error, fontWeight: '600' },
 });
 
 export default BookingScreen;

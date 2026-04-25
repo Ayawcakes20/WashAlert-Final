@@ -69,6 +69,15 @@ public class JobOrder {
     @Column(name = "delivery_address", length = 255)
     private String deliveryAddress;
 
+    @Column(name = "delivery_unit_floor", length = 100)
+    private String deliveryUnitFloor;
+
+    @Column(name = "delivery_contact_name", length = 120)
+    private String deliveryContactName;
+
+    @Column(name = "delivery_contact_phone", length = 30)
+    private String deliveryContactPhone;
+
     @Column(name = "delivery_latitude")
     private Double deliveryLatitude;
 
