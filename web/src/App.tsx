@@ -9,6 +9,7 @@ import PublicAboutPage from "./pages/public/AboutPage";
 import BranchesPage from "./pages/public/BranchesPage";
 import DownloadPage from "./pages/public/DownloadPage";
 import LoginPage from "./pages/LoginPage";
+import LoginOtpPage from "./pages/LoginOtpPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import SetPasswordPage from "./pages/SetPasswordPage";
@@ -58,6 +59,7 @@ const App = () => (
           <Route path="/branches-public" element={<BranchesPage />} />
           <Route path="/download" element={<DownloadPage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/login-otp" element={<LoginOtpPage />} />
           <Route path="/signup" element={<StaffAccountNoticePage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />

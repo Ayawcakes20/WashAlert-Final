@@ -16,14 +16,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
 @Service
-@Transactional
 public class AuthService {
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
@@ -120,6 +118,11 @@ public class AuthService {
     }
 
     public User authenticateWithFirebase(String idToken, String platform, String selectedBranch) {
+        User resolved = resolveFirebaseUserForLoginChallenge(idToken, platform, selectedBranch);
+        return markLoginSuccess(resolved.getId());
+    }
+
+    public User resolveFirebaseUserForLoginChallenge(String idToken, String platform, String selectedBranch) {
         FirebaseToken token = firebaseIdentityService.verifyIdToken(idToken);
         String email = normalizeEmail(token.getEmail());
         log.info("[AUTH][LOGIN] authenticateWithFirebase uid={} email={} platform={}",
@@ -148,11 +151,23 @@ public class AuthService {
         enforceStatus(user);
         enforcePlatform(user, platform, selectedBranch);
 
+        user.syncEnabledFromStatus();
+        User saved = users.save(user);
+        syncUserToFirestore(saved);
+        log.info("[AUTH][LOGIN] Challenge profile resolved id={} role={} status={} enabled={}",
+                saved.getId(), saved.getRole(), saved.getStatus(), saved.isEnabled());
+        return saved;
+    }
+
+    public User markLoginSuccess(Long userId) {
+        User user = users.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("Account profile not found."));
+
         user.setLastLoginAt(LocalDateTime.now());
         user.syncEnabledFromStatus();
         User saved = users.save(user);
         syncUserToFirestore(saved);
-        log.info("[AUTH][LOGIN] Login profile resolved id={} role={} status={} enabled={}",
+        log.info("[AUTH][LOGIN] Login finalized id={} role={} status={} enabled={}",
                 saved.getId(), saved.getRole(), saved.getStatus(), saved.isEnabled());
         return saved;
     }

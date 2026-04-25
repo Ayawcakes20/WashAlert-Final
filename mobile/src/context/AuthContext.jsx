@@ -238,29 +238,24 @@ export const AuthProvider = ({ children }) => {
         password,
         returnSecureToken: true,
       });
-      const profile = await authRequest('/api/auth/firebase-session', {
+      await persistFirebaseSession({
+        idToken: firebaseLogin.idToken,
+        refreshToken: firebaseLogin.refreshToken,
+      });
+
+      const challenge = await authRequest('/api/auth/firebase-login-otp/request', {
         method: 'POST',
         body: {
           idToken: firebaseLogin.idToken,
           platform: 'MOBILE',
         },
       });
-      const mapped = mapSessionProfile(requireSessionProfilePayload(profile, 'Login'));
-      if (!mapped.role) {
-        await clearFirebaseSession();
-        return {
-          success: false,
-          error: `Account role "${mapped.backendRole || 'UNKNOWN'}" is not allowed on mobile.`,
-        };
-      }
-
-      await persistFirebaseSession({
-        idToken: firebaseLogin.idToken,
-        refreshToken: firebaseLogin.refreshToken,
-      });
-      setUser(mapped);
-      await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(mapped));
-      return { success: true, user: mapped };
+      return {
+        success: true,
+        requiresOtp: true,
+        email: normalizedEmail,
+        resendCooldownSeconds: challenge?.resendCooldownSeconds || 60,
+      };
     } catch (error) {
       await clearFirebaseSession();
       return { success: false, error: formatAuthError(error) };
@@ -436,6 +431,57 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+  const requestLoginOTP = useCallback(async () => {
+    if (!firebaseSession?.idToken) {
+      return { success: false, error: 'Login session expired. Please sign in again.' };
+    }
+    try {
+      const challenge = await authRequest('/api/auth/firebase-login-otp/resend', {
+        method: 'POST',
+        body: {
+          idToken: firebaseSession.idToken,
+          platform: 'MOBILE',
+        },
+      });
+      return {
+        success: true,
+        resendCooldownSeconds: challenge?.resendCooldownSeconds || 60,
+      };
+    } catch (error) {
+      return { success: false, error: formatAuthError(error) };
+    }
+  }, [firebaseSession?.idToken]);
+
+  const verifyLoginOTP = useCallback(async (code) => {
+    if (!firebaseSession?.idToken) {
+      return { success: false, error: 'Login session expired. Please sign in again.' };
+    }
+    try {
+      const profile = await authRequest('/api/auth/firebase-login-otp/verify', {
+        method: 'POST',
+        body: {
+          idToken: firebaseSession.idToken,
+          platform: 'MOBILE',
+          code,
+        },
+      });
+      const mapped = mapSessionProfile(requireSessionProfilePayload(profile, 'Login OTP verification'));
+      if (!mapped.role) {
+        await clearFirebaseSession();
+        return {
+          success: false,
+          error: `Account role "${mapped.backendRole || 'UNKNOWN'}" is not allowed on mobile.`,
+        };
+      }
+
+      setUser(mapped);
+      await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(mapped));
+      return { success: true, user: mapped, autoLogin: true };
+    } catch (error) {
+      return { success: false, error: formatAuthError(error) };
+    }
+  }, [firebaseSession?.idToken]);
+
   const resetPassword = useCallback(async (email, newPassword) => {
     try {
       await authRequest('/api/auth/otp/reset-password', {
@@ -461,8 +507,10 @@ export const AuthProvider = ({ children }) => {
         logout,
         forgotPassword,
         requestOTP,
+        requestLoginOTP,
         requestResetOTP,
         verifyOTP,
+        verifyLoginOTP,
         verifyResetOTP,
         resetPassword,
         updateUserProfile,

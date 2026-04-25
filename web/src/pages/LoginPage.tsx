@@ -6,7 +6,7 @@ import logoLaundryHubs from "@/assets/logo-laundryhubs.webp";
 import logoSpeedyWash from "@/assets/logo-speedywash.webp";
 import { authApi } from "@/lib/api";
 import { firebaseAuthApi } from "@/lib/firebaseAuth";
-import { saveFirebaseWebSession, saveSessionUser } from "@/lib/session";
+import { saveFirebaseWebSession } from "@/lib/session";
 import { toast } from "@/components/ui/sonner";
 
 type LoginField = "email" | "password";
@@ -79,32 +79,19 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       const firebaseAuth = await firebaseAuthApi.signInWithPassword(email.trim(), password);
-      const sessionProfile = await authApi.firebaseSession({
+      const challenge = await authApi.requestFirebaseLoginOtp({
         idToken: firebaseAuth.idToken,
         platform: "WEB",
       });
-      const me = await authApi.me().catch(() => ({
-        id: sessionProfile.id,
-        firebaseUid: sessionProfile.firebaseUid,
-        email: sessionProfile.email,
-        fullName: sessionProfile.fullName,
-        role: sessionProfile.role,
-        status: sessionProfile.status,
-        branchId: sessionProfile.branchId,
-        branch: sessionProfile.branch,
-        enabled: sessionProfile.status === "ACTIVE",
-        mustChangePassword: false,
-        provider: "FIREBASE",
-      }));
 
       saveFirebaseWebSession({
         idToken: firebaseAuth.idToken,
         refreshToken: firebaseAuth.refreshToken,
         email: firebaseAuth.email,
       });
-      saveSessionUser(me);
-      toast.success("Login successful.");
-      navigate("/dashboard");
+      const challengeEmail = email.trim();
+      toast.success(challenge?.message || "OTP sent to your email.");
+      navigate(`/login-otp?email=${encodeURIComponent(challengeEmail)}`);
     } catch (err: any) {
       const message = toFriendlyLoginMessage(err);
       setError(message);
