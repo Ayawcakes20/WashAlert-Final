@@ -11,9 +11,11 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
@@ -22,9 +24,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Service
-public class OpenAiChatClient {
+public class GeminiChatClient {
 
-    private static final Logger log = LoggerFactory.getLogger(OpenAiChatClient.class);
+    private static final Logger log = LoggerFactory.getLogger(GeminiChatClient.class);
     private static final Pattern CATEGORY_PATTERN = Pattern.compile("(?im)^CATEGORY\\s*:\\s*([a-zA-Z0-9_-]+)\\s*$");
     private static final Pattern ESCALATE_PATTERN = Pattern.compile("(?im)^ESCALATE\\s*:\\s*(YES|NO|TRUE|FALSE)\\s*$");
     private static final Pattern REPLY_PATTERN = Pattern.compile("(?is)REPLY\\s*:\\s*(.+)$");
@@ -48,40 +50,42 @@ public class OpenAiChatClient {
     private final String model;
     private final String baseUrl;
 
-    public OpenAiChatClient(
+    public GeminiChatClient(
             ObjectMapper objectMapper,
-            @Value("${washalert.openai.api-key:${OPENAI_API_KEY:}}") String apiKey,
-            @Value("${washalert.openai.model:${OPENAI_MODEL:gpt-4o-mini}}") String model,
-            @Value("${washalert.openai.base-url:${OPENAI_BASE_URL:https://api.openai.com/v1}}") String baseUrl
+            @Value("${washalert.gemini.api-key:${GEMINI_API_KEY:${GOOGLE_API_KEY:}}}") String apiKey,
+            @Value("${washalert.gemini.model:${GEMINI_MODEL:gemini-1.5-flash}}") String model,
+            @Value("${washalert.gemini.base-url:${GEMINI_BASE_URL:https://generativelanguage.googleapis.com/v1beta}}") String baseUrl
     ) {
         this.objectMapper = objectMapper;
         this.apiKey = apiKey == null ? "" : apiKey.trim();
-        this.model = model == null || model.isBlank() ? "gpt-4o-mini" : model.trim();
-        this.baseUrl = baseUrl == null || baseUrl.isBlank() ? "https://api.openai.com/v1" : baseUrl.trim();
+        this.model = model == null || model.isBlank() ? "gemini-1.5-flash" : model.trim();
+        this.baseUrl = baseUrl == null || baseUrl.isBlank() ? "https://generativelanguage.googleapis.com/v1beta" : baseUrl.trim();
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(8))
                 .build();
+        log.info("GEMINI_API_KEY configured: {}", isConfigured() ? "YES" : "NO");
     }
 
     public boolean isConfigured() {
         return !apiKey.isBlank();
     }
 
-    public OpenAiSupportDecision generateReply(String userMessage, List<ChatSupportMessage> contextMessages) {
+    public AiSupportDecision generateReply(String userMessage, List<ChatSupportMessage> contextMessages) {
         if (!isConfigured()) {
-            throw new IllegalStateException("AI support is not configured on server (missing OPENAI_API_KEY).");
+            throw new IllegalStateException("AI support is not configured on server (missing GEMINI_API_KEY).");
         }
 
         try {
             ObjectNode payload = objectMapper.createObjectNode();
-            payload.put("model", model);
-            payload.put("temperature", 0.2);
-            payload.set("messages", buildMessages(userMessage, contextMessages));
+            payload.set("systemInstruction", partsOnly(SYSTEM_PROMPT));
+            payload.set("contents", buildContents(userMessage, contextMessages));
+            ObjectNode generationConfig = objectMapper.createObjectNode();
+            generationConfig.put("temperature", 0.2);
+            payload.set("generationConfig", generationConfig);
 
-            HttpRequest request = HttpRequest.newBuilder(URI.create(normalizeBaseUrl(baseUrl) + "/chat/completions"))
+            HttpRequest request = HttpRequest.newBuilder(URI.create(buildGenerateContentUrl()))
                     .timeout(Duration.ofSeconds(25))
                     .header("Content-Type", "application/json")
-                    .header("Authorization", "Bearer " + apiKey)
                     .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
                     .build();
 
@@ -95,7 +99,7 @@ public class OpenAiChatClient {
             JsonNode root = objectMapper.readTree(body);
             String rawContent = extractContent(root);
             if (rawContent.isBlank()) {
-                throw new IllegalStateException("OpenAI returned an empty response.");
+                throw new IllegalStateException("Gemini returned an empty response.");
             }
 
             return parseDecision(rawContent);
@@ -103,40 +107,53 @@ public class OpenAiChatClient {
             throw ex;
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            log.warn("OpenAI support call interrupted: {}", ex.getMessage());
+            log.warn("Gemini support call interrupted: {}", ex.getMessage());
             throw new IllegalStateException("AI support is temporarily unavailable right now.");
         } catch (IOException ex) {
-            log.warn("OpenAI support call failed: {}", ex.getMessage());
+            log.warn("Gemini support call failed: {}", ex.getMessage());
             throw new IllegalStateException("AI support is temporarily unavailable right now.");
         }
     }
 
-    private ArrayNode buildMessages(String userMessage, List<ChatSupportMessage> contextMessages) {
-        ArrayNode messages = objectMapper.createArrayNode();
-        messages.add(message("system", SYSTEM_PROMPT));
+    private ArrayNode buildContents(String userMessage, List<ChatSupportMessage> contextMessages) {
+        ArrayNode contents = objectMapper.createArrayNode();
 
         if (contextMessages != null && !contextMessages.isEmpty()) {
             contextMessages.stream()
                     .sorted(Comparator.comparing(ChatSupportMessage::getCreatedAt))
                     .skip(Math.max(0, contextMessages.size() - 8))
                     .forEach(entry -> {
-                        String role = entry.getSenderType() == ChatResponderType.USER ? "user" : "assistant";
-                        messages.add(message(role, entry.getMessage()));
+                        String role = entry.getSenderType() == ChatResponderType.USER ? "user" : "model";
+                        contents.add(content(role, entry.getMessage()));
                     });
         }
 
-        messages.add(message("user", userMessage));
-        return messages;
+        contents.add(content("user", userMessage));
+        return contents;
     }
 
-    private ObjectNode message(String role, String content) {
+    private ObjectNode partsOnly(String text) {
+        ObjectNode wrapper = objectMapper.createObjectNode();
+        ArrayNode parts = objectMapper.createArrayNode();
+        ObjectNode part = objectMapper.createObjectNode();
+        part.put("text", text == null ? "" : text.trim());
+        parts.add(part);
+        wrapper.set("parts", parts);
+        return wrapper;
+    }
+
+    private ObjectNode content(String role, String content) {
         ObjectNode node = objectMapper.createObjectNode();
         node.put("role", role);
-        node.put("content", content == null ? "" : content.trim());
+        ArrayNode parts = objectMapper.createArrayNode();
+        ObjectNode part = objectMapper.createObjectNode();
+        part.put("text", content == null ? "" : content.trim());
+        parts.add(part);
+        node.set("parts", parts);
         return node;
     }
 
-    private OpenAiSupportDecision parseDecision(String rawContent) {
+    private AiSupportDecision parseDecision(String rawContent) {
         String normalized = rawContent == null ? "" : rawContent.trim();
         String category = extractMatch(CATEGORY_PATTERN, normalized);
         String escalateRaw = extractMatch(ESCALATE_PATTERN, normalized);
@@ -151,17 +168,14 @@ public class OpenAiChatClient {
                 : category.trim().toLowerCase(Locale.ROOT);
         boolean escalate = "YES".equalsIgnoreCase(escalateRaw) || "TRUE".equalsIgnoreCase(escalateRaw);
 
-        return new OpenAiSupportDecision(safeCategory, reply.trim(), escalate);
+        return new AiSupportDecision(safeCategory, reply.trim(), escalate);
     }
 
     private String extractContent(JsonNode root) {
-        JsonNode contentNode = root.path("choices").path(0).path("message").path("content");
-        if (contentNode.isTextual()) {
-            return contentNode.asText();
-        }
-        if (contentNode.isArray()) {
+        JsonNode partsNode = root.path("candidates").path(0).path("content").path("parts");
+        if (partsNode.isArray()) {
             StringBuilder combined = new StringBuilder();
-            for (JsonNode item : contentNode) {
+            for (JsonNode item : partsNode) {
                 String text = item.path("text").asText("");
                 if (!text.isBlank()) {
                     if (!combined.isEmpty()) combined.append('\n');
@@ -169,6 +183,10 @@ public class OpenAiChatClient {
                 }
             }
             return combined.toString();
+        }
+        JsonNode textNode = root.path("candidates").path(0).path("content").path("text");
+        if (textNode.isTextual()) {
+            return textNode.asText();
         }
         return "";
     }
@@ -179,13 +197,13 @@ public class OpenAiChatClient {
                 JsonNode root = objectMapper.readTree(body);
                 String message = root.path("error").path("message").asText("");
                 if (!message.isBlank()) {
-                    return "OpenAI request failed (" + statusCode + "): " + message;
+                    return "Gemini request failed (" + statusCode + "): " + message;
                 }
             } catch (Exception ignored) {
                 // Fallback below.
             }
         }
-        return "OpenAI request failed with status " + statusCode + ".";
+        return "Gemini request failed with status " + statusCode + ".";
     }
 
     private String extractMatch(Pattern pattern, String source) {
@@ -204,5 +222,10 @@ public class OpenAiChatClient {
             return rawBase.substring(0, rawBase.length() - 1);
         }
         return rawBase;
+    }
+
+    private String buildGenerateContentUrl() {
+        String encodedKey = URLEncoder.encode(apiKey, StandardCharsets.UTF_8);
+        return "%s/models/%s:generateContent?key=%s".formatted(normalizeBaseUrl(baseUrl), model, encodedKey);
     }
 }

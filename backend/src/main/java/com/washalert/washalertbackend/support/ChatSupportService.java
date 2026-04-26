@@ -38,7 +38,7 @@ public class ChatSupportService {
     private final PaymentService paymentService;
     private final ChatSupportMessageRepository messageRepository;
     private final SupportTicketRepository supportTicketRepository;
-    private final OpenAiChatClient openAiChatClient;
+    private final GeminiChatClient geminiChatClient;
     private final NotificationService notificationService;
 
     public ChatSupportService(
@@ -47,7 +47,7 @@ public class ChatSupportService {
             PaymentService paymentService,
             ChatSupportMessageRepository messageRepository,
             SupportTicketRepository supportTicketRepository,
-            OpenAiChatClient openAiChatClient,
+            GeminiChatClient geminiChatClient,
             NotificationService notificationService
     ) {
         this.jobOrderService = jobOrderService;
@@ -55,7 +55,7 @@ public class ChatSupportService {
         this.paymentService = paymentService;
         this.messageRepository = messageRepository;
         this.supportTicketRepository = supportTicketRepository;
-        this.openAiChatClient = openAiChatClient;
+        this.geminiChatClient = geminiChatClient;
         this.notificationService = notificationService;
     }
 
@@ -233,10 +233,10 @@ public class ChatSupportService {
     }
 
     private ChatSupportResponse buildAiAssistedFaqReply(String message, String sessionId) {
-        if (!openAiChatClient.isConfigured()) {
+        if (!geminiChatClient.isConfigured()) {
             return new ChatSupportResponse(
                     "ai_configuration",
-                    "AI support is unavailable because OPENAI_API_KEY is not configured on the server. "
+                    "AI support is unavailable because GEMINI_API_KEY is not configured on the server. "
                             + "I can still help with tracking (WA-xxxxx), payments, delivery updates, and ticket escalation.",
                     false,
                     null,
@@ -257,9 +257,9 @@ public class ChatSupportService {
             }
         }
 
-        OpenAiSupportDecision aiDecision;
+        AiSupportDecision aiDecision;
         try {
-            aiDecision = openAiChatClient.generateReply(message, context);
+            aiDecision = geminiChatClient.generateReply(message, context);
         } catch (IllegalStateException ex) {
             return new ChatSupportResponse(
                     "ai_unavailable",

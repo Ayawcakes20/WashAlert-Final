@@ -1,6 +1,6 @@
 package com.washalert.washalertbackend.support;
 
-public record OpenAiSupportDecision(
+public record AiSupportDecision(
         String category,
         String reply,
         boolean escalate
