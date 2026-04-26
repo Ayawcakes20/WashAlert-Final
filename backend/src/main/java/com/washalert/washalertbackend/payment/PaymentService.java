@@ -11,10 +11,12 @@ import com.washalert.washalertbackend.notification.NotificationService;
 import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
-import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -85,28 +87,30 @@ public class PaymentService {
         return toResponse(saved);
     }
 
+    @Transactional(readOnly = true)
     public PaymentResponse trackByTrackingNumber(String trackingNumber) {
         String tracking = normalizeTracking(trackingNumber);
-        PaymentRecord payment = paymentRepository.findByJobOrder_TrackingNumber(tracking)
-                .orElseThrow(() -> new IllegalArgumentException("Payment record not found."));
+        PaymentRecord payment = paymentRepository.findByTrackingNumberWithJobOrder(tracking)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payment record not found."));
         return toResponse(payment);
     }
 
+    @Transactional(readOnly = true)
     public List<PaymentResponse> list(String branch, AuthUserDetails principal) {
         User actor = principal.getUser();
 
         if (actor.getRole() == Role.STAFF) {
-            return paymentRepository.findByJobOrder_BranchIgnoreCaseOrderBySubmittedAtDesc(actor.getBranch())
+            return paymentRepository.findByBranchWithJobOrderOrderBySubmittedAtDesc(actor.getBranch())
                     .stream()
                     .map(this::toResponse)
                     .toList();
         }
 
         if (branch == null || branch.isBlank() || branch.equalsIgnoreCase("All")) {
-            return paymentRepository.findAllByOrderBySubmittedAtDesc().stream().map(this::toResponse).toList();
+            return paymentRepository.findAllWithJobOrderOrderBySubmittedAtDesc().stream().map(this::toResponse).toList();
         }
 
-        return paymentRepository.findByJobOrder_BranchIgnoreCaseOrderBySubmittedAtDesc(branch.trim())
+        return paymentRepository.findByBranchWithJobOrderOrderBySubmittedAtDesc(branch.trim())
                 .stream()
                 .map(this::toResponse)
                 .toList();
