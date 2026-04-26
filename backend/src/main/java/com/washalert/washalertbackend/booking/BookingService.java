@@ -18,15 +18,20 @@ import com.washalert.washalertbackend.user.Role;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class BookingService {
+    private static final BigDecimal DEFAULT_MAX_LOAD_KG = new BigDecimal("8.0");
+    private static final Pattern SERVICE_KG_LIMIT_PATTERN = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*kg", Pattern.CASE_INSENSITIVE);
 
     private final JobOrderRepository jobOrderRepository;
     private final MachineRepository machineRepository;
@@ -98,6 +103,7 @@ public class BookingService {
     public JobOrderResponse createBooking(CreateBookingRequest req) {
         String cleanBranch = normalizeBranch(req.branch());
         validateDate(req.preferredDate());
+        validateLoadSize(req.serviceName(), req.estimatedWeightKg());
 
         if (req.serviceType() == ServiceType.PICKUP_DELIVERY
                 && (req.deliveryAddress() == null || req.deliveryAddress().isBlank())) {
@@ -245,6 +251,39 @@ public class BookingService {
             throw new IllegalStateException("Booking ID was not generated.");
         }
         return "WA-" + (10000 + id);
+    }
+
+    private void validateLoadSize(String serviceName, BigDecimal weightKg) {
+        if (weightKg == null) {
+            throw new IllegalArgumentException("Estimated weight is required.");
+        }
+        BigDecimal maxAllowedKg = resolveMaxLoadKg(serviceName);
+        if (weightKg.compareTo(maxAllowedKg) > 0) {
+            throw new IllegalArgumentException(
+                    "Selected service allows up to " + toWholeOrDecimal(maxAllowedKg) + " kg per load."
+            );
+        }
+    }
+
+    private BigDecimal resolveMaxLoadKg(String serviceName) {
+        if (serviceName == null || serviceName.isBlank()) {
+            return DEFAULT_MAX_LOAD_KG;
+        }
+        Matcher matcher = SERVICE_KG_LIMIT_PATTERN.matcher(serviceName);
+        if (matcher.find()) {
+            try {
+                return new BigDecimal(matcher.group(1));
+            } catch (NumberFormatException ignored) {
+                // Fallback to default cap.
+            }
+        }
+        return DEFAULT_MAX_LOAD_KG;
+    }
+
+    private String toWholeOrDecimal(BigDecimal value) {
+        if (value == null) return "8";
+        BigDecimal stripped = value.stripTrailingZeros();
+        return stripped.scale() <= 0 ? stripped.toPlainString() : value.toPlainString();
     }
 
     @Transactional

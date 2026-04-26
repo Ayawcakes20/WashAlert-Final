@@ -1,6 +1,7 @@
 package com.washalert.washalertbackend.verification;
 
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -10,11 +11,32 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
 @Service
 public class MailService {
     private static final Logger log = LoggerFactory.getLogger(MailService.class);
+    private static final AtomicInteger LOGIN_OTP_WORKER_COUNTER = new AtomicInteger(1);
 
     private final JavaMailSender mailSender;
+    private final ThreadPoolExecutor loginOtpExecutor = new ThreadPoolExecutor(
+            1,
+            2,
+            60L,
+            TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(200),
+            runnable -> {
+                Thread worker = new Thread(runnable);
+                worker.setName("washalert-login-otp-mail-" + LOGIN_OTP_WORKER_COUNTER.getAndIncrement());
+                worker.setDaemon(true);
+                return worker;
+            },
+            new ThreadPoolExecutor.AbortPolicy()
+    );
 
     @Value("${washalert.mail.from}")
     private String from;
@@ -73,8 +95,35 @@ public class MailService {
         }
     }
 
+    @PreDestroy
+    void shutdownExecutors() {
+        loginOtpExecutor.shutdown();
+    }
+
     public void sendLoginOtpEmail(String to, String code) {
         validateMailBasics();
+        sendLoginOtpEmailInternal(to, code);
+    }
+
+    public void queueLoginOtpEmail(String to, String code) {
+        validateMailBasics();
+        String masked = maskEmail(to);
+        try {
+            log.info("[MAIL][LOGIN_OTP] Queueing async login OTP email for {}", masked);
+            loginOtpExecutor.execute(() -> {
+                try {
+                    sendLoginOtpEmailInternal(to, code);
+                } catch (RuntimeException ex) {
+                    log.error("[MAIL][LOGIN_OTP] Async login OTP email dispatch failed for {}", masked, ex);
+                }
+            });
+            log.info("[MAIL][LOGIN_OTP] Async login OTP email queued for {}", masked);
+        } catch (RejectedExecutionException ex) {
+            throw new IllegalStateException("Login OTP email queue is busy. Please retry in a moment.", ex);
+        }
+    }
+
+    private void sendLoginOtpEmailInternal(String to, String code) {
         try {
             log.info("[MAIL][LOGIN_OTP] Dispatching login OTP email to {}", maskEmail(to));
             SimpleMailMessage msg = new SimpleMailMessage();

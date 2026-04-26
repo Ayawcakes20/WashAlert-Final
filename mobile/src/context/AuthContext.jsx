@@ -8,10 +8,27 @@ const USER_STORAGE_KEY = 'userData';
 const FIREBASE_SESSION_STORAGE_KEY = 'firebaseSessionData';
 const normalizeEmail = (email) => (email || '').trim().toLowerCase();
 const looksLikeHtml = (value) => /<!doctype html|<html[\s>]/i.test(String(value || ''));
+const looksLikeNgrokWarningPage = (value) =>
+  /ngrok/i.test(String(value || '')) &&
+  /(visit site|tunnel|ERR_NGROK|ngrok-free\.dev)/i.test(String(value || ''));
+const NGROK_SKIP_BROWSER_WARNING_HEADER = { 'ngrok-skip-browser-warning': 'true' };
+const normalizePath = (path) => {
+  const normalized = String(path || '').trim();
+  return normalized.startsWith('/') ? normalized : `/${normalized}`;
+};
+const buildBackendUrl = (path) => {
+  const base = String(API_BASE_URL || '').replace(/\/+$/, '');
+  const normalizedPath = normalizePath(path);
+  if (base.endsWith('/api') && normalizedPath.startsWith('/api/')) {
+    return `${base}${normalizedPath.slice(4)}`;
+  }
+  return `${base}${normalizedPath}`;
+};
+const toResponsePreview = (text) => String(text || '').replace(/\s+/g, ' ').trim().slice(0, 120);
 
 const invalidApiResponseError = () =>
   new Error(
-    `Unexpected non-JSON response from auth API (${API_BASE_URL}). Check EXPO_PUBLIC_API_BASE_URL and ensure it points to backend.`
+    `Backend returned HTML. Check ngrok warning/API base URL. (${API_BASE_URL})`
   );
 
 const parseResponse = async (res) => {
@@ -26,7 +43,17 @@ const parseResponse = async (res) => {
     } catch {
       parseFailed = true;
       if (contentType.includes('text/html') || looksLikeHtml(text)) {
-        const err = invalidApiResponseError();
+        const preview = toResponsePreview(text);
+        if (__DEV__) {
+          console.warn('[Auth][NonJSON] HTML response detected', {
+            status: res.status,
+            contentType,
+            preview,
+          });
+        }
+        const err = looksLikeNgrokWarningPage(text)
+          ? new Error(`Ngrok warning page received. Header may not be sent or URL is wrong. (${API_BASE_URL})`)
+          : invalidApiResponseError();
         err.status = res.status;
         throw err;
       }
@@ -57,7 +84,17 @@ const parseResponse = async (res) => {
   if (res.ok && text) {
     const payloadLooksStructured = payload && typeof payload === 'object';
     if (!jsonContentType || parseFailed || !payloadLooksStructured) {
-      const err = invalidApiResponseError();
+      const preview = toResponsePreview(text);
+      if (__DEV__) {
+        console.warn('[Auth][NonJSON] Unexpected non-JSON success response', {
+          status: res.status,
+          contentType,
+          preview,
+        });
+      }
+      const err = looksLikeNgrokWarningPage(text)
+        ? new Error(`Ngrok warning page received. Header may not be sent or URL is wrong. (${API_BASE_URL})`)
+        : invalidApiResponseError();
       err.status = res.status;
       throw err;
     }
@@ -68,18 +105,33 @@ const parseResponse = async (res) => {
 
 const formatAuthError = (error) => {
   console.log('[AuthDebug] Raw Error:', error);
-  const msg = error?.message || String(error);
+  const msg = String(error?.message || error || '').trim();
+  const normalized = msg.toUpperCase();
 
-  if (msg.includes('INVALID_LOGIN_CREDENTIALS') || msg.includes('EMAIL_NOT_FOUND') || msg.includes('INVALID_PASSWORD')) {
-    return 'Incorrect email or password.';
+  if (
+    normalized.includes('INVALID_LOGIN_CREDENTIALS') ||
+    normalized.includes('AUTH/INVALID-CREDENTIAL') ||
+    normalized.includes('INVALID_CREDENTIAL') ||
+    normalized.includes('EMAIL_NOT_FOUND') ||
+    normalized.includes('INVALID_PASSWORD')
+  ) {
+    return 'Invalid email or password.';
   }
-  if (msg.includes('EMAIL_EXISTS')) {
+  if (normalized.includes('USER_DISABLED') || normalized.includes('AUTH/USER-DISABLED')) {
+    return 'This account is disabled.';
+  }
+  if (normalized.includes('EMAIL_EXISTS')) {
     return 'This email is already in use.';
   }
-  if (msg.includes('TOO_MANY_ATTEMPTS_TRY_LATER')) {
+  if (normalized.includes('TOO_MANY_ATTEMPTS_TRY_LATER')) {
     return 'Too many failed attempts. Please try again later.';
   }
-  if (msg.includes('Network request failed') || msg.includes('Aborted')) {
+  if (
+    normalized.includes('NETWORK REQUEST FAILED') ||
+    normalized.includes('FAILED TO FETCH') ||
+    normalized.includes('NETWORK ERROR') ||
+    normalized.includes('ABORT')
+  ) {
     return 'Unable to connect to server. Please check your internet or IP configuration.';
   }
 
@@ -88,11 +140,24 @@ const formatAuthError = (error) => {
 };
 
 const authRequest = async (path, options = {}) => {
-  const { method = 'GET', body } = options;
-  return parseResponse(
-    await fetch(`${API_BASE_URL}${path}`, {
+  const { method = 'GET', body, headers = {} } = options;
+  const url = buildBackendUrl(path);
+  const requestHeaders = {
+    'Content-Type': 'application/json',
+    ...NGROK_SKIP_BROWSER_WARNING_HEADER,
+    ...headers,
+  };
+  if (__DEV__) {
+    console.info('[Auth][Request]', {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      url,
+      headerKeys: Object.keys(requestHeaders),
+    });
+  }
+  return parseResponse(
+    await fetch(url, {
+      method,
+      headers: requestHeaders,
       credentials: 'include',
       body: body ? JSON.stringify(body) : undefined,
     })
@@ -233,22 +298,29 @@ export const AuthProvider = ({ children }) => {
     }
 
     try {
+      console.info('[Auth][Mobile] Firebase sign-in started', { email: normalizedEmail });
       const firebaseLogin = await firebaseRequest('accounts:signInWithPassword', {
         email: normalizedEmail,
         password,
         returnSecureToken: true,
       });
+      console.info('[Auth][Mobile] Firebase sign-in success', { email: normalizedEmail });
       await persistFirebaseSession({
         idToken: firebaseLogin.idToken,
         refreshToken: firebaseLogin.refreshToken,
       });
 
+      console.info('[Auth][Mobile] OTP request started', { email: normalizedEmail });
       const challenge = await authRequest('/api/auth/firebase-login-otp/request', {
         method: 'POST',
         body: {
           idToken: firebaseLogin.idToken,
           platform: 'MOBILE',
         },
+      });
+      console.info('[Auth][Mobile] OTP request success', {
+        email: normalizedEmail,
+        resendCooldownSeconds: challenge?.resendCooldownSeconds || 60,
       });
       return {
         success: true,
@@ -257,6 +329,7 @@ export const AuthProvider = ({ children }) => {
         resendCooldownSeconds: challenge?.resendCooldownSeconds || 60,
       };
     } catch (error) {
+      console.error('[Auth][Mobile] Login flow failed', error);
       await clearFirebaseSession();
       return { success: false, error: formatAuthError(error) };
     }

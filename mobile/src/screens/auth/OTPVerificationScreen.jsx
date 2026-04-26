@@ -71,59 +71,69 @@ const OTPVerificationScreen = ({ navigation, route }) => {
     const code = otp.join('');
     if (code.length !== 6) return;
     setLoading(true);
+    try {
+      let result;
+      if (type === 'password_reset') {
+        result = await verifyResetOTP(email, code);
+      } else if (type === 'login_otp') {
+        result = await verifyLoginOTP(code);
+      } else {
+        result = await verifyOTP(code, email);
+      }
+      if (!result?.success) {
+        Alert.alert('Verification Failed', result?.error || 'Invalid OTP.');
+        setOtp(['', '', '', '', '', '']);
+        refs.current[0]?.focus();
+        return;
+      }
 
-    let result;
-    if (type === 'password_reset') {
-      result = await verifyResetOTP(email, code);
-    } else if (type === 'login_otp') {
-      result = await verifyLoginOTP(code);
-    } else {
-      result = await verifyOTP(code, email);
-    }
+      // If auto-logged in by context, the app will navigate automatically.
+      // However, if we're still here, we handle the registration redirect.
+      if (result.autoLogin) {
+        // Transition is handled by AuthContext (root navigator switch)
+        return;
+      }
 
-    setLoading(false);
-    if (!result?.success) {
-      Alert.alert('Verification Failed', result?.error || 'Invalid OTP.');
+      if (type === 'registration') {
+        Alert.alert(
+          'Verification Failed',
+          'Could not confirm account activation from the server. Please try verifying again.'
+        );
+        setOtp(['', '', '', '', '', '']);
+        refs.current[0]?.focus();
+      } else {
+        navigation.navigate('ResetPassword', { email, code });
+      }
+    } catch (_error) {
+      Alert.alert('Verification Failed', 'Unable to verify OTP right now.');
       setOtp(['', '', '', '', '', '']);
       refs.current[0]?.focus();
-      return;
-    }
-
-    // If auto-logged in by context, the app will navigate automatically.
-    // However, if we're still here, we handle the registration redirect.
-    if (result.autoLogin) {
-      // Transition is handled by AuthContext (root navigator switch)
-      return;
-    }
-
-    if (type === 'registration') {
-      Alert.alert(
-        'Verification Failed',
-        'Could not confirm account activation from the server. Please try verifying again.'
-      );
-      setOtp(['', '', '', '', '', '']);
-      refs.current[0]?.focus();
-    } else {
-      navigation.navigate('ResetPassword', { email, code });
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleResend = async () => {
     setLoading(true);
-    let result;
-    if (type === 'password_reset') {
-      result = await requestResetOTP(email);
-    } else if (type === 'login_otp') {
-      result = await requestLoginOTP();
-    } else {
-      result = await requestOTP(email);
-    }
-    setLoading(false);
-    if (result.success) {
-      setTimer(60);
-      Alert.alert('Sent', 'A new code has been sent to your email.');
-    } else {
-      Alert.alert('Error', result.error || 'Could not resend code.');
+    try {
+      let result;
+      if (type === 'password_reset') {
+        result = await requestResetOTP(email);
+      } else if (type === 'login_otp') {
+        result = await requestLoginOTP();
+      } else {
+        result = await requestOTP(email);
+      }
+      if (result.success) {
+        setTimer(60);
+        Alert.alert('Sent', 'A new code has been sent to your email.');
+      } else {
+        Alert.alert('Error', result.error || 'Could not resend code.');
+      }
+    } catch (_error) {
+      Alert.alert('Error', 'Could not resend code right now.');
+    } finally {
+      setLoading(false);
     }
   };
 

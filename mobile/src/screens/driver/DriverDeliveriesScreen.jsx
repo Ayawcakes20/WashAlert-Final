@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -24,45 +24,41 @@ const TABS = [
   { label: 'Failed', value: 'failed' },
 ];
 
+const DELIVERIES_PAGE_SIZE = 8;
+
 const getStatusColor = (status) => {
   switch (status) {
-    // Phase A — Inbound
-    case 'accepted':           return { bg: 'hsla(214, 88%, 57%, 0.12)', text: '#3B82F6' };
-    case 'at_customer':        return { bg: 'hsla(38, 96%, 58%, 0.12)',  text: '#F59E0B' };
-    case 'picked_up':          return { bg: 'hsla(158, 77%, 44%, 0.12)', text: colors.accent };
-    case 'at_branch':          return { bg: 'hsla(263, 70%, 58%, 0.12)', text: '#7C3AED' };
-    case 'handed_over':        return { bg: 'hsla(263, 70%, 58%, 0.12)', text: '#7C3AED' };
-    // Phase B — Outbound
+    case 'accepted': return { bg: 'hsla(214, 88%, 57%, 0.12)', text: '#3B82F6' };
+    case 'at_customer': return { bg: 'hsla(38, 96%, 58%, 0.12)', text: '#F59E0B' };
+    case 'picked_up': return { bg: 'hsla(158, 77%, 44%, 0.12)', text: colors.accent };
+    case 'at_branch':
+    case 'handed_over': return { bg: 'hsla(263, 70%, 58%, 0.12)', text: '#7C3AED' };
     case 'ready_for_dispatch': return { bg: 'hsla(158, 77%, 44%, 0.12)', text: colors.success };
-    case 'en_route':           return { bg: 'hsla(214, 88%, 57%, 0.12)', text: '#3B82F6' };
-    case 'at_delivery':        return { bg: 'hsla(38, 96%, 58%, 0.12)',  text: '#F59E0B' };
-    // Legacy / generic
-    case 'pending':            return { bg: 'hsla(16, 100%, 56%, 0.1)',  text: colors.warning };
-    case 'in_progress':        return { bg: 'hsla(174, 79%, 44%, 0.1)', text: colors.accent };
-    case 'completed':          return { bg: 'hsla(156, 87%, 34%, 0.1)', text: colors.success };
-    case 'failed':             return { bg: 'hsla(0, 84%, 60%, 0.1)',   text: colors.error };
-    default:                   return { bg: colors.border, text: colors.textSecondary };
+    case 'en_route': return { bg: 'hsla(214, 88%, 57%, 0.12)', text: '#3B82F6' };
+    case 'at_delivery': return { bg: 'hsla(38, 96%, 58%, 0.12)', text: '#F59E0B' };
+    case 'pending': return { bg: 'hsla(16, 100%, 56%, 0.1)', text: colors.warning };
+    case 'in_progress': return { bg: 'hsla(174, 79%, 44%, 0.1)', text: colors.accent };
+    case 'completed': return { bg: 'hsla(156, 87%, 34%, 0.1)', text: colors.success };
+    case 'failed': return { bg: 'hsla(0, 84%, 60%, 0.1)', text: colors.error };
+    default: return { bg: colors.border, text: colors.textSecondary };
   }
 };
 
 const getStatusLabel = (status) => {
   switch (status) {
-    // Phase A — Inbound
-    case 'accepted':           return 'Heading to Pickup';
-    case 'at_customer':        return 'At Customer';
-    case 'picked_up':          return 'Picked Up';
-    case 'at_branch':          return 'At Branch';
-    case 'handed_over':        return 'Handed Over';
-    // Phase B — Outbound
+    case 'accepted': return 'Heading to Pickup';
+    case 'at_customer': return 'At Customer';
+    case 'picked_up': return 'Picked Up';
+    case 'at_branch': return 'At Branch';
+    case 'handed_over': return 'Handed Over';
     case 'ready_for_dispatch': return 'Ready to Deliver';
-    case 'en_route':           return 'Out for Delivery';
-    case 'at_delivery':        return 'At Customer';
-    // Generic
-    case 'pending':            return 'New Order';
-    case 'in_progress':        return 'In Progress';
-    case 'completed':          return 'Completed';
-    case 'failed':             return 'Failed';
-    default:                   return status ?? 'Unknown';
+    case 'en_route': return 'Out for Delivery';
+    case 'at_delivery': return 'At Customer';
+    case 'pending': return 'New Order';
+    case 'in_progress': return 'In Progress';
+    case 'completed': return 'Completed';
+    case 'failed': return 'Failed';
+    default: return status ?? 'Unknown';
   }
 };
 
@@ -74,23 +70,50 @@ const DriverDeliveriesScreen = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [acceptingTracking, setAcceptingTracking] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
 
-  const loadDeliveries = useCallback(async () => {
+  const availablePageSlice = useMemo(() => {
+    const start = Math.max(0, currentPage - 1) * DELIVERIES_PAGE_SIZE;
+    return availableOrders.slice(start, start + DELIVERIES_PAGE_SIZE);
+  }, [availableOrders, currentPage]);
+
+  const loadDeliveries = useCallback(async (requestedPage = 0, showLoading = true) => {
     try {
       setError('');
+      if (showLoading) setLoading(true);
+
       if (tab === 'available') {
         const data = await deliveriesApi.getAvailable();
-        setAvailableOrders(data.orders || []);
+        const orders = data.orders || [];
+        setAvailableOrders(orders);
         setDeliveries([]);
-      } else {
-        const data = await deliveriesApi.getAssigned(tab);
-        setDeliveries(data.deliveries || []);
-        setAvailableOrders([]);
+        const localTotalPages = Math.max(1, Math.ceil(orders.length / DELIVERIES_PAGE_SIZE));
+        const safePage = Math.min(localTotalPages, requestedPage + 1);
+        setCurrentPage(Math.max(1, safePage));
+        setTotalPages(localTotalPages);
+        setHasPrevious(safePage > 1);
+        setHasNext(safePage < localTotalPages);
+        return;
       }
-    } catch (e) {
+
+      const data = await deliveriesApi.getMyPaged(tab, requestedPage, DELIVERIES_PAGE_SIZE);
+      setDeliveries(data.deliveries || []);
+      setAvailableOrders([]);
+      setCurrentPage((data.page || 0) + 1);
+      setTotalPages(Math.max(1, data.totalPages || 1));
+      setHasNext(Boolean(data.hasNext));
+      setHasPrevious(Boolean(data.hasPrevious));
+    } catch (loadError) {
       setDeliveries([]);
       setAvailableOrders([]);
-      setError(e?.message || 'Unable to load deliveries right now.');
+      setCurrentPage(1);
+      setTotalPages(1);
+      setHasNext(false);
+      setHasPrevious(false);
+      setError(loadError?.message || 'Unable to load deliveries right now.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -100,47 +123,45 @@ const DriverDeliveriesScreen = ({ navigation }) => {
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      loadDeliveries();
-    }, [loadDeliveries])
+      loadDeliveries(0, true);
+    }, [loadDeliveries]),
   );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    loadDeliveries();
-  }, [loadDeliveries]);
+    loadDeliveries(Math.max(0, currentPage - 1), false);
+  }, [loadDeliveries, currentPage]);
 
   const onChangeTab = useCallback((nextTab) => {
     setTab(nextTab);
+    setCurrentPage(1);
   }, []);
 
-  const handleAcceptBooking = useCallback(
-    (trackingNumber) => {
-      if (!trackingNumber || acceptingTracking) return;
-      Alert.alert(
-        'Accept Booking',
-        `Accept booking ${trackingNumber}?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Accept',
-            onPress: async () => {
-              try {
-                setAcceptingTracking(trackingNumber);
-                await deliveriesApi.acceptBooking(trackingNumber);
-                Alert.alert('Accepted', 'Booking accepted successfully.');
-                setTab('pending');
-              } catch (error) {
-                Alert.alert('Accept Failed', error?.message || 'Unable to accept booking.');
-              } finally {
-                setAcceptingTracking('');
-              }
-            },
-          },
-        ]
-      );
-    },
-    [acceptingTracking]
-  );
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [tab]);
+
+  const handleAcceptBooking = useCallback((trackingNumber) => {
+    if (!trackingNumber || acceptingTracking) return;
+    Alert.alert('Accept Booking', `Accept booking ${trackingNumber}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Accept',
+        onPress: async () => {
+          try {
+            setAcceptingTracking(trackingNumber);
+            await deliveriesApi.acceptBooking(trackingNumber);
+            Alert.alert('Accepted', 'Booking accepted successfully.');
+            setTab('pending');
+          } catch (acceptError) {
+            Alert.alert('Accept Failed', acceptError?.message || 'Unable to accept booking.');
+          } finally {
+            setAcceptingTracking('');
+          }
+        },
+      },
+    ]);
+  }, [acceptingTracking]);
 
   if (loading) {
     return (
@@ -151,6 +172,9 @@ const DriverDeliveriesScreen = ({ navigation }) => {
       </SafeAreaView>
     );
   }
+
+  const activeItems = tab === 'available' ? availablePageSlice : deliveries;
+  const noData = tab === 'available' ? availableOrders.length === 0 : deliveries.length === 0;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -175,7 +199,7 @@ const DriverDeliveriesScreen = ({ navigation }) => {
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-        {(tab === 'available' ? availableOrders.length === 0 : deliveries.length === 0) ? (
+        {noData ? (
           <ScrollView
             contentContainerStyle={styles.emptyState}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
@@ -192,7 +216,7 @@ const DriverDeliveriesScreen = ({ navigation }) => {
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           >
             {tab === 'available'
-              ? availableOrders.map((order) => (
+              ? activeItems.map((order) => (
                   <View key={order.trackingNumber} style={styles.deliveryCard}>
                     <View style={styles.cardHeader}>
                       <Text style={styles.customerName}>{order.customerName || 'Customer'}</Text>
@@ -221,37 +245,57 @@ const DriverDeliveriesScreen = ({ navigation }) => {
                     </View>
                   </View>
                 ))
-              : deliveries.map((delivery) => {
-              const statusColor = getStatusColor(delivery.status);
-              return (
-                <View key={delivery.id} style={styles.deliveryCard}>
-                  <View style={styles.cardHeader}>
-                    <Text style={styles.customerName}>{delivery.customerName}</Text>
-                    <View style={[styles.badge, { backgroundColor: statusColor.bg }]}>
-                      <Text style={[styles.badgeText, { color: statusColor.text }]}>
-                        {getStatusLabel(delivery.status)}
-                      </Text>
+              : activeItems.map((delivery) => {
+                  const statusColor = getStatusColor(delivery.status);
+                  return (
+                    <View key={delivery.id} style={styles.deliveryCard}>
+                      <View style={styles.cardHeader}>
+                        <Text style={styles.customerName}>{delivery.customerName}</Text>
+                        <View style={[styles.badge, { backgroundColor: statusColor.bg }]}>
+                          <Text style={[styles.badgeText, { color: statusColor.text }]}> 
+                            {getStatusLabel(delivery.status)}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.addressRow}>
+                        <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
+                        <Text style={styles.addressText}>{delivery.deliveryAddress}</Text>
+                      </View>
+
+                      <View style={styles.cardFooter}>
+                        <Text style={styles.orderId}>Order: {delivery.orderNumber}</Text>
+                        <TouchableOpacity
+                          style={styles.viewBtn}
+                          onPress={() => navigation.navigate('DeliveryDetail', { deliveryId: delivery.id })}
+                        >
+                          <Text style={styles.viewBtnText}>View Details</Text>
+                          <Ionicons name="chevron-forward" size={14} color={colors.primary} />
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                  </View>
+                  );
+                })}
 
-                  <View style={styles.addressRow}>
-                    <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
-                    <Text style={styles.addressText}>{delivery.deliveryAddress}</Text>
-                  </View>
-
-                  <View style={styles.cardFooter}>
-                    <Text style={styles.orderId}>Order: {delivery.orderNumber}</Text>
-                    <TouchableOpacity
-                      style={styles.viewBtn}
-                      onPress={() => navigation.navigate('DeliveryDetail', { deliveryId: delivery.id })}
-                    >
-                      <Text style={styles.viewBtnText}>View Details</Text>
-                      <Ionicons name="chevron-forward" size={14} color={colors.primary} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            })}
+            {totalPages > 1 ? (
+              <View style={styles.paginationRow}>
+                <TouchableOpacity
+                  style={[styles.pageBtn, !hasPrevious && styles.pageBtnDisabled]}
+                  onPress={() => loadDeliveries(Math.max(0, currentPage - 2), true)}
+                  disabled={!hasPrevious}
+                >
+                  <Text style={styles.pageBtnText}>Previous</Text>
+                </TouchableOpacity>
+                <Text style={styles.pageText}>Page {currentPage} of {totalPages}</Text>
+                <TouchableOpacity
+                  style={[styles.pageBtn, !hasNext && styles.pageBtnDisabled]}
+                  onPress={() => loadDeliveries(currentPage, true)}
+                  disabled={!hasNext}
+                >
+                  <Text style={styles.pageBtnText}>Next</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
             <View style={{ height: 100 }} />
           </ScrollView>
         )}
@@ -309,6 +353,34 @@ const styles = StyleSheet.create({
 
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: 80 },
   emptyText: { fontSize: 14, fontWeight: '500', color: colors.textSecondary, marginTop: 16 },
+  paginationRow: {
+    marginTop: 8,
+    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  pageBtn: {
+    minWidth: 90,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  pageBtnDisabled: { opacity: 0.5 },
+  pageBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  pageText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
 });
 
 export default DriverDeliveriesScreen;

@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ShoppingCart,
   Users,
@@ -30,11 +30,20 @@ const item = {
   show: { opacity: 1, y: 0 },
 };
 
+const RECENT_ORDERS_PAGE_SIZE = 5;
+
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any[]>([]);
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
+  const [recentOrdersPage, setRecentOrdersPage] = useState(1);
   const [alerts, setAlerts] = useState<Array<{ message: string; type: "warning" | "info" | "success" }>>([]);
+
+  const totalRecentOrderPages = Math.max(1, Math.ceil(recentOrders.length / RECENT_ORDERS_PAGE_SIZE));
+  const paginatedRecentOrders = useMemo(() => {
+    const start = (recentOrdersPage - 1) * RECENT_ORDERS_PAGE_SIZE;
+    return recentOrders.slice(start, start + RECENT_ORDERS_PAGE_SIZE);
+  }, [recentOrders, recentOrdersPage]);
 
   useEffect(() => {
     const load = async () => {
@@ -50,18 +59,28 @@ export default function DashboardPage() {
         ]);
 
         setRecentOrders(
-          (data.recentOrders || []).map((order: JobOrderResponse) => ({
-            id: order.trackingNumber,
-            customer: order.customerName,
-            service: order.serviceType === "PICKUP_DELIVERY" ? "Pickup & Delivery" : "Drop Off",
-            branch: order.branch,
-            status: statusLabel[order.status] || order.status,
-            time: new Date(order.updatedAt || order.createdAt).toLocaleTimeString("en-US", {
+          (data.recentOrders || []).map((order: JobOrderResponse) => {
+            const timestamp = new Date(order.updatedAt || order.createdAt);
+            const dateLabel = timestamp.toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            });
+            const timeLabel = timestamp.toLocaleTimeString("en-US", {
               hour: "numeric",
               minute: "2-digit",
-            }),
-          }))
+            });
+            return {
+              id: order.trackingNumber,
+              customer: order.customerName,
+              service: order.serviceType === "PICKUP_DELIVERY" ? "Pickup & Delivery" : "Drop Off",
+              branch: order.branch,
+              status: statusLabel[order.status] || order.status,
+              dateTime: `${dateLabel} • ${timeLabel}`,
+            };
+          })
         );
+        setRecentOrdersPage(1);
 
         setAlerts([
           { message: `${data.orders.pending} pending orders need processing.`, type: "warning" },
@@ -76,6 +95,7 @@ export default function DashboardPage() {
           { label: "Maintenance", value: "-", change: "Unavailable", icon: Truck, color: "bg-destructive/10 text-destructive" },
         ]);
         setRecentOrders([]);
+        setRecentOrdersPage(1);
         setAlerts([{ message: "Unable to load dashboard summary from backend.", type: "warning" }]);
       } finally {
         setLoading(false);
@@ -127,11 +147,11 @@ export default function DashboardPage() {
                   <th className="text-left pb-3 font-medium hidden md:table-cell">Service</th>
                   <th className="text-left pb-3 font-medium hidden lg:table-cell">Branch</th>
                   <th className="text-left pb-3 font-medium">Status</th>
-                  <th className="text-right pb-3 font-medium">Time</th>
+                  <th className="text-right pb-3 font-medium">Date & Time</th>
                 </tr>
               </thead>
               <tbody>
-                {recentOrders.map((o) => (
+                {paginatedRecentOrders.map((o) => (
                   <tr key={o.id} className="border-b border-border/30 last:border-0 hover:bg-muted/30 transition-colors">
                     <td className="py-3 font-mono text-xs font-semibold text-primary">{o.id}</td>
                     <td className="py-3 font-medium text-foreground">{o.customer}</td>
@@ -142,7 +162,7 @@ export default function DashboardPage() {
                         {o.status}
                       </span>
                     </td>
-                    <td className="py-3 text-right text-muted-foreground text-xs">{o.time}</td>
+                    <td className="py-3 text-right text-muted-foreground text-xs">{o.dateTime}</td>
                   </tr>
                 ))}
                 {!recentOrders.length ? (
@@ -155,6 +175,29 @@ export default function DashboardPage() {
               </tbody>
             </table>
           </div>
+          {recentOrders.length > RECENT_ORDERS_PAGE_SIZE ? (
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRecentOrdersPage((prev) => Math.max(1, prev - 1))}
+                disabled={recentOrdersPage === 1}
+                className="h-8 px-3 rounded-md border border-border text-xs disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <span className="text-xs text-muted-foreground">
+                Page {recentOrdersPage} of {totalRecentOrderPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setRecentOrdersPage((prev) => Math.min(totalRecentOrderPages, prev + 1))}
+                disabled={recentOrdersPage >= totalRecentOrderPages}
+                className="h-8 px-3 rounded-md border border-border text-xs disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          ) : null}
         </motion.div>
 
         <motion.div variants={item} className="glass-card rounded-2xl p-6">

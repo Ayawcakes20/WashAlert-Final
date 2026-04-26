@@ -11,13 +11,31 @@ import { toast } from "@/components/ui/sonner";
 
 type LoginField = "email" | "password";
 type LoginFieldErrors = Partial<Record<LoginField, string>>;
+const LOGIN_REQUEST_TIMEOUT_MS = 20000;
+
+const withTimeout = async <T,>(promise: Promise<T>, timeoutMessage: string): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), LOGIN_REQUEST_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+};
 
 const toFriendlyLoginMessage = (error: unknown) => {
-  const raw = error instanceof Error ? error.message : String(error || "");
+  const raw = (error instanceof Error ? error.message : String(error || "")).trim();
   const normalized = raw.toUpperCase();
 
   const firebaseBadCredential =
     normalized.includes("INVALID_LOGIN_CREDENTIALS") ||
+    normalized.includes("AUTH/INVALID-CREDENTIAL") ||
     normalized.includes("INVALID_CREDENTIAL") ||
     normalized.includes("INVALID_PASSWORD") ||
     normalized.includes("EMAIL_NOT_FOUND") ||
@@ -29,7 +47,20 @@ const toFriendlyLoginMessage = (error: unknown) => {
     normalized.includes("BAD CREDENTIALS");
 
   if (firebaseBadCredential || backendBadCredential) {
-    return "Incorrect email or password.";
+    return "Invalid email or password.";
+  }
+
+  if (normalized.includes("USER_DISABLED") || normalized.includes("AUTH/USER-DISABLED")) {
+    return "This account is disabled.";
+  }
+
+  if (
+    normalized.includes("FAILED TO FETCH") ||
+    normalized.includes("NETWORK REQUEST FAILED") ||
+    normalized.includes("NETWORK ERROR") ||
+    normalized.includes("TIMED OUT")
+  ) {
+    return "Network error. Please check your connection and try again.";
   }
 
   return raw || "Unable to sign in right now. Please try again.";
@@ -69,6 +100,7 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     setError("");
     const validationErrors = validateForm();
     setFieldErrors(validationErrors);
@@ -77,11 +109,26 @@ export default function LoginPage() {
       return;
     }
     setSubmitting(true);
+    const normalizedEmail = email.trim();
+    let loginStep: "firebase_sign_in" | "otp_request" = "firebase_sign_in";
     try {
-      const firebaseAuth = await firebaseAuthApi.signInWithPassword(email.trim(), password);
-      const challenge = await authApi.requestFirebaseLoginOtp({
+      console.info("[Auth][Web] Firebase sign-in started", { email: normalizedEmail });
+      const firebaseAuth = await withTimeout(
+        firebaseAuthApi.signInWithPassword(normalizedEmail, password),
+        "Sign-in timed out. Please try again.",
+      );
+      console.info("[Auth][Web] Firebase sign-in success", { email: firebaseAuth.email });
+
+      loginStep = "otp_request";
+      console.info("[Auth][Web] OTP request started", { email: normalizedEmail });
+      const challenge = await withTimeout(authApi.requestFirebaseLoginOtp({
         idToken: firebaseAuth.idToken,
         platform: "WEB",
+      }), "OTP request timed out. Please try again.");
+      console.info("[Auth][Web] OTP request success", {
+        email: normalizedEmail,
+        expiresInSeconds: challenge?.expiresInSeconds,
+        resendCooldownSeconds: challenge?.resendCooldownSeconds,
       });
 
       saveFirebaseWebSession({
@@ -89,10 +136,14 @@ export default function LoginPage() {
         refreshToken: firebaseAuth.refreshToken,
         email: firebaseAuth.email,
       });
-      const challengeEmail = email.trim();
       toast.success(challenge?.message || "OTP sent to your email.");
-      navigate(`/login-otp?email=${encodeURIComponent(challengeEmail)}`);
+      navigate(`/login-otp?email=${encodeURIComponent(normalizedEmail)}`);
     } catch (err: any) {
+      if (loginStep === "firebase_sign_in") {
+        console.error("[Auth][Web] Firebase sign-in failed", err);
+      } else {
+        console.error("[Auth][Web] OTP request failed", err);
+      }
       const message = toFriendlyLoginMessage(err);
       setError(message);
       toast.error(message);

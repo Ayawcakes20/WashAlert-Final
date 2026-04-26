@@ -1,6 +1,9 @@
 package com.washalert.washalertbackend.delivery;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -60,4 +63,75 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
            order by d.updatedAt desc
            """)
     List<DeliveryOrder> findByDriverUser_IdOrderByUpdatedAtDesc(@Param("driverUserId") Long driverUserId);
+
+    @EntityGraph(attributePaths = {"jobOrder", "driverUser"})
+    @Query(
+            value = """
+                    select d
+                    from DeliveryOrder d
+                    join d.jobOrder jo
+                    where (:branch is null or lower(jo.branch) = lower(:branch))
+                      and (:status is null or d.status = :status)
+                      and (:search is null or lower(jo.trackingNumber) like lower(concat('%', :search, '%'))
+                           or lower(jo.customerName) like lower(concat('%', :search, '%'))
+                           or lower(coalesce(d.driverName, '')) like lower(concat('%', :search, '%')))
+                    """,
+            countQuery = """
+                    select count(d)
+                    from DeliveryOrder d
+                    join d.jobOrder jo
+                    where (:branch is null or lower(jo.branch) = lower(:branch))
+                      and (:status is null or d.status = :status)
+                      and (:search is null or lower(jo.trackingNumber) like lower(concat('%', :search, '%'))
+                           or lower(jo.customerName) like lower(concat('%', :search, '%'))
+                           or lower(coalesce(d.driverName, '')) like lower(concat('%', :search, '%')))
+                    """
+    )
+    Page<DeliveryOrder> findOpsPaged(
+            @Param("branch") String branch,
+            @Param("status") DeliveryStatus status,
+            @Param("search") String search,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = {"jobOrder", "driverUser"})
+    @Query(
+            value = """
+                    select d
+                    from DeliveryOrder d
+                    where d.driverUser.id = :driverUserId
+                    order by d.updatedAt desc
+                    """,
+            countQuery = """
+                    select count(d)
+                    from DeliveryOrder d
+                    where d.driverUser.id = :driverUserId
+                    """
+    )
+    Page<DeliveryOrder> findByDriverUserIdPaged(
+            @Param("driverUserId") Long driverUserId,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = {"jobOrder", "driverUser"})
+    @Query(
+            value = """
+                    select d
+                    from DeliveryOrder d
+                    where d.driverUser.id = :driverUserId
+                      and d.status in :statuses
+                    order by d.updatedAt desc
+                    """,
+            countQuery = """
+                    select count(d)
+                    from DeliveryOrder d
+                    where d.driverUser.id = :driverUserId
+                      and d.status in :statuses
+                    """
+    )
+    Page<DeliveryOrder> findByDriverUserIdAndStatusInPaged(
+            @Param("driverUserId") Long driverUserId,
+            @Param("statuses") List<DeliveryStatus> statuses,
+            Pageable pageable
+    );
 }

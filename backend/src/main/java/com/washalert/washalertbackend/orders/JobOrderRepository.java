@@ -3,13 +3,19 @@ package com.washalert.washalertbackend.orders;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Lock;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import com.washalert.washalertbackend.payment.PaymentStatus;
 
 public interface JobOrderRepository extends JpaRepository<JobOrder, Long> {
     Optional<JobOrder> findByTrackingNumber(String trackingNumber);
@@ -34,4 +40,93 @@ public interface JobOrderRepository extends JpaRepository<JobOrder, Long> {
     long countByBranchIgnoreCaseAndBookingDateAndSlotStartTime(String branch, LocalDate bookingDate, LocalTime slotStartTime);
 
     List<JobOrder> findByStatusAndServiceTypeOrderByCreatedAtDesc(JobOrderStatus status, ServiceType serviceType);
+
+    @Query(
+            value = """
+                    select jo
+                    from JobOrder jo
+                    where (:branch is null or lower(jo.branch) = lower(:branch))
+                      and (:status is null or jo.status = :status)
+                      and (:search is null or lower(jo.trackingNumber) like lower(concat('%', :search, '%'))
+                           or lower(jo.customerName) like lower(concat('%', :search, '%')))
+                      and (:paymentMethod is null or upper(coalesce(jo.paymentMethod, '')) like concat('%', upper(:paymentMethod), '%'))
+                      and (:fromDateTime is null or jo.createdAt >= :fromDateTime)
+                      and (:toDateTime is null or jo.createdAt <= :toDateTime)
+                      and (
+                           :paymentStatus is null
+                           or exists(
+                               select pr.id from PaymentRecord pr
+                               where pr.jobOrder = jo and pr.status = :paymentStatus
+                           )
+                           or (:includeOrderPaid = true and jo.isPaid = true)
+                           or (
+                               :includeImplicitPending = true
+                               and jo.isPaid = false
+                               and not exists(select pr0.id from PaymentRecord pr0 where pr0.jobOrder = jo)
+                           )
+                      )
+                    """,
+            countQuery = """
+                    select count(jo)
+                    from JobOrder jo
+                    where (:branch is null or lower(jo.branch) = lower(:branch))
+                      and (:status is null or jo.status = :status)
+                      and (:search is null or lower(jo.trackingNumber) like lower(concat('%', :search, '%'))
+                           or lower(jo.customerName) like lower(concat('%', :search, '%')))
+                      and (:paymentMethod is null or upper(coalesce(jo.paymentMethod, '')) like concat('%', upper(:paymentMethod), '%'))
+                      and (:fromDateTime is null or jo.createdAt >= :fromDateTime)
+                      and (:toDateTime is null or jo.createdAt <= :toDateTime)
+                      and (
+                           :paymentStatus is null
+                           or exists(
+                               select pr.id from PaymentRecord pr
+                               where pr.jobOrder = jo and pr.status = :paymentStatus
+                           )
+                           or (:includeOrderPaid = true and jo.isPaid = true)
+                           or (
+                               :includeImplicitPending = true
+                               and jo.isPaid = false
+                               and not exists(select pr0.id from PaymentRecord pr0 where pr0.jobOrder = jo)
+                           )
+                      )
+                    """
+    )
+    Page<JobOrder> findPagedWithFilters(
+            @Param("branch") String branch,
+            @Param("status") JobOrderStatus status,
+            @Param("search") String search,
+            @Param("paymentStatus") PaymentStatus paymentStatus,
+            @Param("includeOrderPaid") boolean includeOrderPaid,
+            @Param("includeImplicitPending") boolean includeImplicitPending,
+            @Param("paymentMethod") String paymentMethod,
+            @Param("fromDateTime") LocalDateTime fromDateTime,
+            @Param("toDateTime") LocalDateTime toDateTime,
+            Pageable pageable
+    );
+
+    @Query(
+            value = """
+                    select jo
+                    from JobOrder jo
+                    where lower(jo.customerEmail) = lower(:customerEmail)
+                      and (:search is null or lower(jo.trackingNumber) like lower(concat('%', :search, '%'))
+                           or lower(coalesce(jo.branch, '')) like lower(concat('%', :search, '%')))
+                      and (:statusesEmpty = true or jo.status in :statuses)
+                    """,
+            countQuery = """
+                    select count(jo)
+                    from JobOrder jo
+                    where lower(jo.customerEmail) = lower(:customerEmail)
+                      and (:search is null or lower(jo.trackingNumber) like lower(concat('%', :search, '%'))
+                           or lower(coalesce(jo.branch, '')) like lower(concat('%', :search, '%')))
+                      and (:statusesEmpty = true or jo.status in :statuses)
+                    """
+    )
+    Page<JobOrder> findCustomerOrdersPaged(
+            @Param("customerEmail") String customerEmail,
+            @Param("search") String search,
+            @Param("statuses") Collection<JobOrderStatus> statuses,
+            @Param("statusesEmpty") boolean statusesEmpty,
+            Pageable pageable
+    );
 }

@@ -2,7 +2,7 @@
   "expo": {
     "name": "WashAlertMobile",
     "slug": "WashAlertMobile",
-    "owner": "prince06122004",
+    "owner": "washalert",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -20,7 +20,7 @@
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyAzAGBAijqpEZki3ZZBYe-9rxtzjF55RSY"
+          "apiKey": "AIzaSyCTf8ghwEOdt9d4UaIk-h4my02vn71h67s"
         }
       },
       "edgeToEdgeEnabled": false,
@@ -87,7 +87,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "47e8951b-12af-437f-9736-06e13f767a98"
+        "projectId": "4cadc5cf-023b-4d89-8594-fb4701381dfb"
       }
     }
   }

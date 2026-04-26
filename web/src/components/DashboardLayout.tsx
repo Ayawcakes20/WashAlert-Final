@@ -4,13 +4,10 @@ import { Bell, Search } from "lucide-react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { authApi, notificationsApi, type AppNotification, type MeResponse } from "@/lib/api";
-import { firebaseAuthApi } from "@/lib/firebaseAuth";
 import {
   clearFirebaseWebSession,
   clearSessionUser,
-  getFirebaseWebSession,
   getSessionUser,
-  saveFirebaseWebSession,
   saveSessionUser,
 } from "@/lib/session";
 import {
@@ -23,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 const NOTIFICATION_SEEN_KEY = "washalert_seen_notifications";
+const NOTIFICATIONS_PAGE_SIZE = 6;
 
 const readSeenIds = () => {
   try {
@@ -46,14 +44,29 @@ export default function DashboardLayout() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [seenIds, setSeenIds] = useState<Set<string>>(() => readSeenIds());
+  const [notificationsPage, setNotificationsPage] = useState(1);
+  const [totalNotificationPages, setTotalNotificationPages] = useState(1);
+  const [hasNextNotifications, setHasNextNotifications] = useState(false);
+  const [hasPreviousNotifications, setHasPreviousNotifications] = useState(false);
 
-  const loadNotifications = async () => {
+  const loadNotifications = async (requestedPage = 0) => {
     setNotificationsLoading(true);
     try {
-      const rows = await notificationsApi.list();
-      setNotifications(rows);
+      const response = await notificationsApi.listPaged({
+        page: requestedPage,
+        size: NOTIFICATIONS_PAGE_SIZE,
+      });
+      setNotifications(response.content || []);
+      setNotificationsPage((response.page || 0) + 1);
+      setTotalNotificationPages(Math.max(1, response.totalPages || 1));
+      setHasNextNotifications(Boolean(response.hasNext));
+      setHasPreviousNotifications(Boolean(response.hasPrevious));
     } catch {
       setNotifications([]);
+      setNotificationsPage(1);
+      setTotalNotificationPages(1);
+      setHasNextNotifications(false);
+      setHasPreviousNotifications(false);
     } finally {
       setNotificationsLoading(false);
     }
@@ -67,47 +80,9 @@ export default function DashboardLayout() {
         setUser(me);
         await loadNotifications();
       } catch {
-        const firebaseSession = getFirebaseWebSession();
-        if (!firebaseSession?.refreshToken) {
-          clearSessionUser();
-          clearFirebaseWebSession();
-          navigate("/login");
-          return;
-        }
-
-        try {
-          const refreshed = await firebaseAuthApi.refreshIdToken(firebaseSession.refreshToken);
-          const sessionProfile = await authApi.firebaseSession({
-            idToken: refreshed.id_token,
-            platform: "WEB",
-          });
-          const nextUser: MeResponse = await authApi.me().catch(() => ({
-            id: sessionProfile.id,
-            firebaseUid: sessionProfile.firebaseUid,
-            email: sessionProfile.email,
-            fullName: sessionProfile.fullName,
-            role: sessionProfile.role,
-            status: sessionProfile.status,
-            branchId: sessionProfile.branchId,
-            branch: sessionProfile.branch,
-            enabled: sessionProfile.status === "ACTIVE",
-            mustChangePassword: false,
-            provider: "FIREBASE",
-          }));
-
-          saveSessionUser(nextUser);
-          saveFirebaseWebSession({
-            idToken: refreshed.id_token,
-            refreshToken: refreshed.refresh_token || firebaseSession.refreshToken,
-            email: nextUser.email,
-          });
-          setUser(nextUser);
-          await loadNotifications();
-        } catch {
-          clearSessionUser();
-          clearFirebaseWebSession();
-          navigate("/login");
-        }
+        clearSessionUser();
+        clearFirebaseWebSession();
+        navigate("/login");
       } finally {
         setLoading(false);
       }
@@ -117,10 +92,10 @@ export default function DashboardLayout() {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      void loadNotifications();
+      void loadNotifications(Math.max(0, notificationsPage - 1));
     }, 45000);
     return () => clearInterval(timer);
-  }, []);
+  }, [notificationsPage]);
 
   const unreadCount = useMemo(
     () => notifications.filter((n) => !seenIds.has(n.id)).length,
@@ -211,7 +186,7 @@ export default function DashboardLayout() {
                   {notificationsLoading ? (
                     <div className="px-3 py-4 text-sm text-muted-foreground">Loading notifications...</div>
                   ) : notifications.length ? (
-                    notifications.slice(0, 12).map((notification) => (
+                    notifications.map((notification) => (
                       <DropdownMenuItem
                         key={notification.id}
                         onClick={() => openNotification(notification)}
@@ -231,6 +206,32 @@ export default function DashboardLayout() {
                   ) : (
                     <div className="px-3 py-4 text-sm text-muted-foreground">No notifications available.</div>
                   )}
+                  {totalNotificationPages > 1 ? (
+                    <>
+                      <DropdownMenuSeparator />
+                      <div className="px-3 py-2 flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          className="text-[11px] font-medium text-foreground disabled:opacity-50"
+                          onClick={() => void loadNotifications(Math.max(0, notificationsPage - 2))}
+                          disabled={!hasPreviousNotifications}
+                        >
+                          Previous
+                        </button>
+                        <span className="text-[11px] text-muted-foreground">
+                          {notificationsPage}/{totalNotificationPages}
+                        </span>
+                        <button
+                          type="button"
+                          className="text-[11px] font-medium text-foreground disabled:opacity-50"
+                          onClick={() => void loadNotifications(notificationsPage)}
+                          disabled={!hasNextNotifications}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </>
+                  ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>
 

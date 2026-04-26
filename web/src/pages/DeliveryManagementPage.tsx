@@ -71,6 +71,8 @@ const statusApiMap: Record<DeliveryStatusLabel, DeliveryStatusApi> = {
 };
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
+const DELIVERIES_PAGE_SIZE = 8;
+const RIDERS_PAGE_SIZE = 6;
 
 const mapDelivery = (d: DeliveryRecord): Delivery => ({
   id: d.id,
@@ -95,6 +97,12 @@ export default function DeliveryManagementPage() {
   const [error, setError] = useState("");
   const [statusDrafts, setStatusDrafts] = useState<Record<number, DeliveryStatusApi>>({});
   const [statusUpdatingId, setStatusUpdatingId] = useState<number | null>(null);
+  const [deliveriesPage, setDeliveriesPage] = useState(1);
+  const [totalDeliveries, setTotalDeliveries] = useState(0);
+  const [totalDeliveryPages, setTotalDeliveryPages] = useState(1);
+  const [hasNextDeliveries, setHasNextDeliveries] = useState(false);
+  const [hasPreviousDeliveries, setHasPreviousDeliveries] = useState(false);
+  const [ridersPage, setRidersPage] = useState(1);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createSubmitting, setCreateSubmitting] = useState(false);
@@ -116,12 +124,22 @@ export default function DeliveryManagementPage() {
     notes: "",
   });
 
-  const loadDeliveries = async () => {
+  const loadDeliveries = async (requestedPage = 0) => {
     try {
       setError("");
-      const data = await deliveriesApi.list();
-      const mapped = data.map(mapDelivery);
+      const response = await deliveriesApi.listPaged({
+        page: requestedPage,
+        size: DELIVERIES_PAGE_SIZE,
+        sort: "updatedAt",
+        direction: "desc",
+      });
+      const mapped = (response.content || []).map(mapDelivery);
       setDeliveries(mapped);
+      setDeliveriesPage((response.page || 0) + 1);
+      setTotalDeliveries(response.totalElements || 0);
+      setTotalDeliveryPages(Math.max(1, response.totalPages || 1));
+      setHasNextDeliveries(Boolean(response.hasNext));
+      setHasPreviousDeliveries(Boolean(response.hasPrevious));
       setStatusDrafts(
         mapped.reduce(
           (acc, d) => {
@@ -134,13 +152,18 @@ export default function DeliveryManagementPage() {
     } catch (err: any) {
       setError(err?.message || "Unable to load deliveries.");
       setDeliveries([]);
+      setDeliveriesPage(1);
+      setTotalDeliveries(0);
+      setTotalDeliveryPages(1);
+      setHasNextDeliveries(false);
+      setHasPreviousDeliveries(false);
     }
   };
 
   useEffect(() => {
     const run = async () => {
       setLoading(true);
-      await loadDeliveries();
+      await loadDeliveries(0);
       setLoading(false);
     };
     void run();
@@ -160,6 +183,16 @@ export default function DeliveryManagementPage() {
     });
     return Array.from(unique.values());
   }, [deliveries]);
+
+  const totalRiderPages = Math.max(1, Math.ceil(riders.length / RIDERS_PAGE_SIZE));
+  const paginatedRiders = useMemo(() => {
+    const start = (ridersPage - 1) * RIDERS_PAGE_SIZE;
+    return riders.slice(start, start + RIDERS_PAGE_SIZE);
+  }, [riders, ridersPage]);
+
+  useEffect(() => {
+    setRidersPage(1);
+  }, [riders.length]);
 
   const submitCreate = async () => {
     if (!createForm.trackingNumber.trim() || !createForm.driverName.trim() || !createForm.driverPhone.trim()) {
@@ -185,7 +218,7 @@ export default function DeliveryManagementPage() {
         estimatedArrivalAt: "",
         notes: "",
       });
-      await loadDeliveries();
+      await loadDeliveries(Math.max(0, deliveriesPage - 1));
     } catch (err: any) {
       toast.error(err?.message || "Unable to create delivery.");
     } finally {
@@ -203,7 +236,7 @@ export default function DeliveryManagementPage() {
         status: nextStatus,
       });
       toast.success(`Delivery ${delivery.orderId} moved to ${statusMap[nextStatus]}.`);
-      await loadDeliveries();
+      await loadDeliveries(Math.max(0, deliveriesPage - 1));
     } catch (err: any) {
       toast.error(err?.message || "Unable to update delivery status.");
     } finally {
@@ -239,7 +272,7 @@ export default function DeliveryManagementPage() {
       });
       toast.success("Rider assignment updated.");
       setAssignOpen(false);
-      await loadDeliveries();
+      await loadDeliveries(Math.max(0, deliveriesPage - 1));
     } catch (err: any) {
       toast.error(err?.message || "Unable to update rider assignment.");
     } finally {
@@ -354,13 +387,40 @@ export default function DeliveryManagementPage() {
               );
             })}
             {!deliveries.length ? <p className="text-sm text-muted-foreground">No deliveries found.</p> : null}
+            {totalDeliveries > DELIVERIES_PAGE_SIZE ? (
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-3 text-xs"
+                  onClick={() => void loadDeliveries(Math.max(0, deliveriesPage - 2))}
+                  disabled={!hasPreviousDeliveries}
+                >
+                  Previous
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Page {deliveriesPage} of {totalDeliveryPages}
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-3 text-xs"
+                  onClick={() => void loadDeliveries(deliveriesPage)}
+                  disabled={!hasNextDeliveries}
+                >
+                  Next
+                </Button>
+              </div>
+            ) : null}
           </div>
         </motion.div>
 
         <motion.div variants={item} className="glass-card rounded-2xl p-6">
           <h2 className="text-lg font-semibold text-foreground mb-4">Active Riders</h2>
           <div className="space-y-4">
-            {riders.map((r) => (
+            {paginatedRiders.map((r) => (
               <div key={r.name} className="rounded-xl border border-border/30 p-4">
                 <div className="flex items-center gap-3 mb-2">
                   <div className="h-10 w-10 rounded-full gradient-navy flex items-center justify-center text-xs font-bold text-primary-foreground">
@@ -387,6 +447,33 @@ export default function DeliveryManagementPage() {
               </div>
             ))}
             {!riders.length ? <p className="text-sm text-muted-foreground">No rider data yet.</p> : null}
+            {riders.length > RIDERS_PAGE_SIZE ? (
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-3 text-xs"
+                  onClick={() => setRidersPage((prev) => Math.max(1, prev - 1))}
+                  disabled={ridersPage === 1}
+                >
+                  Previous
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Page {ridersPage} of {totalRiderPages}
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-3 text-xs"
+                  onClick={() => setRidersPage((prev) => Math.min(totalRiderPages, prev + 1))}
+                  disabled={ridersPage >= totalRiderPages}
+                >
+                  Next
+                </Button>
+              </div>
+            ) : null}
           </div>
         </motion.div>
       </div>

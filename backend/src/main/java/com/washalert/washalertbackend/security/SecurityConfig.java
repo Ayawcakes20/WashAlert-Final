@@ -84,7 +84,6 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST,
                                 "/api/auth/register",
                                 "/api/auth/login",
-                                "/api/auth/firebase-session",
                                 "/api/auth/firebase-login-otp/request",
                                 "/api/auth/firebase-login-otp/resend",
                                 "/api/auth/firebase-login-otp/verify",

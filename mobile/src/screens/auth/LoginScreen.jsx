@@ -52,19 +52,26 @@ const LoginScreen = ({ navigation }) => {
   };
 
   const handleLogin = async () => {
-    if (!validate()) return;
+    if (loading || !validate()) return;
     setLoading(true);
-    const result = await login(email, password);
-    setLoading(false);
-    if (!result?.success) {
-      Alert.alert('Login Failed', result?.error || 'Unable to login right now.');
-      return;
-    }
-    if (result.requiresOtp) {
-      navigation.navigate('OTPVerification', {
-        email: email.trim().toLowerCase(),
-        type: 'login_otp',
-      });
+    try {
+      const result = await login(email, password);
+      if (!result?.success) {
+        Alert.alert('Login Failed', result?.error || 'Unable to login right now.');
+        return;
+      }
+      if (result.requiresOtp) {
+        navigation.navigate('OTPVerification', {
+          email: email.trim().toLowerCase(),
+          type: 'login_otp',
+        });
+        return;
+      }
+      Alert.alert('Login Failed', 'Unable to start OTP verification. Please try again.');
+    } catch (_error) {
+      Alert.alert('Login Failed', 'Unable to login right now. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 

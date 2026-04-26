@@ -20,12 +20,16 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import * as Location from 'expo-location';
 import { MapView, Marker, PROVIDER_GOOGLE } from './SafeMap';
 import { colors } from '../theme/colors';
-import { GOOGLE_MAPS_API_KEY } from '../config/env';
+import {
+  GOOGLE_MAPS_API_KEY,
+  GOOGLE_MAPS_API_KEY_SOURCE,
+  NATIVE_GOOGLE_MAPS_API_KEY,
+} from '../config/env';
 import {
   loadSavedAddresses,
   saveSavedAddresses,
@@ -36,6 +40,70 @@ import {
 const formatAddressFromGeo = (geo = {}, lat, lng) => {
   const parts = [geo.name, geo.street, geo.subregion, geo.city, geo.region].filter(Boolean);
   return parts.length ? parts.join(', ') : `Pinned location (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
+};
+const DEFAULT_REGION = {
+  latitude: 14.5995,
+  longitude: 120.9842,
+  latitudeDelta: 0.02,
+  longitudeDelta: 0.02,
+};
+const DEFAULT_COORDINATE = {
+  latitude: DEFAULT_REGION.latitude,
+  longitude: DEFAULT_REGION.longitude,
+};
+const METRO_MANILA_TEST_PIN = {
+  latitude: 14.5995,
+  longitude: 120.9842,
+};
+const PH_BOUNDS = {
+  minLatitude: 4,
+  maxLatitude: 22,
+  minLongitude: 116,
+  maxLongitude: 127,
+};
+const toFiniteNumber = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+const isWithinPhilippinesBounds = ({ latitude, longitude }) =>
+  latitude >= PH_BOUNDS.minLatitude &&
+  latitude <= PH_BOUNDS.maxLatitude &&
+  longitude >= PH_BOUNDS.minLongitude &&
+  longitude <= PH_BOUNDS.maxLongitude;
+const sanitizeCoordinate = (coord, fallbackCoordinate = null) => {
+  const latitude = toFiniteNumber(coord?.latitude);
+  const longitude = toFiniteNumber(coord?.longitude);
+  const fallback = fallbackCoordinate
+    ? {
+        latitude: toFiniteNumber(fallbackCoordinate.latitude) ?? DEFAULT_COORDINATE.latitude,
+        longitude: toFiniteNumber(fallbackCoordinate.longitude) ?? DEFAULT_COORDINATE.longitude,
+      }
+    : null;
+  if (latitude == null || longitude == null) return fallback;
+
+  const nextCoordinate = { latitude, longitude };
+  if (!isWithinPhilippinesBounds(nextCoordinate)) return fallback;
+  return nextCoordinate;
+};
+const sanitizeDelta = (value, fallback) => {
+  const parsed = toFiniteNumber(value);
+  return parsed && parsed > 0 ? parsed : fallback;
+};
+const sanitizeRegion = (region, fallbackCoordinate = DEFAULT_COORDINATE) => {
+  const fallback = sanitizeCoordinate(fallbackCoordinate, DEFAULT_COORDINATE) || DEFAULT_COORDINATE;
+  const coord = sanitizeCoordinate(region, fallback) || fallback;
+  return {
+    latitude: coord.latitude,
+    longitude: coord.longitude,
+    latitudeDelta: sanitizeDelta(region?.latitudeDelta, DEFAULT_REGION.latitudeDelta),
+    longitudeDelta: sanitizeDelta(region?.longitudeDelta, DEFAULT_REGION.longitudeDelta),
+  };
+};
+const logMapLocationDebug = (source, region, coordinate) => {
+  if (!__DEV__) return;
+  console.info('[AddressPicker] LOCATION SOURCE:', source);
+  console.info('[AddressPicker] MAP REGION:', region);
+  console.info('[AddressPicker] MARKER COORDINATE:', coordinate);
 };
 
 const LABEL_ICONS = {
@@ -64,7 +132,14 @@ const getLabelIcon = (label = '') => {
  *   onClose       () => void
  *   initialValue  addressObj | null
  */
-const AddressPickerSheet = ({ visible, title = 'Set Address', onConfirm, onClose, initialValue }) => {
+const AddressPickerSheet = ({
+  visible,
+  title = 'Set Address',
+  onConfirm,
+  onClose,
+  initialValue,
+  fallbackCoordinate = null,
+}) => {
   // panel: 'list' | 'map' | 'confirm'
   const [panel, setPanel] = useState('list');
 
@@ -72,13 +147,15 @@ const AddressPickerSheet = ({ visible, title = 'Set Address', onConfirm, onClose
   const [savedAddresses, setSavedAddresses] = useState([]);
 
   // Map state
-  const [mapRegion, setMapRegion] = useState({
-    latitude: 14.5517, longitude: 121.0244, // Makati default
-    latitudeDelta: 0.01, longitudeDelta: 0.01,
-  });
+  const [mapRegion, setMapRegion] = useState(DEFAULT_REGION);
   const [pinnedCoords, setPinnedCoords] = useState(null);
   const [resolvedAddress, setResolvedAddress] = useState('');
   const [resolving, setResolving] = useState(false);
+  const [mapLoadError, setMapLoadError] = useState('');
+  const [isMapReady, setIsMapReady] = useState(false);
+  const [isMapLoaded, setIsMapLoaded] = useState(false);
+  const [mapLoadFailed, setMapLoadFailed] = useState(false);
+  const [mapKey, setMapKey] = useState(0);
 
   // Confirm form state
   const [unitFloor, setUnitFloor] = useState('');
@@ -88,11 +165,27 @@ const AddressPickerSheet = ({ visible, title = 'Set Address', onConfirm, onClose
   const [saveThis, setSaveThis] = useState(false);
 
   const autocompleteRef = useRef(null);
+  const mapLoadTimerRef = useRef(null);
+  const fallbackLatitude = toFiniteNumber(fallbackCoordinate?.latitude);
+  const fallbackLongitude = toFiniteNumber(fallbackCoordinate?.longitude);
+  const safeFallbackCoordinate = React.useMemo(
+    () =>
+      sanitizeCoordinate(
+        { latitude: fallbackLatitude, longitude: fallbackLongitude },
+        DEFAULT_COORDINATE
+      ) || DEFAULT_COORDINATE,
+    [fallbackLatitude, fallbackLongitude]
+  );
+  const fallbackRegion = React.useMemo(
+    () => sanitizeRegion(safeFallbackCoordinate, safeFallbackCoordinate),
+    [safeFallbackCoordinate]
+  );
 
   // ── Load saved addresses when modal opens ──────────────────────────────
   useEffect(() => {
     if (!visible) return;
     setPanel('list');
+    setMapLoadError('');
     loadSavedAddresses().then(setSavedAddresses).catch(() => setSavedAddresses([]));
 
     // Pre-populate confirm fields if editing
@@ -100,20 +193,101 @@ const AddressPickerSheet = ({ visible, title = 'Set Address', onConfirm, onClose
       setUnitFloor(initialValue.unitFloor || '');
       setContactName(initialValue.contactName || '');
       setPhone(initialValue.phone || '');
-      if (initialValue.latitude && initialValue.longitude) {
-        const coords = { latitude: initialValue.latitude, longitude: initialValue.longitude };
+      const coords = sanitizeCoordinate(initialValue, null);
+      if (coords) {
+        const nextRegion = sanitizeRegion({ ...fallbackRegion, ...coords }, safeFallbackCoordinate);
         setPinnedCoords(coords);
-        setMapRegion((prev) => ({ ...prev, ...coords }));
+        setMapRegion(nextRegion);
+        logMapLocationDebug('INITIAL_VALUE', nextRegion, coords);
+      } else {
+        setPinnedCoords(safeFallbackCoordinate);
+        setMapRegion(fallbackRegion);
+        logMapLocationDebug('FALLBACK_REGION_ON_INIT', fallbackRegion, safeFallbackCoordinate);
       }
       setResolvedAddress(initialValue.address || '');
     } else {
       setUnitFloor('');
       setContactName('');
       setPhone('');
-      setPinnedCoords(null);
+      setPinnedCoords(safeFallbackCoordinate);
       setResolvedAddress('');
+      setMapRegion(fallbackRegion);
+      logMapLocationDebug(
+        fallbackCoordinate ? 'BRANCH_FALLBACK' : 'METRO_MANILA_DEFAULT',
+        fallbackRegion,
+        safeFallbackCoordinate
+      );
     }
-  }, [visible]);
+  }, [visible, initialValue, fallbackCoordinate, fallbackRegion, safeFallbackCoordinate]);
+
+  useEffect(() => {
+    if (!visible || panel !== 'map') return;
+    if (__DEV__) {
+      console.info(`GOOGLE MAPS KEY LOADED: ${GOOGLE_MAPS_API_KEY ? 'YES' : 'NO'}`);
+      if (
+        GOOGLE_MAPS_API_KEY &&
+        NATIVE_GOOGLE_MAPS_API_KEY &&
+        GOOGLE_MAPS_API_KEY !== NATIVE_GOOGLE_MAPS_API_KEY
+      ) {
+        console.warn(
+          `[AddressPicker] JS/native maps key source mismatch (source: ${GOOGLE_MAPS_API_KEY_SOURCE}). ` +
+            'Ensure EXPO_PUBLIC_GOOGLE_MAPS_API_KEY and native googleMaps key are aligned for this build.'
+        );
+      }
+    }
+    setIsMapReady(false);
+    setIsMapLoaded(false);
+    setMapLoadFailed(false);
+
+    if (!GOOGLE_MAPS_API_KEY) {
+      setMapLoadError('Map failed to load. Please check Google Maps API key or internet connection.');
+      setMapLoadFailed(true);
+      return;
+    }
+
+    if (mapLoadTimerRef.current) {
+      clearTimeout(mapLoadTimerRef.current);
+      mapLoadTimerRef.current = null;
+    }
+
+    setMapLoadError('');
+
+    return () => {
+      if (mapLoadTimerRef.current) {
+        clearTimeout(mapLoadTimerRef.current);
+        mapLoadTimerRef.current = null;
+      }
+    };
+  }, [visible, panel, mapKey]);
+
+  useEffect(() => {
+    if (!visible || panel !== 'map' || !GOOGLE_MAPS_API_KEY) return;
+    const safeRegion = sanitizeRegion(mapRegion, safeFallbackCoordinate);
+    const safeMarker = sanitizeCoordinate(pinnedCoords, safeFallbackCoordinate) || safeFallbackCoordinate;
+    if (
+      safeRegion.latitude !== mapRegion.latitude ||
+      safeRegion.longitude !== mapRegion.longitude
+    ) {
+      setMapRegion(safeRegion);
+    }
+    if (
+      !pinnedCoords ||
+      safeMarker.latitude !== pinnedCoords.latitude ||
+      safeMarker.longitude !== pinnedCoords.longitude
+    ) {
+      setPinnedCoords(safeMarker);
+    }
+    logMapLocationDebug(pinnedCoords ? 'EXISTING_PIN' : 'MAP_PANEL_OPEN_FALLBACK', safeRegion, safeMarker);
+  }, [visible, panel, mapRegion, pinnedCoords, safeFallbackCoordinate]);
+
+  useEffect(() => {
+    if (panel !== 'map' || pinnedCoords) return;
+    const fallbackCoord = sanitizeCoordinate(mapRegion, safeFallbackCoordinate);
+    if (fallbackCoord) {
+      setPinnedCoords(fallbackCoord);
+      logMapLocationDebug('MAP_PANEL_FALLBACK_PIN', sanitizeRegion(mapRegion, safeFallbackCoordinate), fallbackCoord);
+    }
+  }, [panel, pinnedCoords, mapRegion, safeFallbackCoordinate]);
 
   // ── Sync address string from coords ──────────────────────────────────────
   const resolveFromCoords = async (lat, lng) => {
@@ -139,9 +313,16 @@ const AddressPickerSheet = ({ visible, title = 'Set Address', onConfirm, onClose
       }
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const { latitude, longitude } = loc.coords;
-      setPinnedCoords({ latitude, longitude });
-      setMapRegion((prev) => ({ ...prev, latitude, longitude }));
-      await resolveFromCoords(latitude, longitude);
+      const coords = sanitizeCoordinate({ latitude, longitude }, safeFallbackCoordinate);
+      if (!coords) {
+        Alert.alert('Error', 'Unable to parse current location coordinates.');
+        return;
+      }
+      const nextRegion = sanitizeRegion({ ...mapRegion, ...coords }, safeFallbackCoordinate);
+      setPinnedCoords(coords);
+      setMapRegion(nextRegion);
+      logMapLocationDebug('CURRENT_LOCATION', nextRegion, coords);
+      await resolveFromCoords(coords.latitude, coords.longitude);
       setPanel('confirm');
     } catch {
       Alert.alert('Error', 'Unable to get current location.');
@@ -152,18 +333,29 @@ const AddressPickerSheet = ({ visible, title = 'Set Address', onConfirm, onClose
   const handlePlaceSelect = (data, details) => {
     if (!details?.geometry?.location) return;
     const { lat, lng } = details.geometry.location;
-    setPinnedCoords({ latitude: lat, longitude: lng });
-    setMapRegion((prev) => ({ ...prev, latitude: lat, longitude: lng }));
+    const coords = sanitizeCoordinate({ latitude: lat, longitude: lng }, safeFallbackCoordinate);
+    if (!coords) return;
+    const nextRegion = sanitizeRegion({ ...mapRegion, ...coords }, safeFallbackCoordinate);
+    setPinnedCoords(coords);
+    setMapRegion(nextRegion);
     setResolvedAddress(data.description);
+    logMapLocationDebug('AUTOCOMPLETE_SELECTION', nextRegion, coords);
     setPanel('map');
   };
 
   // ── Select a previously saved address ────────────────────────────────
   const handleSelectSaved = (item) => {
     setResolvedAddress(item.address);
-    if (item.latitude && item.longitude) {
-      setPinnedCoords({ latitude: item.latitude, longitude: item.longitude });
-      setMapRegion((prev) => ({ ...prev, latitude: item.latitude, longitude: item.longitude }));
+    if (item.latitude != null && item.longitude != null) {
+      const coords = sanitizeCoordinate(item, null);
+      if (coords) {
+        const nextRegion = sanitizeRegion({ ...mapRegion, ...coords }, safeFallbackCoordinate);
+        setPinnedCoords(coords);
+        setMapRegion(nextRegion);
+        logMapLocationDebug('SAVED_ADDRESS_COORDS', nextRegion, coords);
+      } else {
+        logMapLocationDebug('SAVED_ADDRESS_INVALID_COORDS', fallbackRegion, safeFallbackCoordinate);
+      }
       setPanel('map');
     } else {
       // try geocoding
@@ -171,9 +363,15 @@ const AddressPickerSheet = ({ visible, title = 'Set Address', onConfirm, onClose
         .then((res) => {
           const first = res?.[0];
           if (first?.latitude) {
-            const coords = { latitude: first.latitude, longitude: first.longitude };
+            const coords = sanitizeCoordinate(
+              { latitude: first.latitude, longitude: first.longitude },
+              safeFallbackCoordinate
+            );
+            if (!coords) return;
+            const nextRegion = sanitizeRegion({ ...mapRegion, ...coords }, safeFallbackCoordinate);
             setPinnedCoords(coords);
-            setMapRegion((prev) => ({ ...prev, ...coords }));
+            setMapRegion(nextRegion);
+            logMapLocationDebug('SAVED_ADDRESS_GEOCODE', nextRegion, coords);
           }
         })
         .catch(() => {})
@@ -186,17 +384,86 @@ const AddressPickerSheet = ({ visible, title = 'Set Address', onConfirm, onClose
 
   // ── Map press / drag end ──────────────────────────────────────────────
   const handleMapPress = async (event) => {
-    const coord = event?.nativeEvent?.coordinate;
+    const coord = sanitizeCoordinate(event?.nativeEvent?.coordinate, safeFallbackCoordinate);
     if (!coord) return;
+    const nextRegion = sanitizeRegion({ ...mapRegion, ...coord }, safeFallbackCoordinate);
     setPinnedCoords(coord);
+    setMapRegion(nextRegion);
+    logMapLocationDebug('MAP_PRESS', nextRegion, coord);
     await resolveFromCoords(coord.latitude, coord.longitude);
   };
 
   const handleMarkerDrag = async (event) => {
-    const coord = event?.nativeEvent?.coordinate;
+    const coord = sanitizeCoordinate(event?.nativeEvent?.coordinate, safeFallbackCoordinate);
     if (!coord) return;
+    const nextRegion = sanitizeRegion({ ...mapRegion, ...coord }, safeFallbackCoordinate);
     setPinnedCoords(coord);
+    setMapRegion(nextRegion);
+    logMapLocationDebug('MARKER_DRAG', nextRegion, coord);
     await resolveFromCoords(coord.latitude, coord.longitude);
+  };
+
+  const handleMapReady = () => {
+    setIsMapReady(true);
+    if (__DEV__) console.info('[AddressPicker] onMapReady fired');
+    setMapLoadError('');
+    setMapLoadFailed(false);
+    if (mapLoadTimerRef.current) {
+      clearTimeout(mapLoadTimerRef.current);
+      mapLoadTimerRef.current = null;
+    }
+    mapLoadTimerRef.current = setTimeout(() => {
+      setMapLoadFailed(true);
+      setMapLoadError(
+        'Google Map tiles failed to load. Check Maps SDK for Android, billing, or API key restrictions.'
+      );
+    }, 8000);
+    logMapLocationDebug(
+      'MAP_READY',
+      sanitizeRegion(mapRegion, safeFallbackCoordinate),
+      sanitizeCoordinate(pinnedCoords, safeFallbackCoordinate)
+    );
+  };
+
+  const handleMapLoaded = () => {
+    setIsMapLoaded(true);
+    if (__DEV__) console.info('[AddressPicker] onMapLoaded fired');
+    setMapLoadError('');
+    setMapLoadFailed(false);
+    if (mapLoadTimerRef.current) {
+      clearTimeout(mapLoadTimerRef.current);
+      mapLoadTimerRef.current = null;
+    }
+    logMapLocationDebug(
+      'MAP_LOADED',
+      sanitizeRegion(mapRegion, safeFallbackCoordinate),
+      sanitizeCoordinate(pinnedCoords, safeFallbackCoordinate)
+    );
+  };
+
+  const handleMapError = (event) => {
+    const message =
+      event?.nativeEvent?.message ||
+      event?.nativeEvent?.error ||
+      event?.message ||
+      'Unknown map error';
+    if (__DEV__) console.error('[AddressPicker] onError fired:', message);
+    setMapLoadFailed(true);
+    setMapLoadError(
+      'Google Map tiles failed to load. Check Maps SDK for Android, billing, or API key restrictions.'
+    );
+  };
+
+  const handleRetryMapLoad = () => {
+    if (mapLoadTimerRef.current) {
+      clearTimeout(mapLoadTimerRef.current);
+      mapLoadTimerRef.current = null;
+    }
+    setMapLoadError('');
+    setMapLoadFailed(false);
+    setIsMapReady(false);
+    setIsMapLoaded(false);
+    setMapKey((prev) => prev + 1);
   };
 
   // ── Confirm → fire callback ───────────────────────────────────────────
@@ -369,13 +636,26 @@ const AddressPickerSheet = ({ visible, title = 'Set Address', onConfirm, onClose
             </View>
 
             <MapView
+              key={`address-map-${mapKey}`}
               style={styles.fullMap}
               provider={PROVIDER_GOOGLE}
-              region={mapRegion}
-              onRegionChangeComplete={setMapRegion}
+              initialRegion={sanitizeRegion(mapRegion, safeFallbackCoordinate)}
+              region={isMapLoaded ? sanitizeRegion(mapRegion, safeFallbackCoordinate) : undefined}
+              onMapReady={handleMapReady}
+              onMapLoaded={handleMapLoaded}
+              onError={handleMapError}
+              onRegionChangeComplete={(nextRegion) => {
+                const sanitizedRegion = sanitizeRegion(nextRegion, safeFallbackCoordinate);
+                setMapRegion(sanitizedRegion);
+                logMapLocationDebug(
+                  'REGION_CHANGE_COMPLETE',
+                  sanitizedRegion,
+                  sanitizeCoordinate(pinnedCoords, safeFallbackCoordinate)
+                );
+              }}
               onPress={handleMapPress}
             >
-              {pinnedCoords && (
+              {isMapReady && pinnedCoords && (
                 <Marker
                   coordinate={pinnedCoords}
                   draggable
@@ -383,7 +663,29 @@ const AddressPickerSheet = ({ visible, title = 'Set Address', onConfirm, onClose
                   title="Your location"
                 />
               )}
+              {__DEV__ && (
+                <Marker
+                  coordinate={METRO_MANILA_TEST_PIN}
+                  title="Metro Manila test pin"
+                  description="Temporary map render check"
+                  pinColor="#2563EB"
+                />
+              )}
             </MapView>
+            {mapLoadError ? (
+              <View style={styles.mapErrorBanner}>
+                <Ionicons name="warning-outline" size={16} color={colors.warning} />
+                <Text style={styles.mapErrorText}>{mapLoadError}</Text>
+                <TouchableOpacity style={styles.mapRetryBtn} onPress={handleRetryMapLoad}>
+                  <Text style={styles.mapRetryBtnText}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+            {__DEV__ && isMapReady && !isMapLoaded ? (
+              <View style={styles.mapInfoBanner}>
+                <Text style={styles.mapInfoText}>Map ready. Waiting for tiles to fully load...</Text>
+              </View>
+            ) : null}
 
             {/* Bottom confirm strip */}
             <View style={styles.mapBottomStrip}>
@@ -400,6 +702,20 @@ const AddressPickerSheet = ({ visible, title = 'Set Address', onConfirm, onClose
                   </Text>
                 </View>
               )}
+              {mapLoadFailed && pinnedCoords ? (
+                <View style={styles.mapFallbackCard}>
+                  <Text style={styles.mapFallbackTitle}>Map tiles unavailable</Text>
+                  <Text style={styles.mapFallbackText} numberOfLines={2}>
+                    {resolvedAddress || 'Pinned coordinate'}
+                  </Text>
+                  <Text style={styles.mapFallbackCoord}>
+                    Lat {pinnedCoords.latitude.toFixed(5)} • Lng {pinnedCoords.longitude.toFixed(5)}
+                  </Text>
+                  <TouchableOpacity style={styles.mapFallbackBtn} onPress={() => setPanel('confirm')}>
+                    <Text style={styles.mapFallbackBtnText}>Use These Coordinates</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
               <TouchableOpacity
                 style={[styles.confirmStripBtn, (!pinnedCoords || resolving) && styles.confirmStripBtnDisabled]}
                 onPress={() => pinnedCoords && !resolving && setPanel('confirm')}
@@ -647,6 +963,94 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   mapHeaderText: { fontSize: 14, fontWeight: '600', color: colors.text },
+  mapErrorBanner: {
+    position: 'absolute',
+    top: 64,
+    left: 12,
+    right: 12,
+    zIndex: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  mapErrorText: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  mapRetryBtn: {
+    height: 28,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: colors.warning,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapRetryBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  mapInfoBanner: {
+    position: 'absolute',
+    top: 104,
+    left: 12,
+    right: 12,
+    zIndex: 11,
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  mapInfoText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  mapFallbackCard: {
+    backgroundColor: colors.surfaceVariant,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    gap: 6,
+  },
+  mapFallbackTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  mapFallbackText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  mapFallbackCoord: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textTertiary,
+  },
+  mapFallbackBtn: {
+    marginTop: 4,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapFallbackBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFF',
+  },
   mapBottomStrip: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: colors.surface,

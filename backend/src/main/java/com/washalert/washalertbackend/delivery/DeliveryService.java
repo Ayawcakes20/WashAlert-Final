@@ -1,6 +1,7 @@
 package com.washalert.washalertbackend.delivery;
 
 import com.washalert.washalertbackend.common.DataReadProperties;
+import com.washalert.washalertbackend.common.dto.PagedResponse;
 import com.washalert.washalertbackend.delivery.dto.BranchHandoverRequest;
 import com.washalert.washalertbackend.delivery.dto.CreateDeliveryRequest;
 import com.washalert.washalertbackend.delivery.dto.DeliveryResponse;
@@ -30,11 +31,14 @@ import com.washalert.washalertbackend.user.UserRepository;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 
@@ -329,6 +333,25 @@ public class DeliveryService {
                 .stream().map(this::toResponse).toList();
     }
 
+    public PagedResponse<DeliveryResponse> listMyPaged(
+            AuthUserDetails principal,
+            String statusGroup,
+            Pageable pageable
+    ) {
+        User driver = principal.getUser();
+        if (driver.getRole() != Role.DRIVER) {
+            throw new IllegalArgumentException("Only drivers can view personal deliveries.");
+        }
+
+        List<DeliveryStatus> statuses = resolveDriverStatusGroup(statusGroup);
+        Page<DeliveryOrder> page = statuses.isEmpty()
+                ? deliveryRepository.findByDriverUserIdPaged(driver.getId(), pageable)
+                : deliveryRepository.findByDriverUserIdAndStatusInPaged(driver.getId(), statuses, pageable);
+
+        Page<DeliveryResponse> mapped = page.map(this::toResponse);
+        return PagedResponse.from(mapped);
+    }
+
     public List<DeliveryResponse> list(String branch, AuthUserDetails principal) {
         User actor = principal.getUser();
         String effectiveBranch = resolveEffectiveBranch(branch, actor);
@@ -347,6 +370,27 @@ public class DeliveryService {
         }
 
         return firestoreRows;
+    }
+
+    public PagedResponse<DeliveryResponse> listPaged(
+            String branch,
+            String status,
+            String search,
+            AuthUserDetails principal,
+            Pageable pageable
+    ) {
+        User actor = principal.getUser();
+        String effectiveBranch = resolveEffectiveBranch(branch, actor);
+        DeliveryStatus parsedStatus = parseDeliveryStatus(status);
+
+        Page<DeliveryOrder> page = deliveryRepository.findOpsPaged(
+                effectiveBranch,
+                parsedStatus,
+                blankToNull(search),
+                pageable
+        );
+        Page<DeliveryResponse> mapped = page.map(this::toResponse);
+        return PagedResponse.from(mapped);
     }
 
     public DeliveryResponse getById(Long deliveryId, AuthUserDetails principal) {
@@ -911,6 +955,38 @@ public class DeliveryService {
         if (value == null) return null;
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private DeliveryStatus parseDeliveryStatus(String status) {
+        String normalized = blankToNull(status);
+        if (normalized == null) return null;
+        try {
+            return DeliveryStatus.valueOf(normalized.toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Invalid delivery status filter.");
+        }
+    }
+
+    private List<DeliveryStatus> resolveDriverStatusGroup(String statusGroup) {
+        String normalized = blankToNull(statusGroup);
+        if (normalized == null || "all".equalsIgnoreCase(normalized)) return List.of();
+        return switch (normalized.toLowerCase()) {
+            case "pending" -> List.of(DeliveryStatus.ASSIGNED_PICKUP, DeliveryStatus.PENDING_PICKUP);
+            case "in_progress" -> EnumSet.of(
+                    DeliveryStatus.ARRIVED_CUSTOMER,
+                    DeliveryStatus.PICKED_UP,
+                    DeliveryStatus.ARRIVED_BRANCH,
+                    DeliveryStatus.HANDED_TO_BRANCH,
+                    DeliveryStatus.ASSIGNED_DELIVERY,
+                    DeliveryStatus.OUT_FOR_DELIVERY,
+                    DeliveryStatus.ARRIVED_DELIVERY,
+                    DeliveryStatus.EN_ROUTE_TO_PICKUP,
+                    DeliveryStatus.IN_TRANSIT
+            ).stream().toList();
+            case "completed" -> List.of(DeliveryStatus.DELIVERED);
+            case "failed" -> List.of(DeliveryStatus.FAILED, DeliveryStatus.CANCELLED);
+            default -> throw new IllegalArgumentException("Invalid delivery status group filter.");
+        };
     }
 
     private String resolveDriverContact(User driver) {

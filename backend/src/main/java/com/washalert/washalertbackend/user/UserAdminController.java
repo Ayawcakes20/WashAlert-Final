@@ -3,9 +3,13 @@ package com.washalert.washalertbackend.user;
 import com.washalert.washalertbackend.user.dto.CreateStaffRequest;
 import com.washalert.washalertbackend.user.dto.UpdateStaffRequest;
 import com.washalert.washalertbackend.user.dto.UserAdminResponse;
+import com.washalert.washalertbackend.common.dto.PagedResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -27,6 +31,18 @@ public class UserAdminController {
     @PreAuthorize("hasRole('ADMIN')")
     public List<UserAdminResponse> listStaff() {
         return userAdminService.listStaff();
+    }
+
+    @GetMapping("/staff/paged")
+    @PreAuthorize("hasRole('ADMIN')")
+    public PagedResponse<UserAdminResponse> listStaffPaged(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Role role,
+            @RequestParam(required = false) UserStatus status,
+            @RequestParam(required = false) String branch,
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        return userAdminService.listStaffPaged(search, role, status, branch, pageable);
     }
 
     // ✅ Drivers list — used by web "Assign Driver" dialog; filter by branch when provided

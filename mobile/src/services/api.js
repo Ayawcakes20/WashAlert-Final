@@ -6,6 +6,23 @@ const USER_STORAGE_KEY = 'userData';
 const NOTIFICATION_READ_IDS_KEY = 'washalert_notifications_read_ids_v1';
 const SUPPORT_SESSION_KEY = 'washalert_support_session_id_v1';
 const looksLikeHtml = (value) => /<!doctype html|<html[\s>]/i.test(String(value || ''));
+const looksLikeNgrokWarningPage = (value) =>
+  /ngrok/i.test(String(value || '')) &&
+  /(visit site|tunnel|ERR_NGROK|ngrok-free\.dev)/i.test(String(value || ''));
+const NGROK_SKIP_BROWSER_WARNING_HEADER = { 'ngrok-skip-browser-warning': 'true' };
+const normalizePath = (path) => {
+  const normalized = String(path || '').trim();
+  return normalized.startsWith('/') ? normalized : `/${normalized}`;
+};
+const buildBackendUrl = (path) => {
+  const base = String(API_BASE_URL || '').replace(/\/+$/, '');
+  const normalizedPath = normalizePath(path);
+  if (base.endsWith('/api') && normalizedPath.startsWith('/api/')) {
+    return `${base}${normalizedPath.slice(4)}`;
+  }
+  return `${base}${normalizedPath}`;
+};
+const toResponsePreview = (text) => String(text || '').replace(/\s+/g, ' ').trim().slice(0, 120);
 
 const createSupportSessionId = () => `mobile-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
@@ -271,8 +288,18 @@ const parseResponse = async (res) => {
     } catch {
       parseFailed = true;
       if (contentType.includes('text/html') || looksLikeHtml(text)) {
+        const preview = toResponsePreview(text);
+        if (__DEV__) {
+          console.warn('[API][NonJSON] HTML response detected', {
+            status: res.status,
+            contentType,
+            preview,
+          });
+        }
         const err = new Error(
-          `Unexpected non-JSON response from API (${API_BASE_URL}). Check EXPO_PUBLIC_API_BASE_URL and backend port.`
+          looksLikeNgrokWarningPage(text)
+            ? `Ngrok warning page received. Header may not be sent or URL is wrong. (${API_BASE_URL})`
+            : `Backend returned HTML. Check ngrok warning/API base URL. (${API_BASE_URL})`
         );
         err.status = res.status;
         throw err;
@@ -292,8 +319,18 @@ const parseResponse = async (res) => {
   if (res.ok && text) {
     const payloadLooksStructured = payload && typeof payload === 'object';
     if (!jsonContentType || parseFailed || !payloadLooksStructured) {
+      const preview = toResponsePreview(text);
+      if (__DEV__) {
+        console.warn('[API][NonJSON] Unexpected non-JSON success response', {
+          status: res.status,
+          contentType,
+          preview,
+        });
+      }
       const err = new Error(
-        `Unexpected non-JSON response from API (${API_BASE_URL}). Check EXPO_PUBLIC_API_BASE_URL and backend port.`
+        looksLikeNgrokWarningPage(text)
+          ? `Ngrok warning page received. Header may not be sent or URL is wrong. (${API_BASE_URL})`
+          : `Backend returned HTML. Check ngrok warning/API base URL. (${API_BASE_URL})`
       );
       err.status = res.status;
       throw err;
@@ -305,13 +342,23 @@ const parseResponse = async (res) => {
 
 const apiRequest = async (path, options = {}) => {
   const { method = 'GET', body, headers = {} } = options;
-  return parseResponse(
-    await fetch(`${API_BASE_URL}${path}`, {
+  const url = buildBackendUrl(path);
+  const requestHeaders = {
+    'Content-Type': 'application/json',
+    ...NGROK_SKIP_BROWSER_WARNING_HEADER,
+    ...headers,
+  };
+  if (__DEV__) {
+    console.info('[API][Request]', {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers,
-      },
+      url,
+      headerKeys: Object.keys(requestHeaders),
+    });
+  }
+  return parseResponse(
+    await fetch(url, {
+      method,
+      headers: requestHeaders,
       credentials: 'include',
       body: body ? JSON.stringify(body) : undefined,
     })
@@ -860,22 +907,71 @@ export const bookings = {
       slotsRemaining: Number(slot.slotsRemaining || 0),
     }));
   },
-  getMyBookings: async (status = 'all', limit = 20) => {
-    const stored = await getLocalOrders();
-    const refreshed = await Promise.all(stored.map(refreshOrderStatus));
-    await setLocalOrders(refreshed);
+  getMyBookings: async (status = 'all', limit = 20, page = 0, search = '') => {
+    try {
+      const query = new URLSearchParams();
+      query.set('status', status || 'all');
+      query.set('page', String(Math.max(0, Number(page) || 0)));
+      query.set('size', String(Math.max(1, Number(limit) || 20)));
+      if (search && String(search).trim()) query.set('search', String(search).trim());
+      const response = await apiRequest(`/api/orders/my/paged?${query.toString()}`);
 
-    let filtered = [...refreshed];
-    if (status !== 'all') {
-      const statusMap = {
-        active: ['pending', 'received', 'washing', 'drying', 'ready', 'delivering'],
-        completed: ['delivered', 'completed'],
-        cancelled: ['cancelled'],
+      const localOrders = await getLocalOrders();
+      const previousByTracking = new Map(
+        localOrders
+          .filter((order) => order?.trackingNumber)
+          .map((order) => [String(order.trackingNumber), order])
+      );
+
+      const mapped = (response?.content || []).map((jobOrder) =>
+        mapJobOrderToMobile(jobOrder, previousByTracking.get(String(jobOrder.trackingNumber)) || {})
+      );
+
+      return {
+        bookings: mapped,
+        total: Number(response?.totalElements || 0),
+        page: Number(response?.page || 0),
+        size: Number(response?.size || limit),
+        totalPages: Number(response?.totalPages || 0),
+        hasNext: Boolean(response?.hasNext),
+        hasPrevious: Boolean(response?.hasPrevious),
       };
-      filtered = filtered.filter((o) => statusMap[status]?.includes(o.status));
-    }
+    } catch (error) {
+      const stored = await getLocalOrders();
+      const refreshed = await Promise.all(stored.map(refreshOrderStatus));
+      await setLocalOrders(refreshed);
 
-    return { bookings: filtered.slice(0, limit), total: filtered.length };
+      let filtered = [...refreshed];
+      if (status !== 'all') {
+        const statusMap = {
+          active: ['pending', 'received', 'washing', 'drying', 'ready', 'delivering'],
+          completed: ['delivered', 'completed'],
+          cancelled: ['cancelled'],
+        };
+        filtered = filtered.filter((o) => statusMap[status]?.includes(o.status));
+      }
+      if (search && String(search).trim()) {
+        const needle = String(search).trim().toLowerCase();
+        filtered = filtered.filter(
+          (order) =>
+            String(order.trackingNumber || '').toLowerCase().includes(needle) ||
+            String(order.branchName || '').toLowerCase().includes(needle)
+        );
+      }
+      const safePage = Math.max(0, Number(page) || 0);
+      const safeSize = Math.max(1, Number(limit) || 20);
+      const start = safePage * safeSize;
+      const paged = filtered.slice(start, start + safeSize);
+      return {
+        bookings: paged,
+        total: filtered.length,
+        page: safePage,
+        size: safeSize,
+        totalPages: Math.ceil(filtered.length / safeSize),
+        hasNext: start + safeSize < filtered.length,
+        hasPrevious: safePage > 0,
+      };
+    }
   },
 
   getById: async (id) => {
@@ -922,15 +1018,22 @@ export const branches = {
 };
 
 export const deliveries = {
-  /** Driver-facing: returns only deliveries assigned to the authenticated driver. */
-  getMy: async (status = 'all') => {
+  getMyPaged: async (status = 'all', page = 0, size = 10) => {
     try {
-      const all = await apiRequest('/api/deliveries/my');
-      let mapped = (all || []).map(mapDelivery);
-      if (status !== 'all') {
-        mapped = mapped.filter((d) => d.status === status);
-      }
-      return { deliveries: mapped };
+      const query = new URLSearchParams();
+      query.set('status', status || 'all');
+      query.set('page', String(Math.max(0, Number(page) || 0)));
+      query.set('size', String(Math.max(1, Number(size) || 10)));
+      const response = await apiRequest(`/api/deliveries/my/paged?${query.toString()}`);
+      return {
+        deliveries: (response?.content || []).map(mapDelivery),
+        total: Number(response?.totalElements || 0),
+        page: Number(response?.page || 0),
+        size: Number(response?.size || size),
+        totalPages: Number(response?.totalPages || 0),
+        hasNext: Boolean(response?.hasNext),
+        hasPrevious: Boolean(response?.hasPrevious),
+      };
     } catch (error) {
       if (!DEMO_MODE_ENABLED) {
         rethrowAccessAware(
@@ -939,11 +1042,26 @@ export const deliveries = {
         );
       }
       let mapped = DEMO_DELIVERIES.map(mapDelivery);
-      if (status !== 'all') {
-        mapped = mapped.filter((d) => d.status === status);
-      }
-      return { deliveries: mapped };
+      if (status !== 'all') mapped = mapped.filter((d) => d.status === status);
+      const safePage = Math.max(0, Number(page) || 0);
+      const safeSize = Math.max(1, Number(size) || 10);
+      const start = safePage * safeSize;
+      return {
+        deliveries: mapped.slice(start, start + safeSize),
+        total: mapped.length,
+        page: safePage,
+        size: safeSize,
+        totalPages: Math.ceil(mapped.length / safeSize),
+        hasNext: start + safeSize < mapped.length,
+        hasPrevious: safePage > 0,
+      };
     }
+  },
+
+  /** Driver-facing: returns only deliveries assigned to the authenticated driver. */
+  getMy: async (status = 'all') => {
+    const paged = await deliveries.getMyPaged(status, 0, 50);
+    return { deliveries: paged.deliveries };
   },
 
   /** Legacy alias kept so existing code doesn't break during transition */
@@ -1089,16 +1207,25 @@ export const deliveries = {
 };
 
 export const notifications = {
-  getAll: async () => {
+  getPaged: async (page = 0, size = 10) => {
     try {
-      const response = await apiRequest('/api/notifications');
-      const list = Array.isArray(response) ? response : [];
+      const query = new URLSearchParams();
+      query.set('page', String(Math.max(0, Number(page) || 0)));
+      query.set('size', String(Math.max(1, Number(size) || 10)));
+      const response = await apiRequest(`/api/notifications/paged?${query.toString()}`);
+      const list = Array.isArray(response?.content) ? response.content : [];
       const readIds = await getReadNotificationIds();
       return {
         notifications: list.map((item) => {
           const mapped = mapNotification(item);
           return { ...mapped, read: readIds.has(mapped.id) };
         }),
+        total: Number(response?.totalElements || 0),
+        page: Number(response?.page || 0),
+        size: Number(response?.size || size),
+        totalPages: Number(response?.totalPages || 0),
+        hasNext: Boolean(response?.hasNext),
+        hasPrevious: Boolean(response?.hasPrevious),
       };
     } catch (error) {
       if (!DEMO_MODE_ENABLED) {
@@ -1108,13 +1235,28 @@ export const notifications = {
         );
       }
       const readIds = await getReadNotificationIds();
+      const safePage = Math.max(0, Number(page) || 0);
+      const safeSize = Math.max(1, Number(size) || 10);
+      const start = safePage * safeSize;
+      const mappedDemo = DEMO_NOTIFICATIONS.map((item) => {
+        const mapped = mapNotification(item);
+        return { ...mapped, read: readIds.has(mapped.id) };
+      });
       return {
-        notifications: DEMO_NOTIFICATIONS.map((item) => {
-          const mapped = mapNotification(item);
-          return { ...mapped, read: readIds.has(mapped.id) };
-        }),
+        notifications: mappedDemo.slice(start, start + safeSize),
+        total: mappedDemo.length,
+        page: safePage,
+        size: safeSize,
+        totalPages: Math.ceil(mappedDemo.length / safeSize),
+        hasNext: start + safeSize < mappedDemo.length,
+        hasPrevious: safePage > 0,
       };
     }
+  },
+
+  getAll: async () => {
+    const paged = await notifications.getPaged(0, 50);
+    return { notifications: paged.notifications };
   },
 
   markAsRead: async (id) => {

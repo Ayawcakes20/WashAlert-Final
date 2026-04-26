@@ -130,6 +130,16 @@ export type AppNotification = {
   createdAt: string;
 };
 
+export type PagedResponse<T> = {
+  content: T[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrevious: boolean;
+};
+
 export type AnnouncementType = "CLOSURE" | "HOLIDAY" | "GENERAL";
 
 export type AnnouncementRecord = {
@@ -189,8 +199,6 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
 export const authApi = {
   login: (payload: { email: string; password: string; rememberMe?: boolean }) =>
     apiRequest<MeResponse>("/api/auth/login", { method: "POST", body: payload }),
-  firebaseSession: (payload: { idToken: string; platform: "WEB" | "MOBILE"; selectedBranch?: string }) =>
-    apiRequest<AuthSessionProfile>("/api/auth/firebase-session", { method: "POST", body: payload }),
   requestFirebaseLoginOtp: (payload: { idToken: string; platform: "WEB" | "MOBILE"; selectedBranch?: string }) =>
     apiRequest<FirebaseLoginOtpChallenge>("/api/auth/firebase-login-otp/request", {
       method: "POST",
@@ -241,6 +249,33 @@ export const dashboardApi = {
 
 export const ordersApi = {
   list: () => apiRequest<JobOrderResponse[]>("/api/orders"),
+  listPaged: (params?: {
+    page?: number;
+    size?: number;
+    sort?: string;
+    direction?: "asc" | "desc";
+    branch?: string;
+    status?: string;
+    search?: string;
+    paymentStatus?: string;
+    paymentMethod?: string;
+    fromDate?: string;
+    toDate?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.page != null) query.set("page", String(params.page));
+    if (params?.size != null) query.set("size", String(params.size));
+    if (params?.sort) query.set("sort", `${params.sort},${params.direction || "desc"}`);
+    if (params?.branch) query.set("branch", params.branch);
+    if (params?.status) query.set("status", params.status);
+    if (params?.search) query.set("search", params.search);
+    if (params?.paymentStatus) query.set("paymentStatus", params.paymentStatus);
+    if (params?.paymentMethod) query.set("paymentMethod", params.paymentMethod);
+    if (params?.fromDate) query.set("fromDate", params.fromDate);
+    if (params?.toDate) query.set("toDate", params.toDate);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return apiRequest<PagedResponse<JobOrderResponse>>(`/api/orders/paged${suffix}`);
+  },
   getById: (id: number) => apiRequest<JobOrderResponse>(`/api/orders/${id}`),
   create: (payload: CreateOrderPayload) =>
     apiRequest<JobOrderResponse>("/api/orders", {
@@ -274,6 +309,27 @@ export const ordersApi = {
 
 export const usersApi = {
   listStaff: () => apiRequest<UserAdminRecord[]>("/api/admin/users/staff"),
+  listStaffPaged: (params?: {
+    page?: number;
+    size?: number;
+    sort?: string;
+    direction?: "asc" | "desc";
+    search?: string;
+    role?: "STAFF" | "DRIVER";
+    status?: "PENDING" | "ACTIVE" | "SUSPENDED" | "DEACTIVATED";
+    branch?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.page != null) query.set("page", String(params.page));
+    if (params?.size != null) query.set("size", String(params.size));
+    if (params?.sort) query.set("sort", `${params.sort},${params.direction || "desc"}`);
+    if (params?.search) query.set("search", params.search);
+    if (params?.role) query.set("role", params.role);
+    if (params?.status) query.set("status", params.status);
+    if (params?.branch) query.set("branch", params.branch);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return apiRequest<PagedResponse<UserAdminRecord>>(`/api/admin/users/staff/paged${suffix}`);
+  },
   listDrivers: (branch?: string) =>
     apiRequest<UserAdminRecord[]>(`/api/admin/users/drivers${branch ? `?branch=${encodeURIComponent(branch)}` : ""}`),
   createStaff: (payload: { fullName: string; email: string; role?: "STAFF" | "DRIVER"; branch?: string; initialPassword?: string }) =>
@@ -332,6 +388,25 @@ export const deliveriesApi = {
       body: payload,
     }),
   list: () => apiRequest<DeliveryRecord[]>("/api/deliveries"),
+  listPaged: (params?: {
+    page?: number;
+    size?: number;
+    sort?: string;
+    direction?: "asc" | "desc";
+    branch?: string;
+    status?: string;
+    search?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.page != null) query.set("page", String(params.page));
+    if (params?.size != null) query.set("size", String(params.size));
+    if (params?.sort) query.set("sort", `${params.sort},${params.direction || "desc"}`);
+    if (params?.branch) query.set("branch", params.branch);
+    if (params?.status) query.set("status", params.status);
+    if (params?.search) query.set("search", params.search);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return apiRequest<PagedResponse<DeliveryRecord>>(`/api/deliveries/paged${suffix}`);
+  },
   create: (payload: {
     trackingNumber: string;
     driverName: string;
@@ -421,6 +496,13 @@ export const inventoryApi = {
 
 export const notificationsApi = {
   list: () => apiRequest<AppNotification[]>("/api/notifications"),
+  listPaged: (params?: { page?: number; size?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.page != null) query.set("page", String(params.page));
+    if (params?.size != null) query.set("size", String(params.size));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return apiRequest<PagedResponse<AppNotification>>(`/api/notifications/paged${suffix}`);
+  },
 };
 
 export const announcementsApi = {

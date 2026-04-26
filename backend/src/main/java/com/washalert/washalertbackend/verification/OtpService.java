@@ -64,7 +64,7 @@ public class OtpService {
         if (!user.isEnabled()) {
             throw new IllegalArgumentException("Your account is not active.");
         }
-        generateAndSendInternal(user, "LOGIN", mail::sendLoginOtpEmail);
+        generateAndSendInternal(user, "LOGIN", mail::queueLoginOtpEmail);
     }
 
     public void verifyLoginCode(String email, String code) {
@@ -123,7 +123,8 @@ public class OtpService {
 
         try {
             dispatcher.accept(normalizedEmail, code);
-            log.info("[OTP][{}] Email dispatch succeeded for userId={} email={}", flow, user.getId(), maskEmail(normalizedEmail));
+            String dispatchStatus = "LOGIN".equals(flow) ? "Email dispatch queued" : "Email dispatch succeeded";
+            log.info("[OTP][{}] {} for userId={} email={}", flow, dispatchStatus, user.getId(), maskEmail(normalizedEmail));
         } catch (Exception ex) {
             log.error(
                     "[OTP][{}] Email dispatch failed for userId={} email={}. OTP remains persisted for retry.",

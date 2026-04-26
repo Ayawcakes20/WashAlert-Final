@@ -55,6 +55,7 @@ const AVAILABLE_BRANCHES = [
 ];
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
+const USERS_PAGE_SIZE = 10;
 
 const mapUser = (u: UserAdminRecord): UserRecord => ({
   id: u.id,
@@ -87,6 +88,11 @@ export default function UsersPage() {
   const [roleFilter, setRoleFilter] = useState<"ALL" | Role>("ALL");
   const [statusFilter, setStatusFilter] = useState<"ALL" | UserRecord["status"]>("ALL");
   const [branchFilter, setBranchFilter] = useState("ALL");
+  const [usersPage, setUsersPage] = useState(1);
+  const [totalUserPages, setTotalUserPages] = useState(1);
+  const [hasNextUsers, setHasNextUsers] = useState(false);
+  const [hasPreviousUsers, setHasPreviousUsers] = useState(false);
+  const [totalUsers, setTotalUsers] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -114,49 +120,66 @@ export default function UsersPage() {
     enabled: true,
   });
 
-  const loadUsers = async () => {
+  const mapStatusFilterToApi = (value: "ALL" | UserRecord["status"]) =>
+    value === "ALL"
+      ? undefined
+      : value === "Pending"
+      ? "PENDING"
+      : value === "Suspended"
+      ? "SUSPENDED"
+      : value === "Deactivated"
+      ? "DEACTIVATED"
+      : "ACTIVE";
+
+  const loadUsers = async (requestedPage = 0) => {
     try {
       setError("");
-      const data = await usersApi.listStaff();
-      setUsers(data.map(mapUser));
+      const response = await usersApi.listStaffPaged({
+        page: requestedPage,
+        size: USERS_PAGE_SIZE,
+        sort: "createdAt",
+        direction: "desc",
+        search: query.trim() || undefined,
+        role: roleFilter === "ALL" ? undefined : roleFilter,
+        status: mapStatusFilterToApi(statusFilter),
+        branch: branchFilter === "ALL" ? undefined : branchFilter,
+      });
+      setUsers((response.content || []).map(mapUser));
+      setUsersPage((response.page || 0) + 1);
+      setTotalUsers(response.totalElements || 0);
+      setTotalUserPages(Math.max(1, response.totalPages || 1));
+      setHasNextUsers(Boolean(response.hasNext));
+      setHasPreviousUsers(Boolean(response.hasPrevious));
     } catch (err: any) {
-      setError(err?.message || "Unable to load users.");
+      setError(err?.message || "Network error. Please try again.");
       setUsers([]);
+      setUsersPage(1);
+      setTotalUsers(0);
+      setTotalUserPages(1);
+      setHasNextUsers(false);
+      setHasPreviousUsers(false);
     }
   };
 
   useEffect(() => {
     const run = async () => {
       setLoading(true);
-      await loadUsers();
+      await loadUsers(0);
       setLoading(false);
     };
     void run();
-  }, []);
+  }, [query, roleFilter, statusFilter, branchFilter]);
 
-  const filtered = useMemo(() => {
-    const q = query.toLowerCase();
-    return users.filter(
-      (u) =>
-        (query.trim()
-          ? u.name.toLowerCase().includes(q) ||
-            u.email.toLowerCase().includes(q) ||
-            u.role.toLowerCase().includes(q) ||
-            u.branch.toLowerCase().includes(q)
-          : true) &&
-        (roleFilter === "ALL" ? true : u.role === roleFilter) &&
-        (statusFilter === "ALL" ? true : u.status === statusFilter) &&
-        (branchFilter === "ALL" ? true : u.branch === branchFilter),
-    );
-  }, [users, query, roleFilter, statusFilter, branchFilter]);
+  useEffect(() => {
+    setUsersPage(1);
+  }, [query, roleFilter, statusFilter, branchFilter]);
 
   const branchOptions = useMemo(() => {
-    const unique = Array.from(
-      new Set([...AVAILABLE_BRANCHES, ...users.map((u) => u.branch).filter((branch) => branch && branch !== "Unassigned")]),
-    );
+    const unique = Array.from(new Set([...AVAILABLE_BRANCHES]));
+    if (branchFilter !== "ALL") unique.push(branchFilter);
     unique.sort((a, b) => a.localeCompare(b));
     return unique;
-  }, [users]);
+  }, [branchFilter]);
 
   const editBranchOptions = useMemo(() => {
     const unique = new Set(AVAILABLE_BRANCHES);
@@ -227,7 +250,7 @@ export default function UsersPage() {
       setCreateOpen(false);
       setCreateForm({ fullName: "", email: "", role: "STAFF", branch: "", initialPassword: "", showPassword: false });
       setCreateErrors({});
-      await loadUsers();
+      await loadUsers(Math.max(0, usersPage - 1));
     } catch (err: any) {
       toast.error(err?.message || "Unable to create user.");
     } finally {
@@ -256,7 +279,7 @@ export default function UsersPage() {
       });
       toast.success("User updated successfully.");
       setEditOpen(false);
-      await loadUsers();
+      await loadUsers(Math.max(0, usersPage - 1));
     } catch (err: any) {
       toast.error(err?.message || "Unable to update user.");
     } finally {
@@ -274,7 +297,7 @@ export default function UsersPage() {
       } else {
         toast.success("Account reactivated.");
       }
-      await loadUsers();
+      await loadUsers(Math.max(0, usersPage - 1));
     } catch (err: any) {
       toast.error(err?.message || "Unable to update user status.");
     }
@@ -284,7 +307,7 @@ export default function UsersPage() {
     try {
       await usersApi.resendInvite(user.id);
       toast.success("Invitation resent successfully.");
-      await loadUsers();
+      await loadUsers(Math.max(0, usersPage - 1));
     } catch (err: any) {
       toast.error(err?.message || "Unable to resend invite.");
     }
@@ -377,7 +400,7 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((u) => {
+              {users.map((u) => {
                 const RoleIcon = roleIcon[u.role];
                 return (
                   <tr key={u.id} className="border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors">
@@ -455,7 +478,7 @@ export default function UsersPage() {
                   </tr>
                 );
               })}
-              {!filtered.length ? (
+              {!users.length ? (
                 <tr>
                   <td colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
                     No users found.
@@ -465,6 +488,33 @@ export default function UsersPage() {
             </tbody>
           </table>
         </div>
+        {totalUsers > USERS_PAGE_SIZE ? (
+          <div className="flex items-center justify-end gap-2 border-t border-border/30 px-4 py-3">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 px-3 text-xs"
+              onClick={() => void loadUsers(Math.max(0, usersPage - 2))}
+              disabled={!hasPreviousUsers}
+            >
+              Previous
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Page {usersPage} of {totalUserPages}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 px-3 text-xs"
+              onClick={() => void loadUsers(usersPage)}
+              disabled={!hasNextUsers}
+            >
+              Next
+            </Button>
+          </div>
+        ) : null}
       </motion.div>
 
       <Dialog

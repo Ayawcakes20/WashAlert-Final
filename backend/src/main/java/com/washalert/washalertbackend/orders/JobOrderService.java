@@ -1,6 +1,7 @@
 package com.washalert.washalertbackend.orders;
 
 import com.washalert.washalertbackend.common.DataReadProperties;
+import com.washalert.washalertbackend.common.dto.PagedResponse;
 import com.washalert.washalertbackend.delivery.DeliveryService;
 import com.washalert.washalertbackend.firebase.FirestoreReadService;
 import com.washalert.washalertbackend.firebase.FirestoreSyncService;
@@ -19,9 +20,14 @@ import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
 import jakarta.transaction.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -80,6 +86,72 @@ public class JobOrderService {
         }
 
         return firestoreRows;
+    }
+
+    public PagedResponse<JobOrderResponse> listPaged(
+            AuthUserDetails principal,
+            String branch,
+            String status,
+            String search,
+            String paymentStatus,
+            String paymentMethod,
+            LocalDate fromDate,
+            LocalDate toDate,
+            Pageable pageable
+    ) {
+        User actor = principal.getUser();
+        String effectiveBranch = actor.getRole() == Role.STAFF ? actor.getBranch() : normalizeBranchFilter(branch);
+        JobOrderStatus parsedStatus = parseOrderStatus(status);
+        PaymentStatus parsedPaymentStatus = parsePaymentStatus(paymentStatus);
+        boolean includeOrderPaid = parsedPaymentStatus == PaymentStatus.PAID;
+        boolean includeImplicitPending = parsedPaymentStatus == PaymentStatus.PENDING;
+
+        Page<JobOrder> page = repo.findPagedWithFilters(
+                effectiveBranch,
+                parsedStatus,
+                normalizeSearch(search),
+                parsedPaymentStatus,
+                includeOrderPaid,
+                includeImplicitPending,
+                normalizeSearch(paymentMethod),
+                atStartOfDay(fromDate),
+                atEndOfDay(toDate),
+                pageable
+        );
+
+        Map<Long, PaymentStatus> paymentStatusByOrderId = resolvePaymentStatusByOrderId(page.getContent());
+        Page<JobOrderResponse> mapped = page.map(order -> toResponse(order, paymentStatusByOrderId.get(order.getId())));
+        return PagedResponse.from(mapped);
+    }
+
+    public PagedResponse<JobOrderResponse> listMyPaged(
+            AuthUserDetails principal,
+            String statusGroup,
+            String search,
+            Pageable pageable
+    ) {
+        User actor = principal.getUser();
+        if (actor.getRole() != Role.CUSTOMER) {
+            throw new IllegalArgumentException("Only customers can access personal order history.");
+        }
+
+        String customerEmail = actor.getEmail();
+        if (customerEmail == null || customerEmail.isBlank()) {
+            throw new IllegalArgumentException("Missing customer email in session.");
+        }
+
+        List<JobOrderStatus> scopedStatuses = resolveCustomerStatusGroup(statusGroup);
+        Page<JobOrder> page = repo.findCustomerOrdersPaged(
+                customerEmail,
+                normalizeSearch(search),
+                scopedStatuses,
+                scopedStatuses.isEmpty(),
+                pageable
+        );
+
+        Map<Long, PaymentStatus> paymentStatusByOrderId = resolvePaymentStatusByOrderId(page.getContent());
+        Page<JobOrderResponse> mapped = page.map(order -> toResponse(order, paymentStatusByOrderId.get(order.getId())));
+        return PagedResponse.from(mapped);
     }
 
     public JobOrderResponse getById(Long id, AuthUserDetails principal) {
@@ -294,15 +366,7 @@ public class JobOrderService {
             return List.of();
         }
 
-        Map<Long, PaymentStatus> paymentStatusByOrderId = paymentRepository
-                .findByJobOrder_IdIn(orders.stream().map(JobOrder::getId).toList())
-                .stream()
-                .filter(record -> record.getJobOrder() != null && record.getJobOrder().getId() != null)
-                .collect(Collectors.toMap(
-                        record -> record.getJobOrder().getId(),
-                        PaymentRecord::getStatus,
-                        (left, right) -> right
-                ));
+        Map<Long, PaymentStatus> paymentStatusByOrderId = resolvePaymentStatusByOrderId(orders);
 
         return orders.stream()
                 .map(order -> toResponse(order, paymentStatusByOrderId.get(order.getId())))
@@ -337,6 +401,24 @@ public class JobOrderService {
         return scoped.stream()
                 .map(order -> withPaymentStatus(order, paymentStatusByOrderId.get(order.id())))
                 .toList();
+    }
+
+    private Map<Long, PaymentStatus> resolvePaymentStatusByOrderId(Collection<JobOrder> orders) {
+        if (orders == null || orders.isEmpty()) return Map.of();
+        return paymentRepository
+                .findByJobOrder_IdIn(
+                        orders.stream()
+                                .map(JobOrder::getId)
+                                .filter(id -> id != null)
+                                .toList()
+                )
+                .stream()
+                .filter(record -> record.getJobOrder() != null && record.getJobOrder().getId() != null)
+                .collect(Collectors.toMap(
+                        record -> record.getJobOrder().getId(),
+                        PaymentRecord::getStatus,
+                        (left, right) -> right
+                ));
     }
 
     private OrderTrackingResponse trackByTrackingNumberMysql(String cleanTracking) {
@@ -509,6 +591,64 @@ public class JobOrderService {
             throw new IllegalArgumentException("Tracking number is required.");
         }
         return trackingNumber.trim().toUpperCase();
+    }
+
+    private String normalizeBranchFilter(String branch) {
+        if (branch == null || branch.isBlank() || "ALL".equalsIgnoreCase(branch.trim())) return null;
+        return branch.trim();
+    }
+
+    private String normalizeSearch(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private JobOrderStatus parseOrderStatus(String status) {
+        String normalized = normalizeSearch(status);
+        if (normalized == null) return null;
+        try {
+            return JobOrderStatus.valueOf(normalized.toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Invalid order status filter.");
+        }
+    }
+
+    private PaymentStatus parsePaymentStatus(String paymentStatus) {
+        String normalized = normalizeSearch(paymentStatus);
+        if (normalized == null) return null;
+        try {
+            return PaymentStatus.valueOf(normalized.toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Invalid payment status filter.");
+        }
+    }
+
+    private LocalDateTime atStartOfDay(LocalDate date) {
+        if (date == null) return null;
+        return date.atStartOfDay();
+    }
+
+    private LocalDateTime atEndOfDay(LocalDate date) {
+        if (date == null) return null;
+        return date.atTime(LocalTime.MAX);
+    }
+
+    private List<JobOrderStatus> resolveCustomerStatusGroup(String statusGroup) {
+        String normalized = normalizeSearch(statusGroup);
+        if (normalized == null || "all".equalsIgnoreCase(normalized)) return List.of();
+        return switch (normalized.toLowerCase()) {
+            case "active" -> List.of(
+                    JobOrderStatus.PENDING,
+                    JobOrderStatus.WASHING,
+                    JobOrderStatus.DRYING,
+                    JobOrderStatus.READY,
+                    JobOrderStatus.PICKED_UP
+            );
+            case "completed" -> List.of(JobOrderStatus.DELIVERED);
+            case "cancelled", "canceled" -> List.of(JobOrderStatus.CANCELLED);
+            default -> throw new IllegalArgumentException("Invalid status group filter.");
+        };
     }
 
     private boolean safeEquals(String a, String b) {

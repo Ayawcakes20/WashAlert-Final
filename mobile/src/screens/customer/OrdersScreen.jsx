@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   View,
@@ -8,22 +8,33 @@ import {
   TouchableOpacity,
   RefreshControl,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { bookings } from '../../services/api';
 import { colors } from '../../theme/colors';
-import { typography } from '../../theme/typography';
 
 const FILTERS = ['All', 'Active', 'Completed', 'Cancelled'];
+const ORDERS_PAGE_SIZE = 8;
+
+const FILTER_TO_API_STATUS = {
+  All: 'all',
+  Active: 'active',
+  Completed: 'completed',
+  Cancelled: 'cancelled',
+};
 
 const getStatusColor = (status) => {
   switch (status) {
     case 'pending': return colors.warning;
-    case 'washing': case 'drying': case 'received': return colors.primary;
+    case 'washing':
+    case 'drying':
+    case 'received': return colors.primary;
     case 'ready': return colors.accent;
     case 'delivering': return colors.info;
-    case 'delivered': case 'completed': return colors.success;
+    case 'delivered':
+    case 'completed': return colors.success;
     case 'cancelled': return colors.error;
     default: return colors.textSecondary;
   }
@@ -44,63 +55,82 @@ const getStatusLabel = (status) => {
   return labels[status] || status;
 };
 
+const formatDateTimeLabel = (value) => {
+  const parsed = value ? new Date(value) : null;
+  if (!parsed || Number.isNaN(parsed.getTime())) return 'N/A';
+  const dateLabel = parsed.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const timeLabel = parsed.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  return `${dateLabel} • ${timeLabel}`;
+};
+
 const OrdersScreen = ({ navigation }) => {
   const [filter, setFilter] = useState('All');
   const [searchText, setSearchText] = useState('');
-  const [allOrders, setAllOrders] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
+  const [totalOrders, setTotalOrders] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
 
-  const loadOrders = useCallback(async () => {
+  const loadOrders = useCallback(async (requestedPage = 0, showLoading = true) => {
     try {
-      setLoading(true);
-      const data = await bookings.getMyBookings('all', 100);
-      setAllOrders(data.bookings || []);
-    } catch (error) {
-      console.error('Error loading orders:', error);
+      setError('');
+      if (showLoading) setLoading(true);
+      const data = await bookings.getMyBookings(
+        FILTER_TO_API_STATUS[filter] || 'all',
+        ORDERS_PAGE_SIZE,
+        requestedPage,
+        searchText.trim(),
+      );
+      setOrders(data.bookings || []);
+      setCurrentPage((data.page || 0) + 1);
+      setTotalPages(Math.max(1, data.totalPages || 1));
+      setHasNext(Boolean(data.hasNext));
+      setHasPrevious(Boolean(data.hasPrevious));
+      setTotalOrders(Number(data.total || 0));
+    } catch (loadError) {
+      console.error('Error loading orders:', loadError);
+      setError(loadError?.message || 'Unable to load orders right now.');
+      setOrders([]);
+      setCurrentPage(1);
+      setTotalPages(1);
+      setHasNext(false);
+      setHasPrevious(false);
+      setTotalOrders(0);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filter, searchText]);
 
   useFocusEffect(
     useCallback(() => {
-      loadOrders();
-    }, [loadOrders])
+      loadOrders(0, true);
+    }, [loadOrders]),
   );
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadOrders(0, true);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [filter, searchText, loadOrders]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadOrders();
+    await loadOrders(Math.max(0, currentPage - 1), false);
     setRefreshing(false);
-  }, [loadOrders]);
-
-  const getFilteredOrders = useCallback(() => {
-    let filtered = [...allOrders];
-
-    if (filter !== 'All') {
-      const statusMap = {
-        Active: ['pending', 'received', 'washing', 'drying', 'ready'],
-        Completed: ['delivered', 'completed'],
-        Cancelled: ['cancelled'],
-      };
-      filtered = filtered.filter((order) =>
-        statusMap[filter]?.includes(order.status)
-      );
-    }
-
-    if (searchText) {
-      filtered = filtered.filter(
-        (order) =>
-          (order.trackingNumber || '').toLowerCase().includes(searchText.toLowerCase()) ||
-          (order.branchName || '').toLowerCase().includes(searchText.toLowerCase())
-      );
-    }
-
-    return filtered;
-  }, [allOrders, filter, searchText]);
-
-  const filteredOrders = getFilteredOrders();
+  }, [loadOrders, currentPage]);
 
   const renderOrderCard = ({ item }) => (
     <TouchableOpacity
@@ -113,7 +143,7 @@ const OrdersScreen = ({ navigation }) => {
           <Text style={styles.trackingNumber}>{item.trackingNumber}</Text>
           <Text style={styles.branchName}>{item.branchName}</Text>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '1A' }]}>
+        <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(item.status)}1A` }]}>
           <Text style={[styles.statusBadgeText, { color: getStatusColor(item.status) }]}>
             {getStatusLabel(item.status)}
           </Text>
@@ -127,13 +157,11 @@ const OrdersScreen = ({ navigation }) => {
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Amount</Text>
-          <Text style={styles.detailValue}>â‚±{item.amountPaid || item.amount}</Text>
+          <Text style={styles.detailValue}>PHP {item.amountPaid || item.amount}</Text>
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Date</Text>
-          <Text style={styles.detailValue}>
-            {item.date || new Date(item.dateBooked).toLocaleDateString()}
-          </Text>
+          <Text style={styles.detailValue}>{formatDateTimeLabel(item.dateBooked || item.date)}</Text>
         </View>
       </View>
 
@@ -152,22 +180,26 @@ const OrdersScreen = ({ navigation }) => {
       <MaterialCommunityIcons name="package-variant" size={64} color={colors.border} />
       <Text style={styles.emptyTitle}>No Orders</Text>
       <Text style={styles.emptyMessage}>
-        {searchText
-          ? `No orders found matching "${searchText}"`
-          : `No ${filter.toLowerCase()} orders yet`}
+        {searchText ? `No orders found matching "${searchText}"` : `No ${filter.toLowerCase()} orders yet`}
       </Text>
-      <TouchableOpacity
-        style={styles.bookNowBtn}
-        onPress={() => navigation.navigate('Book')}
-      >
+      <TouchableOpacity style={styles.bookNowBtn} onPress={() => navigation.navigate('Book')}>
         <Text style={styles.bookNowText}>Book Now</Text>
       </TouchableOpacity>
     </View>
   );
 
+  if (loading && !orders.length) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
-      {/* Search Bar */}
       <View style={styles.searchSection}>
         <View style={styles.searchContainer}>
           <Ionicons name="search-outline" size={20} color={colors.textSecondary} />
@@ -186,7 +218,6 @@ const OrdersScreen = ({ navigation }) => {
         </View>
       </View>
 
-      {/* Filters */}
       <View style={styles.filterContainer}>
         {FILTERS.map((filterItem) => (
           <TouchableOpacity
@@ -209,11 +240,10 @@ const OrdersScreen = ({ navigation }) => {
         ))}
       </View>
 
-      {/* Orders List */}
       <FlatList
-        data={filteredOrders}
+        data={orders}
         renderItem={renderOrderCard}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => String(item.id ?? item.trackingNumber)}
         contentContainerStyle={styles.listContainer}
         refreshControl={
           <RefreshControl
@@ -223,7 +253,30 @@ const OrdersScreen = ({ navigation }) => {
           />
         }
         ListEmptyComponent={renderEmptyState}
+        ListFooterComponent={
+          totalPages > 1 ? (
+            <View style={styles.paginationRow}>
+              <TouchableOpacity
+                style={[styles.pageBtn, !hasPrevious && styles.pageBtnDisabled]}
+                disabled={!hasPrevious}
+                onPress={() => loadOrders(Math.max(0, currentPage - 2), true)}
+              >
+                <Text style={styles.pageBtnText}>Previous</Text>
+              </TouchableOpacity>
+              <Text style={styles.pageText}>Page {currentPage} of {totalPages}</Text>
+              <TouchableOpacity
+                style={[styles.pageBtn, !hasNext && styles.pageBtnDisabled]}
+                disabled={!hasNext}
+                onPress={() => loadOrders(currentPage, true)}
+              >
+                <Text style={styles.pageBtnText}>Next</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null
+        }
       />
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {!error && !loading && totalOrders === 0 ? <Text style={styles.infoText}>No data available.</Text> : null}
     </SafeAreaView>
   );
 };
@@ -232,6 +285,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  loadingWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   searchSection: {
     paddingHorizontal: 16,
@@ -389,6 +447,48 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
+  },
+  paginationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    paddingBottom: 4,
+    gap: 8,
+  },
+  pageBtn: {
+    minWidth: 88,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingVertical: 8,
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+  },
+  pageBtnDisabled: {
+    opacity: 0.5,
+  },
+  pageBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  pageText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  errorText: {
+    fontSize: 12,
+    color: colors.error,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  infoText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
   },
 });
 

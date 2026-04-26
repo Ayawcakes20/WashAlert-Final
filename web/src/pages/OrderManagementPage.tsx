@@ -108,6 +108,9 @@ const serviceTypeLabel: Record<ApiServiceType, string> = {
 };
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
+const LAUNDRY_COLUMN_PAGE_SIZE = 8;
+const DELIVERY_COLUMN_PAGE_SIZE = 8;
+const ORDERS_SERVER_PAGE_SIZE = 60;
 
 const mapOrder = (order: JobOrderResponse): Order => ({
   id: order.id,
@@ -181,6 +184,12 @@ export default function OrderManagementPage() {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const autoRefreshRef = useRef<NodeJS.Timeout | null>(null);
+  const [columnPages, setColumnPages] = useState<Partial<Record<ApiOrderStatus, number>>>({});
+  const [ordersPage, setOrdersPage] = useState(1);
+  const [totalOrdersPages, setTotalOrdersPages] = useState(1);
+  const [hasNextOrders, setHasNextOrders] = useState(false);
+  const [hasPreviousOrders, setHasPreviousOrders] = useState(false);
+  const [totalOrders, setTotalOrders] = useState(0);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createSubmitting, setCreateSubmitting] = useState(false);
@@ -212,47 +221,63 @@ export default function OrderManagementPage() {
   const [selectedDriverId, setSelectedDriverId] = useState<number | null>(null);
   const [assignSubmitting, setAssignSubmitting] = useState(false);
 
-  const loadOrders = useCallback(async () => {
+  const loadOrders = useCallback(async (requestedPage = 0, silent = false) => {
     try {
+      if (!silent) setLoading(true);
       setError("");
-      const data = await ordersApi.list();
-      const mapped = data.map(mapOrder);
-      const scoped = isAdmin
-        ? mapped
-        : mapped.filter((o) => o.branch?.toLowerCase() === staffBranch?.toLowerCase());
-      setOrders(scoped);
+      const response = await ordersApi.listPaged({
+        page: requestedPage,
+        size: ORDERS_SERVER_PAGE_SIZE,
+        sort: "updatedAt",
+        direction: "desc",
+        branch: isAdmin ? (filterBranch || undefined) : (staffBranch || undefined),
+        search: searchQuery.trim() || undefined,
+        paymentStatus: filterPaymentStatus || undefined,
+        paymentMethod: filterPaymentMethod || undefined,
+      });
+      setOrders((response.content || []).map(mapOrder));
+      setOrdersPage((response.page || 0) + 1);
+      setTotalOrders(response.totalElements || 0);
+      setTotalOrdersPages(Math.max(1, response.totalPages || 1));
+      setHasNextOrders(Boolean(response.hasNext));
+      setHasPreviousOrders(Boolean(response.hasPrevious));
       setLastRefreshed(new Date());
     } catch (err: any) {
       const message = err?.message || "Unable to load orders.";
       setError(message);
-      toast.error(message);
       setOrders([]);
+      setOrdersPage(1);
+      setTotalOrders(0);
+      setTotalOrdersPages(1);
+      setHasNextOrders(false);
+      setHasPreviousOrders(false);
+      if (!silent) toast.error(message);
+    } finally {
+      if (!silent) setLoading(false);
     }
-  }, [isAdmin, staffBranch]);
+  }, [isAdmin, staffBranch, filterBranch, searchQuery, filterPaymentStatus, filterPaymentMethod]);
 
   const handleManualRefresh = async () => {
     setRefreshing(true);
-    await loadOrders();
+    await loadOrders(Math.max(0, ordersPage - 1), true);
     setRefreshing(false);
   };
 
   useEffect(() => {
     const run = async () => {
-      setLoading(true);
-      await loadOrders();
-      setLoading(false);
+      await loadOrders(0, false);
     };
     void run();
 
     // Poll frequently so webhook-confirmed payment updates surface quickly in Order Management.
     autoRefreshRef.current = setInterval(() => {
-      void loadOrders();
+      void loadOrders(Math.max(0, ordersPage - 1), true);
     }, 10000);
 
     return () => {
       if (autoRefreshRef.current) clearInterval(autoRefreshRef.current);
     };
-  }, [loadOrders]);
+  }, [loadOrders, ordersPage]);
 
   // Only allow dragging active laundry columns (not delivery columns)
   const DRAGGABLE_STATUSES: ApiOrderStatus[] = ["PENDING", "WASHING", "DRYING", "READY"];
@@ -439,28 +464,23 @@ export default function OrderManagementPage() {
     }
   };
 
-  const filteredOrders = useMemo(() => {
-    return orders.filter((o) => {
-      const matchesSearch =
-        !searchQuery ||
-        o.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        o.orderId.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesBranch = !filterBranch || o.branch?.toLowerCase() === filterBranch.toLowerCase();
-      const paymentStatus = resolvePaymentStatusLabel(o);
-      const matchesPaymentStatus = !filterPaymentStatus || paymentStatus === filterPaymentStatus;
-      const method = normalizePaymentMethod(o.paymentMethod);
-      const matchesPaymentMethod =
-        !filterPaymentMethod ||
-        (filterPaymentMethod === "GCASH" && isOnlinePaymentMethod(method)) ||
-        (filterPaymentMethod === "CASH" && isCashPaymentMethod(method));
-      return matchesSearch && matchesBranch && matchesPaymentStatus && matchesPaymentMethod;
-    });
-  }, [orders, searchQuery, filterBranch, filterPaymentStatus, filterPaymentMethod]);
+  const filteredOrders = orders;
 
-  const uniqueBranches = useMemo(
-    () => [...new Set(orders.map((o) => o.branch).filter(Boolean))].sort(),
-    [orders],
-  );
+  useEffect(() => {
+    setColumnPages({});
+  }, [orders.length, ordersPage]);
+
+  const getColumnPage = (status: ApiOrderStatus) => Math.max(1, columnPages[status] || 1);
+
+  const setColumnPage = (status: ApiOrderStatus, page: number) => {
+    setColumnPages((prev) => ({ ...prev, [status]: Math.max(1, page) }));
+  };
+
+  const uniqueBranches = useMemo(() => {
+    const set = new Set(orders.map((o) => o.branch).filter(Boolean));
+    if (filterBranch) set.add(filterBranch);
+    return Array.from(set).sort();
+  }, [orders, filterBranch]);
 
   const renderOrderCard = (order: Order) => (
     <div
@@ -680,6 +700,34 @@ export default function OrderManagementPage() {
         </div>
       </motion.div>
 
+      {totalOrders > 0 ? (
+        <motion.div variants={item} className="flex items-center justify-end gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 px-3 text-xs"
+            onClick={() => void loadOrders(Math.max(0, ordersPage - 2), false)}
+            disabled={!hasPreviousOrders}
+          >
+            Previous Page
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            Data page {ordersPage} of {totalOrdersPages}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 px-3 text-xs"
+            onClick={() => void loadOrders(ordersPage, false)}
+            disabled={!hasNextOrders}
+          >
+            Next Page
+          </Button>
+        </motion.div>
+      ) : null}
+
       {/* Laundry Progress Board */}
       <motion.div variants={item}>
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -689,6 +737,10 @@ export default function OrderManagementPage() {
         <div className="flex gap-4 overflow-x-auto pb-4">
           {LAUNDRY_COLUMNS.map((col) => {
             const colOrders = filteredOrders.filter((o) => o.status === col.status);
+            const currentPage = getColumnPage(col.status);
+            const totalPages = Math.max(1, Math.ceil(colOrders.length / LAUNDRY_COLUMN_PAGE_SIZE));
+            const pageStart = (Math.min(currentPage, totalPages) - 1) * LAUNDRY_COLUMN_PAGE_SIZE;
+            const pagedOrders = colOrders.slice(pageStart, pageStart + LAUNDRY_COLUMN_PAGE_SIZE);
             return (
               <div
                 key={col.status}
@@ -703,10 +755,42 @@ export default function OrderManagementPage() {
                   </span>
                 </div>
                 <div className="space-y-3">
-                  {colOrders.map(renderOrderCard)}
+                  {pagedOrders.map(renderOrderCard)}
                   {!colOrders.length ? (
                     <div className="text-xs text-muted-foreground text-center py-8">
                       No orders in this stage.
+                    </div>
+                  ) : null}
+                  {!!colOrders.length && !pagedOrders.length ? (
+                    <div className="text-xs text-muted-foreground text-center py-6">
+                      No orders on this page.
+                    </div>
+                  ) : null}
+                  {colOrders.length > LAUNDRY_COLUMN_PAGE_SIZE ? (
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-[10px]"
+                        onClick={() => setColumnPage(col.status, Math.max(1, currentPage - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        Prev
+                      </Button>
+                      <span className="text-[10px] text-muted-foreground">
+                        {Math.min(currentPage, totalPages)}/{totalPages}
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-[10px]"
+                        onClick={() => setColumnPage(col.status, Math.min(totalPages, currentPage + 1))}
+                        disabled={currentPage >= totalPages}
+                      >
+                        Next
+                      </Button>
                     </div>
                   ) : null}
                 </div>
@@ -725,6 +809,10 @@ export default function OrderManagementPage() {
         <div className="flex gap-4 overflow-x-auto pb-4">
           {DELIVERY_COLUMNS.map((col) => {
             const colOrders = filteredOrders.filter((o) => o.status === col.status);
+            const currentPage = getColumnPage(col.status);
+            const totalPages = Math.max(1, Math.ceil(colOrders.length / DELIVERY_COLUMN_PAGE_SIZE));
+            const pageStart = (Math.min(currentPage, totalPages) - 1) * DELIVERY_COLUMN_PAGE_SIZE;
+            const pagedOrders = colOrders.slice(pageStart, pageStart + DELIVERY_COLUMN_PAGE_SIZE);
             return (
               <div
                 key={col.status}
@@ -737,10 +825,42 @@ export default function OrderManagementPage() {
                   </span>
                 </div>
                 <div className="space-y-3">
-                  {colOrders.map(renderOrderCard)}
+                  {pagedOrders.map(renderOrderCard)}
                   {!colOrders.length ? (
                     <div className="text-xs text-muted-foreground text-center py-8">
                       No orders here.
+                    </div>
+                  ) : null}
+                  {!!colOrders.length && !pagedOrders.length ? (
+                    <div className="text-xs text-muted-foreground text-center py-6">
+                      No orders on this page.
+                    </div>
+                  ) : null}
+                  {colOrders.length > DELIVERY_COLUMN_PAGE_SIZE ? (
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-[10px]"
+                        onClick={() => setColumnPage(col.status, Math.max(1, currentPage - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        Prev
+                      </Button>
+                      <span className="text-[10px] text-muted-foreground">
+                        {Math.min(currentPage, totalPages)}/{totalPages}
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-[10px]"
+                        onClick={() => setColumnPage(col.status, Math.min(totalPages, currentPage + 1))}
+                        disabled={currentPage >= totalPages}
+                      >
+                        Next
+                      </Button>
                     </div>
                   ) : null}
                 </div>

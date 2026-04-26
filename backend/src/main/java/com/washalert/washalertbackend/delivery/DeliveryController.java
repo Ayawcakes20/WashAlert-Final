@@ -10,8 +10,12 @@ import com.washalert.washalertbackend.delivery.dto.UpdateDeliveryAssignmentReque
 import com.washalert.washalertbackend.delivery.dto.UpdateDeliveryLocationRequest;
 import com.washalert.washalertbackend.delivery.dto.UpdateDeliveryStatusRequest;
 import com.washalert.washalertbackend.delivery.dto.UploadDeliveryProofRequest;
+import com.washalert.washalertbackend.common.dto.PagedResponse;
 import com.washalert.washalertbackend.security.AuthUserDetails;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -54,6 +58,18 @@ public class DeliveryController {
         return deliveryService.list(branch, principal);
     }
 
+    @GetMapping("/paged")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public PagedResponse<DeliveryResponse> listPaged(
+            @RequestParam(required = false) String branch,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String search,
+            @AuthenticationPrincipal AuthUserDetails principal,
+            @PageableDefault(size = 10, sort = "updatedAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        return deliveryService.listPaged(branch, status, search, principal, pageable);
+    }
+
     @GetMapping("/{deliveryId}")
     @PreAuthorize("hasAnyRole('ADMIN','STAFF','DRIVER')")
     public DeliveryResponse getById(
@@ -83,6 +99,16 @@ public class DeliveryController {
     @PreAuthorize("hasRole('DRIVER')")
     public List<DeliveryResponse> listMy(@AuthenticationPrincipal AuthUserDetails principal) {
         return deliveryService.listMy(principal);
+    }
+
+    @GetMapping("/my/paged")
+    @PreAuthorize("hasRole('DRIVER')")
+    public PagedResponse<DeliveryResponse> listMyPaged(
+            @RequestParam(required = false, defaultValue = "all") String status,
+            @AuthenticationPrincipal AuthUserDetails principal,
+            @PageableDefault(size = 10, sort = "updatedAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        return deliveryService.listMyPaged(principal, status, pageable);
     }
 
     @GetMapping("/available")

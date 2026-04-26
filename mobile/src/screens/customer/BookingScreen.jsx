@@ -65,6 +65,7 @@ const SERVICE_ICON_BY_ID = {
 };
 
 const STEP_LABELS = ['Branch', 'Address', 'Schedule', 'Prefs', 'Pay', 'Confirm'];
+const DEFAULT_MAX_LOAD_KG = 8;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -95,6 +96,16 @@ const resolveServiceIcon = (service = {}) => {
   return 'washing-machine';
 };
 
+const resolveServiceMaxLoadKg = (service) => {
+  const serviceName = String(service?.name || '');
+  const match = serviceName.match(/(\d+(?:\.\d+)?)\s*kg/i);
+  if (match?.[1]) {
+    const parsed = Number(match[1]);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return DEFAULT_MAX_LOAD_KG;
+};
+
 const normalizeCheckoutUrl = (payload) => {
   const candidate = payload?.checkout_url || payload?.checkoutUrl || payload?.url || payload || null;
   if (!candidate) return null;
@@ -112,6 +123,16 @@ const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+const toFiniteCoordinate = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+const resolveBranchFallbackCoordinate = (branch) => {
+  const latitude = toFiniteCoordinate(branch?.latitude);
+  const longitude = toFiniteCoordinate(branch?.longitude);
+  if (latitude == null || longitude == null) return null;
+  return { latitude, longitude };
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -154,6 +175,7 @@ const BookingScreen = ({ route, navigation }) => {
 
   // ── Step 4: Preferences ────────────────────────────────────────────────
   const [loadKg, setLoadKg] = useState('5');
+  const [loadKgError, setLoadKgError] = useState('');
   const [selectedDetergent, setSelectedDetergent] = useState('None');
   const [selectedConditioner, setSelectedConditioner] = useState('None');
   const [isRush, setIsRush] = useState(false);
@@ -171,10 +193,46 @@ const BookingScreen = ({ route, navigation }) => {
   const dateOptions = createDateOptions(7);
   const selectedServiceMode = SERVICE_MODES.find((m) => m.id === serviceMode) || SERVICE_MODES[0];
   const serviceModeNeedsAddress = selectedServiceMode.needsAddress;
+  const branchFallbackCoordinate = React.useMemo(
+    () => resolveBranchFallbackCoordinate(selectedBranch),
+    [selectedBranch]
+  );
+  const selectedServiceMaxLoadKg = resolveServiceMaxLoadKg(selectedService);
+  const selectedSlot = availableSlots.find((slot) => slot.label === scheduleTime) || null;
+  const isSelectedSlotAvailable = Boolean(selectedSlot?.available);
+
+  const sanitizeLoadKgInput = (value) => {
+    const cleaned = String(value || '').replace(/[^0-9.]/g, '');
+    const firstDot = cleaned.indexOf('.');
+    if (firstDot < 0) return cleaned;
+    return `${cleaned.slice(0, firstDot + 1)}${cleaned.slice(firstDot + 1).replace(/\./g, '')}`;
+  };
+
+  const validateLoadKgInput = (showAlert = false) => {
+    const parsedKg = Number.parseFloat(loadKg);
+    let message = '';
+    if (!Number.isFinite(parsedKg) || parsedKg <= 0) {
+      message = 'Please enter a valid load size in kilograms.';
+    } else if (parsedKg > selectedServiceMaxLoadKg) {
+      message = `Maximum load for this service is ${selectedServiceMaxLoadKg}kg.`;
+    }
+
+    setLoadKgError(message);
+    if (message && showAlert) {
+      Alert.alert('Invalid Load Size', message);
+    }
+    return !message;
+  };
 
   // ── Lifecycle ──────────────────────────────────────────────────────────
   useEffect(() => {
     loadInitialData();
+  }, []);
+
+  useEffect(() => {
+    if (__DEV__) {
+      console.info(`GOOGLE MAPS KEY LOADED: ${GOOGLE_MAPS_API_KEY ? 'YES' : 'NO'}`);
+    }
   }, []);
 
   useFocusEffect(
@@ -186,6 +244,10 @@ const BookingScreen = ({ route, navigation }) => {
   useEffect(() => {
     if (selectedService && loadKg) void handleEstimate();
   }, [selectedService, loadKg, isRush, selectedDetergent, selectedConditioner, deliveryAddress, selectedBranch]);
+
+  useEffect(() => {
+    void validateLoadKgInput(false);
+  }, [loadKg, selectedServiceMaxLoadKg]);
 
   useEffect(() => {
     if (!serviceModeNeedsAddress) setDeliveryAddress(null);
@@ -202,15 +264,15 @@ const BookingScreen = ({ route, navigation }) => {
         setSlotsLoading(true);
         setSlotError('');
         const slots = await bookings.getAvailableSlots(selectedBranch.name, scheduleDate);
-        const open = slots.filter((s) => s.available);
-        setAvailableSlots(open);
-        if (!open.find((s) => s.label === scheduleTime)) {
-          setScheduleTime(open[0]?.label || null);
+        setAvailableSlots(slots);
+        if (!slots.find((s) => s.label === scheduleTime && s.available)) {
+          const firstOpen = slots.find((s) => s.available);
+          setScheduleTime(firstOpen?.label || null);
         }
       } catch (error) {
         setAvailableSlots([]);
         setScheduleTime(null);
-        setSlotError('No available time slots found for this date.');
+        setSlotError('Unable to load slots for this date. Please try again.');
       } finally {
         setSlotsLoading(false);
       }
@@ -304,6 +366,19 @@ const BookingScreen = ({ route, navigation }) => {
     setDeliveryAddress(addr);
   };
 
+  const handleStep3Continue = () => {
+    if (!scheduleTime || !isSelectedSlotAvailable) {
+      Alert.alert('Schedule Unavailable', 'Please choose an available time slot before continuing.');
+      return;
+    }
+    setStep(4);
+  };
+
+  const handleStep4Continue = () => {
+    if (!validateLoadKgInput(true)) return;
+    setStep(5);
+  };
+
   // ── Booking confirm ────────────────────────────────────────────────────
   const handleConfirmBooking = async () => {
     if (serviceModeNeedsAddress && !deliveryAddress?.address) {
@@ -311,6 +386,15 @@ const BookingScreen = ({ route, navigation }) => {
         { text: 'Set Address', onPress: () => { setStep(2); setAddressSheetVisible(true); } },
         { text: 'Cancel', style: 'cancel' },
       ]);
+      return;
+    }
+    if (!scheduleTime || !isSelectedSlotAvailable) {
+      Alert.alert('Time Slot Full', 'The selected time slot is no longer available. Please pick another slot.');
+      setStep(3);
+      return;
+    }
+    if (!validateLoadKgInput(true)) {
+      setStep(4);
       return;
     }
 
@@ -425,6 +509,7 @@ const BookingScreen = ({ route, navigation }) => {
         onConfirm={handleAddressConfirmed}
         onClose={() => setAddressSheetVisible(false)}
         initialValue={deliveryAddress}
+        fallbackCoordinate={branchFallbackCoordinate}
       />
 
       <ScrollView
@@ -728,28 +813,45 @@ const BookingScreen = ({ route, navigation }) => {
             <View style={styles.timeGrid2Col}>
               {availableSlots.map((slot) => {
                 const isTimeSelected = scheduleTime === slot.label;
+                const isSlotAvailable = slot.available !== false;
                 return (
                   <TouchableOpacity
                     key={`${slot.slotStartTime}-${slot.slotEndTime}`}
-                    style={[styles.timeCard2, isTimeSelected && styles.selectedTimeCard2]}
-                    onPress={() => setScheduleTime(slot.label)}
+                    style={[
+                      styles.timeCard2,
+                      isTimeSelected && styles.selectedTimeCard2,
+                      !isSlotAvailable && styles.timeCardUnavailable,
+                    ]}
+                    onPress={() => {
+                      if (!isSlotAvailable) return;
+                      setScheduleTime(slot.label);
+                    }}
+                    disabled={!isSlotAvailable}
                     activeOpacity={0.75}
                   >
                     <Ionicons
                       name="time-outline"
                       size={18}
-                      color={isTimeSelected ? '#FFF' : colors.primary}
+                      color={isTimeSelected ? '#FFF' : isSlotAvailable ? colors.primary : colors.textTertiary}
                     />
-                    <Text style={[styles.timeText2, isTimeSelected && styles.selectedTimeText2]}>
+                    <Text style={[styles.timeText2, isTimeSelected && styles.selectedTimeText2, !isSlotAvailable && styles.timeTextUnavailable]}>
                       {slot.label}
                     </Text>
-                    {isTimeSelected && (
+                    {!isSlotAvailable ? <Text style={styles.slotTagUnavailable}>Full</Text> : null}
+                    {isTimeSelected && isSlotAvailable && (
                       <Ionicons name="checkmark-circle" size={16} color="#FFF" style={{ marginLeft: 'auto' }} />
                     )}
                   </TouchableOpacity>
                 );
               })}
             </View>
+            {!slotsLoading && !!availableSlots.length && !availableSlots.some((slot) => slot.available) ? (
+              <View style={styles.noSlotBox}>
+                <Ionicons name="alert-circle-outline" size={32} color={colors.warning} />
+                <Text style={styles.slotHintText}>All slots are currently full.</Text>
+                <Text style={styles.slotHintSub}>Please pick another day above.</Text>
+              </View>
+            ) : null}
             {!slotsLoading && !availableSlots.length ? (
               <View style={styles.noSlotBox}>
                 <Ionicons name="calendar-clear-outline" size={32} color={colors.textTertiary} />
@@ -767,8 +869,8 @@ const BookingScreen = ({ route, navigation }) => {
               />
               <Button
                 title="Continue"
-                onPress={() => setStep(4)}
-                disabled={!scheduleTime || slotsLoading}
+                onPress={handleStep3Continue}
+                disabled={!scheduleTime || !isSelectedSlotAvailable || slotsLoading}
                 style={styles.halfButton}
               />
             </View>
@@ -786,12 +888,14 @@ const BookingScreen = ({ route, navigation }) => {
                 style={styles.kgInput}
                 keyboardType="numeric"
                 value={loadKg}
-                onChangeText={setLoadKg}
+                onChangeText={(value) => setLoadKg(sanitizeLoadKgInput(value))}
+                onBlur={() => validateLoadKgInput(false)}
                 placeholder="0"
               />
               <Text style={styles.kgUnit}>kg</Text>
             </View>
-            <Text style={styles.kgTip}>Standard load is 5–8 kg per machine.</Text>
+            <Text style={styles.kgTip}>Maximum load for this service: {selectedServiceMaxLoadKg}kg.</Text>
+            {!!loadKgError ? <Text style={styles.errorText}>{loadKgError}</Text> : null}
 
             <Text style={styles.sectionTitle}>Detergent</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
@@ -841,7 +945,7 @@ const BookingScreen = ({ route, navigation }) => {
 
             <View style={styles.buttonRow}>
               <Button title="Back" variant="ghost" onPress={() => setStep(3)} style={styles.halfButton} />
-              <Button title="Continue" onPress={() => setStep(5)} style={styles.halfButton} />
+              <Button title="Continue" onPress={handleStep4Continue} style={styles.halfButton} />
             </View>
           </View>
         )}
@@ -1220,8 +1324,19 @@ const styles = StyleSheet.create({
     shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25, shadowRadius: 8, elevation: 4,
   },
+  timeCardUnavailable: { backgroundColor: colors.surface, borderColor: colors.border, opacity: 0.7 },
   timeText2: { fontSize: 13, fontWeight: '700', color: colors.text, flex: 1 },
   selectedTimeText2: { color: '#FFF' },
+  timeTextUnavailable: { color: colors.textSecondary },
+  slotTagUnavailable: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.warning,
+    backgroundColor: `${colors.warning}1A`,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
   noSlotBox: { alignItems: 'center', paddingVertical: 24, gap: 8 },
   slotHintText: { fontSize: 14, fontWeight: '700', color: colors.textSecondary },
   slotHintSub: { fontSize: 12, color: colors.textTertiary },

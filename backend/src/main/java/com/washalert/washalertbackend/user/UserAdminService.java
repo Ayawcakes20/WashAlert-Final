@@ -4,6 +4,7 @@ import com.washalert.washalertbackend.audit.StaffAuditService;
 import com.washalert.washalertbackend.auth.FirebaseIdentityService;
 import com.washalert.washalertbackend.auth.StaffInvitationProperties;
 import com.washalert.washalertbackend.common.DataReadProperties;
+import com.washalert.washalertbackend.common.dto.PagedResponse;
 import com.washalert.washalertbackend.firebase.FirestoreReadService;
 import com.washalert.washalertbackend.firebase.FirestoreSyncService;
 import com.washalert.washalertbackend.firebase.FirestoreUserPayloadFactory;
@@ -13,6 +14,8 @@ import com.washalert.washalertbackend.user.dto.UpdateStaffRequest;
 import com.washalert.washalertbackend.user.dto.UserAdminResponse;
 import com.washalert.washalertbackend.verification.MailService;
 import jakarta.transaction.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -80,6 +83,30 @@ public class UserAdminService {
                 .sorted(Comparator.comparing(User::getFullName))
                 .map(this::toResponse)
                 .toList();
+    }
+
+    public PagedResponse<UserAdminResponse> listStaffPaged(
+            String search,
+            Role role,
+            UserStatus status,
+            String branch,
+            Pageable pageable
+    ) {
+        Role effectiveRole = role;
+        if (effectiveRole != null && effectiveRole != Role.STAFF && effectiveRole != Role.DRIVER) {
+            throw new IllegalArgumentException("Only STAFF or DRIVER roles can be filtered.");
+        }
+
+        Page<User> page = userRepository.findInternalUsersPaged(
+                List.of(Role.STAFF, Role.DRIVER),
+                effectiveRole,
+                status,
+                blankToNull(branch),
+                blankToNull(search),
+                pageable
+        );
+        Page<UserAdminResponse> mapped = page.map(this::toResponse);
+        return PagedResponse.from(mapped);
     }
 
     @Transactional

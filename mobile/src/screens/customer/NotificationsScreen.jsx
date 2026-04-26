@@ -14,6 +14,8 @@ import { colors } from '../../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
 import { notifications as notificationsApi } from '../../services/api';
 
+const NOTIFICATIONS_PAGE_SIZE = 10;
+
 const getTypeStyle = (type) => {
   switch (type) {
     case 'status':
@@ -48,15 +50,28 @@ const NotificationsScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
 
-  const loadNotifications = useCallback(async () => {
+  const loadNotifications = useCallback(async (requestedPage = 0, showLoading = true) => {
     try {
       setError('');
-      const data = await notificationsApi.getAll();
+      if (showLoading) setLoading(true);
+      const data = await notificationsApi.getPaged(requestedPage, NOTIFICATIONS_PAGE_SIZE);
       setItems(data.notifications || []);
-    } catch (e) {
+      setCurrentPage((data.page || 0) + 1);
+      setTotalPages(Math.max(1, data.totalPages || 1));
+      setHasNext(Boolean(data.hasNext));
+      setHasPrevious(Boolean(data.hasPrevious));
+    } catch (loadError) {
       setItems([]);
-      setError(e?.message || 'Unable to load notifications right now.');
+      setCurrentPage(1);
+      setTotalPages(1);
+      setHasNext(false);
+      setHasPrevious(false);
+      setError(loadError?.message || 'Unable to load notifications right now.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -66,14 +81,14 @@ const NotificationsScreen = () => {
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      loadNotifications();
-    }, [loadNotifications])
+      loadNotifications(0, true);
+    }, [loadNotifications]),
   );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    loadNotifications();
-  }, [loadNotifications]);
+    loadNotifications(Math.max(0, currentPage - 1), false);
+  }, [loadNotifications, currentPage]);
 
   const markAsRead = useCallback(async (id) => {
     try {
@@ -144,7 +159,7 @@ const NotificationsScreen = () => {
                   onPress={() => markAsRead(item.id)}
                   style={[styles.notifCard, !item.read && styles.notifCardUnread]}
                 >
-                  <View style={[styles.iconBox, { backgroundColor: styleDef.bg }]}>
+                  <View style={[styles.iconBox, { backgroundColor: styleDef.bg }]}> 
                     <Ionicons name={styleDef.icon} size={20} color={styleDef.text} />
                   </View>
                   <View style={styles.notifContent}>
@@ -164,6 +179,26 @@ const NotificationsScreen = () => {
             })
           )}
         </View>
+
+        {totalPages > 1 ? (
+          <View style={styles.paginationRow}>
+            <TouchableOpacity
+              style={[styles.pageBtn, !hasPrevious && styles.pageBtnDisabled]}
+              onPress={() => loadNotifications(Math.max(0, currentPage - 2), true)}
+              disabled={!hasPrevious}
+            >
+              <Text style={styles.pageBtnText}>Previous</Text>
+            </TouchableOpacity>
+            <Text style={styles.pageText}>Page {currentPage} of {totalPages}</Text>
+            <TouchableOpacity
+              style={[styles.pageBtn, !hasNext && styles.pageBtnDisabled]}
+              onPress={() => loadNotifications(currentPage, true)}
+              disabled={!hasNext}
+            >
+              <Text style={styles.pageBtnText}>Next</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -235,6 +270,35 @@ const styles = StyleSheet.create({
   unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary, marginTop: 4 },
   notifMsg: { fontSize: 12, color: colors.textSecondary, marginBottom: 8, lineHeight: 18 },
   notifTime: { fontSize: 10, color: colors.textSecondary, opacity: 0.7 },
+  paginationRow: {
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  pageBtn: {
+    minWidth: 90,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  pageBtnDisabled: {
+    opacity: 0.5,
+  },
+  pageBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  pageText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
 });
 
 export default NotificationsScreen;

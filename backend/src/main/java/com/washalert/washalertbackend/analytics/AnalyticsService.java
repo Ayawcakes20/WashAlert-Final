@@ -12,7 +12,10 @@ import com.washalert.washalertbackend.payment.PaymentStatus;
 import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -22,10 +25,12 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
+import java.util.Objects;
 
 @Service
 public class AnalyticsService {
+    private static final Logger log = LoggerFactory.getLogger(AnalyticsService.class);
+    private static final String UNKNOWN_BRANCH = "Unknown";
 
     private final JobOrderRepository orderRepository;
     private final PaymentRecordRepository paymentRepository;
@@ -35,6 +40,7 @@ public class AnalyticsService {
         this.paymentRepository = paymentRepository;
     }
 
+    @Transactional(readOnly = true)
     public AnalyticsSummaryResponse summary(LocalDate fromDate, LocalDate toDate, String branch, AuthUserDetails principal) {
         LocalDate from = (fromDate == null) ? LocalDate.now().minusDays(6) : fromDate;
         LocalDate to = (toDate == null) ? LocalDate.now() : toDate;
@@ -48,13 +54,16 @@ public class AnalyticsService {
         User actor = principal.getUser();
         String effectiveBranch = resolveBranch(branch, actor);
 
-        List<JobOrder> orders = (effectiveBranch == null)
+        List<JobOrder> queriedOrders = (effectiveBranch == null)
                 ? orderRepository.findByCreatedAtBetween(start, end)
                 : orderRepository.findByBranchIgnoreCaseAndCreatedAtBetween(effectiveBranch, start, end);
 
-        List<PaymentRecord> payments = (effectiveBranch == null)
+        List<PaymentRecord> queriedPayments = (effectiveBranch == null)
                 ? paymentRepository.findBySubmittedAtBetween(start, end)
                 : paymentRepository.findByJobOrder_BranchIgnoreCaseAndSubmittedAtBetween(effectiveBranch, start, end);
+
+        List<JobOrder> orders = safeOrders(queriedOrders);
+        List<PaymentRecord> payments = safePayments(queriedPayments);
 
         long pending = orders.stream().filter(o -> o.getStatus() == JobOrderStatus.PENDING).count();
         long washing = orders.stream().filter(o -> o.getStatus() == JobOrderStatus.WASHING).count();
@@ -62,8 +71,8 @@ public class AnalyticsService {
         long ready = orders.stream().filter(o -> o.getStatus() == JobOrderStatus.READY).count();
 
         BigDecimal totalRevenue = payments.stream()
-                .filter(p -> p.getStatus() == PaymentStatus.VERIFIED || p.getStatus() == PaymentStatus.PAID)
-                .map(PaymentRecord::getAmount)
+                .filter(this::isCompletedPayment)
+                .map(this::amountOrZero)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         Integer peakHour = findPeakHour(orders);
@@ -93,16 +102,20 @@ public class AnalyticsService {
             return actor.getBranch();
         }
 
-        if (branch == null || branch.isBlank() || branch.equalsIgnoreCase("All")) {
+        String normalizedBranch = branch == null ? "" : branch.trim();
+        if (normalizedBranch.isBlank() || normalizedBranch.equalsIgnoreCase("All")) {
             return null;
         }
 
-        return branch.trim();
+        return normalizedBranch;
     }
 
     private Integer findPeakHour(List<JobOrder> orders) {
         Map<Integer, Long> byHour = new HashMap<>();
         for (JobOrder order : orders) {
+            if (order.getCreatedAt() == null) {
+                continue;
+            }
             int hour = order.getCreatedAt().getHour();
             byHour.put(hour, byHour.getOrDefault(hour, 0L) + 1);
         }
@@ -120,6 +133,9 @@ public class AnalyticsService {
             result.put(String.format("%02d:00", h), 0L);
         }
         for (JobOrder order : orders) {
+            if (order.getCreatedAt() == null) {
+                continue;
+            }
             String key = String.format("%02d:00", order.getCreatedAt().getHour());
             result.put(key, result.getOrDefault(key, 0L) + 1);
         }
@@ -132,7 +148,7 @@ public class AnalyticsService {
         result.put("MAYA", 0L);
         result.put("CASH", 0L);
         for (PaymentRecord p : payments) {
-            if (p.getStatus() != PaymentStatus.VERIFIED && p.getStatus() != PaymentStatus.PAID) continue;
+            if (!isCompletedPayment(p)) continue;
             String key = p.getMethod() == null ? "CASH" : p.getMethod().name();
             result.put(key, result.getOrDefault(key, 0L) + 1);
         }
@@ -146,23 +162,23 @@ public class AnalyticsService {
     ) {
         Map<String, Long> orderCountByBranch = new HashMap<>();
         for (JobOrder o : orders) {
-            String key = (o.getBranch() == null) ? "Unknown" : o.getBranch();
+            String key = normalizeBranchName(o.getBranch());
             orderCountByBranch.put(key, orderCountByBranch.getOrDefault(key, 0L) + 1);
         }
 
         Map<String, BigDecimal> revenueByBranch = new HashMap<>();
         for (PaymentRecord p : payments) {
-            if (p.getStatus() != PaymentStatus.VERIFIED && p.getStatus() != PaymentStatus.PAID) continue;
-
-            String key = (p.getJobOrder().getBranch() == null) ? "Unknown" : p.getJobOrder().getBranch();
-            revenueByBranch.put(key, revenueByBranch.getOrDefault(key, BigDecimal.ZERO).add(p.getAmount()));
+            if (!isCompletedPayment(p)) continue;
+            String key = normalizeBranchName(resolvePaymentBranch(p));
+            revenueByBranch.put(key, revenueByBranch.getOrDefault(key, BigDecimal.ZERO).add(amountOrZero(p)));
         }
 
         if (effectiveBranch != null) {
+            String normalizedBranch = normalizeBranchName(effectiveBranch);
             return List.of(new BranchAnalyticsResponse(
-                    effectiveBranch,
-                    orderCountByBranch.getOrDefault(effectiveBranch, 0L),
-                    revenueByBranch.getOrDefault(effectiveBranch, BigDecimal.ZERO)
+                    normalizedBranch,
+                    orderCountByBranch.getOrDefault(normalizedBranch, 0L),
+                    revenueByBranch.getOrDefault(normalizedBranch, BigDecimal.ZERO)
             ));
         }
 
@@ -174,5 +190,51 @@ public class AnalyticsService {
                         revenueByBranch.getOrDefault(branch, BigDecimal.ZERO)
                 ))
                 .toList();
+    }
+
+    private List<JobOrder> safeOrders(List<JobOrder> orders) {
+        if (orders == null || orders.isEmpty()) {
+            return List.of();
+        }
+        return orders.stream().filter(Objects::nonNull).toList();
+    }
+
+    private List<PaymentRecord> safePayments(List<PaymentRecord> payments) {
+        if (payments == null || payments.isEmpty()) {
+            return List.of();
+        }
+        return payments.stream().filter(Objects::nonNull).toList();
+    }
+
+    private boolean isCompletedPayment(PaymentRecord payment) {
+        if (payment == null) {
+            return false;
+        }
+        return payment.getStatus() == PaymentStatus.VERIFIED || payment.getStatus() == PaymentStatus.PAID;
+    }
+
+    private BigDecimal amountOrZero(PaymentRecord payment) {
+        if (payment == null || payment.getAmount() == null) {
+            return BigDecimal.ZERO;
+        }
+        return payment.getAmount();
+    }
+
+    private String resolvePaymentBranch(PaymentRecord payment) {
+        try {
+            if (payment != null && payment.getJobOrder() != null) {
+                return payment.getJobOrder().getBranch();
+            }
+        } catch (Exception ex) {
+            log.warn("[ANALYTICS] Unable to resolve payment branch for paymentId={}", payment == null ? null : payment.getId(), ex);
+        }
+        return UNKNOWN_BRANCH;
+    }
+
+    private String normalizeBranchName(String branch) {
+        if (branch == null || branch.isBlank()) {
+            return UNKNOWN_BRANCH;
+        }
+        return branch.trim();
     }
 }

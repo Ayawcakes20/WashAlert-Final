@@ -49,22 +49,82 @@ public class AuthController {
         return ResponseEntity.status(400).body(apiError(
                 request,
                 400,
-                "Legacy email/password login is disabled. Use Firebase login and /api/auth/firebase-session."
+                "Legacy email/password login is disabled. Use /api/auth/firebase-login-otp/request then /api/auth/firebase-login-otp/verify."
         ));
     }
 
     @PostMapping("/firebase-session")
     public ResponseEntity<?> firebaseSession(
             @Valid @RequestBody FirebaseSessionRequest req,
+            Authentication authentication,
             HttpServletRequest request
     ) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof AuthUserDetails principal)) {
+            return ResponseEntity.status(401).body(apiError(
+                    request,
+                    401,
+                    "Direct session creation is disabled. Complete login OTP verification first."
+            ));
+        }
+        String platform = req.platform() == null ? "WEB" : req.platform().trim().toUpperCase();
+        return ResponseEntity.ok(authService.toSessionResponse(principal.getUser(), platform));
+    }
+
+    @PostMapping({"/firebase-login-otp/request", "/firebase-login-otp/resend"})
+    public ResponseEntity<?> requestFirebaseLoginOtp(
+            @Valid @RequestBody FirebaseLoginOtpRequest req,
+            HttpServletRequest request
+    ) {
+        User user;
         try {
-            User user = authService.authenticateWithFirebase(req.idToken(), req.platform(), req.selectedBranch());
-            establishSession(user, request);
-            return ResponseEntity.ok(authService.toSessionResponse(user, req.platform().trim().toUpperCase()));
+            user = authService.resolveFirebaseUserForLoginChallenge(req.idToken(), req.platform(), req.selectedBranch());
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.status(403).body(apiError(request, 403, ex.getMessage()));
         }
+
+        try {
+            otpService.sendForLogin(user);
+            return ResponseEntity.ok(new FirebaseLoginOtpChallengeResponse(
+                    maskEmail(user.getEmail()),
+                    "Login OTP sent to email.",
+                    otpService.getTtlMinutes() * 60,
+                    otpService.getResendCooldownSeconds()
+            ));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
+        } catch (Exception mailEx) {
+            return ResponseEntity.status(503).body(apiError(
+                    request,
+                    503,
+                    mailFailureMessage(
+                            mailEx,
+                            "Login OTP email could not be sent. Please retry in a moment."
+                    )
+            ));
+        }
+    }
+
+    @PostMapping("/firebase-login-otp/verify")
+    public ResponseEntity<?> verifyFirebaseLoginOtp(
+            @Valid @RequestBody FirebaseLoginOtpVerifyRequest req,
+            HttpServletRequest request
+    ) {
+        User user;
+        try {
+            user = authService.resolveFirebaseUserForLoginChallenge(req.idToken(), req.platform(), req.selectedBranch());
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.status(403).body(apiError(request, 403, ex.getMessage()));
+        }
+
+        try {
+            otpService.verifyLoginCode(user.getEmail(), req.code());
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
+        }
+
+        User finalizedUser = authService.markLoginSuccess(user.getId());
+        establishSession(finalizedUser, request);
+        return ResponseEntity.ok(authService.toSessionResponse(finalizedUser, req.platform().trim().toUpperCase()));
     }
 
     @PostMapping({"/firebase-login-otp/request", "/firebase-login-otp/resend"})
