@@ -6,7 +6,8 @@ import logoLaundryHubs from "@/assets/logo-laundryhubs.webp";
 const links = [
   { label: "Home", href: "/" },
   { label: "Services", href: "/features" },
-  { label: "Branches", href: "/branches-public" },
+  { label: "Branches", href: "/branches" },
+  { label: "Download", href: "/download" },
   { label: "About", href: "/about-public" },
 ];
 
@@ -48,7 +49,7 @@ export default function Navbar() {
 
         <div className="ml-auto hidden items-center gap-2.5 sm:flex">
           <Link
-            to="/branches-public"
+            to="/branches"
             className="rounded-brand bg-brand-gold px-4 py-2 text-sm font-semibold text-brand-navy transition hover:brightness-95"
           >
             Find a Branch
@@ -86,7 +87,7 @@ export default function Navbar() {
             ))}
             <div className="mt-3 grid grid-cols-2 gap-2">
               <Link
-                to="/branches-public"
+                to="/branches"
                 onClick={() => setMobileOpen(false)}
                 className="rounded-brand bg-brand-gold px-3 py-2 text-center text-sm font-semibold text-brand-navy"
               >

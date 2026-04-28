@@ -11,6 +11,9 @@ import {
   Timer,
   ShieldCheck,
   ChevronRight,
+  Download,
+  Smartphone,
+  Info,
 } from "lucide-react";
 import Navbar from "@/components/public/Navbar";
 import Footer from "@/components/public/Footer";
@@ -127,7 +130,7 @@ export default function HomePage() {
               className="mt-8 flex flex-wrap gap-3"
             >
               <Link
-                to="/branches-public"
+                to="/branches"
                 className="rounded-brand bg-brand-gold px-5 py-3 text-sm font-semibold text-brand-navy transition hover:brightness-95"
               >
                 Book a Laundry Service
@@ -243,13 +246,86 @@ export default function HomePage() {
 
       <section className="bg-white py-16 lg:py-20">
         <div className="mx-auto max-w-7xl px-6 lg:px-8">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 0.3 }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
+            className="mb-10 flex items-end justify-between gap-4"
+          >
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-wider text-brand-mint">Download App</p>
+              <h2 className="mt-2 text-3xl font-bold text-brand-navy md:text-4xl">Use WashAlert on mobile</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-brand-muted">
+                Access bookings, tracking, and updates from your phone. Android testing build is available, while iOS is coming soon.
+              </p>
+            </div>
+            <Link
+              to="/download"
+              className="hidden rounded-brand bg-brand-navy px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-navyDark md:inline-flex"
+            >
+              View Download Page
+            </Link>
+          </motion.div>
+
+          <div className="grid gap-5 md:grid-cols-2">
+            <motion.article
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.2 }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              className="rounded-brand border border-brand-border bg-brand-bg p-6 shadow-brand"
+            >
+              <span className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-brand-mintSoft text-brand-navy">
+                <Smartphone className="h-5 w-5" />
+              </span>
+              <h3 className="text-xl font-semibold text-brand-navy">Android APK available for testing</h3>
+              <p className="mt-2 text-sm text-brand-muted">
+                Install the current Android test build to try customer booking and tracking flows.
+              </p>
+              <Link
+                to="/download"
+                className="mt-4 inline-flex items-center gap-2 rounded-brand bg-brand-gold px-4 py-2 text-sm font-semibold text-brand-navy transition hover:brightness-95"
+              >
+                <Download className="h-4 w-4" /> Get Android Build
+              </Link>
+            </motion.article>
+
+            <motion.article
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.2 }}
+              transition={{ duration: 0.6, ease: "easeOut", delay: 0.06 }}
+              className="rounded-brand border border-brand-border bg-brand-bg p-6 shadow-brand"
+            >
+              <span className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-brand-mintSoft text-brand-navy">
+                <Info className="h-5 w-5" />
+              </span>
+              <h3 className="text-xl font-semibold text-brand-navy">iOS build coming soon</h3>
+              <p className="mt-2 text-sm text-brand-muted">
+                iOS distribution is being finalized. We will publish release instructions once the build is ready.
+              </p>
+              <button
+                type="button"
+                disabled
+                className="mt-4 inline-flex items-center gap-2 rounded-brand border border-brand-border bg-white px-4 py-2 text-sm font-semibold text-brand-muted"
+              >
+                <Download className="h-4 w-4" /> iOS Availability Pending
+              </button>
+            </motion.article>
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-white py-16 lg:py-20">
+        <div className="mx-auto max-w-7xl px-6 lg:px-8">
           <div className="mb-10 flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-sm font-semibold uppercase tracking-wider text-brand-mint">Branch Network</p>
               <h2 className="mt-2 text-3xl font-bold text-brand-navy md:text-4xl">Trusted locations across Metro Manila</h2>
             </div>
             <Link
-              to="/branches-public"
+              to="/branches"
               className="inline-flex items-center gap-1 text-sm font-semibold text-brand-navy hover:text-brand-navyDark"
             >
               View All Branches <ChevronRight className="h-4 w-4" />
@@ -299,7 +375,7 @@ export default function HomePage() {
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Link
-              to="/branches-public"
+              to="/branches"
               className="rounded-brand bg-brand-navy px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-navyDark"
             >
               Find a Branch

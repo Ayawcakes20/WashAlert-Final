@@ -29,7 +29,8 @@ export default function Footer() {
             <div className="space-y-2 text-sm text-white/80">
               <Link to="/" className="block transition hover:text-brand-mint">Home</Link>
               <Link to="/features" className="block transition hover:text-brand-mint">Services</Link>
-              <Link to="/branches-public" className="block transition hover:text-brand-mint">Branches</Link>
+              <Link to="/branches" className="block transition hover:text-brand-mint">Branches</Link>
+              <Link to="/download" className="block transition hover:text-brand-mint">Download</Link>
               <Link to="/about-public" className="block transition hover:text-brand-mint">About</Link>
             </div>
           </div>
@@ -50,7 +51,7 @@ export default function Footer() {
             </p>
             <div className="flex gap-2">
               <Link
-                to="/branches-public"
+                to="/branches"
                 className="rounded-brand bg-brand-gold px-3 py-2 text-xs font-semibold text-brand-navy transition hover:brightness-95"
               >
                 Find Branch

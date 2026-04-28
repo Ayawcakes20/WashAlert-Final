@@ -60,7 +60,7 @@ export default function FeaturesPage() {
             Locate an open branch and get directions in one tap.
           </p>
           <Link
-            to="/branches-public"
+            to="/branches"
             className="mt-6 inline-flex items-center gap-1 rounded-brand bg-brand-gold px-5 py-3 text-sm font-semibold text-brand-navy transition hover:brightness-95"
           >
             View Branches <ChevronRight className="h-4 w-4" />
