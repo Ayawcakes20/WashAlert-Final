@@ -1,81 +1,54 @@
+import { Link } from "react-router-dom";
+import { ChevronRight } from "lucide-react";
 import Navbar from "@/components/public/Navbar";
 import Footer from "@/components/public/Footer";
-import { motion } from "framer-motion";
 import { featureDetails } from "@/data/features";
-import { Link } from "react-router-dom";
-import svcBooking from "@/assets/svc-booking.png";
-import svcTracking from "@/assets/svc-tracking.png";
-import svcDelivery from "@/assets/svc-delivery.png";
-import svcPayment from "@/assets/svc-payment.png";
-import heroMachines from "@/assets/hero-machines.png";
-import heroLinens from "@/assets/hero-linens.png";
-import heroDetergent from "@/assets/hero-detergent.png";
-import heroBasket from "@/assets/hero-basket.png";
-import heroDryer from "@/assets/hero-dryer.png";
-
-// 4 contextually relevant images per feature section
-const featureImages: Record<number, [string, string, string, string]> = {
-  0: [svcBooking,   heroMachines, heroBasket,   heroDetergent],
-  1: [svcTracking,  heroDryer,    heroLinens,   heroMachines],
-  2: [svcDelivery,  heroBasket,   heroLinens,   heroDetergent],
-  3: [svcPayment,   svcBooking,   heroMachines, heroDetergent],
-};
 
 export default function FeaturesPage() {
+  const coreServices = featureDetails.slice(0, 4);
+
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-brand-bg text-brand-text">
       <Navbar />
-      <section className="pt-20 lg:pt-24 pb-16 bg-[#1a2b3c]">
-        <div className="max-w-7xl mx-auto px-6 pt-16">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-primary-foreground">Our Services</h1>
-          </motion.div>
+
+      <section className="bg-brand-navy py-16 lg:py-20">
+        <div className="mx-auto max-w-7xl px-6 lg:px-8">
+          <p className="text-sm font-semibold uppercase tracking-wider text-brand-mint">Services</p>
+          <h1 className="mt-2 text-4xl font-bold text-white md:text-5xl">Laundry services built for speed and visibility</h1>
+          <p className="mt-4 max-w-3xl text-base text-white/80">
+            Explore how WashAlert powers booking, tracking, delivery updates, and payments across Triplets LaundryHubs and SpeedyWash branches.
+          </p>
         </div>
       </section>
 
-      {featureDetails.map((f, i) => {
-        const imgs = featureImages[i % 4] ?? featureImages[0];
-        return (
-          <div key={f.id}>
-            {/* Numbered section */}
-            <section className={`relative py-20 lg:py-28 overflow-hidden ${i % 2 === 0 ? "bg-[hsl(220,10%,35%)]" : "bg-[hsl(220,10%,55%)]"}`}>
-              <div className="absolute left-0 top-1/2 -translate-y-1/2 text-[200px] md:text-[300px] font-black text-primary-foreground/5 leading-none select-none -ml-4">
-                {i + 1}
-              </div>
-              <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">
-                <motion.div
-                  initial={{ opacity: 0, y: 30 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                >
-                  <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-primary-foreground mb-8">{f.title}</h2>
-                  <p className="text-sm md:text-base text-primary-foreground/80 leading-relaxed max-w-2xl mx-auto">{f.description}</p>
-                </motion.div>
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  whileInView={{ opacity: 1 }}
-                  viewport={{ once: true }}
-                  className="mt-10"
-                >
-                  <Link to="/about-public" className="inline-block text-base font-medium text-primary-foreground border-b-2 border-primary-foreground pb-1 hover:opacity-70 transition-opacity">
-                    Read More
-                  </Link>
-                </motion.div>
-              </div>
-            </section>
+      <section className="mx-auto max-w-7xl px-6 py-16 lg:px-8 lg:py-20">
+        <div className="grid gap-6 md:grid-cols-2">
+          {coreServices.map((service) => (
+            <article key={service.id} className="rounded-brand border border-brand-border bg-white p-6 shadow-brand">
+              <p className="text-xs font-semibold uppercase tracking-wider text-brand-mint">{service.subtitle}</p>
+              <h2 className="mt-2 text-2xl font-bold text-brand-navy">{service.title}</h2>
+              <p className="mt-3 text-sm leading-relaxed text-brand-muted">{service.description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
 
-            {/* 2x2 image grid */}
-            <div className="grid grid-cols-2">
-              {imgs.map((src, idx) => (
-                <img key={idx} src={src} alt={f.title} className="w-full h-[200px] md:h-[300px] object-cover" />
-              ))}
-            </div>
-          </div>
-        );
-      })}
+      <section className="bg-white py-16 lg:py-20">
+        <div className="mx-auto max-w-6xl px-6 text-center lg:px-8">
+          <h2 className="text-3xl font-bold text-brand-navy md:text-4xl">Need a nearby branch now?</h2>
+          <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-brand-muted">
+            Locate an open branch and get directions in one tap.
+          </p>
+          <Link
+            to="/branches-public"
+            className="mt-6 inline-flex items-center gap-1 rounded-brand bg-brand-gold px-5 py-3 text-sm font-semibold text-brand-navy transition hover:brightness-95"
+          >
+            View Branches <ChevronRight className="h-4 w-4" />
+          </Link>
+        </div>
+      </section>
 
       <Footer />
     </div>
   );
 }
-

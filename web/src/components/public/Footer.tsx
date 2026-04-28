@@ -1,57 +1,73 @@
 import { Link } from "react-router-dom";
-import { FiFacebook, FiInstagram } from "react-icons/fi";
+import { Phone, Mail, MapPin } from "lucide-react";
+import logoLaundryHubs from "@/assets/logo-laundryhubs.webp";
 
 export default function Footer() {
   return (
-    <footer className="bg-background border-t border-border">
-      <div className="max-w-5xl mx-auto px-6 py-16">
-        {/* Nav links row */}
-        <div className="flex flex-wrap justify-center gap-6 md:gap-10 mb-10">
-          <Link to="/branches-public" className="text-sm font-medium text-foreground hover:opacity-70 transition-opacity">Branches</Link>
-          <Link to="/features" className="text-sm font-medium text-foreground hover:opacity-70 transition-opacity">Services</Link>
-          <Link to="/about-public" className="text-sm font-medium text-foreground hover:opacity-70 transition-opacity">News</Link>
-          <Link to="/about-public" className="text-sm font-medium text-foreground hover:opacity-70 transition-opacity">About</Link>
-          <Link to="/download" className="text-sm font-medium text-foreground hover:opacity-70 transition-opacity">Download</Link>
-        </div>
-
-        {/* Social icons */}
-        <div className="flex justify-center gap-6 mb-10">
-          <a href="#" className="text-foreground hover:opacity-70 transition-opacity">
-            <FiFacebook className="w-6 h-6" />
-          </a>
-          <a href="#" className="text-foreground hover:opacity-70 transition-opacity">
-            <FiInstagram className="w-6 h-6" />
-          </a>
-        </div>
-
-        {/* Bottom links */}
-        <div className="flex flex-wrap justify-center gap-4 md:gap-8 mb-8 text-xs text-muted-foreground">
-          <Link to="/about-public" className="hover:opacity-70 transition-opacity">About Us</Link>
-          <span>|</span>
-          <Link to="/about-public" className="hover:opacity-70 transition-opacity">Privacy Policy</Link>
-        </div>
-
-        {/* Logo */}
-        <div className="flex justify-center mb-6">
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md bg-foreground flex items-center justify-center">
-              <svg viewBox="0 0 24 24" className="w-4 h-4 text-background" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="4" y="4" width="16" height="16" rx="2" />
-                <circle cx="12" cy="13" r="5" />
-                <circle cx="12" cy="13" r="2" />
-              </svg>
+    <footer className="bg-brand-navy text-white">
+      <div className="mx-auto max-w-7xl px-6 py-16 lg:px-8">
+        <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <div className="mb-4 flex items-center gap-2.5">
+              <img
+                src={logoLaundryHubs}
+                alt="Triplets LaundryHubs"
+                className="h-9 w-9 rounded-full object-cover ring-1 ring-white/20"
+              />
+              <div>
+                <p className="text-sm font-bold">WashAlert</p>
+                <p className="text-[11px] text-white/70">Triplets LaundryHubs</p>
+              </div>
             </div>
-            <div className="flex flex-col leading-tight">
-              <span className="text-xs font-bold text-foreground">WashAlert</span>
-              <span className="text-[8px] text-muted-foreground tracking-wider">Laundry Place</span>
+            <p className="text-sm leading-relaxed text-white/80">
+              Laundry made simple with booking, tracking, payment, and delivery updates across every branch.
+            </p>
+          </div>
+
+          <div>
+            <p className="mb-4 text-sm font-semibold text-brand-mint">Quick Links</p>
+            <div className="space-y-2 text-sm text-white/80">
+              <Link to="/" className="block transition hover:text-brand-mint">Home</Link>
+              <Link to="/features" className="block transition hover:text-brand-mint">Services</Link>
+              <Link to="/branches-public" className="block transition hover:text-brand-mint">Branches</Link>
+              <Link to="/about-public" className="block transition hover:text-brand-mint">About</Link>
             </div>
-          </Link>
+          </div>
+
+          <div>
+            <p className="mb-4 text-sm font-semibold text-brand-mint">Customer Support</p>
+            <div className="space-y-3 text-sm text-white/80">
+              <p className="flex items-center gap-2"><Phone className="h-4 w-4" /> +63 2 8123 4567</p>
+              <p className="flex items-center gap-2"><Mail className="h-4 w-4" /> support@washalert.app</p>
+              <p className="flex items-center gap-2"><MapPin className="h-4 w-4" /> Metro Manila, Philippines</p>
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-4 text-sm font-semibold text-brand-mint">Start Now</p>
+            <p className="mb-4 text-sm text-white/80">
+              Find your nearest branch and book your next laundry service in minutes.
+            </p>
+            <div className="flex gap-2">
+              <Link
+                to="/branches-public"
+                className="rounded-brand bg-brand-gold px-3 py-2 text-xs font-semibold text-brand-navy transition hover:brightness-95"
+              >
+                Find Branch
+              </Link>
+              <Link
+                to="/login"
+                className="rounded-brand border border-white/25 px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/10"
+              >
+                Log-in
+              </Link>
+            </div>
+          </div>
         </div>
 
-        {/* Copyright */}
-        <p className="text-center text-xs text-muted-foreground">
-          © 2025 WashAlert. All Rights Reserved.
-        </p>
+        <div className="mt-12 border-t border-white/20 pt-5 text-xs text-white/70">
+          © {new Date().getFullYear()} WashAlert by Triplets LaundryHubs. All rights reserved.
+        </div>
       </div>
     </footer>
   );
