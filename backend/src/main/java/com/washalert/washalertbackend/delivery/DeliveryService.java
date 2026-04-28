@@ -327,12 +327,14 @@ public class DeliveryService {
     }
 
     /** Driver-only: returns all deliveries assigned to the calling driver's account. */
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<DeliveryResponse> listMy(AuthUserDetails principal) {
         User driver = principal.getUser();
         return deliveryRepository.findByDriverUser_IdOrderByUpdatedAtDesc(driver.getId())
                 .stream().map(this::toResponse).toList();
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public PagedResponse<DeliveryResponse> listMyPaged(
             AuthUserDetails principal,
             String statusGroup,
@@ -352,6 +354,7 @@ public class DeliveryService {
         return PagedResponse.from(mapped);
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<DeliveryResponse> list(String branch, AuthUserDetails principal) {
         User actor = principal.getUser();
         String effectiveBranch = resolveEffectiveBranch(branch, actor);
@@ -372,6 +375,7 @@ public class DeliveryService {
         return firestoreRows;
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public PagedResponse<DeliveryResponse> listPaged(
             String branch,
             String status,
@@ -393,6 +397,7 @@ public class DeliveryService {
         return PagedResponse.from(mapped);
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public DeliveryResponse getById(Long deliveryId, AuthUserDetails principal) {
         User actor = principal.getUser();
 
@@ -418,6 +423,7 @@ public class DeliveryService {
         throw new IllegalArgumentException("Delivery not found.");
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public DeliveryResponse trackByTrackingNumber(String trackingNumber) {
         String normalized = normalizeTracking(trackingNumber);
 

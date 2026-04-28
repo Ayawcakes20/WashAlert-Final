@@ -1,4 +1,4 @@
-import React, { useContext } from 'react';
+import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -7,8 +7,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Platform,
-  Dimensions,
 } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -50,7 +48,6 @@ import DriverProfileScreen from '../screens/driver/DriverProfileScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
-const { width } = Dimensions.get('window');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Brsh.-style FLOATING rounded bottom tab bar — Customer
@@ -238,9 +235,11 @@ const CustomerTabs = () => (
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth Stack
 // ─────────────────────────────────────────────────────────────────────────────
-const AuthStack = () => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="Splash"          component={SplashScreen} />
+const AuthStack = ({ hasSeenOnboarding }) => (
+  <Stack.Navigator
+    screenOptions={{ headerShown: false }}
+    initialRouteName={hasSeenOnboarding ? 'Login' : 'Onboarding'}
+  >
     <Stack.Screen name="Onboarding"      component={OnboardingScreen} />
     <Stack.Screen name="Login"           component={LoginScreen} />
     <Stack.Screen name="Register"        component={RegisterScreen} />
@@ -347,7 +346,7 @@ const DriverStack = () => (
 // Root
 // ─────────────────────────────────────────────────────────────────────────────
 const AppNavigator = () => {
-  const { loading, isAuthenticated, user } = useAuth();
+  const { loading, isAuthenticated, hasSeenOnboarding, user } = useAuth();
   const roleModules = new Set((user?.allowedModules || []).map((item) => String(item).toLowerCase()));
   const isDriver = user?.role === 'driver' || roleModules.has('driver-delivery');
 
@@ -372,7 +371,9 @@ const AppNavigator = () => {
     <NavigationContainer linking={linking}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
-          <Stack.Screen name="Auth" component={AuthStack} />
+          <Stack.Screen name="Auth">
+            {() => <AuthStack hasSeenOnboarding={hasSeenOnboarding} />}
+          </Stack.Screen>
         ) : isDriver ? (
           <Stack.Screen name="Driver" component={DriverStack} />
         ) : (

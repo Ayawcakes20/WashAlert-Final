@@ -8,10 +8,10 @@ import {
   Image,
   Animated,
   StatusBar,
-  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useAuth } from '../../context/AuthContext';
 
 const { width, height } = Dimensions.get('window');
 
@@ -207,6 +207,7 @@ const panel = StyleSheet.create({
 
 // ── Main component ────────────────────────────────────────────────────────
 const OnboardingScreen = ({ navigation }) => {
+  const { completeOnboarding } = useAuth();
   const insets = useSafeAreaInsets();
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
@@ -220,9 +221,17 @@ const OnboardingScreen = ({ navigation }) => {
   }).current;
   const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
 
+  const goToLoginAndPersist = async () => {
+    try {
+      await completeOnboarding();
+    } finally {
+      navigation.navigate('Login');
+    }
+  };
+
   const goNext = () => {
     if (isLast) {
-      navigation.navigate('Login');
+      void goToLoginAndPersist();
     } else {
       flatListRef.current?.scrollToIndex({ index: currentIndex + 1, animated: true });
     }
@@ -244,7 +253,7 @@ const OnboardingScreen = ({ navigation }) => {
         {!isLast ? (
           <TouchableOpacity
             style={styles.skipBtn}
-            onPress={() => navigation.navigate('Login')}
+            onPress={() => void goToLoginAndPersist()}
             activeOpacity={0.7}
           >
             <Text style={styles.skipTxt}>Skip</Text>
@@ -341,7 +350,7 @@ const OnboardingScreen = ({ navigation }) => {
 
         {/* Already have account */}
         <TouchableOpacity
-          onPress={() => navigation.navigate('Login')}
+          onPress={() => void goToLoginAndPersist()}
           style={styles.loginRow}
           activeOpacity={0.7}
         >

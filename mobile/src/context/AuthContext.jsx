@@ -6,6 +6,7 @@ const AuthContext = createContext(undefined);
 
 const USER_STORAGE_KEY = 'userData';
 const FIREBASE_SESSION_STORAGE_KEY = 'firebaseSessionData';
+const HAS_SEEN_ONBOARDING_STORAGE_KEY = 'hasSeenOnboarding';
 const normalizeEmail = (email) => (email || '').trim().toLowerCase();
 const looksLikeHtml = (value) => /<!doctype html|<html[\s>]/i.test(String(value || ''));
 const looksLikeNgrokWarningPage = (value) =>
@@ -229,19 +230,18 @@ const mapSessionProfile = (profile, fallback = null) => ({
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [firebaseSession, setFirebaseSession] = useState(null);
+  const [hasSeenOnboarding, setHasSeenOnboarding] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    bootstrapAsync();
-  }, []);
-
-  const bootstrapAsync = async () => {
+  const bootstrapAsync = useCallback(async () => {
     try {
       const minDelay = new Promise((r) => setTimeout(r, 800));
       const stored = await AsyncStorage.getItem(USER_STORAGE_KEY);
       const storedFirebaseSession = await AsyncStorage.getItem(FIREBASE_SESSION_STORAGE_KEY);
+      const storedHasSeenOnboarding = await AsyncStorage.getItem(HAS_SEEN_ONBOARDING_STORAGE_KEY);
       const localUser = stored ? JSON.parse(stored) : null;
       const localFirebaseSession = storedFirebaseSession ? JSON.parse(storedFirebaseSession) : null;
+      setHasSeenOnboarding(storedHasSeenOnboarding === 'true');
       setFirebaseSession(localFirebaseSession);
 
       if (localUser) {
@@ -271,7 +271,11 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void bootstrapAsync();
+  }, [bootstrapAsync]);
 
   const persistFirebaseSession = async (session = {}) => {
     if (!session?.idToken) return;
@@ -282,6 +286,11 @@ export const AuthProvider = ({ children }) => {
     setFirebaseSession(normalized);
     await AsyncStorage.setItem(FIREBASE_SESSION_STORAGE_KEY, JSON.stringify(normalized));
   };
+
+  const persistOnboardingSeen = useCallback(async () => {
+    setHasSeenOnboarding(true);
+    await AsyncStorage.setItem(HAS_SEEN_ONBOARDING_STORAGE_KEY, 'true');
+  }, []);
 
   const clearFirebaseSession = async () => {
     setFirebaseSession(null);
@@ -322,6 +331,7 @@ export const AuthProvider = ({ children }) => {
         email: normalizedEmail,
         resendCooldownSeconds: challenge?.resendCooldownSeconds || 60,
       });
+      await persistOnboardingSeen();
       return {
         success: true,
         requiresOtp: true,
@@ -333,7 +343,7 @@ export const AuthProvider = ({ children }) => {
       await clearFirebaseSession();
       return { success: false, error: formatAuthError(error) };
     }
-  }, []);
+  }, [persistOnboardingSeen]);
 
   const register = useCallback(async (data) => {
     const normalizedEmail = normalizeEmail(data.email);
@@ -362,6 +372,7 @@ export const AuthProvider = ({ children }) => {
         idToken: signup.idToken,
         refreshToken: signup.refreshToken,
       });
+      await persistOnboardingSeen();
       return {
         success: true,
         message: 'Registration successful. You can now log in.',
@@ -370,7 +381,7 @@ export const AuthProvider = ({ children }) => {
       await clearFirebaseSession();
       return { success: false, error: formatAuthError(error) };
     }
-  }, []);
+  }, [persistOnboardingSeen]);
 
   const signup = register;
 
@@ -498,11 +509,12 @@ export const AuthProvider = ({ children }) => {
 
       setUser(mapped);
       await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(mapped));
+      await persistOnboardingSeen();
       return { success: true, user: mapped, autoLogin: true };
     } catch (error) {
       return { success: false, error: formatAuthError(error) };
     }
-  }, []);
+  }, [persistOnboardingSeen]);
 
   const requestLoginOTP = useCallback(async () => {
     if (!firebaseSession?.idToken) {
@@ -549,11 +561,16 @@ export const AuthProvider = ({ children }) => {
 
       setUser(mapped);
       await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(mapped));
+      await persistOnboardingSeen();
       return { success: true, user: mapped, autoLogin: true };
     } catch (error) {
       return { success: false, error: formatAuthError(error) };
     }
-  }, [firebaseSession?.idToken]);
+  }, [firebaseSession?.idToken, persistOnboardingSeen]);
+
+  const completeOnboarding = useCallback(async () => {
+    await persistOnboardingSeen();
+  }, [persistOnboardingSeen]);
 
   const resetPassword = useCallback(async (email, newPassword) => {
     try {
@@ -572,6 +589,7 @@ export const AuthProvider = ({ children }) => {
       value={{
         user,
         isAuthenticated: !!user,
+        hasSeenOnboarding,
         isLoading,
         loading: isLoading,
         login,
@@ -586,6 +604,7 @@ export const AuthProvider = ({ children }) => {
         verifyLoginOTP,
         verifyResetOTP,
         resetPassword,
+        completeOnboarding,
         updateUserProfile,
         changePassword,
         firebaseIdToken: firebaseSession?.idToken || '',

@@ -16,6 +16,7 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
            select d
            from DeliveryOrder d
            join fetch d.jobOrder jo
+           left join fetch d.driverUser du
            where jo.trackingNumber = :trackingNumber
            and d.leg = :leg
            """)
@@ -25,6 +26,7 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
            select d
            from DeliveryOrder d
            join fetch d.jobOrder jo
+           left join fetch d.driverUser du
            where jo.trackingNumber = :trackingNumber
            order by d.updatedAt desc
            """)
@@ -34,6 +36,7 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
            select d
            from DeliveryOrder d
            join fetch d.jobOrder
+           left join fetch d.driverUser
            order by d.updatedAt desc
            """)
     List<DeliveryOrder> findAllByOrderByUpdatedAtDesc();
@@ -42,6 +45,7 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
            select d
            from DeliveryOrder d
            join fetch d.jobOrder jo
+           left join fetch d.driverUser du
            where lower(jo.branch) = lower(:branch)
            order by d.updatedAt desc
            """)
@@ -51,6 +55,7 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
            select d
            from DeliveryOrder d
            join fetch d.jobOrder
+           left join fetch d.driverUser
            where d.id = :id
            """)
     Optional<DeliveryOrder> findWithJobOrderById(@Param("id") Long id);
@@ -59,6 +64,7 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
            select d
            from DeliveryOrder d
            join fetch d.jobOrder
+           left join fetch d.driverUser
            where d.driverUser.id = :driverUserId
            order by d.updatedAt desc
            """)

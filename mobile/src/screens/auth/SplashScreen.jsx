@@ -1,19 +1,9 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '../../context/AuthContext';
 import { WashingMachineLoader } from '../../components';
 
-const SplashScreen = ({ navigation }) => {
-  const { isAuthenticated, user } = useAuth();
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      navigation?.navigate('Onboarding');
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, [isAuthenticated, user?.role, navigation]);
-
+const SplashScreen = () => {
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.inner}>
