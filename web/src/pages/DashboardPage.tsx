@@ -11,11 +11,13 @@ import {
 import { dashboardApi, type JobOrderResponse } from "@/lib/api";
 
 const statusColor: Record<string, string> = {
-  Pending: "bg-accent/20 text-accent-foreground",
-  Washing: "bg-primary/10 text-primary",
-  Drying: "bg-secondary/30 text-secondary-foreground",
-  Ready: "bg-mint/20 text-mint-foreground",
-  "For Delivery": "bg-destructive/10 text-destructive",
+  Pending: "status-chip status-pending",
+  Washing: "status-chip status-progress",
+  Drying: "status-chip status-drying",
+  Ready: "status-chip status-ready",
+  "For Delivery": "status-chip status-delivering",
+  Delivered: "status-chip status-ready",
+  Cancelled: "status-chip status-failed",
 };
 
 const statusLabel: Record<string, string> = {
@@ -120,7 +122,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((s) => (
-          <motion.div key={s.label} variants={item} className="glass-card rounded-2xl p-5 hover:shadow-[var(--shadow-elevated)] transition-shadow">
+          <motion.div key={s.label} variants={item} className="surface-card p-5 hover:shadow-[var(--shadow-elevated)] transition-shadow">
             <div className="flex items-center justify-between mb-3">
               <div className={`p-2.5 rounded-xl ${s.color}`}>
                 <s.icon className="h-5 w-5" />
@@ -136,10 +138,10 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <motion.div variants={item} className="lg:col-span-2 glass-card rounded-2xl p-6">
+        <motion.div variants={item} className="lg:col-span-2 surface-card p-6">
           <h2 className="text-lg font-semibold text-foreground mb-4">Recent Orders</h2>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm table-modern">
               <thead>
                 <tr className="text-muted-foreground text-xs uppercase tracking-wider border-b border-border/50">
                   <th className="text-left pb-3 font-medium">Order ID</th>
@@ -158,7 +160,7 @@ export default function DashboardPage() {
                     <td className="py-3 text-muted-foreground hidden md:table-cell">{o.service}</td>
                     <td className="py-3 text-muted-foreground hidden lg:table-cell">{o.branch}</td>
                     <td className="py-3">
-                      <span className={`inline-flex px-2.5 py-1 rounded-lg text-xs font-medium ${statusColor[o.status] || "bg-muted text-muted-foreground"}`}>
+                      <span className={`${statusColor[o.status] || "status-chip bg-muted text-muted-foreground"}`}>
                         {o.status}
                       </span>
                     </td>
@@ -200,7 +202,7 @@ export default function DashboardPage() {
           ) : null}
         </motion.div>
 
-        <motion.div variants={item} className="glass-card rounded-2xl p-6">
+        <motion.div variants={item} className="surface-card p-6">
           <h2 className="text-lg font-semibold text-foreground mb-4">Live Alerts</h2>
           <div className="space-y-3">
             {alerts.map((a, i) => (

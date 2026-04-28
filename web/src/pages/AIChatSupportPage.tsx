@@ -240,7 +240,7 @@ export default function AIChatSupportPage() {
 
         <motion.div variants={item} className="flex gap-4 h-[calc(100vh-180px)]">
           {/* LEFT: Ticket list panel */}
-          <div className="w-72 glass-card rounded-2xl flex flex-col overflow-hidden flex-shrink-0">
+          <div className="w-72 surface-card flex flex-col overflow-hidden flex-shrink-0">
             <div className="p-3 border-b border-border/30">
               <div className="relative mb-2">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -291,7 +291,7 @@ export default function AIChatSupportPage() {
           </div>
 
           {/* CENTER: Ticket detail */}
-          <div className="flex-1 glass-card rounded-2xl flex flex-col overflow-hidden">
+          <div className="flex-1 surface-card flex flex-col overflow-hidden">
             {selectedTicket ? (
               <>
                 <div className="p-4 border-b border-border/30 flex items-center justify-between">
@@ -345,7 +345,7 @@ export default function AIChatSupportPage() {
           </div>
 
           {/* RIGHT: Summary panel */}
-          <div className="w-64 glass-card rounded-2xl flex-shrink-0 overflow-y-auto p-4 flex flex-col gap-4">
+          <div className="w-64 surface-card flex-shrink-0 overflow-y-auto p-4 flex flex-col gap-4">
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Ticket Summary</p>
               {[
@@ -394,7 +394,7 @@ export default function AIChatSupportPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Chat panel */}
-        <motion.div variants={item} className="lg:col-span-2 glass-card rounded-2xl flex flex-col h-[600px]">
+        <motion.div variants={item} className="lg:col-span-2 surface-card flex flex-col h-[600px]">
           {/* Chat header */}
           <div className="p-4 border-b border-border/30 flex items-center gap-3">
             <div className="p-2 rounded-xl bg-primary/10">
@@ -424,9 +424,9 @@ export default function AIChatSupportPage() {
                         msg.sender === "user"
                           ? "gradient-navy text-primary-foreground"
                           : msg.sender === "ai"
-                          ? "bg-primary/10 text-primary"
+                          ? "bg-secondary/30 text-secondary-foreground"
                           : msg.sender === "human"
-                          ? "bg-amber-500/15 text-amber-600"
+                          ? "bg-accent/20 text-accent-foreground"
                           : "bg-destructive/10 text-destructive"
                       }`}
                     >
@@ -437,9 +437,9 @@ export default function AIChatSupportPage() {
                         msg.sender === "user"
                           ? "gradient-navy text-primary-foreground"
                           : msg.sender === "human"
-                          ? "bg-amber-500/10 text-foreground border border-amber-500/20"
+                          ? "bg-accent/12 text-foreground border border-accent/35"
                           : msg.sender === "ai"
-                          ? "bg-muted/50 text-foreground"
+                          ? "bg-secondary/18 text-foreground border border-secondary/40"
                           : "bg-destructive/10 text-destructive"
                       }`}
                     >
@@ -464,7 +464,7 @@ export default function AIChatSupportPage() {
                     </div>
                   </div>
                   <p className={`text-[10px] text-muted-foreground mt-1 ${msg.sender === "user" ? "text-right mr-9" : "ml-9"}`}>
-                    {msg.sender === "human" ? "🧑‍💼 Staff  · " : msg.sender === "ai" ? "🤖 AI  · " : ""}{msg.time}
+                    {msg.sender === "human" ? "Staff � " : msg.sender === "ai" ? "AI � " : ""}{msg.time}
                   </p>
                 </div>
               </div>
@@ -517,7 +517,7 @@ export default function AIChatSupportPage() {
         </motion.div>
 
         {/* Tickets sidebar */}
-        <motion.div variants={item} className="glass-card rounded-2xl p-6">
+        <motion.div variants={item} className="surface-card p-6">
           <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
             <Headphones className="h-5 w-5 text-amber-500" /> Escalated Tickets
           </h2>
@@ -551,3 +551,4 @@ export default function AIChatSupportPage() {
     </motion.div>
   );
 }
+

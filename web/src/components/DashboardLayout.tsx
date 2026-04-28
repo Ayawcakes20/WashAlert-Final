@@ -145,10 +145,10 @@ export default function DashboardLayout() {
       <div className="min-h-screen flex w-full bg-background">
         <AppSidebar />
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="h-16 flex items-center justify-between border-b border-border/50 px-6 bg-card/60 backdrop-blur-md sticky top-0 z-30">
+          <header className="h-16 flex items-center justify-between border-b border-border/60 px-6 bg-card/92 backdrop-blur-md sticky top-0 z-30 shadow-[0_3px_16px_rgba(15,42,68,0.06)]">
             <div className="flex items-center gap-3">
               <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
-              <div className="hidden md:flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-2 w-72">
+              <div className="hidden md:flex items-center gap-2 bg-muted/50 rounded-xl px-3 py-2 w-72 border border-border/60">
                 <Search className="h-4 w-4 text-muted-foreground" />
                 <input
                   type="text"
@@ -160,7 +160,7 @@ export default function DashboardLayout() {
             <div className="flex items-center gap-4">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="relative p-2 rounded-lg hover:bg-muted/50 transition-colors">
+                  <button className="relative p-2.5 rounded-xl hover:bg-muted/50 transition-colors border border-transparent hover:border-border/60">
                     <Bell className="h-5 w-5 text-muted-foreground" />
                     {unreadCount > 0 ? (
                       <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-[10px] font-semibold text-white flex items-center justify-center">
@@ -169,7 +169,7 @@ export default function DashboardLayout() {
                     ) : null}
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-96">
+                <DropdownMenuContent align="end" className="w-96 rounded-xl border border-border/70 shadow-[var(--shadow-elevated)]">
                   <div className="flex items-center justify-between px-2">
                     <DropdownMenuLabel className="px-0">Notifications</DropdownMenuLabel>
                     {!!notifications.length ? (
@@ -190,7 +190,7 @@ export default function DashboardLayout() {
                       <DropdownMenuItem
                         key={notification.id}
                         onClick={() => openNotification(notification)}
-                        className="flex flex-col items-start gap-1 py-2.5 cursor-pointer"
+                        className="flex flex-col items-start gap-1 py-2.5 cursor-pointer rounded-lg focus:bg-muted/50"
                       >
                         <div className="flex items-center gap-2 w-full">
                           <span

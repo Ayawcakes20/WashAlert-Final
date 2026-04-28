@@ -77,7 +77,7 @@ type Order = {
 const LAUNDRY_COLUMNS: { status: ApiOrderStatus; label: string; color: string; bgColor: string }[] = [
   { status: "PENDING", label: "Pending", color: "border-amber-400", bgColor: "bg-amber-50 dark:bg-amber-950/20" },
   { status: "WASHING", label: "Washing", color: "border-blue-400", bgColor: "bg-blue-50 dark:bg-blue-950/20" },
-  { status: "DRYING", label: "Drying", color: "border-orange-400", bgColor: "bg-orange-50 dark:bg-orange-950/20" },
+  { status: "DRYING", label: "Drying", color: "border-teal-400", bgColor: "bg-teal-50 dark:bg-teal-950/20" },
   { status: "READY", label: "Ready for Pickup", color: "border-green-400", bgColor: "bg-green-50 dark:bg-green-950/20" },
 ];
 

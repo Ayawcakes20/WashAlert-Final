@@ -49,8 +49,8 @@ interface Delivery {
 const statusStyle: Record<DeliveryStatusLabel, { color: string; icon: typeof Truck }> = {
   "Pending Pickup": { color: "bg-accent/15 text-accent-foreground", icon: Package },
   "Picked Up": { color: "bg-primary/10 text-primary", icon: CheckCircle2 },
-  "In Transit": { color: "bg-mint/15 text-mint-foreground", icon: Navigation },
-  Delivered: { color: "bg-secondary/20 text-secondary-foreground", icon: CheckCircle2 },
+  "In Transit": { color: "bg-purple-500/15 text-purple-700", icon: Navigation },
+  Delivered: { color: "bg-emerald-500/15 text-emerald-700", icon: CheckCircle2 },
   Failed: { color: "bg-destructive/10 text-destructive", icon: AlertCircle },
 };
 

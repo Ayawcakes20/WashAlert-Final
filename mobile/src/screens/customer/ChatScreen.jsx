@@ -88,7 +88,7 @@ const ChatScreen = ({ navigation }) => {
           {messages.map((msg) => (
             <View key={msg.id} style={[styles.msgRow, msg.sender === 'user' ? styles.msgRowUser : styles.msgRowBot]}>
               {msg.sender === 'bot' && (
-                <View style={[styles.avatarBox, { backgroundColor: 'hsla(174, 79%, 44%, 0.1)' }]}>
+                <View style={[styles.avatarBox, { backgroundColor: colors.mintSoft }]}>
                   <Ionicons name="chatbubbles" size={12} color={colors.accent} />
                 </View>
               )}
@@ -98,7 +98,7 @@ const ChatScreen = ({ navigation }) => {
               </View>
 
               {msg.sender === 'user' && (
-                <View style={[styles.avatarBox, { backgroundColor: 'hsla(224, 82%, 48%, 0.1)' }]}>
+                <View style={[styles.avatarBox, { backgroundColor: colors.goldSoft }]}>
                   <Ionicons name="person" size={12} color={colors.primary} />
                 </View>
               )}
@@ -106,7 +106,7 @@ const ChatScreen = ({ navigation }) => {
           ))}
           {isTyping && (
             <View style={[styles.msgRow, styles.msgRowBot]}>
-              <View style={[styles.avatarBox, { backgroundColor: 'hsla(174, 79%, 44%, 0.1)' }]}>
+              <View style={[styles.avatarBox, { backgroundColor: colors.mintSoft }]}>
                 <Ionicons name="chatbubbles" size={12} color={colors.accent} />
               </View>
               <View style={[styles.msgBubble, styles.bubbleBot]}>
@@ -152,8 +152,8 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   keyboardWrap: { flex: 1 },
 
-  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: colors.border, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
-  headerAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'hsla(174, 79%, 44%, 0.1)', alignItems: 'center', justifyContent: 'center', marginHorizontal: 12 },
+  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: colors.border, shadowColor: colors.navy, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
+  headerAvatar: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.mintSoft, alignItems: 'center', justifyContent: 'center', marginHorizontal: 12 },
   headerInfo: { flex: 1 },
   headerName: { fontSize: 14, fontWeight: 'bold', color: colors.text },
   headerOnline: { fontSize: 10, fontWeight: 'bold', color: colors.success },
@@ -165,20 +165,20 @@ const styles = StyleSheet.create({
   msgRowBot: { justifyContent: 'flex-start' },
 
   avatarBox: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  msgBubble: { maxWidth: '75%', paddingHorizontal: 16, paddingVertical: 12 },
-  bubbleUser: { backgroundColor: colors.primary, borderRadius: 16, borderBottomRightRadius: 4 },
-  bubbleBot: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, borderBottomLeftRadius: 4 },
+  msgBubble: { maxWidth: '78%', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 16 },
+  bubbleUser: { backgroundColor: colors.primary, borderBottomRightRadius: 8 },
+  bubbleBot: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderBottomLeftRadius: 8 },
   msgText: { fontSize: 14, lineHeight: 20 },
   msgTextUser: { color: colors.card },
   msgTextBot: { color: colors.text },
 
   quickRepliesWrap: { paddingHorizontal: 16, paddingBottom: 8 },
-  qrBtn: { backgroundColor: 'hsla(224, 82%, 48%, 0.05)', borderWidth: 1, borderColor: 'hsla(224, 82%, 48%, 0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100, marginRight: 8 },
+  qrBtn: { backgroundColor: colors.goldSoft, borderWidth: 1, borderColor: colors.gold, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 100, marginRight: 8 },
   qrText: { color: colors.primary, fontSize: 12, fontWeight: '500' },
 
   inputBox: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.border, gap: 8 },
-  inputField: { flex: 1, backgroundColor: colors.background, borderRadius: 12, paddingHorizontal: 16, fontSize: 14, color: colors.text },
-  sendBtn: { width: 44, height: 44, backgroundColor: colors.primary, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  inputField: { flex: 1, backgroundColor: colors.background, borderRadius: 14, paddingHorizontal: 16, fontSize: 14, color: colors.text, borderWidth: 1, borderColor: colors.border },
+  sendBtn: { width: 48, height: 48, backgroundColor: colors.primary, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   sendBtnDisabled: { opacity: 0.5 },
 });
 

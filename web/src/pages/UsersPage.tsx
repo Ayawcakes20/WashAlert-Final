@@ -386,9 +386,9 @@ export default function UsersPage() {
       {loading ? <p className="text-sm text-muted-foreground">Loading users...</p> : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-      <motion.div variants={item} className="glass-card rounded-2xl overflow-hidden">
+      <motion.div variants={item} className="surface-card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm table-modern">
             <thead>
               <tr className="text-muted-foreground text-xs uppercase tracking-wider border-b border-border/50 bg-muted/20">
                 <th className="text-left p-4 font-medium">User</th>
@@ -431,13 +431,13 @@ export default function UsersPage() {
                     <td className="p-4 text-center">
                       <div className="inline-flex flex-col items-center gap-1">
                         <span
-                          className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-semibold ${
+                          className={`status-chip ${
                             u.status === "Active"
-                              ? "bg-mint/20 text-mint-foreground"
+                              ? "status-ready"
                               : u.status === "Pending"
-                              ? "bg-accent/20 text-accent-foreground"
+                              ? "status-pending"
                               : u.status === "Suspended"
-                              ? "bg-destructive/20 text-destructive"
+                              ? "status-failed"
                               : "bg-muted text-muted-foreground"
                           }`}
                         >
@@ -615,7 +615,7 @@ export default function UsersPage() {
                 <div className="relative">
                   <Input
                     id="create-password"
-                    type={createForm.showPassword ? "text" : "password"}
+                    type={createForm.showPassword ? "Hide" : "Show"}
                     value={createForm.initialPassword}
                     onChange={(e) => {
                       setCreateForm((prev) => ({ ...prev, initialPassword: e.target.value }));
@@ -629,13 +629,21 @@ export default function UsersPage() {
                     onClick={() => setCreateForm((prev) => ({ ...prev, showPassword: !prev.showPassword }))}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
-                    {createForm.showPassword ? "🙈" : "👁"}
+                    {createForm.showPassword ? "Hide" : "Show"}
                   </button>
                 </div>
-                <p className="text-xs text-muted-foreground">Driver will use this password to log in on the mobile app.</p>
+                <p className="text-xs text-muted-foreground">Password rule: minimum 8 characters with at least one letter and one number.</p>
                 {createErrors.initialPassword ? <p className="text-xs text-destructive">{createErrors.initialPassword}</p> : null}
               </div>
             )}
+            {createForm.role === "STAFF" ? (
+              <div className="rounded-xl border border-border/50 bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Invitation password requirement:</p>
+                <p className="text-xs font-medium text-foreground mt-1">
+                  Minimum 8 characters with uppercase, lowercase, and at least one number.
+                </p>
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={createSubmitting}>
@@ -716,3 +724,4 @@ export default function UsersPage() {
     </motion.div>
   );
 }
+
