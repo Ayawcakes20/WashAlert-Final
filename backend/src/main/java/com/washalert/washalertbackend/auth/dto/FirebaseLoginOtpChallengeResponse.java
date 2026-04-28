@@ -4,5 +4,6 @@ public record FirebaseLoginOtpChallengeResponse(
         String email,
         String message,
         int expiresInSeconds,
-        int resendCooldownSeconds
+        int resendCooldownSeconds,
+        boolean requiresPasswordUpdate
 ) {}

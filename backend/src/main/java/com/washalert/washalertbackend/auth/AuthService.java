@@ -268,11 +268,29 @@ public class AuthService {
                 user.getProfileImageUrl(),
                 user.getRole().name(),
                 user.getStatus().name(),
+                user.isMustChangePassword(),
                 user.getBranchId(),
                 user.getBranch(),
                 allowedModules(user),
                 platform
         );
+    }
+
+    public User completeMobileFirstLoginPasswordUpdate(String idToken, String platform) {
+        User user = resolveFirebaseUserForLoginChallenge(idToken, platform, null);
+        if (user.getRole() != Role.DRIVER) {
+            throw new IllegalArgumentException("Only driver accounts can use first-login password completion.");
+        }
+
+        if (user.isMustChangePassword()) {
+            user.setMustChangePassword(false);
+            user.setUpdatedAt(LocalDateTime.now());
+            User saved = users.save(user);
+            syncUserToFirestore(saved);
+            return markLoginSuccess(saved.getId());
+        }
+
+        return markLoginSuccess(user.getId());
     }
 
     public MeResponse me(AuthUserDetails principal) {

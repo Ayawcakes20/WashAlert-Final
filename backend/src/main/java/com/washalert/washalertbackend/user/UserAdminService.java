@@ -127,6 +127,7 @@ public class UserAdminService {
             throw new IllegalArgumentException("Initial password is required for driver accounts.");
         }
         boolean hasInitialPassword = initialPassword != null;
+        boolean requiresPasswordChange = role == Role.DRIVER && hasInitialPassword;
         LocalDateTime now = LocalDateTime.now();
         User actor = currentUserOrNull();
 
@@ -160,7 +161,7 @@ public class UserAdminService {
                 .activatedAt(activatedAt)
                 .deactivatedAt(null)
                 .lastLoginAt(null)
-                .mustChangePassword(false)
+                .mustChangePassword(requiresPasswordChange)
                 .provider(AuthProvider.LOCAL)
                 .build();
 

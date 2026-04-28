@@ -60,6 +60,13 @@ const LoginScreen = ({ navigation }) => {
         Alert.alert('Login Failed', result?.error || 'Unable to login right now.');
         return;
       }
+      if (result.requiresPasswordUpdate) {
+        navigation.navigate('ChangePassword', {
+          forcePasswordUpdate: true,
+          securityMessage: 'For your security, please create a new password before continuing.',
+        });
+        return;
+      }
       if (result.requiresOtp) {
         navigation.navigate('OTPVerification', {
           email: email.trim().toLowerCase(),

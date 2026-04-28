@@ -225,6 +225,7 @@ const mapSessionProfile = (profile, fallback = null) => ({
   allowedModules: profile.allowedModules || [],
   platform: profile.platform || 'MOBILE',
   branch: profile.branch || '',
+  mustChangePassword: Boolean(profile.mustChangePassword),
 });
 
 export const AuthProvider = ({ children }) => {
@@ -282,6 +283,7 @@ export const AuthProvider = ({ children }) => {
     const normalized = {
       idToken: String(session.idToken),
       refreshToken: session.refreshToken ? String(session.refreshToken) : '',
+      email: session.email ? String(session.email).trim().toLowerCase() : '',
     };
     setFirebaseSession(normalized);
     await AsyncStorage.setItem(FIREBASE_SESSION_STORAGE_KEY, JSON.stringify(normalized));
@@ -317,6 +319,7 @@ export const AuthProvider = ({ children }) => {
       await persistFirebaseSession({
         idToken: firebaseLogin.idToken,
         refreshToken: firebaseLogin.refreshToken,
+        email: normalizedEmail,
       });
 
       console.info('[Auth][Mobile] OTP request started', { email: normalizedEmail });
@@ -330,8 +333,17 @@ export const AuthProvider = ({ children }) => {
       console.info('[Auth][Mobile] OTP request success', {
         email: normalizedEmail,
         resendCooldownSeconds: challenge?.resendCooldownSeconds || 60,
+        requiresPasswordUpdate: Boolean(challenge?.requiresPasswordUpdate),
       });
       await persistOnboardingSeen();
+      if (challenge?.requiresPasswordUpdate) {
+        return {
+          success: true,
+          requiresPasswordUpdate: true,
+          email: normalizedEmail,
+          message: challenge?.message || 'Password update required before continuing.',
+        };
+      }
       return {
         success: true,
         requiresOtp: true,
@@ -371,6 +383,7 @@ export const AuthProvider = ({ children }) => {
       await persistFirebaseSession({
         idToken: signup.idToken,
         refreshToken: signup.refreshToken,
+        email: normalizedEmail,
       });
       await persistOnboardingSeen();
       return {
@@ -412,8 +425,9 @@ export const AuthProvider = ({ children }) => {
     });
   }, []);
 
-  const changePassword = useCallback(async ({ currentPassword, newPassword }) => {
-    if (!user?.email) {
+  const changePassword = useCallback(async ({ currentPassword, newPassword, forcePasswordUpdate = false }) => {
+    const accountEmail = normalizeEmail(user?.email || firebaseSession?.email || '');
+    if (!accountEmail) {
       return { success: false, error: 'No authenticated user email available.' };
     }
     if (!currentPassword || !newPassword) {
@@ -422,7 +436,7 @@ export const AuthProvider = ({ children }) => {
 
     try {
       const reauth = await firebaseRequest('accounts:signInWithPassword', {
-        email: normalizeEmail(user.email),
+        email: accountEmail,
         password: currentPassword,
         returnSecureToken: true,
       });
@@ -436,12 +450,27 @@ export const AuthProvider = ({ children }) => {
       await persistFirebaseSession({
         idToken: updated.idToken || reauth.idToken,
         refreshToken: updated.refreshToken || reauth.refreshToken,
+        email: accountEmail,
       });
+      if (forcePasswordUpdate) {
+        const sessionProfile = await authRequest('/api/auth/firebase/complete-first-login-password', {
+          method: 'POST',
+          body: {
+            idToken: updated.idToken || reauth.idToken,
+            platform: 'MOBILE',
+          },
+        });
+        const mapped = mapSessionProfile(requireSessionProfilePayload(sessionProfile, 'First-login password update'));
+        setUser(mapped);
+        await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(mapped));
+        await persistOnboardingSeen();
+        return { success: true, autoLogin: true, user: mapped };
+      }
       return { success: true };
     } catch (error) {
       return { success: false, error: formatAuthError(error) };
     }
-  }, [user?.email]);
+  }, [firebaseSession?.email, persistOnboardingSeen, user?.email]);
 
   const forgotPassword = useCallback(async (email) => {
     try {

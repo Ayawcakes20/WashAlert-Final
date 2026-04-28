@@ -21,6 +21,7 @@ export type AuthSessionProfile = {
   fullName: string;
   role: string;
   status: string;
+  mustChangePassword?: boolean;
   branchId: number | null;
   branch: string;
   allowedModules: string[];
@@ -32,6 +33,7 @@ export type FirebaseLoginOtpChallenge = {
   message: string;
   expiresInSeconds: number;
   resendCooldownSeconds: number;
+  requiresPasswordUpdate?: boolean;
 };
 
 export type JobOrderResponse = {

@@ -4,8 +4,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
 
-const ChangePasswordScreen = ({ navigation }) => {
+const ChangePasswordScreen = ({ navigation, route }) => {
   const { changePassword } = useAuth();
+  const forcePasswordUpdate = Boolean(route?.params?.forcePasswordUpdate);
+  const securityMessage = route?.params?.securityMessage
+    || 'For your security, please create a new password before continuing.';
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -38,13 +41,15 @@ const ChangePasswordScreen = ({ navigation }) => {
     setSaving(true);
     try {
       console.log('[Profile][Password] Attempting password change with Firebase reauthentication');
-      const result = await changePassword({ currentPassword, newPassword });
+      const result = await changePassword({ currentPassword, newPassword, forcePasswordUpdate });
       if (!result?.success) {
         throw new Error(result?.error || 'Unable to change password.');
       }
-      Alert.alert('Password Updated', 'Your password has been changed successfully.', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
+      if (result.autoLogin) {
+        Alert.alert('Password Updated', 'Password updated successfully. Redirecting to dashboard.');
+        return;
+      }
+      Alert.alert('Password Updated', 'Your password has been changed successfully.', [{ text: 'OK', onPress: () => navigation.goBack() }]);
     } catch (e) {
       console.error('[Profile][Password] Password change failed:', e);
       setError(e?.message || 'Unable to change password right now.');
@@ -57,7 +62,9 @@ const ChangePasswordScreen = ({ navigation }) => {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.description}>
-          For security, please confirm your current password before setting a new one.
+          {forcePasswordUpdate
+            ? securityMessage
+            : 'For security, please confirm your current password before setting a new one.'}
         </Text>
 
         <View style={styles.field}>

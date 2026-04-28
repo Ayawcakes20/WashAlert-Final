@@ -11,6 +11,7 @@ public record AuthSessionResponse(
         String profileImageUrl,
         String role,
         String status,
+        boolean mustChangePassword,
         Long branchId,
         String branch,
         List<String> allowedModules,

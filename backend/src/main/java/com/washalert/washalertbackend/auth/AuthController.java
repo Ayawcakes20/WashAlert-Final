@@ -83,12 +83,23 @@ public class AuthController {
         }
 
         try {
+            if (user.getRole() == com.washalert.washalertbackend.user.Role.DRIVER && user.isMustChangePassword()) {
+                return ResponseEntity.ok(new FirebaseLoginOtpChallengeResponse(
+                        maskEmail(user.getEmail()),
+                        "Password update required before continuing.",
+                        0,
+                        0,
+                        true
+                ));
+            }
+
             otpService.sendForLogin(user);
             return ResponseEntity.ok(new FirebaseLoginOtpChallengeResponse(
                     maskEmail(user.getEmail()),
                     "Login OTP sent to email.",
                     otpService.getTtlMinutes() * 60,
-                    otpService.getResendCooldownSeconds()
+                    otpService.getResendCooldownSeconds(),
+                    false
             ));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
@@ -116,6 +127,14 @@ public class AuthController {
             return ResponseEntity.status(403).body(apiError(request, 403, ex.getMessage()));
         }
 
+        if (user.getRole() == com.washalert.washalertbackend.user.Role.DRIVER && user.isMustChangePassword()) {
+            return ResponseEntity.status(403).body(apiError(
+                    request,
+                    403,
+                    "Password update required before OTP verification."
+            ));
+        }
+
         try {
             otpService.verifyLoginCode(user.getEmail(), req.code());
         } catch (IllegalArgumentException ex) {
@@ -125,6 +144,20 @@ public class AuthController {
         User finalizedUser = authService.markLoginSuccess(user.getId());
         establishSession(finalizedUser, request);
         return ResponseEntity.ok(authService.toSessionResponse(finalizedUser, req.platform().trim().toUpperCase()));
+    }
+
+    @PostMapping("/firebase/complete-first-login-password")
+    public ResponseEntity<?> completeFirstLoginPassword(
+            @Valid @RequestBody CompleteFirstLoginPasswordRequest req,
+            HttpServletRequest request
+    ) {
+        try {
+            User finalizedUser = authService.completeMobileFirstLoginPasswordUpdate(req.idToken(), req.platform());
+            establishSession(finalizedUser, request);
+            return ResponseEntity.ok(authService.toSessionResponse(finalizedUser, req.platform().trim().toUpperCase()));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
+        }
     }
 
     @PostMapping("/mobile/register-profile")

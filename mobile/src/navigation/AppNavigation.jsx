@@ -245,6 +245,7 @@ const AuthStack = ({ hasSeenOnboarding }) => (
     <Stack.Screen name="Register"        component={RegisterScreen} />
     <Stack.Screen name="ForgotPassword"  component={ForgotPasswordScreen} />
     <Stack.Screen name="OTPVerification" component={OTPVerificationScreen} />
+    <Stack.Screen name="ChangePassword"  component={ChangePasswordScreen} />
     <Stack.Screen name="ResetPassword"   component={ResetPasswordScreen} />
   </Stack.Navigator>
 );
@@ -336,6 +337,7 @@ const DriverStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="DriverTabs"     component={DriverTabs} />
     <Stack.Screen name="DeliveryDetail" component={DeliveryDetailScreen} options={stackHeader('Delivery Details')} />
+    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={stackHeader('Change Password')} />
     <Stack.Screen name="Chat"           component={ChatScreen}           options={stackHeader('Support')} />
     <Stack.Screen name="TermsAndConditions" component={TermsAndConditionsScreen} options={stackHeader('Terms & Conditions')} />
     <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={stackHeader('Privacy Policy')} />
@@ -349,6 +351,7 @@ const AppNavigator = () => {
   const { loading, isAuthenticated, hasSeenOnboarding, user } = useAuth();
   const roleModules = new Set((user?.allowedModules || []).map((item) => String(item).toLowerCase()));
   const isDriver = user?.role === 'driver' || roleModules.has('driver-delivery');
+  const requiresDriverPasswordUpdate = isAuthenticated && isDriver && Boolean(user?.mustChangePassword);
 
   if (loading) return <SplashScreen />;
 
@@ -374,6 +377,15 @@ const AppNavigator = () => {
           <Stack.Screen name="Auth">
             {() => <AuthStack hasSeenOnboarding={hasSeenOnboarding} />}
           </Stack.Screen>
+        ) : requiresDriverPasswordUpdate ? (
+          <Stack.Screen
+            name="DriverFirstLoginPasswordUpdate"
+            component={ChangePasswordScreen}
+            initialParams={{
+              forcePasswordUpdate: true,
+              securityMessage: 'For your security, please create a new password before continuing.',
+            }}
+          />
         ) : isDriver ? (
           <Stack.Screen name="Driver" component={DriverStack} />
         ) : (
