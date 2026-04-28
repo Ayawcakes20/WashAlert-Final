@@ -911,7 +911,7 @@ export default function OrderManagementPage() {
                 id="create-branch"
                 value={createForm.branch}
                 onChange={(e) => setCreateForm((prev) => ({ ...prev, branch: e.target.value }))}
-                placeholder="Light Residences"
+                placeholder="Makati Branch"
               />
             </div>
           </div>
@@ -1054,7 +1054,7 @@ export default function OrderManagementPage() {
                 <Pencil className="h-4 w-4" /> Edit
               </Button>
             )}
-            {selectedOrder?.status === "PENDING" && (
+            {(selectedOrder?.status === "PENDING" || String(selectedOrder?.status) === "SCHEDULED") && (
               <Button
                 variant="secondary"
                 onClick={() => void submitCancel()}

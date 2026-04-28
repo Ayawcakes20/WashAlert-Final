@@ -8,16 +8,16 @@ import { authApi } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
 
 const branches = [
-  { name: "Triplets LaundryHubs - Makati", brand: "triplets" },
-  { name: "SpeedyWash - UP Diliman", brand: "speedywash" },
-  { name: "SpeedyWash - JP Rizal", brand: "speedywash" },
-  { name: "SpeedyWash - S. Catalina", brand: "speedywash" },
-  { name: "SpeedyWash - Pasig", brand: "speedywash" },
-  { name: "SpeedyWash - Republic", brand: "speedywash" },
-  { name: "SpeedyWash - Chestnut", brand: "speedywash" },
-  { name: "SpeedyWash - T.O.N", brand: "speedywash" },
-  { name: "SpeedyWash - Samat", brand: "speedywash" },
-  { name: "SpeedyWash - St. Nino", brand: "speedywash" },
+  { name: "Triplets LaundryHubs - Makati Branch", brand: "triplets" },
+  { name: "SpeedyWash - Chestnut Branch", brand: "speedywash" },
+  { name: "SpeedyWash - Republic Branch", brand: "speedywash" },
+  { name: "SpeedyWash - Holy Spirit Branch", brand: "speedywash" },
+  { name: "SpeedyWash - Sta. Catalina Branch", brand: "speedywash" },
+  { name: "SpeedyWash - Brookside Branch", brand: "speedywash" },
+  { name: "SpeedyWash - JP Rizal Branch", brand: "speedywash" },
+  { name: "SpeedyWash - Luzon Branch", brand: "speedywash" },
+  { name: "SpeedyWash - St. Anthony Branch", brand: "speedywash" },
+  { name: "SpeedyWash - UP Diliman / San Vicente Branch", brand: "speedywash" },
 ];
 
 type SignUpField = "branch" | "fullName" | "email" | "role" | "password";

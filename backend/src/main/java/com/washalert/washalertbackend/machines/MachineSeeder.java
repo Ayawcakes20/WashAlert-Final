@@ -17,24 +17,39 @@ public class MachineSeeder implements CommandLineRunner {
     // 2. web/src/pages/LoginPage.tsx branch list
     // 3. web/src/pages/UsersPage.tsx AVAILABLE_BRANCHES
     private static final String[] BRANCHES = {
-            "Makati Branch", "UP Diliman", "JP Rizal", "S. Catalina",
-            "Pasig City", "Republic Ave", "Chestnut St", "Tondo",
-            "Samat St", "St. Nino"
+            "Makati Branch",
+            "Chestnut Branch",
+            "Republic Branch",
+            "Holy Spirit Branch",
+            "Sta. Catalina Branch",
+            "Brookside Branch",
+            "JP Rizal Branch",
+            "Luzon Branch",
+            "St. Anthony Branch",
+            "UP Diliman / San Vicente Branch"
     };
 
     // Reverse-migration: if the DB has long names (from a previous bad migration),
     // rename them back to the canonical short names used everywhere.
-    private static final Map<String, String> REVERSE_RENAME_MAP = Map.of(
-            "Triplets LaundryHubs - Makati", "Makati Branch",
-            "SpeedyWash - UP Diliman",       "UP Diliman",
-            "SpeedyWash - JP Rizal",         "JP Rizal",
-            "SpeedyWash - S. Catalina",      "S. Catalina",
-            "SpeedyWash - Pasig",            "Pasig City",
-            "SpeedyWash - Republic",         "Republic Ave",
-            "SpeedyWash - Chestnut",         "Chestnut St",
-            "SpeedyWash - T.O.N",            "Tondo",
-            "SpeedyWash - Samat",            "Samat St",
-            "SpeedyWash - St. Nino",         "St. Nino"
+    private static final Map<String, String> REVERSE_RENAME_MAP = Map.ofEntries(
+            Map.entry("Triplets LaundryHubs - Makati", "Makati Branch"),
+            Map.entry("Makati Branch", "Makati Branch"),
+            Map.entry("SpeedyWash - Chestnut", "Chestnut Branch"),
+            Map.entry("Chestnut St", "Chestnut Branch"),
+            Map.entry("SpeedyWash - Republic", "Republic Branch"),
+            Map.entry("Republic Ave", "Republic Branch"),
+            Map.entry("SpeedyWash - T.O.N", "Holy Spirit Branch"),
+            Map.entry("Tondo", "Holy Spirit Branch"),
+            Map.entry("SpeedyWash - S. Catalina", "Sta. Catalina Branch"),
+            Map.entry("S. Catalina", "Sta. Catalina Branch"),
+            Map.entry("SpeedyWash - Pasig", "Brookside Branch"),
+            Map.entry("Pasig City", "Brookside Branch"),
+            Map.entry("SpeedyWash - JP Rizal", "JP Rizal Branch"),
+            Map.entry("JP Rizal", "JP Rizal Branch"),
+            Map.entry("Samat St", "Luzon Branch"),
+            Map.entry("St. Nino", "St. Anthony Branch"),
+            Map.entry("SpeedyWash - UP Diliman", "UP Diliman / San Vicente Branch"),
+            Map.entry("UP Diliman", "UP Diliman / San Vicente Branch")
     );
 
     public MachineSeeder(MachineRepository machineRepository) {

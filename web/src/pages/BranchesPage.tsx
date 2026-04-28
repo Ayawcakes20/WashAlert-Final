@@ -2,16 +2,16 @@ import { motion } from "framer-motion";
 import { MapPin, Users, ShoppingCart, Bike, Wifi, WifiOff } from "lucide-react";
 
 const branches = [
-  { name: "Triplets LaundryHubs", location: "Makati", brand: "laundryhubs", capacity: 85, orders: 24, riders: 3, online: true },
-  { name: "SpeedyWash", location: "UP Diliman", brand: "speedywash", capacity: 72, orders: 18, riders: 2, online: true },
-  { name: "SpeedyWash", location: "JP Rizal", brand: "speedywash", capacity: 90, orders: 31, riders: 4, online: true },
-  { name: "SpeedyWash", location: "S. Catalina", brand: "speedywash", capacity: 45, orders: 12, riders: 1, online: true },
-  { name: "SpeedyWash", location: "Pasig", brand: "speedywash", capacity: 68, orders: 22, riders: 3, online: true },
-  { name: "SpeedyWash", location: "Republic", brand: "speedywash", capacity: 55, orders: 14, riders: 2, online: false },
-  { name: "SpeedyWash", location: "Chestnut", brand: "speedywash", capacity: 78, orders: 20, riders: 2, online: true },
-  { name: "SpeedyWash", location: "T.O.N", brand: "speedywash", capacity: 62, orders: 16, riders: 2, online: true },
-  { name: "SpeedyWash", location: "Samat", brand: "speedywash", capacity: 40, orders: 9, riders: 1, online: true },
-  { name: "SpeedyWash", location: "St. Niño", brand: "speedywash", capacity: 50, orders: 11, riders: 1, online: true },
+  { name: "Triplets LaundryHubs", location: "Makati Branch", brand: "laundryhubs", capacity: 85, orders: 24, riders: 3, online: true },
+  { name: "SpeedyWash", location: "Chestnut Branch", brand: "speedywash", capacity: 72, orders: 18, riders: 2, online: true },
+  { name: "SpeedyWash", location: "Republic Branch", brand: "speedywash", capacity: 90, orders: 31, riders: 4, online: true },
+  { name: "SpeedyWash", location: "Holy Spirit Branch", brand: "speedywash", capacity: 45, orders: 12, riders: 1, online: true },
+  { name: "SpeedyWash", location: "Sta. Catalina Branch", brand: "speedywash", capacity: 68, orders: 22, riders: 3, online: true },
+  { name: "SpeedyWash", location: "Brookside Branch", brand: "speedywash", capacity: 55, orders: 14, riders: 2, online: false },
+  { name: "SpeedyWash", location: "JP Rizal Branch", brand: "speedywash", capacity: 78, orders: 20, riders: 2, online: true },
+  { name: "SpeedyWash", location: "Luzon Branch", brand: "speedywash", capacity: 62, orders: 16, riders: 2, online: true },
+  { name: "SpeedyWash", location: "St. Anthony Branch", brand: "speedywash", capacity: 40, orders: 9, riders: 1, online: true },
+  { name: "SpeedyWash", location: "UP Diliman / San Vicente Branch", brand: "speedywash", capacity: 50, orders: 11, riders: 1, online: true },
 ];
 
 function capacityColor(pct: number) {

@@ -4,16 +4,16 @@ import { Building2, Target, Users, Zap, MapPin } from "lucide-react";
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 
 const branchLocations = [
-  "Triplets LaundryHubs — Makati",
-  "SpeedyWash — UP Diliman",
-  "SpeedyWash — JP Rizal",
-  "SpeedyWash — S. Catalina",
-  "SpeedyWash — Pasig",
-  "SpeedyWash — Republic",
-  "SpeedyWash — Chestnut",
-  "SpeedyWash — T.O.N",
-  "SpeedyWash — Samat",
-  "SpeedyWash — St. Niño",
+  "Triplets LaundryHubs — Makati Branch",
+  "SpeedyWash — Chestnut Branch",
+  "SpeedyWash — Republic Branch",
+  "SpeedyWash — Holy Spirit Branch",
+  "SpeedyWash — Sta. Catalina Branch",
+  "SpeedyWash — Brookside Branch",
+  "SpeedyWash — JP Rizal Branch",
+  "SpeedyWash — Luzon Branch",
+  "SpeedyWash — St. Anthony Branch",
+  "SpeedyWash — UP Diliman / San Vicente Branch",
 ];
 
 export default function AboutPage() {
@@ -70,7 +70,7 @@ export default function AboutPage() {
           {
             icon: Building2,
             title: "Our Scale",
-            desc: "Triplets LaundryHubs handles Makati. SpeedyWash covers 9 branches: UP Diliman, JP Rizal, S. Catalina, Pasig, Republic, Chestnut, T.O.N, Samat, and St. Niño — all owned by the same family.",
+            desc: "Triplets LaundryHubs handles Makati. SpeedyWash covers 9 branches: Chestnut, Republic, Holy Spirit, Sta. Catalina, Brookside, JP Rizal, Luzon, St. Anthony, and UP Diliman / San Vicente — all owned by the same family.",
           },
         ].map((card) => (
           <motion.div key={card.title} variants={item} className="glass-card rounded-2xl p-6">

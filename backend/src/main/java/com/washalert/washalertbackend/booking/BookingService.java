@@ -30,7 +30,10 @@ import java.util.regex.Pattern;
 
 @Service
 public class BookingService {
-    private static final BigDecimal DEFAULT_MAX_LOAD_KG = new BigDecimal("8.0");
+    private static final BigDecimal MACHINE_ABSOLUTE_MAX_LOAD_KG = new BigDecimal("9.0");
+    private static final BigDecimal PURE_CLOTHES_MAX_LOAD_KG = new BigDecimal("8.0");
+    private static final BigDecimal BULKY_ITEMS_MAX_LOAD_KG = new BigDecimal("7.0");
+    private static final BigDecimal MIN_LOAD_KG = new BigDecimal("1.0");
     private static final Pattern SERVICE_KG_LIMIT_PATTERN = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*kg", Pattern.CASE_INSENSITIVE);
 
     private final JobOrderRepository jobOrderRepository;
@@ -103,7 +106,7 @@ public class BookingService {
     public JobOrderResponse createBooking(CreateBookingRequest req) {
         String cleanBranch = normalizeBranch(req.branch());
         validateDate(req.preferredDate());
-        validateLoadSize(req.serviceName(), req.estimatedWeightKg());
+        validateLoadSize(req.serviceName(), req.estimatedWeightKg(), req.containsBulkyItems());
 
         if (req.serviceType() == ServiceType.PICKUP_DELIVERY
                 && (req.deliveryAddress() == null || req.deliveryAddress().isBlank())) {
@@ -253,11 +256,27 @@ public class BookingService {
         return "WA-" + (10000 + id);
     }
 
-    private void validateLoadSize(String serviceName, BigDecimal weightKg) {
+    private void validateLoadSize(String serviceName, BigDecimal weightKg, boolean containsBulkyItems) {
         if (weightKg == null) {
             throw new IllegalArgumentException("Estimated weight is required.");
         }
-        BigDecimal maxAllowedKg = resolveMaxLoadKg(serviceName);
+
+        if (weightKg.compareTo(MIN_LOAD_KG) < 0) {
+            throw new IllegalArgumentException("Minimum load is 1 kg.");
+        }
+
+        if (weightKg.compareTo(MACHINE_ABSOLUTE_MAX_LOAD_KG) > 0) {
+            throw new IllegalArgumentException("Machine limit is 9 kg per load.");
+        }
+
+        BigDecimal fabricTypeMaxKg = containsBulkyItems ? BULKY_ITEMS_MAX_LOAD_KG : PURE_CLOTHES_MAX_LOAD_KG;
+        if (weightKg.compareTo(fabricTypeMaxKg) > 0) {
+            String limitLabel = containsBulkyItems ? "Loads with towels/beddings are limited to 7 kg." : "Pure clothes loads are limited to 8 kg.";
+            throw new IllegalArgumentException(limitLabel);
+        }
+
+        BigDecimal serviceMaxKg = resolveMaxLoadKg(serviceName);
+        BigDecimal maxAllowedKg = serviceMaxKg.min(fabricTypeMaxKg).min(MACHINE_ABSOLUTE_MAX_LOAD_KG);
         if (weightKg.compareTo(maxAllowedKg) > 0) {
             throw new IllegalArgumentException(
                     "Selected service allows up to " + toWholeOrDecimal(maxAllowedKg) + " kg per load."
@@ -267,7 +286,12 @@ public class BookingService {
 
     private BigDecimal resolveMaxLoadKg(String serviceName) {
         if (serviceName == null || serviceName.isBlank()) {
-            return DEFAULT_MAX_LOAD_KG;
+            return PURE_CLOTHES_MAX_LOAD_KG;
+        }
+        String normalized = serviceName.toLowerCase();
+        if (normalized.contains("basic full")) {
+            // Supports the approved "madness limit" +1kg on top of 8kg.
+            return MACHINE_ABSOLUTE_MAX_LOAD_KG;
         }
         Matcher matcher = SERVICE_KG_LIMIT_PATTERN.matcher(serviceName);
         if (matcher.find()) {
@@ -277,11 +301,11 @@ public class BookingService {
                 // Fallback to default cap.
             }
         }
-        return DEFAULT_MAX_LOAD_KG;
+        return PURE_CLOTHES_MAX_LOAD_KG;
     }
 
     private String toWholeOrDecimal(BigDecimal value) {
-        if (value == null) return "8";
+        if (value == null) return "0";
         BigDecimal stripped = value.stripTrailingZeros();
         return stripped.scale() <= 0 ? stripped.toPlainString() : value.toPlainString();
     }

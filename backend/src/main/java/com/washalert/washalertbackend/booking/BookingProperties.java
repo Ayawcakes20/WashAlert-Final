@@ -7,8 +7,8 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "washalert.booking")
 public class BookingProperties {
 
-    private int openHour = 8;
-    private int closeHour = 20;
+    private int openHour = 7;
+    private int closeHour = 22;
     private int slotMinutes = 90;
 
     public int getOpenHour() {

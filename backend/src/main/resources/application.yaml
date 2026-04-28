@@ -80,8 +80,8 @@ washalert:
       cron: ${STAFF_INVITATION_CLEANUP_CRON:0 */30 * * * *}
 
   booking:
-    open-hour: ${BOOKING_OPEN_HOUR:8}
-    close-hour: ${BOOKING_CLOSE_HOUR:20}
+    open-hour: ${BOOKING_OPEN_HOUR:7}
+    close-hour: ${BOOKING_CLOSE_HOUR:22}
     slot-minutes: ${BOOKING_SLOT_MINUTES:90}
 
   payment:

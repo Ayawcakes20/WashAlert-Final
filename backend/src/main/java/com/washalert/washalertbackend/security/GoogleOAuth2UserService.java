@@ -54,7 +54,7 @@ public class GoogleOAuth2UserService extends DefaultOAuth2UserService {
                     .email(email)
                     .fullName((name == null || name.isBlank()) ? email : name)
                     .role(Role.STAFF)
-                    .branch("Light Residences")
+                    .branch("Makati Branch")
                     .provider(AuthProvider.GOOGLE)
                     .enabled(true)
                     .verifiedAt(now)

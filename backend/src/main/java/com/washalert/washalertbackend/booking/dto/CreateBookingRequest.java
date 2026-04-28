@@ -52,10 +52,12 @@ public record CreateBookingRequest(
         @NotNull(message = "Load size is required.")
         LoadSize loadSize,
 
-        @DecimalMin(value = "0.10", message = "Estimated weight must be at least 0.10 kg.")
-        @DecimalMax(value = "8.00", message = "Estimated weight must be 8 kg or less.")
+        @DecimalMin(value = "1.00", message = "Estimated weight must be at least 1 kg.")
+        @DecimalMax(value = "9.00", message = "Estimated weight must not exceed 9 kg.")
         @NotNull(message = "Estimated weight is required.")
         BigDecimal estimatedWeightKg,
+
+        boolean containsBulkyItems,
 
         @Size(max = 500, message = "Special instructions are too long.")
         String specialInstructions,

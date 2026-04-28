@@ -118,17 +118,21 @@ public class UserAdminService {
 
         Role role = normalizeInternalRole(req.role());
         String branch = blankToNull(req.branch());
-        if (role == Role.STAFF && branch == null) {
-            throw new IllegalArgumentException("Branch is required for staff accounts.");
+        if (branch == null) {
+            throw new IllegalArgumentException("Branch is required for staff and driver accounts.");
         }
 
-        boolean hasInitialPassword = req.initialPassword() != null && req.initialPassword().trim().length() >= 8;
+        String initialPassword = blankToNull(req.initialPassword());
+        if (role == Role.DRIVER && initialPassword == null) {
+            throw new IllegalArgumentException("Initial password is required for driver accounts.");
+        }
+        boolean hasInitialPassword = initialPassword != null;
         LocalDateTime now = LocalDateTime.now();
         User actor = currentUserOrNull();
 
         // Create Firebase user
         var firebaseUser = hasInitialPassword
-                ? firebaseIdentityService.createUser(email, req.fullName().trim(), req.initialPassword().trim())
+                ? firebaseIdentityService.createUser(email, req.fullName().trim(), initialPassword)
                 : firebaseIdentityService.createInvitationUser(email, req.fullName().trim());
 
         // Determine initial account status

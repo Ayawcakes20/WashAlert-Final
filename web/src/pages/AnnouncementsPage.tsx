@@ -11,15 +11,15 @@ import { Textarea } from "@/components/ui/textarea";
 
 const BRANCH_OPTIONS = [
   "Makati Branch",
-  "UP Diliman",
-  "JP Rizal",
-  "S. Catalina",
-  "Pasig City",
-  "Republic Ave",
-  "Chestnut St",
-  "Tondo",
-  "Samat St",
-  "St. Nino",
+  "Chestnut Branch",
+  "Republic Branch",
+  "Holy Spirit Branch",
+  "Sta. Catalina Branch",
+  "Brookside Branch",
+  "JP Rizal Branch",
+  "Luzon Branch",
+  "St. Anthony Branch",
+  "UP Diliman / San Vicente Branch",
 ];
 
 const DELAY_PRESETS: Array<{

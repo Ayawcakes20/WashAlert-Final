@@ -39,7 +39,7 @@ public class AdminBootstrap {
                     .createdAt(LocalDateTime.now())
                     .mustChangePassword(false)
                     .provider(AuthProvider.LOCAL)
-                    .branch("Main")
+                    .branch("Makati Branch")
                     .build();
 
             User saved = userRepository.save(admin);

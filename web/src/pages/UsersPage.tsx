@@ -43,15 +43,15 @@ const roleStyle: Record<Role, string> = {
 
 const AVAILABLE_BRANCHES = [
   "Makati Branch",
-  "UP Diliman",
-  "JP Rizal",
-  "S. Catalina",
-  "Pasig City",
-  "Republic Ave",
-  "Chestnut St",
-  "Tondo",
-  "Samat St",
-  "St. Nino",
+  "Chestnut Branch",
+  "Republic Branch",
+  "Holy Spirit Branch",
+  "Sta. Catalina Branch",
+  "Brookside Branch",
+  "JP Rizal Branch",
+  "Luzon Branch",
+  "St. Anthony Branch",
+  "UP Diliman / San Vicente Branch",
 ];
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
