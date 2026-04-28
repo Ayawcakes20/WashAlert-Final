@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { View, StyleSheet, Dimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -8,7 +8,6 @@ import Animated, {
   withRepeat,
   withSequence,
   withTiming,
-  runOnJS,
   interpolateColor,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
@@ -52,7 +51,22 @@ const SwipeSlider = ({ label, onComplete, color = colors.primary, disabled = fal
     }
   }, [disabled, isDisabled, pulseScale]);
 
+  const handleReset = useCallback(() => {
+    translateX.value = withSpring(0);
+  }, [translateX]);
+
+  const handleComplete = useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (typeof onComplete === 'function') {
+      onComplete();
+    }
+    setTimeout(() => {
+      handleReset();
+    }, 1000);
+  }, [handleReset, onComplete]);
+
   const panGesture = Gesture.Pan()
+    .runOnJS(true)
     .onBegin(() => {
       startX.value = translateX.value;
     })
@@ -65,19 +79,11 @@ const SwipeSlider = ({ label, onComplete, color = colors.primary, disabled = fal
       if (isDisabled.value) return;
       if (translateX.value > SWIPE_RANGE * 0.85) {
         translateX.value = withSpring(SWIPE_RANGE);
-        runOnJS(handleComplete)();
+        handleComplete();
       } else {
-        translateX.value = withSpring(0);
+        handleReset();
       }
     });
-
-  const handleComplete = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onComplete?.();
-    setTimeout(() => {
-      translateX.value = withSpring(0);
-    }, 1000);
-  };
 
   const animatedKnobStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }, { scale: pulseScale.value }],
