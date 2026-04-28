@@ -1,8 +1,7 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
-import { PanGestureHandler } from 'react-native-gesture-handler';
+import { View, StyleSheet, Dimensions } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
-  useAnimatedGestureHandler,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -34,8 +33,11 @@ const SWIPE_RANGE = SLIDER_WIDTH - KNOB_SIZE - 8;
 const SwipeSlider = ({ label, onComplete, color = colors.primary, disabled = false }) => {
   const translateX = useSharedValue(0);
   const pulseScale = useSharedValue(1);
+  const startX = useSharedValue(0);
+  const isDisabled = useSharedValue(disabled);
 
   useEffect(() => {
+    isDisabled.value = disabled;
     if (!disabled) {
       pulseScale.value = withRepeat(
         withSequence(
@@ -48,27 +50,26 @@ const SwipeSlider = ({ label, onComplete, color = colors.primary, disabled = fal
     } else {
       pulseScale.value = withTiming(1);
     }
-  }, [disabled]);
+  }, [disabled, isDisabled, pulseScale]);
 
-  const onGestureEvent = useAnimatedGestureHandler({
-    onStart: (_, ctx) => {
-      ctx.startX = translateX.value;
-    },
-    onActive: (event, ctx) => {
-      if (disabled) return;
-      const newVal = ctx.startX + event.translationX;
+  const panGesture = Gesture.Pan()
+    .onBegin(() => {
+      startX.value = translateX.value;
+    })
+    .onUpdate((event) => {
+      if (isDisabled.value) return;
+      const newVal = startX.value + event.translationX;
       translateX.value = Math.min(Math.max(newVal, 0), SWIPE_RANGE);
-    },
-    onEnd: () => {
-      if (disabled) return;
+    })
+    .onEnd(() => {
+      if (isDisabled.value) return;
       if (translateX.value > SWIPE_RANGE * 0.85) {
         translateX.value = withSpring(SWIPE_RANGE);
         runOnJS(handleComplete)();
       } else {
         translateX.value = withSpring(0);
       }
-    },
-  });
+    });
 
   const handleComplete = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -100,14 +101,14 @@ const SwipeSlider = ({ label, onComplete, color = colors.primary, disabled = fal
     <View style={[styles.container, { backgroundColor: disabled ? colors.disabled : color }]}>
       <Animated.View style={[styles.backgroundOverlay, animatedBgStyle]} />
 
-      <PanGestureHandler onGestureEvent={onGestureEvent}>
+      <GestureDetector gesture={panGesture}>
         <Animated.View style={[styles.knob, animatedKnobStyle]}>
           <View style={styles.knobInner}>
             <Ionicons name="chevron-forward" size={18} color={disabled ? colors.disabled : color} />
             <Ionicons name="chevron-forward" size={18} color={disabled ? colors.disabled : color} style={{ marginLeft: -10 }} />
           </View>
         </Animated.View>
-      </PanGestureHandler>
+      </GestureDetector>
 
       <Animated.Text style={[styles.label, animatedTextStyle]} pointerEvents="none">
         {label}
