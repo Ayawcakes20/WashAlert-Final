@@ -3,6 +3,7 @@ import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
+import { Ionicons } from '@expo/vector-icons';
 
 const ChangePasswordScreen = ({ navigation, route }) => {
   const { changePassword } = useAuth();
@@ -14,13 +15,25 @@ const ChangePasswordScreen = ({ navigation, route }) => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const validate = () => {
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      return 'Please complete all password fields.';
+    if (!currentPassword) {
+      return 'Current password is required.';
+    }
+    if (!newPassword) {
+      return 'New password is required.';
+    }
+    if (!confirmPassword) {
+      return 'Confirm password is required.';
     }
     if (newPassword.length < 8) {
       return 'New password must be at least 8 characters.';
+    }
+    if (!/^(?=.*[A-Za-z])(?=.*\d).+$/.test(newPassword)) {
+      return 'New password must include at least one letter and one number.';
     }
     if (newPassword !== confirmPassword) {
       return 'New password and confirm password do not match.';
@@ -35,6 +48,7 @@ const ChangePasswordScreen = ({ navigation, route }) => {
     const validationMessage = validate();
     if (validationMessage) {
       setError(validationMessage);
+      Alert.alert('Validation Error', validationMessage);
       return;
     }
     setError('');
@@ -69,35 +83,50 @@ const ChangePasswordScreen = ({ navigation, route }) => {
 
         <View style={styles.field}>
           <Text style={styles.label}>Current Password</Text>
-          <TextInput
-            secureTextEntry
-            style={styles.input}
-            value={currentPassword}
-            onChangeText={setCurrentPassword}
-            autoCapitalize="none"
-          />
+          <View style={styles.inputRow}>
+            <TextInput
+              secureTextEntry={!showCurrentPassword}
+              style={styles.input}
+              value={currentPassword}
+              onChangeText={setCurrentPassword}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowCurrentPassword((prev) => !prev)}>
+              <Ionicons name={showCurrentPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.textTertiary} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.field}>
           <Text style={styles.label}>New Password</Text>
-          <TextInput
-            secureTextEntry
-            style={styles.input}
-            value={newPassword}
-            onChangeText={setNewPassword}
-            autoCapitalize="none"
-          />
+          <View style={styles.inputRow}>
+            <TextInput
+              secureTextEntry={!showNewPassword}
+              style={styles.input}
+              value={newPassword}
+              onChangeText={setNewPassword}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowNewPassword((prev) => !prev)}>
+              <Ionicons name={showNewPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.textTertiary} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.field}>
           <Text style={styles.label}>Confirm New Password</Text>
-          <TextInput
-            secureTextEntry
-            style={styles.input}
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            autoCapitalize="none"
-          />
+          <View style={styles.inputRow}>
+            <TextInput
+              secureTextEntry={!showConfirmPassword}
+              style={styles.input}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowConfirmPassword((prev) => !prev)}>
+              <Ionicons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.textTertiary} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {!!error && <Text style={styles.error}>{error}</Text>}
@@ -116,14 +145,23 @@ const styles = StyleSheet.create({
   description: { fontSize: 13, color: colors.textSecondary, marginBottom: 20, lineHeight: 20 },
   field: { marginBottom: 14 },
   label: { fontSize: 13, fontWeight: '600', color: colors.text, marginBottom: 6 },
-  input: {
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 12,
     height: 50,
     paddingHorizontal: 14,
+  },
+  input: {
+    flex: 1,
+    height: '100%',
     color: colors.text,
+  },
+  eyeBtn: {
+    padding: 4,
   },
   error: { marginTop: 6, color: colors.error, fontSize: 12 },
   button: {

@@ -103,7 +103,7 @@ export type DeliveryRecord = {
   deliveryAddress: string;
   driverName: string;
   driverPhone: string;
-  status: "PENDING_PICKUP" | "PICKED_UP" | "IN_TRANSIT" | "DELIVERED" | "FAILED";
+  status: string;
   currentLatitude: number | null;
   currentLongitude: number | null;
   estimatedArrivalAt: string | null;
@@ -390,6 +390,8 @@ export const deliveriesApi = {
       body: payload,
     }),
   list: () => apiRequest<DeliveryRecord[]>("/api/deliveries"),
+  track: (trackingNumber: string) =>
+    apiRequest<DeliveryRecord>(`/api/deliveries/track/${encodeURIComponent(trackingNumber)}`),
   listPaged: (params?: {
     page?: number;
     size?: number;

@@ -132,7 +132,7 @@ public class DeliveryService {
                 .estimatedArrivalAt(req.estimatedArrivalAt())
                 .notes(blankToNull(req.notes()))
                 .leg(req.leg())
-                .status(DeliveryStatus.PENDING_PICKUP)
+                .status(DeliveryStatus.ASSIGNED_PICKUP)
                 .build();
 
         DeliveryOrder saved = deliveryRepository.save(delivery);
@@ -209,6 +209,12 @@ public class DeliveryService {
         if (existingPickup.isPresent()) {
             DeliveryOrder assigned = existingPickup.get();
             if (assigned.getDriverUser() != null && assigned.getDriverUser().getId().equals(driver.getId())) {
+                if (assigned.getStatus() == DeliveryStatus.PENDING_PICKUP) {
+                    assigned.setStatus(DeliveryStatus.ASSIGNED_PICKUP);
+                    DeliveryOrder normalized = deliveryRepository.save(assigned);
+                    firestoreSyncService.upsert("deliveries", normalized.getJobOrder().getTrackingNumber(), toResponse(normalized));
+                    return toResponse(normalized);
+                }
                 return toResponse(assigned);
             }
             throw new IllegalStateException("This booking was already accepted by another driver.");
@@ -220,7 +226,7 @@ public class DeliveryService {
                 .driverName(driver.getFullName())
                 .driverPhone(resolveDriverContact(driver))
                 .leg(DeliveryLeg.PICKUP_FROM_CUSTOMER)
-                .status(DeliveryStatus.PENDING_PICKUP)
+                .status(DeliveryStatus.ASSIGNED_PICKUP)
                 .notes("Driver accepted booking.")
                 .build();
 
@@ -519,6 +525,9 @@ public class DeliveryService {
         delivery.setDriverPhone(req.driverPhone().trim());
         userRepository.findAllByRoleAndFullName(Role.DRIVER, req.driverName().trim()).stream().findFirst()
                 .ifPresent(delivery::setDriverUser);
+        if (delivery.getStatus() == DeliveryStatus.PENDING_PICKUP) {
+            delivery.setStatus(DeliveryStatus.ASSIGNED_PICKUP);
+        }
         delivery.setEstimatedArrivalAt(req.estimatedArrivalAt());
         if (req.notes() != null) {
             delivery.setNotes(blankToNull(req.notes()));
@@ -808,7 +817,7 @@ public class DeliveryService {
     public DeliveryResponse arriveAtCustomer(Long deliveryId, AuthUserDetails principal) {
         DeliveryOrder d = findDeliveryOrThrow(deliveryId);
         enforceDriverOwnership(d, principal);
-        requireStatus(d, DeliveryStatus.ASSIGNED_PICKUP, "arrive at customer");
+        requireStatusIn(d, "arrive at customer", DeliveryStatus.ASSIGNED_PICKUP, DeliveryStatus.PENDING_PICKUP);
         d.setStatus(DeliveryStatus.ARRIVED_CUSTOMER);
         DeliveryOrder saved = deliveryRepository.save(d);
         syncToFirestore(saved);
@@ -921,6 +930,17 @@ public class DeliveryService {
                     "Cannot " + action + ": delivery is in state " + d.getStatus() + " (expected " + required + ")."
             );
         }
+    }
+
+    private void requireStatusIn(DeliveryOrder d, String action, DeliveryStatus... expectedStatuses) {
+        for (DeliveryStatus expected : expectedStatuses) {
+            if (d.getStatus() == expected) {
+                return;
+            }
+        }
+        throw new IllegalStateException(
+                "Cannot " + action + ": delivery is in state " + d.getStatus() + "."
+        );
     }
 
     private void enforceDriverOwnership(DeliveryOrder d, AuthUserDetails principal) {

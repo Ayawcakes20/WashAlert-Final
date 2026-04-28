@@ -62,6 +62,22 @@ const getStatusLabel = (status) => {
   }
 };
 
+const getPrimaryActionLabel = (status) => {
+  switch (status) {
+    case 'accepted':
+      return 'Start Pickup';
+    case 'at_customer':
+      return 'Confirm Pickup';
+    case 'picked_up':
+    case 'en_route':
+      return 'Arrive at Customer';
+    case 'at_delivery':
+      return 'Mark Delivered';
+    default:
+      return 'View Details';
+  }
+};
+
 const DriverDeliveriesScreen = ({ navigation }) => {
   const [tab, setTab] = useState('all');
   const [deliveries, setDeliveries] = useState([]);
@@ -238,7 +254,7 @@ const DriverDeliveriesScreen = ({ navigation }) => {
                         disabled={acceptingTracking === order.trackingNumber}
                       >
                         <Text style={styles.viewBtnText}>
-                          {acceptingTracking === order.trackingNumber ? 'Accepting...' : 'Accept'}
+                          {acceptingTracking === order.trackingNumber ? 'Accepting...' : 'Accept Delivery'}
                         </Text>
                         <Ionicons name="checkmark-circle-outline" size={14} color={colors.primary} />
                       </TouchableOpacity>
@@ -269,7 +285,7 @@ const DriverDeliveriesScreen = ({ navigation }) => {
                           style={styles.viewBtn}
                           onPress={() => navigation.navigate('DeliveryDetail', { deliveryId: delivery.id })}
                         >
-                          <Text style={styles.viewBtnText}>View Details</Text>
+                          <Text style={styles.viewBtnText}>{getPrimaryActionLabel(delivery.status)}</Text>
                           <Ionicons name="chevron-forward" size={14} color={colors.primary} />
                         </TouchableOpacity>
                       </View>

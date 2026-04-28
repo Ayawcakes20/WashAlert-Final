@@ -17,6 +17,7 @@ const MENU_GROUPS = [
   {
     title: 'Settings',
     items: [
+      { label: 'Account Info', icon: 'person-circle-outline', color: colors.textSecondary },
       { label: 'Change Password', icon: 'lock-closed-outline', color: colors.primary, screen: 'ChangePassword' },
       { label: 'Notification Settings', icon: 'notifications-outline', color: colors.warning, screen: 'DriverNotifications' },
       { label: 'Terms & Conditions', icon: 'document-text-outline', color: colors.textSecondary, screen: 'TermsAndConditions' },
@@ -153,6 +154,13 @@ const DriverProfileScreen = ({ navigation }) => {
                   onPress={() => {
                     if (item.screen) {
                       navigation.navigate(item.screen);
+                      return;
+                    }
+                    if (item.label === 'Account Info') {
+                      Alert.alert(
+                        'Account Info',
+                        `Name: ${user?.fullName || '-'}\nEmail: ${user?.email || '-'}\nBranch: ${user?.branch || '-'}`
+                      );
                       return;
                     }
                     Alert.alert('Coming Soon', `${item.label} is not yet available in this build.`);

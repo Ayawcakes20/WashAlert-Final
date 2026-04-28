@@ -16,17 +16,14 @@ import {
   Trash2,
   Truck,
   User,
-  UserCheck,
   Weight,
 } from "lucide-react";
 import {
   ordersApi,
   deliveriesApi,
-  usersApi,
   type CreateOrderPayload,
   type JobOrderResponse,
   type UpdateOrderPayload,
-  type UserAdminRecord,
 } from "@/lib/api";
 import { getSessionUser } from "@/lib/session";
 import { toast } from "@/components/ui/sonner";
@@ -72,6 +69,11 @@ type Order = {
   paymentStatus?: "PENDING" | "VERIFIED" | "REJECTED" | "PAID" | null;
   isPaid?: boolean;
   totalPrice?: number;
+};
+
+type DeliveryAssignmentMeta = {
+  driverName: string;
+  status: string;
 };
 
 const LAUNDRY_COLUMNS: { status: ApiOrderStatus; label: string; color: string; bgColor: string }[] = [
@@ -160,6 +162,25 @@ const resolvePaymentStatusLabel = (order: Order) => {
   return order.isPaid ? "PAID" : "PENDING";
 };
 
+const resolveDeliveryStatusLabel = (status?: string) => {
+  const normalized = String(status || "").toUpperCase();
+  const labels: Record<string, string> = {
+    ASSIGNED_PICKUP: "Accepted Pickup",
+    PENDING_PICKUP: "Pending Pickup",
+    ARRIVED_CUSTOMER: "At Customer",
+    PICKED_UP: "Picked Up",
+    ARRIVED_BRANCH: "At Branch",
+    HANDED_TO_BRANCH: "At Shop",
+    ASSIGNED_DELIVERY: "Ready for Delivery",
+    OUT_FOR_DELIVERY: "Out for Delivery",
+    ARRIVED_DELIVERY: "Arrived Delivery",
+    DELIVERED: "Delivered",
+    CANCELLED: "Cancelled",
+    FAILED: "Failed",
+  };
+  return labels[normalized] || "Unassigned";
+};
+
 const emptyCreateForm: CreateOrderPayload = {
   customerName: "",
   serviceType: "DROP_OFF",
@@ -214,12 +235,7 @@ export default function OrderManagementPage() {
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
 
-  const [assignDriverOpen, setAssignDriverOpen] = useState(false);
-  const [assignDriverOrder, setAssignDriverOrder] = useState<Order | null>(null);
-  const [availableDrivers, setAvailableDrivers] = useState<UserAdminRecord[]>([]);
-  const [driversLoading, setDriversLoading] = useState(false);
-  const [selectedDriverId, setSelectedDriverId] = useState<number | null>(null);
-  const [assignSubmitting, setAssignSubmitting] = useState(false);
+  const [deliveryMetaByTracking, setDeliveryMetaByTracking] = useState<Record<string, DeliveryAssignmentMeta>>({});
 
   const loadOrders = useCallback(async (requestedPage = 0, silent = false) => {
     try {
@@ -427,42 +443,45 @@ export default function OrderManagementPage() {
     }
   };
 
-  const openAssignDriver = async (order: Order) => {
-    setAssignDriverOrder(order);
-    setSelectedDriverId(null);
-    setAssignDriverOpen(true);
-    setDriversLoading(true);
-    try {
-      const drivers = await usersApi.listDrivers(order.branch);
-      setAvailableDrivers(drivers.filter((d) => d.status === "ACTIVE"));
-    } catch {
-      setAvailableDrivers([]);
-      toast.error("Unable to load drivers for this branch.");
-    } finally {
-      setDriversLoading(false);
+  useEffect(() => {
+    let active = true;
+    const pickupDeliveryOrders = orders.filter((order) => order.serviceType === "PICKUP_DELIVERY");
+    if (pickupDeliveryOrders.length === 0) {
+      setDeliveryMetaByTracking({});
+      return () => {
+        active = false;
+      };
     }
-  };
 
-  const submitAssignDriver = async () => {
-    if (!assignDriverOrder || !selectedDriverId) return;
-    const leg = assignDriverOrder.status === "PENDING" ? "PICKUP_FROM_CUSTOMER" : "DELIVERY_TO_CUSTOMER";
-    setAssignSubmitting(true);
+    (async () => {
+      const results = await Promise.allSettled(
+        pickupDeliveryOrders.map((order) => deliveriesApi.track(order.orderId)),
+      );
+      if (!active) return;
 
-    try {
-      await deliveriesApi.assign({
-        trackingNumber: assignDriverOrder.orderId,
-        leg,
-        driverId: selectedDriverId,
+      const nextMeta: Record<string, DeliveryAssignmentMeta> = {};
+      pickupDeliveryOrders.forEach((order, index) => {
+        const result = results[index];
+        if (result.status === "fulfilled" && result.value) {
+          nextMeta[order.orderId] = {
+            driverName: result.value.driverName?.trim() || "Unassigned",
+            status: result.value.status || "UNASSIGNED",
+          };
+          return;
+        }
+
+        nextMeta[order.orderId] = {
+          driverName: "Unassigned",
+          status: "UNASSIGNED",
+        };
       });
-      toast.success(`Driver assigned to ${assignDriverOrder.orderId} successfully.`);
-      setAssignDriverOpen(false);
-      setAssignDriverOrder(null);
-    } catch (err: any) {
-      toast.error(err?.message || "Unable to assign driver.");
-    } finally {
-      setAssignSubmitting(false);
-    }
-  };
+      setDeliveryMetaByTracking(nextMeta);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [orders]);
 
   const filteredOrders = orders;
 
@@ -513,9 +532,23 @@ export default function OrderManagementPage() {
         </span>
       </div>
       {order.serviceType === "PICKUP_DELIVERY" && (
-        <div className="flex items-center gap-1 mt-1">
-          <Truck className="h-3 w-3 text-purple-500" />
-          <span className="text-[10px] text-purple-600 font-medium">Delivery Order</span>
+        <div className="mt-1 space-y-0.5">
+          <div className="flex items-center gap-1">
+            <Truck className="h-3 w-3 text-purple-500" />
+            <span className="text-[10px] text-purple-600 font-medium">Delivery Order</span>
+          </div>
+          <div className="text-[10px] text-brand-muted">
+            Driver:{" "}
+            <span className="font-semibold text-brand-text">
+              {deliveryMetaByTracking[order.orderId]?.driverName || "Unassigned"}
+            </span>
+          </div>
+          <div className="text-[10px] text-brand-muted">
+            Delivery Status:{" "}
+            <span className="font-semibold text-brand-text">
+              {resolveDeliveryStatusLabel(deliveryMetaByTracking[order.orderId]?.status)}
+            </span>
+          </div>
         </div>
       )}
       <div className="flex items-center justify-between mt-2">
@@ -547,19 +580,6 @@ export default function OrderManagementPage() {
           <Eye className="h-3 w-3" />
           Details
         </Button>
-        {["PENDING", "READY"].includes(order.status) && order.serviceType === "PICKUP_DELIVERY" && (
-          <Button
-            size="sm"
-            className="h-7 px-2 text-[10px] bg-purple-600 hover:bg-purple-700 text-white"
-            onClick={(e) => {
-              e.stopPropagation();
-              void openAssignDriver(order);
-            }}
-          >
-            <UserCheck className="h-3 w-3" />
-            Assign Driver
-          </Button>
-        )}
       </div>
     </div>
   );
@@ -962,10 +982,26 @@ export default function OrderManagementPage() {
                   <p className="text-muted-foreground text-xs">Service Type</p>
                   <p className="font-medium">{serviceTypeLabel[selectedOrder.serviceType]}</p>
                 </div>
+                {selectedOrder.serviceType === "PICKUP_DELIVERY" ? (
+                  <div>
+                    <p className="text-muted-foreground text-xs">Assigned Driver</p>
+                    <p className="font-medium">
+                      {deliveryMetaByTracking[selectedOrder.orderId]?.driverName || "Unassigned"}
+                    </p>
+                  </div>
+                ) : null}
                 <div>
                   <p className="text-muted-foreground text-xs">Branch</p>
                   <p className="font-medium">{selectedOrder.branch}</p>
                 </div>
+                {selectedOrder.serviceType === "PICKUP_DELIVERY" ? (
+                  <div>
+                    <p className="text-muted-foreground text-xs">Delivery Status</p>
+                    <p className="font-medium">
+                      {resolveDeliveryStatusLabel(deliveryMetaByTracking[selectedOrder.orderId]?.status)}
+                    </p>
+                  </div>
+                ) : null}
                 <div>
                   <p className="text-muted-foreground text-xs">Payment Method</p>
                   <p className="font-medium">{selectedOrder.paymentMethod || "N/A"}</p>
@@ -1156,61 +1192,6 @@ export default function OrderManagementPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Assign Driver Dialog */}
-      <Dialog open={assignDriverOpen} onOpenChange={setAssignDriverOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Assign Driver</DialogTitle>
-            <DialogDescription>
-              {assignDriverOrder
-                ? `Select a driver from ${assignDriverOrder.branch} for order ${assignDriverOrder.orderId}.`
-                : "Select a driver to assign to this delivery."}
-            </DialogDescription>
-          </DialogHeader>
-          {driversLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading available drivers...
-            </div>
-          ) : availableDrivers.length === 0 ? (
-            <div className="py-4 text-center text-sm text-muted-foreground">
-              <UserCheck className="h-8 w-8 mx-auto mb-2 text-muted-foreground/40" />
-              No active drivers found for this branch.
-              <p className="text-xs mt-1">Add drivers in User Management and assign them to this branch.</p>
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {availableDrivers.map((driver) => (
-                <button
-                  key={driver.id}
-                  type="button"
-                  onClick={() => setSelectedDriverId(driver.id)}
-                  className={`w-full text-left px-4 py-3 rounded-xl border transition-all text-sm ${
-                    selectedDriverId === driver.id
-                      ? "border-purple-500 bg-purple-50 dark:bg-purple-950/30"
-                      : "border-border hover:border-muted-foreground/40"
-                  }`}
-                >
-                  <p className="font-medium text-foreground">{driver.fullName}</p>
-                  <p className="text-xs text-muted-foreground">{driver.email}</p>
-                </button>
-              ))}
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAssignDriverOpen(false)} disabled={assignSubmitting}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-purple-600 hover:bg-purple-700 text-white"
-              onClick={() => void submitAssignDriver()}
-              disabled={!selectedDriverId || assignSubmitting}
-            >
-              {assignSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4" />}
-              {assignSubmitting ? "Assigning..." : "Assign Driver"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </motion.div>
   );
 }

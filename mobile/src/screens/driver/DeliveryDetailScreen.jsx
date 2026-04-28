@@ -38,7 +38,7 @@ import { useAuth } from '../../context/AuthContext';
 import SwipeSlider from '../../components/SwipeSlider';
 import PhotoProofCapture from '../../components/PhotoProofCapture';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // ─── Google Maps Dark / Night Style ──────────────────────────────────────────
 const DARK_MAP_STYLE = [
@@ -302,7 +302,12 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
       setDelivery(updated);
       setEtaInfo({ distance: null, duration: null }); // reset ETA on transition
     } catch (e) {
-      Alert.alert('Action Failed', e?.message || 'Something went wrong. Try again.');
+      const message = String(e?.message || '');
+      if (message.toLowerCase().includes('cannot') || message.toLowerCase().includes('invalid')) {
+        Alert.alert('Action Not Allowed', 'This action is not allowed for the current delivery state.');
+      } else {
+        Alert.alert('Action Failed', message || 'Something went wrong. Try again.');
+      }
     } finally {
       setUpdating(false);
     }
@@ -403,7 +408,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
           </View>
 
           <SwipeSlider
-            label="Swipe to Arrive"
+            label="Start Pickup"
             color={colors.primary}
             onComplete={() => handleAction('arriveAtCustomer')}
           />
@@ -419,7 +424,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
     if (status === 'at_customer') {
       return (
         <View style={styles.sheetInner}>
-          <Text style={styles.sheetTitle}>Arrived at {customerName}'s Location</Text>
+          <Text style={styles.sheetTitle}>Arrived at {customerName}&apos;s Location</Text>
 
           {/* Bag count */}
           <View style={styles.fieldGroup}>
@@ -443,7 +448,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
           <Text style={styles.mandatoryHint}>Mandatory items for processing.</Text>
 
           <SwipeSlider
-            label="✓  Verify & Complete Pickup"
+            label="Confirm Pickup"
             color={colors.primary}
             disabled={!bagCount || !pickupPhoto}
             onComplete={() => handleAction('completePickup', {
@@ -521,7 +526,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
           <MaterialCommunityIcons name="washing-machine" size={48} color={colors.accent} />
           <Text style={styles.waitTitle}>Phase 1 Complete!</Text>
           <Text style={styles.waitSub}>
-            Laundry is being processed at the branch. You'll be notified when clean laundry is ready.
+            Laundry is being processed at the branch. You&apos;ll be notified when clean laundry is ready.
           </Text>
           <View style={styles.freeBadge}>
             <Ionicons name="checkmark-circle" size={14} color={colors.success} />
@@ -588,7 +593,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
           </View>
 
           <SwipeSlider
-            label="Swipe to Arrive"
+            label="Arrive at Customer"
             color={colors.primary}
             onComplete={() => handleAction('arriveForDelivery')}
           />
@@ -642,7 +647,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
           </View>
 
           <SwipeSlider
-            label="✓  Handover & Order Completed  ✦"
+            label="Mark Delivered"
             color={colors.primary}
             disabled={confCode.length < 4 || !deliveryPhoto}
             onComplete={() => handleAction('finalHandover', {
@@ -757,20 +762,11 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             if (updating) return;
             try {
               setUpdating(true);
-              
-              // Kung wala pang driver (Pool Order), kailangan i-accept.
-              // Kung may driver na (Assigned Job), deretso na sa arriveAtCustomer logic.
-              if (delivery.status === 'pending' && !delivery.driverName) {
-                const accepted = await deliveriesApi.acceptBooking(delivery.orderNumber);
-                setDelivery(accepted);
-              } else {
-                // Pre-assigned job — just transition to the first active state
-                const updated = await deliveriesApi.arriveAtCustomer(delivery.id);
-                setDelivery(updated);
-              }
+              const accepted = await deliveriesApi.acceptBooking(delivery.orderNumber);
+              setDelivery(accepted);
             } catch (e) {
               console.error('[AcceptError]', e);
-              Alert.alert('Action Failed', e?.message || 'Please try again.');
+              Alert.alert('Accept Failed', e?.message || 'Unable to accept this delivery right now.');
             } finally {
               setUpdating(false);
             }
@@ -783,7 +779,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
           ) : (
             <>
               <Ionicons name="checkmark-circle" size={20} color="#FFF" />
-              <Text style={styles.acceptBtnText}>Accept & Start Pickup</Text>
+              <Text style={styles.acceptBtnText}>Accept Delivery</Text>
             </>
           )}
         </TouchableOpacity>
@@ -822,7 +818,6 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
   // ─── Live values ───────────────────────────────────────────────────────────
   const cfg = STATE_CONFIG[delivery.status] || STATE_CONFIG['pending'];
   const targetCoords = getTargetCoords();
-  const hasCoords = !!(targetCoords && driverCoords);
   const isHandover = delivery.status === 'at_branch';
 
   // ─── Render ────────────────────────────────────────────────────────────────
