@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
 import {
   CalendarCheck2,
   MapPinned,
@@ -90,17 +91,41 @@ export default function HomePage() {
         </div>
         <div className="relative mx-auto grid min-h-[78vh] max-w-7xl items-center gap-10 px-6 py-20 lg:grid-cols-2 lg:px-8 lg:py-24">
           <div>
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/12 px-4 py-1 text-xs font-semibold uppercase tracking-wider text-brand-mint">
+            <motion.span
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.4 }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              className="inline-flex items-center gap-2 rounded-full bg-white/12 px-4 py-1 text-xs font-semibold uppercase tracking-wider text-brand-mint"
+            >
               <Sparkles className="h-3.5 w-3.5" />
               Triplets LaundryHubs Platform
-            </span>
-            <h1 className="mt-5 text-4xl font-extrabold leading-tight text-white md:text-5xl lg:text-6xl">
+            </motion.span>
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.4 }}
+              transition={{ duration: 0.7, ease: "easeOut", delay: 0.05 }}
+              className="mt-5 text-4xl font-extrabold leading-tight text-white md:text-5xl lg:text-6xl"
+            >
               Laundry made simple across every branch
-            </h1>
-            <p className="mt-5 max-w-xl text-base leading-relaxed text-white/80 md:text-lg">
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.4 }}
+              transition={{ duration: 0.7, ease: "easeOut", delay: 0.1 }}
+              className="mt-5 max-w-xl text-base leading-relaxed text-white/80 md:text-lg"
+            >
               Book, track, pay, and get real-time updates from Triplets LaundryHubs and SpeedyWash.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
+            </motion.p>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.4 }}
+              transition={{ duration: 0.7, ease: "easeOut", delay: 0.15 }}
+              className="mt-8 flex flex-wrap gap-3"
+            >
               <Link
                 to="/branches-public"
                 className="rounded-brand bg-brand-gold px-5 py-3 text-sm font-semibold text-brand-navy transition hover:brightness-95"
@@ -113,33 +138,58 @@ export default function HomePage() {
               >
                 Track an Order
               </Link>
-            </div>
-            <div className="mt-6 flex flex-wrap gap-4 text-xs text-white/80">
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.4 }}
+              transition={{ duration: 0.7, ease: "easeOut", delay: 0.2 }}
+              className="mt-6 flex flex-wrap gap-4 text-xs text-white/80"
+            >
               <span className="inline-flex items-center gap-1"><ShieldCheck className="h-3.5 w-3.5 text-brand-mint" /> Secure digital payment</span>
               <span className="inline-flex items-center gap-1"><Timer className="h-3.5 w-3.5 text-brand-mint" /> Live status notifications</span>
               <span className="inline-flex items-center gap-1"><Truck className="h-3.5 w-3.5 text-brand-mint" /> Pickup and delivery ready</span>
-            </div>
+            </motion.div>
           </div>
-          <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur md:p-6">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 0.3 }}
+            transition={{ duration: 0.7, ease: "easeOut", delay: 0.15 }}
+            className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur md:p-6"
+          >
             <img src={appMockup} alt="WashAlert app preview" className="w-full rounded-xl border border-white/20" />
-          </div>
+          </motion.div>
         </div>
       </section>
 
       <section className="mx-auto max-w-7xl px-6 py-16 lg:px-8 lg:py-20">
-        <div className="mb-10">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.3 }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+          className="mb-10"
+        >
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-mint">Core Features</p>
           <h2 className="mt-2 text-3xl font-bold text-brand-navy md:text-4xl">Everything customers and staff need in one flow</h2>
-        </div>
+        </motion.div>
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {featureCards.map((feature) => (
-            <article key={feature.title} className="rounded-brand border border-brand-border bg-white p-6 shadow-brand">
+          {featureCards.map((feature, index) => (
+            <motion.article
+              key={feature.title}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.25 }}
+              transition={{ duration: 0.6, ease: "easeOut", delay: index * 0.04 }}
+              className="rounded-brand border border-brand-border bg-white p-6 shadow-brand"
+            >
               <span className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-brand-mintSoft text-brand-navy">
                 <feature.icon className="h-5 w-5" />
               </span>
               <h3 className="text-lg font-semibold text-brand-navy">{feature.title}</h3>
               <p className="mt-2 text-sm leading-relaxed text-brand-muted">{feature.text}</p>
-            </article>
+            </motion.article>
           ))}
         </div>
       </section>
@@ -151,12 +201,19 @@ export default function HomePage() {
             <h2 className="mt-2 text-3xl font-bold text-white md:text-4xl">Fast flow from booking to delivery</h2>
           </div>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {steps.map((step) => (
-              <article key={step.number} className="rounded-brand border border-white/20 bg-white/5 p-5">
+            {steps.map((step, index) => (
+              <motion.article
+                key={step.number}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, amount: 0.25 }}
+                transition={{ duration: 0.6, ease: "easeOut", delay: index * 0.05 }}
+                className="rounded-brand border border-white/20 bg-white/5 p-5"
+              >
                 <p className="text-sm font-bold text-brand-gold">{step.number}</p>
                 <h3 className="mt-2 text-lg font-semibold text-white">{step.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-white/80">{step.text}</p>
-              </article>
+              </motion.article>
             ))}
           </div>
         </div>
@@ -168,11 +225,18 @@ export default function HomePage() {
           <h2 className="mt-2 text-3xl font-bold text-brand-navy md:text-4xl">Designed for modern laundry operations</h2>
         </div>
         <div className="grid gap-5 sm:grid-cols-2">
-          {services.map((service) => (
-            <article key={service.title} className="rounded-brand border border-brand-border bg-white p-6 shadow-brand">
+          {services.map((service, index) => (
+            <motion.article
+              key={service.title}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.25 }}
+              transition={{ duration: 0.6, ease: "easeOut", delay: index * 0.05 }}
+              className="rounded-brand border border-brand-border bg-white p-6 shadow-brand"
+            >
               <h3 className="text-xl font-semibold text-brand-navy">{service.title}</h3>
               <p className="mt-2 text-sm leading-relaxed text-brand-muted">{service.text}</p>
-            </article>
+            </motion.article>
           ))}
         </div>
       </section>
@@ -192,8 +256,15 @@ export default function HomePage() {
             </Link>
           </div>
           <div className="grid gap-5 md:grid-cols-3">
-            {highlightedBranches.map((branch) => (
-              <article key={branch.id} className="rounded-brand border border-brand-border bg-brand-bg p-6 shadow-brand">
+            {highlightedBranches.map((branch, index) => (
+              <motion.article
+                key={branch.id}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, amount: 0.2 }}
+                transition={{ duration: 0.6, ease: "easeOut", delay: index * 0.05 }}
+                className="rounded-brand border border-brand-border bg-brand-bg p-6 shadow-brand"
+              >
                 <div className="mb-3 flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-brand-navy">{branch.area}</h3>
                   <span
@@ -207,14 +278,20 @@ export default function HomePage() {
                 <p className="text-sm font-medium text-brand-text">{branch.name}</p>
                 <p className="mt-2 text-sm text-brand-muted">{branch.address}</p>
                 <p className="mt-3 text-xs font-medium text-brand-navy">{branch.hours}</p>
-              </article>
+              </motion.article>
             ))}
           </div>
         </div>
       </section>
 
       <section className="bg-brand-mintSoft py-16 lg:py-20">
-        <div className="mx-auto max-w-5xl rounded-2xl border border-brand-border bg-white px-6 py-10 text-center shadow-brand lg:px-12">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.3 }}
+          transition={{ duration: 0.7, ease: "easeOut" }}
+          className="mx-auto max-w-5xl rounded-2xl border border-brand-border bg-white px-6 py-10 text-center shadow-brand lg:px-12"
+        >
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-mint">Ready to Start?</p>
           <h2 className="mt-2 text-3xl font-bold text-brand-navy md:text-4xl">Get your laundry moving today</h2>
           <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-brand-muted">
@@ -234,7 +311,7 @@ export default function HomePage() {
               Log-in to Dashboard
             </Link>
           </div>
-        </div>
+        </motion.div>
       </section>
 
       <Footer />

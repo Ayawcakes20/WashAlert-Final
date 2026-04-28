@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import Navbar from "@/components/public/Navbar";
 import Footer from "@/components/public/Footer";
 import { branches } from "@/data/branches";
@@ -39,13 +40,19 @@ export default function BranchesPage() {
       <Navbar />
 
       <section className="bg-brand-navy py-16 lg:py-20">
-        <div className="mx-auto max-w-7xl px-6 lg:px-8">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.3 }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+          className="mx-auto max-w-7xl px-6 lg:px-8"
+        >
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-mint">Branches</p>
           <h1 className="mt-2 text-4xl font-bold text-white md:text-5xl">Find your nearest laundry branch</h1>
           <p className="mt-4 max-w-3xl text-base text-white/80">
             Browse open locations, check operating hours, and launch directions instantly.
           </p>
-        </div>
+        </motion.div>
       </section>
 
       <section className="mx-auto max-w-7xl px-6 py-16 lg:px-8 lg:py-20">
@@ -61,8 +68,15 @@ export default function BranchesPage() {
         </div>
 
         <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((branch) => (
-            <article key={branch.id} className="rounded-brand border border-brand-border bg-white p-6 shadow-brand">
+          {filtered.map((branch, index) => (
+            <motion.article
+              key={branch.id}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.2 }}
+              transition={{ duration: 0.55, ease: "easeOut", delay: index * 0.03 }}
+              className="rounded-brand border border-brand-border bg-white p-6 shadow-brand"
+            >
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-semibold text-brand-navy">{branch.area}</h2>
@@ -101,7 +115,7 @@ export default function BranchesPage() {
                 <Navigation className="h-4 w-4" />
                 Get Directions
               </a>
-            </article>
+            </motion.article>
           ))}
         </div>
 

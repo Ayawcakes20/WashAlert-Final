@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { Shield, UserCog, Search, Plus, Pencil, Loader2, Truck, Mail } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { usersApi, type UserAdminRecord } from "@/lib/api";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,9 +37,9 @@ const roleIcon: Record<Role, typeof UserCog> = {
 };
 
 const roleStyle: Record<Role, string> = {
-  STAFF: "bg-accent/20 text-accent-foreground",
-  DRIVER: "bg-secondary/20 text-secondary-foreground",
-  ADMIN: "bg-mint/20 text-mint-foreground",
+  STAFF: "bg-brand-goldSoft text-brand-gold",
+  DRIVER: "bg-brand-mintSoft text-brand-text",
+  ADMIN: "bg-blue-100 text-blue-700",
 };
 
 const AVAILABLE_BRANCHES = [
@@ -85,6 +86,7 @@ const statusDescription: Record<UserRecord["status"], string> = {
 export default function UsersPage() {
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, 400);
   const [roleFilter, setRoleFilter] = useState<"ALL" | Role>("ALL");
   const [statusFilter, setStatusFilter] = useState<"ALL" | UserRecord["status"]>("ALL");
   const [branchFilter, setBranchFilter] = useState("ALL");
@@ -139,7 +141,7 @@ export default function UsersPage() {
         size: USERS_PAGE_SIZE,
         sort: "createdAt",
         direction: "desc",
-        search: query.trim() || undefined,
+        search: debouncedQuery.trim() || undefined,
         role: roleFilter === "ALL" ? undefined : roleFilter,
         status: mapStatusFilterToApi(statusFilter),
         branch: branchFilter === "ALL" ? undefined : branchFilter,
@@ -168,11 +170,21 @@ export default function UsersPage() {
       setLoading(false);
     };
     void run();
-  }, [query, roleFilter, statusFilter, branchFilter]);
+  }, [debouncedQuery, roleFilter, statusFilter, branchFilter]);
 
   useEffect(() => {
     setUsersPage(1);
   }, [query, roleFilter, statusFilter, branchFilter]);
+
+  const displayUsers = useMemo(() => {
+    const term = debouncedQuery.trim().toLowerCase();
+    if (!term) return users;
+    return users.filter((u) =>
+      [u.name, u.email, u.role, u.branch, u.status].some((value) =>
+        String(value).toLowerCase().includes(term),
+      ),
+    );
+  }, [users, debouncedQuery]);
 
   const branchOptions = useMemo(() => {
     const unique = Array.from(new Set([...AVAILABLE_BRANCHES]));
@@ -322,22 +334,22 @@ export default function UsersPage() {
     >
       <motion.div variants={item} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">User Management</h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage internal staff and driver accounts</p>
+          <h1 className="text-2xl font-bold text-brand-text tracking-tight">User Management</h1>
+          <p className="text-sm text-brand-muted mt-1">Manage internal staff and driver accounts</p>
         </div>
-        <Button className="h-10 px-5 rounded-xl gradient-navy" onClick={() => setCreateOpen(true)}>
+        <Button className="h-10 px-5 rounded-brand bg-brand-navy text-white hover:bg-brand-navyDark" onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4" /> Invite User
         </Button>
       </motion.div>
 
-      <motion.div variants={item} className="flex items-center gap-2 bg-muted/50 rounded-xl px-4 py-2.5 max-w-md">
-        <Search className="h-4 w-4 text-muted-foreground" />
+      <motion.div variants={item} className="flex items-center gap-2 bg-brand-mintSoft rounded-brand border border-brand-border px-4 py-2.5 max-w-md">
+        <Search className="h-4 w-4 text-brand-muted" />
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search users by name, email, role, branch..."
-          className="bg-transparent text-sm outline-none w-full text-foreground placeholder:text-muted-foreground"
+          className="bg-transparent text-sm outline-none w-full text-brand-text placeholder:text-brand-muted"
         />
       </motion.div>
 
@@ -345,7 +357,7 @@ export default function UsersPage() {
         <select
           value={roleFilter}
           onChange={(e) => setRoleFilter((e.target.value as Role | "ALL") || "ALL")}
-          className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
+          className="h-10 rounded-brand border border-brand-border bg-white px-3 text-sm text-brand-text"
         >
           <option value="ALL">All Roles</option>
           <option value="STAFF">Staff</option>
@@ -354,7 +366,7 @@ export default function UsersPage() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter((e.target.value as UserRecord["status"] | "ALL") || "ALL")}
-          className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
+          className="h-10 rounded-brand border border-brand-border bg-white px-3 text-sm text-brand-text"
         >
           <option value="ALL">All Statuses</option>
           <option value="Pending">Pending</option>
@@ -365,7 +377,7 @@ export default function UsersPage() {
         <select
           value={branchFilter}
           onChange={(e) => setBranchFilter(e.target.value || "ALL")}
-          className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
+          className="h-10 rounded-brand border border-brand-border bg-white px-3 text-sm text-brand-text"
         >
           <option value="ALL">All Branches</option>
           {branchOptions.map((branch) => (
@@ -376,21 +388,21 @@ export default function UsersPage() {
         </select>
       </motion.div>
 
-      <motion.div variants={item} className="rounded-xl border border-border/40 bg-muted/30 px-4 py-3">
-        <p className="text-xs text-muted-foreground">
-          <span className="font-semibold text-foreground">Suspend</span>: temporary login block.{" "}
-          <span className="font-semibold text-foreground">Deactivate</span>: long-term disabled and removed from active roster.
+      <motion.div variants={item} className="rounded-brand border border-brand-border bg-brand-bg px-4 py-3">
+        <p className="text-xs text-brand-muted">
+          <span className="font-semibold text-brand-text">Suspend</span>: temporary login block.{" "}
+          <span className="font-semibold text-brand-text">Deactivate</span>: long-term disabled and removed from active roster.
         </p>
       </motion.div>
 
-      {loading ? <p className="text-sm text-muted-foreground">Loading users...</p> : null}
+      {loading ? <p className="text-sm text-brand-muted">Loading users...</p> : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-      <motion.div variants={item} className="surface-card overflow-hidden">
+      <motion.div variants={item} className="bg-white rounded-brand shadow-brand border border-brand-border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm table-modern">
             <thead>
-              <tr className="text-muted-foreground text-xs uppercase tracking-wider border-b border-border/50 bg-muted/20">
+              <tr className="bg-brand-mintSoft text-brand-muted text-xs uppercase tracking-wider border-b border-brand-border">
                 <th className="text-left p-4 font-medium">User</th>
                 <th className="text-left p-4 font-medium">Role</th>
                 <th className="text-left p-4 font-medium hidden md:table-cell">Branch</th>
@@ -400,13 +412,13 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => {
+              {displayUsers.map((u) => {
                 const RoleIcon = roleIcon[u.role];
                 return (
-                  <tr key={u.id} className="border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors">
+                  <tr key={u.id} className="border-b border-brand-border last:border-0 hover:bg-brand-mintSoft/50 transition-colors">
                     <td className="p-4">
                       <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-full gradient-navy flex items-center justify-center text-xs font-bold text-primary-foreground shrink-0">
+                        <div className="h-9 w-9 rounded-full bg-brand-navy flex items-center justify-center text-xs font-bold text-white shrink-0">
                           {u.name
                             .split(" ")
                             .filter(Boolean)
@@ -415,8 +427,8 @@ export default function UsersPage() {
                             .join("")}
                         </div>
                         <div>
-                          <p className="font-medium text-foreground">{u.name}</p>
-                          <p className="text-xs text-muted-foreground">{u.email}</p>
+                          <p className="font-medium text-brand-text">{u.name}</p>
+                          <p className="text-xs text-brand-muted">{u.email}</p>
                         </div>
                       </div>
                     </td>
@@ -426,24 +438,24 @@ export default function UsersPage() {
                         {u.role}
                       </span>
                     </td>
-                    <td className="p-4 text-muted-foreground hidden md:table-cell">{u.branch}</td>
-                    <td className="p-4 text-muted-foreground hidden lg:table-cell">{u.joined}</td>
+                    <td className="p-4 text-brand-muted hidden md:table-cell">{u.branch}</td>
+                    <td className="p-4 text-brand-muted hidden lg:table-cell">{u.joined}</td>
                     <td className="p-4 text-center">
                       <div className="inline-flex flex-col items-center gap-1">
                         <span
-                          className={`status-chip ${
+                          className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                             u.status === "Active"
-                              ? "status-ready"
+                              ? "bg-green-200 text-green-700"
                               : u.status === "Pending"
-                              ? "status-pending"
+                              ? "bg-brand-goldSoft text-brand-gold"
                               : u.status === "Suspended"
-                              ? "status-failed"
-                              : "bg-muted text-muted-foreground"
+                              ? "bg-red-100 text-red-600"
+                              : "bg-brand-bg text-brand-muted"
                           }`}
                         >
                           {u.status}
                         </span>
-                        <span className="text-[10px] text-muted-foreground">{statusDescription[u.status]}</span>
+                        <span className="text-[10px] text-brand-muted">{statusDescription[u.status]}</span>
                       </div>
                     </td>
                     <td className="p-4">
@@ -478,10 +490,10 @@ export default function UsersPage() {
                   </tr>
                 );
               })}
-              {!users.length ? (
+              {!displayUsers.length ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
-                    No users found.
+                  <td colSpan={6} className="py-8 text-center text-sm text-brand-muted">
+                    {debouncedQuery.trim() ? "No results found" : "No users found."}
                   </td>
                 </tr>
               ) : null}
@@ -489,7 +501,7 @@ export default function UsersPage() {
           </table>
         </div>
         {totalUsers > USERS_PAGE_SIZE ? (
-          <div className="flex items-center justify-end gap-2 border-t border-border/30 px-4 py-3">
+          <div className="flex items-center justify-end gap-2 border-t border-brand-border px-4 py-3">
             <Button
               type="button"
               size="sm"
@@ -500,7 +512,7 @@ export default function UsersPage() {
             >
               Previous
             </Button>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-brand-muted">
               Page {usersPage} of {totalUserPages}
             </span>
             <Button
@@ -615,7 +627,7 @@ export default function UsersPage() {
                 <div className="relative">
                   <Input
                     id="create-password"
-                    type={createForm.showPassword ? "Hide" : "Show"}
+                    type={createForm.showPassword ? "text" : "password"}
                     value={createForm.initialPassword}
                     onChange={(e) => {
                       setCreateForm((prev) => ({ ...prev, initialPassword: e.target.value }));
