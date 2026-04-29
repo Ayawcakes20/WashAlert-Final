@@ -208,6 +208,17 @@ public class DeliveryService {
         );
         if (existingPickup.isPresent()) {
             DeliveryOrder assigned = existingPickup.get();
+            if (assigned.getDriverUser() == null) {
+                assigned.setDriverUser(driver);
+                assigned.setDriverName(driver.getFullName());
+                assigned.setDriverPhone(resolveDriverContact(driver));
+                if (assigned.getStatus() == DeliveryStatus.PENDING_PICKUP) {
+                    assigned.setStatus(DeliveryStatus.ASSIGNED_PICKUP);
+                }
+                DeliveryOrder claimed = deliveryRepository.save(assigned);
+                firestoreSyncService.upsert("deliveries", claimed.getJobOrder().getTrackingNumber(), toResponse(claimed));
+                return toResponse(claimed);
+            }
             if (assigned.getDriverUser() != null && assigned.getDriverUser().getId().equals(driver.getId())) {
                 if (assigned.getStatus() == DeliveryStatus.PENDING_PICKUP) {
                     assigned.setStatus(DeliveryStatus.ASSIGNED_PICKUP);
@@ -217,7 +228,7 @@ public class DeliveryService {
                 }
                 return toResponse(assigned);
             }
-            throw new IllegalStateException("This booking was already accepted by another driver.");
+            throw new IllegalArgumentException("This booking was already accepted by another driver.");
         }
 
         DeliveryOrder delivery = DeliveryOrder.builder()
@@ -419,8 +430,11 @@ public class DeliveryService {
         Optional<DeliveryResponse> firestoreDelivery = firestoreReadService.findDeliveryById(deliveryId);
         if (firestoreDelivery.isPresent()) {
             DeliveryResponse response = firestoreDelivery.get();
-            enforceStaffBranchScope(actor, response.branch());
-            return response;
+            if (!isIncompleteResponse(response)) {
+                enforceStaffBranchScope(actor, response.branch());
+                return response;
+            }
+            log.warn("[DeliveryService] Firestore delivery {} missing critical fields; falling back to MySQL.", deliveryId);
         }
 
         if (dataReadProperties.allowsMysqlFallback() || !firestoreReadService.isAvailable()) {
@@ -444,7 +458,11 @@ public class DeliveryService {
 
         Optional<DeliveryResponse> firestoreDelivery = firestoreReadService.findDeliveryByTracking(normalized);
         if (firestoreDelivery.isPresent()) {
-            return firestoreDelivery.get();
+            DeliveryResponse response = firestoreDelivery.get();
+            if (!isIncompleteResponse(response)) {
+                return response;
+            }
+            log.warn("[DeliveryService] Firestore tracking {} missing critical fields; falling back to MySQL.", normalized);
         }
 
         if (dataReadProperties.allowsMysqlFallback() || !firestoreReadService.isAvailable()) {
@@ -776,20 +794,31 @@ public class DeliveryService {
                 : d.getDriverPhone();
         String driverPhotoUrl = driverUser != null ? driverUser.getProfileImageUrl() : null;
         String driverVehicle = extractVehicleFromNotes(d.getNotes());
+        Integer resolvedLoadCount = d.getBagCount() != null
+                ? d.getBagCount()
+                : (order.getEstimatedWeightKg() != null ? order.getEstimatedWeightKg().intValue() : null);
+        String paymentStatus = order.isPaid() ? "PAID" : "UNPAID";
         return new DeliveryResponse(
                 d.getId(),
+                order.getId(),
                 order.getTrackingNumber(),
+                order.getBranchId(),
                 order.getBranch(),
+                resolveBranchAddress(order.getBranch()),
                 order.getCustomerName(),
                 order.getCustomerPhone(),
                 order.getDeliveryAddress(),
                 d.getDriverName(),
+                driverUser != null ? driverUser.getId() : null,
                 driverPhone,
                 driverPhotoUrl,
                 driverVehicle,
                 order.getPaymentMethod(),
+                paymentStatus,
                 order.isPaid(),
                 order.getTotalPrice(),
+                order.getEstimatedWeightKg(),
+                resolvedLoadCount,
                 deriveWorkflowStatus(order, d),
                 d.getLeg(),
                 d.getStatus(),
@@ -994,6 +1023,32 @@ public class DeliveryService {
         if (value == null) return null;
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private boolean isIncompleteResponse(DeliveryResponse response) {
+        return response == null
+                || response.id() == null
+                || blankToNull(response.trackingNumber()) == null
+                || blankToNull(response.customerName()) == null
+                || blankToNull(response.branch()) == null;
+    }
+
+    private String resolveBranchAddress(String branchName) {
+        String branch = blankToNull(branchName);
+        if (branch == null) return null;
+        return switch (branch.toLowerCase()) {
+            case "makati branch" -> "7605 Dela Rosa, Corner Wilson Street (inside R&R Carwash), Makati City, Metro Manila";
+            case "chestnut branch" -> "244A Upper Republic Ave., West Fairview Park, Quezon City, Metro Manila";
+            case "republic branch" -> "Republic Avenue, West Fairview, Quezon City, Metro Manila";
+            case "holy spirit branch" -> "Faustino Street, Brgy. Holy Spirit, Quezon City, Metro Manila";
+            case "sta. catalina branch" -> "408 Sta. Catalina St, Quezon City, Metro Manila";
+            case "brookside branch" -> "Sunset Drive, Brookside Hills Subdivision, Cainta, Rizal";
+            case "jp rizal branch" -> "J.P. Rizal Ave, Binangonan, Rizal";
+            case "luzon branch" -> "Luzon Ave, Matandang Balara, Quezon City, Metro Manila";
+            case "st. anthony branch" -> "St. Anthony Street, Quezon City, Metro Manila";
+            case "up diliman / san vicente branch" -> "San Vicente, Diliman, Quezon City, Metro Manila";
+            default -> branch;
+        };
     }
 
     private DeliveryStatus parseDeliveryStatus(String status) {

@@ -229,7 +229,7 @@ const SERVICE_CATALOG = [
     name: 'Handwash',
     price: 150,
     icon: 'hand-wash',
-    description: 'Careful handwashing service (1-3kg: ₱150/kg, 3kg+: ₱90/kg)',
+    description: 'Careful handwashing service (1-3kg: â‚±150/kg, 3kg+: â‚±90/kg)',
   },
 ];
 
@@ -730,45 +730,70 @@ const toMobileOrderStatusFromWorkflow = (workflowStatus, fallbackStatus) => {
   return fallbackStatus;
 };
 
-const mapDelivery = (delivery) => ({
-  id: String(delivery.id),
-  orderNumber: delivery.trackingNumber,
+const toNullableNumber = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const isNonEmpty = (value) => String(value || '').trim().length > 0;
+const findBranchFromCatalog = (branchName) =>
+  BRANCH_CATALOG.find((branch) => String(branch?.name || '').trim().toLowerCase() === String(branchName || '').trim().toLowerCase()) || null;
+
+const mapDelivery = (delivery) => {
+  const catalogBranch = findBranchFromCatalog(delivery?.branch);
+  const branchLatitude = toNullableNumber(delivery.branchLatitude) ?? toNullableNumber(catalogBranch?.latitude);
+  const branchLongitude = toNullableNumber(delivery.branchLongitude) ?? toNullableNumber(catalogBranch?.longitude);
+  const branchAddress = delivery.branchAddress || catalogBranch?.address || '';
+  return ({
+  id: isNonEmpty(delivery?.id) ? String(delivery.id) : null,
+  orderId: toNullableNumber(delivery?.orderId),
+  orderNumber: isNonEmpty(delivery?.trackingNumber) ? String(delivery.trackingNumber).trim() : null,
+  trackingNumber: isNonEmpty(delivery?.trackingNumber) ? String(delivery.trackingNumber).trim() : null,
   customerName: delivery.customerName || 'Customer',
   customerPhone: delivery.customerPhone || '',
   deliveryAddress: delivery.deliveryAddress || '',
   deliveryUnitFloor: delivery.deliveryUnitFloor || null,
   deliveryContactName: delivery.deliveryContactName || null,
   deliveryContactPhone: delivery.deliveryContactPhone || null,
+  branchId: toNullableNumber(delivery.branchId),
   branchName: delivery.branch || '',
+  branchAddress,
   leg: delivery.leg || 'DELIVERY_TO_CUSTOMER',
   status: toMobileDeliveryStatus(delivery.status, delivery.workflowStatus),
   workflowStatus: delivery.workflowStatus || null,
   workflowLabel: toWorkflowLabel(delivery.workflowStatus),
   driverName: delivery.driverName || '',
+  assignedDriverId: toNullableNumber(delivery.assignedDriverId),
   driverPhone: delivery.driverPhone || '',
   driverPhotoUrl: delivery.driverPhotoUrl || null,
   driverVehicle: delivery.driverVehicle || null,
   paymentMethod: delivery.paymentMethod || '',
+  paymentStatus: delivery.paymentStatus || (delivery.isPaid ? 'PAID' : 'UNPAID'),
   isPaid: Boolean(delivery.isPaid),
   amountToCollect: Number(delivery.amountToCollect ?? delivery.totalPrice ?? 0),
+  loadKg: toNullableNumber(delivery.loadKg),
+  loadCount: toNullableNumber(delivery.loadCount),
   estimatedDelivery: delivery.estimatedArrivalAt || null,
   pickupProofUrl: delivery.pickupProofUrl || null,
   dropoffProofUrl: delivery.dropoffProofUrl || null,
   notes: delivery.notes || '',
   updatedAt: delivery.updatedAt || null,
-  currentLatitude: delivery.currentLatitude,
-  currentLongitude: delivery.currentLongitude,
-  branchLatitude: delivery.branchLatitude,
-  branchLongitude: delivery.branchLongitude,
-  deliveryLatitude: delivery.deliveryLatitude,
-  deliveryLongitude: delivery.deliveryLongitude,
-  // ── State Machine Data ──
-  bagCount: delivery.bagCount || 0,
+  currentLatitude: toNullableNumber(delivery.currentLatitude),
+  currentLongitude: toNullableNumber(delivery.currentLongitude),
+  branchLatitude,
+  branchLongitude,
+  deliveryLatitude: toNullableNumber(delivery.deliveryLatitude),
+  deliveryLongitude: toNullableNumber(delivery.deliveryLongitude),
+  bagCount: toNullableNumber(delivery.bagCount),
   confirmationCode: delivery.confirmationCode || null,
   branchHandoverPhotoUrl: delivery.branchHandoverPhotoUrl || null,
   finalDeliveryPhotoUrl: delivery.finalDeliveryPhotoUrl || null,
-});
+  });
+};
 
+const isValidDeliveryForDetail = (delivery) =>
+  Boolean(delivery && isNonEmpty(delivery.id) && isNonEmpty(delivery.orderNumber));
 const mapNotificationSeverity = (severity = '') => {
   const normalized = String(severity).toUpperCase();
   if (normalized === 'ERROR') return 'status';
@@ -953,7 +978,7 @@ export const bookings = {
         hasNext: Boolean(response?.hasNext),
         hasPrevious: Boolean(response?.hasPrevious),
       };
-    } catch (error) {
+    } catch (_error) {
       const stored = await getLocalOrders();
       const refreshed = await Promise.all(stored.map(refreshOrderStatus));
       await setLocalOrders(refreshed);
@@ -1042,8 +1067,11 @@ export const deliveries = {
       query.set('page', String(Math.max(0, Number(page) || 0)));
       query.set('size', String(Math.max(1, Number(size) || 10)));
       const response = await apiRequest(`/api/deliveries/my/paged?${query.toString()}`);
+      const mapped = (response?.content || [])
+        .map(mapDelivery)
+        .filter(isValidDeliveryForDetail);
       return {
-        deliveries: (response?.content || []).map(mapDelivery),
+        deliveries: mapped,
         total: Number(response?.totalElements || 0),
         page: Number(response?.page || 0),
         size: Number(response?.size || size),
@@ -1059,6 +1087,7 @@ export const deliveries = {
         );
       }
       let mapped = DEMO_DELIVERIES.map(mapDelivery);
+      mapped = mapped.filter(isValidDeliveryForDetail);
       if (status !== 'all') mapped = mapped.filter((d) => d.status === status);
       const safePage = Math.max(0, Number(page) || 0);
       const safeSize = Math.max(1, Number(size) || 10);
@@ -1087,7 +1116,15 @@ export const deliveries = {
   getAvailable: async () => {
     try {
       const rows = await apiRequest('/api/deliveries/available');
-      return { orders: rows || [] };
+      const safeRows = Array.isArray(rows) ? rows : [];
+      const validRows = safeRows.filter(
+        (row) =>
+          isNonEmpty(row?.trackingNumber) &&
+          toNullableNumber(row?.orderId) !== null &&
+          isNonEmpty(row?.customerName) &&
+          isNonEmpty(row?.deliveryAddress)
+      );
+      return { orders: validRows };
     } catch (error) {
       if (!DEMO_MODE_ENABLED) {
         rethrowAccessAware(
@@ -1100,16 +1137,30 @@ export const deliveries = {
   },
 
   acceptBooking: async (trackingNumber) => {
+    if (!isNonEmpty(trackingNumber)) {
+      throw new Error('Cannot accept delivery without a tracking number.');
+    }
     const payload = await apiRequest(`/api/deliveries/accept/${encodeURIComponent(trackingNumber)}`, {
       method: 'POST',
     });
-    return mapDelivery(payload);
+    const mapped = mapDelivery(payload);
+    if (!isValidDeliveryForDetail(mapped)) {
+      throw new Error('Accepted delivery returned incomplete data. Please refresh.');
+    }
+    return mapped;
   },
 
   getById: async (id) => {
+    if (!isNonEmpty(id)) {
+      throw new Error('Delivery detail is unavailable because delivery ID is missing.');
+    }
     try {
       const data = await apiRequest(`/api/deliveries/${id}`);
-      return mapDelivery(data);
+      const mapped = mapDelivery(data);
+      if (!isValidDeliveryForDetail(mapped)) {
+        throw new Error('Delivery detail returned incomplete data.');
+      }
+      return mapped;
     } catch (error) {
       if (!DEMO_MODE_ENABLED) {
         rethrowAccessAware(
@@ -1176,7 +1227,7 @@ export const deliveries = {
     return { success: true };
   },
 
-  // ── State Machine Actions ──
+  // â”€â”€ State Machine Actions â”€â”€
 
   arriveAtCustomer: async (id) => {
     const payload = await apiRequest(`/api/deliveries/${id}/arrive-customer`, { method: 'POST' });

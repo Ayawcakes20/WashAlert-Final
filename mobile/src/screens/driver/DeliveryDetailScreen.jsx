@@ -16,6 +16,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  PanResponder,
   Linking,
   Alert,
   ActivityIndicator,
@@ -23,7 +24,6 @@ import {
   Dimensions,
   Animated as RNAnimated,
   StatusBar,
-  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
@@ -39,6 +39,9 @@ import SwipeSlider from '../../components/SwipeSlider';
 import PhotoProofCapture from '../../components/PhotoProofCapture';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const SHEET_COLLAPSED_RATIO = 0.24;
+const SHEET_EXPANDED_RATIO = 0.74;
+const SHEET_ACTION_BAR_HEIGHT = 92;
 
 // ─── Google Maps Dark / Night Style ──────────────────────────────────────────
 const DARK_MAP_STYLE = [
@@ -97,8 +100,6 @@ const STATE_CONFIG = {
   failed:             { statusLabel: 'Cancelled',            destination: null,       phase: null, routeColor: '#F87171' },
 };
 
-const getStatusLabel = (s) => STATE_CONFIG[s]?.statusLabel || 'Pending';
-
 // ─── Phase B Step Definitions ─────────────────────────────────────────────────
 const PHASE_B_STEPS = [
   { key: 'ready_for_dispatch', label: 'Ready for Pickup' },
@@ -131,11 +132,67 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
   // Map / GPS state
   const [mapRegion, setMapRegion] = useState(METRO_MANILA);
   const [driverCoords, setDriverCoords] = useState(null);
+  const [derivedBranchCoords, setDerivedBranchCoords] = useState(null);
+  const [derivedCustomerCoords, setDerivedCustomerCoords] = useState(null);
   const [etaInfo, setEtaInfo] = useState({ distance: null, duration: null });
+  const [locationWarning, setLocationWarning] = useState('');
+  const [sheetExpanded, setSheetExpanded] = useState(false);
+  const collapsedSheetHeight = Math.round(SCREEN_HEIGHT * SHEET_COLLAPSED_RATIO);
+  const expandedSheetHeight = Math.round(SCREEN_HEIGHT * SHEET_EXPANDED_RATIO);
+  const sheetHeightAnim = useRef(new RNAnimated.Value(collapsedSheetHeight)).current;
+  const currentSheetHeight = useRef(collapsedSheetHeight);
 
   // Driver "You" pulse ring animation
   const pulseAnim = useRef(new RNAnimated.Value(1)).current;
   const pulseOpacity = useRef(new RNAnimated.Value(0.6)).current;
+
+  useEffect(() => {
+    const id = sheetHeightAnim.addListener(({ value }) => {
+      currentSheetHeight.current = value;
+    });
+    return () => sheetHeightAnim.removeListener(id);
+  }, [sheetHeightAnim]);
+
+  const snapSheet = (expand) => {
+    const toValue = expand ? expandedSheetHeight : collapsedSheetHeight;
+    setSheetExpanded(expand);
+    RNAnimated.spring(sheetHeightAnim, {
+      toValue,
+      useNativeDriver: false,
+      bounciness: 0,
+      speed: 20,
+    }).start();
+  };
+
+  const toggleSheet = () => {
+    snapSheet(!sheetExpanded);
+  };
+
+  const sheetPanResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dy) > 8,
+      onPanResponderMove: (_, gestureState) => {
+        const nextHeight = Math.min(
+          expandedSheetHeight,
+          Math.max(collapsedSheetHeight, currentSheetHeight.current - gestureState.dy)
+        );
+        sheetHeightAnim.setValue(nextHeight);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        const midpoint = (collapsedSheetHeight + expandedSheetHeight) / 2;
+        const velocityThreshold = 0.2;
+        if (gestureState.vy < -velocityThreshold) {
+          snapSheet(true);
+          return;
+        }
+        if (gestureState.vy > velocityThreshold) {
+          snapSheet(false);
+          return;
+        }
+        snapSheet(currentSheetHeight.current >= midpoint);
+      },
+    })
+  ).current;
 
   // ─── Pulse loop ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -158,13 +215,56 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
     if (mockDelivery) {
       hydrateMock(mockDelivery);
     } else {
+      if (!deliveryId) {
+        setError('Delivery detail is unavailable because delivery ID is missing.');
+        setLoading(false);
+        return;
+      }
       loadDelivery();
     }
   }, [deliveryId]);
 
+  useEffect(() => {
+    let active = true;
+    const geocodeMissingTargets = async () => {
+      if (!delivery) return;
+      try {
+        if ((!delivery.branchLatitude || !delivery.branchLongitude) && delivery.branchAddress) {
+          const branchResult = await Location.geocodeAsync(delivery.branchAddress);
+          if (active && branchResult?.[0]) {
+            setDerivedBranchCoords({
+              latitude: branchResult[0].latitude,
+              longitude: branchResult[0].longitude,
+            });
+          }
+        } else {
+          setDerivedBranchCoords(null);
+        }
+
+        if ((!delivery.deliveryLatitude || !delivery.deliveryLongitude) && delivery.deliveryAddress) {
+          const customerResult = await Location.geocodeAsync(delivery.deliveryAddress);
+          if (active && customerResult?.[0]) {
+            setDerivedCustomerCoords({
+              latitude: customerResult[0].latitude,
+              longitude: customerResult[0].longitude,
+            });
+          }
+        } else {
+          setDerivedCustomerCoords(null);
+        }
+      } catch (error) {
+        console.warn('[DeliveryDetail][Geocode] Unable to derive map coordinates:', error?.message || error);
+      }
+    };
+    void geocodeMissingTargets();
+    return () => {
+      active = false;
+    };
+  }, [delivery?.branchAddress, delivery?.branchLatitude, delivery?.branchLongitude, delivery?.deliveryAddress, delivery?.deliveryLatitude, delivery?.deliveryLongitude]);
+
   const hydrateMock = (data) => {
     setDelivery(data);
-    if (data.bagCount) setBagCount(String(data.bagCount));
+    if (data.bagCount || data.loadCount) setBagCount(String(data.bagCount ?? data.loadCount));
     const coords = pickBestCoords(data);
     if (coords) setMapRegion({ ...coords, latitudeDelta: 0.018, longitudeDelta: 0.018 });
     if (data.currentLatitude) {
@@ -181,7 +281,20 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
     const startTracking = async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
+        if (status !== 'granted') {
+          setLocationWarning('Location permission not granted.');
+          return;
+        }
+
+        const initial = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (initial?.coords && active) {
+          setDriverCoords({
+            latitude: initial.coords.latitude,
+            longitude: initial.coords.longitude,
+            heading: initial.coords.heading || 0,
+          });
+        }
+        setLocationWarning('');
 
         // Watch position instead of polling — this is "Real-Time"
         subscription = await Location.watchPositionAsync(
@@ -226,6 +339,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
         );
       } catch (err) {
         console.warn('[GPS] Tracking error:', err);
+        setLocationWarning('Unable to access live GPS location right now.');
       }
     };
 
@@ -238,7 +352,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
       active = false;
       if (subscription) subscription.remove();
     };
-  }, [delivery?.id, delivery?.status, delivery?.orderNumber]);
+  }, [delivery?.id, delivery?.status, delivery?.orderNumber, mockDelivery]);
 
   // ─── Load from backend ─────────────────────────────────────────────────────
   const loadDelivery = async () => {
@@ -246,7 +360,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
       setLoading(true);
       const data = await deliveriesApi.getById(deliveryId);
       setDelivery(data);
-      if (data?.bagCount) setBagCount(String(data.bagCount));
+      if (data?.bagCount || data?.loadCount) setBagCount(String(data.bagCount ?? data.loadCount));
       const coords = pickBestCoords(data);
       if (coords) setMapRegion({ ...coords, latitudeDelta: 0.018, longitudeDelta: 0.018 });
     } catch (e) {
@@ -299,8 +413,16 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
     try {
       setUpdating(true);
       const updated = await deliveriesApi[method](delivery.id, args);
+      if (!updated?.id || !updated?.orderNumber) {
+        throw new Error('Delivery update returned incomplete data. Please refresh and try again.');
+      }
       setDelivery(updated);
       setEtaInfo({ distance: null, duration: null }); // reset ETA on transition
+      if (method === 'finalHandover' && updated.status === 'completed') {
+        Alert.alert('Delivery Completed', 'Great work. Returning to your dashboard.', [
+          { text: 'OK', onPress: () => navigation.navigate('DriverTabs', { screen: 'Dashboard' }) },
+        ]);
+      }
     } catch (e) {
       const message = String(e?.message || '');
       if (message.toLowerCase().includes('cannot') || message.toLowerCase().includes('invalid')) {
@@ -316,18 +438,85 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
   // ─── Helpers ───────────────────────────────────────────────────────────────
   const getTargetCoords = () => {
     if (!delivery) return null;
-    const cfg = STATE_CONFIG[delivery.status];
-    if (cfg?.destination === 'customer' && delivery.deliveryLatitude)
-      return { latitude: delivery.deliveryLatitude, longitude: delivery.deliveryLongitude };
-    if (cfg?.destination === 'branch' && delivery.branchLatitude)
-      return { latitude: delivery.branchLatitude, longitude: delivery.branchLongitude };
+    const pickupToBranchStates = new Set(['accepted', 'at_customer']);
+    const deliveryToCustomerStates = new Set([
+      'picked_up',
+      'at_branch',
+      'handed_over',
+      'ready_for_dispatch',
+      'en_route',
+      'at_delivery',
+      'completed',
+    ]);
+
+    const branchCoords = (delivery.branchLatitude && delivery.branchLongitude)
+      ? { latitude: delivery.branchLatitude, longitude: delivery.branchLongitude }
+      : derivedBranchCoords;
+    const customerCoords = (delivery.deliveryLatitude && delivery.deliveryLongitude)
+      ? { latitude: delivery.deliveryLatitude, longitude: delivery.deliveryLongitude }
+      : derivedCustomerCoords;
+
+    if (pickupToBranchStates.has(delivery.status) && branchCoords) {
+      return branchCoords;
+    }
+    if (deliveryToCustomerStates.has(delivery.status) && customerCoords) {
+      return customerCoords;
+    }
+    if (branchCoords) {
+      return branchCoords;
+    }
+    if (customerCoords) {
+      return customerCoords;
+    }
     return null;
   };
 
   const openExternalNav = () => {
     const t = getTargetCoords();
-    if (!t) return Alert.alert('No GPS', 'This order has no saved coordinates.');
-    Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${t.latitude},${t.longitude}&travelmode=driving`);
+    if (!t) {
+      const msg = ['accepted', 'at_customer'].includes(delivery?.status)
+        ? 'Branch location unavailable.'
+        : 'Customer location unavailable.';
+      return Alert.alert('Navigation Unavailable', msg);
+    }
+    const origin = driverCoords?.latitude && driverCoords?.longitude
+      ? `&origin=${driverCoords.latitude},${driverCoords.longitude}`
+      : '';
+    Linking.openURL(`https://www.google.com/maps/dir/?api=1${origin}&destination=${t.latitude},${t.longitude}&travelmode=driving`);
+  };
+
+  const normalizePhone = (value) => String(value || '').replace(/[^0-9+]/g, '');
+
+  const callCustomer = async () => {
+    const phone = normalizePhone(delivery?.customerPhone);
+    if (!phone) {
+      Alert.alert('No phone number available.', 'Customer contact number is not provided.');
+      return;
+    }
+    try {
+      const url = `tel:${phone}`;
+      const canOpen = await Linking.canOpenURL(url);
+      if (!canOpen) throw new Error('dialer unavailable');
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Unable to open phone dialer.', 'Please try again later.');
+    }
+  };
+
+  const messageCustomer = async () => {
+    const phone = normalizePhone(delivery?.customerPhone);
+    if (!phone) {
+      Alert.alert('No phone number available.', 'Customer contact number is not provided.');
+      return;
+    }
+    try {
+      const url = `sms:${phone}`;
+      const canOpen = await Linking.canOpenURL(url);
+      if (!canOpen) throw new Error('messaging unavailable');
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Unable to open messaging app.', 'Please try again later.');
+    }
   };
 
   const handleCancel = () => {
@@ -378,13 +567,13 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
   // ─── Bottom Sheet Content per State ───────────────────────────────────────
   const renderSheetContent = () => {
     if (!delivery) return null;
-    const { status, customerName, customerPhone, deliveryAddress, branchAddress, bagCount: bags } = delivery;
+    const { status, customerName, customerPhone, deliveryAddress, branchAddress, branchName, bagCount: bags } = delivery;
 
     // ── ACCEPTED: Heading to Customer ────────────────────────────────────────
     if (status === 'accepted') {
       return (
         <View style={styles.sheetInner}>
-          <Text style={styles.sheetTitle}>Phase 1: Pickup — Go to {customerName}</Text>
+          <Text style={styles.sheetTitle}>Phase 1: Pickup — Go to {branchName || 'Assigned Branch'}</Text>
 
           {/* Customer Profile Card */}
           <View style={styles.profileCard}>
@@ -392,26 +581,21 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
               <Ionicons name="person" size={22} color={colors.textTertiary} />
             </View>
             <View style={styles.profileInfo}>
-              <Text style={styles.profileSubLabel}>Customer Profile</Text>
-              <Text style={styles.profileName}>{customerName}</Text>
-              {deliveryAddress ? (
-                <Text style={styles.profileAddress}>{deliveryAddress}</Text>
+              <Text style={styles.profileSubLabel}>Laundry Branch</Text>
+              <Text style={styles.profileName}>{branchName || 'Assigned Branch'}</Text>
+              {branchAddress ? (
+                <Text style={styles.profileAddress}>{branchAddress}</Text>
               ) : null}
             </View>
             <TouchableOpacity
               style={styles.callBtn}
-              onPress={() => delivery.customerPhone && Linking.openURL(`tel:${delivery.customerPhone.replace(/[^0-9+]/g,'')}`) }
+              onPress={callCustomer}
+              disabled={!normalizePhone(customerPhone)}
             >
               <Ionicons name="call" size={15} color="#FFF" />
               <Text style={styles.callBtnText}>Call</Text>
             </TouchableOpacity>
           </View>
-
-          <SwipeSlider
-            label="Start Pickup"
-            color={colors.primary}
-            onComplete={() => handleAction('arriveAtCustomer')}
-          />
 
           <TouchableOpacity style={styles.cancelLink} onPress={handleCancel}>
             <Text style={styles.cancelLinkText}>Cancel Order</Text>
@@ -424,7 +608,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
     if (status === 'at_customer') {
       return (
         <View style={styles.sheetInner}>
-          <Text style={styles.sheetTitle}>Arrived at {customerName}&apos;s Location</Text>
+          <Text style={styles.sheetTitle}>Arrived at Branch Pickup Point</Text>
 
           {/* Bag count */}
           <View style={styles.fieldGroup}>
@@ -447,15 +631,6 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
 
           <Text style={styles.mandatoryHint}>Mandatory items for processing.</Text>
 
-          <SwipeSlider
-            label="Confirm Pickup"
-            color={colors.primary}
-            disabled={!bagCount || !pickupPhoto}
-            onComplete={() => handleAction('completePickup', {
-              bagCount: parseInt(bagCount) || 1,
-              pickupPhotoUrl: pickupPhoto,
-            })}
-          />
         </View>
       );
     }
@@ -483,11 +658,6 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             </Text>
           </View>
 
-          <SwipeSlider
-            label="Arrived at Branch"
-            color="#7C3AED"
-            onComplete={() => handleAction('arriveAtBranch')}
-          />
         </View>
       );
     }
@@ -509,12 +679,6 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             <PhotoProofCapture label="Take Photo" value={handoverPhoto} onCapture={setHandoverPhoto} />
           </View>
 
-          <SwipeSlider
-            label="Confirm Branch Handover"
-            color="#7C3AED"
-            disabled={!handoverPhoto}
-            onComplete={() => handleAction('branchHandover', { branchHandoverPhotoUrl: handoverPhoto })}
-          />
         </View>
       );
     }
@@ -522,8 +686,8 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
     // ── HANDED_OVER: Waiting for Phase B ─────────────────────────────────────
     if (status === 'handed_over') {
       return (
-        <View style={styles.centerPanel}>
-          <MaterialCommunityIcons name="washing-machine" size={48} color={colors.accent} />
+        <View style={[styles.centerPanel, styles.centerPanelCompact]}>
+          <MaterialCommunityIcons name="washing-machine" size={34} color={colors.accent} />
           <Text style={styles.waitTitle}>Phase 1 Complete!</Text>
           <Text style={styles.waitSub}>
             Laundry is being processed at the branch. You&apos;ll be notified when clean laundry is ready.
@@ -559,11 +723,6 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             </Text>
           </View>
 
-          <SwipeSlider
-            label="Start Return Delivery"
-            color={colors.accent}
-            onComplete={() => handleAction('startDelivery')}
-          />
         </View>
       );
     }
@@ -586,17 +745,13 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             </View>
             <TouchableOpacity
               style={styles.callBtn}
-              onPress={() => delivery.customerPhone && Linking.openURL(`tel:${delivery.customerPhone.replace(/[^0-9+]/g,'')}`) }
+              onPress={callCustomer}
+              disabled={!normalizePhone(customerPhone)}
             >
               <Ionicons name="call" size={15} color="#FFF" />
             </TouchableOpacity>
           </View>
 
-          <SwipeSlider
-            label="Arrive at Customer"
-            color={colors.primary}
-            onComplete={() => handleAction('arriveForDelivery')}
-          />
         </View>
       );
     }
@@ -611,14 +766,16 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
           <View style={styles.contactRow}>
             <TouchableOpacity
               style={styles.contactBtn}
-              onPress={() => delivery.customerPhone && Linking.openURL(`tel:${delivery.customerPhone.replace(/[^0-9+]/g,'')}`) }
+              onPress={callCustomer}
+              disabled={!normalizePhone(customerPhone)}
             >
               <Ionicons name="call" size={16} color="#FFF" />
               <Text style={styles.contactBtnText}>Call{'\n'}Customer</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.contactBtn, { backgroundColor: '#334e87' }]}
-              onPress={() => delivery.customerPhone && Linking.openURL(`sms:${delivery.customerPhone.replace(/[^0-9+]/g,'')}`) }
+              onPress={messageCustomer}
+              disabled={!normalizePhone(customerPhone)}
             >
               <Ionicons name="chatbubble-ellipses" size={16} color="#FFF" />
               <Text style={styles.contactBtnText}>Message{'\n'}Customer</Text>
@@ -646,15 +803,6 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             <PhotoProofCapture label="Take Photo" value={deliveryPhoto} onCapture={setDeliveryPhoto} />
           </View>
 
-          <SwipeSlider
-            label="Mark Delivered"
-            color={colors.primary}
-            disabled={confCode.length < 4 || !deliveryPhoto}
-            onComplete={() => handleAction('finalHandover', {
-              confirmationCode: confCode,
-              finalDeliveryPhotoUrl: deliveryPhoto,
-            })}
-          />
         </View>
       );
     }
@@ -704,7 +852,8 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             </View>
             <TouchableOpacity
               style={styles.callBtn}
-              onPress={() => delivery.customerPhone && Linking.openURL(`tel:${delivery.customerPhone.replace(/[^0-9+]/g,'')}`) }
+              onPress={callCustomer}
+              disabled={!normalizePhone(customerPhone)}
             >
               <Ionicons name="call" size={15} color="#FFF" />
               <Text style={styles.callBtnText}>Call</Text>
@@ -823,13 +972,79 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
     !delivery.isPaid &&
     delivery.paymentMethod?.toLowerCase().includes('cash') &&
     delivery.status !== 'completed';
-  const loadCountValue = delivery.bagCount ?? bagCount ?? 'N/A';
-  const trackingValue = delivery.orderNumber || delivery.trackingNumber || `DEL-${delivery.id}`;
+  const loadCountValue = delivery.bagCount ?? delivery.loadCount ?? (delivery.loadKg ? `${delivery.loadKg} kg` : (bagCount || 'Not provided'));
+  const trackingValue = delivery.orderNumber || delivery.trackingNumber || 'Not provided';
+  const stickyAction = (() => {
+    switch (delivery.status) {
+      case 'accepted':
+        return {
+          label: 'Start Pickup',
+          color: colors.primary,
+          disabled: updating,
+          onComplete: () => handleAction('arriveAtCustomer'),
+        };
+      case 'at_customer':
+        return {
+          label: 'Confirm Pickup',
+          color: colors.primary,
+          disabled: updating || !bagCount || !pickupPhoto,
+          onComplete: () =>
+            handleAction('completePickup', {
+              bagCount: parseInt(bagCount, 10) || 1,
+              pickupPhotoUrl: pickupPhoto,
+            }),
+        };
+      case 'picked_up':
+        return {
+          label: 'Arrived at Branch',
+          color: '#7C3AED',
+          disabled: updating,
+          onComplete: () => handleAction('arriveAtBranch'),
+        };
+      case 'at_branch':
+        return {
+          label: 'Confirm Branch Handover',
+          color: '#7C3AED',
+          disabled: updating || !handoverPhoto,
+          onComplete: () =>
+            handleAction('branchHandover', {
+              branchHandoverPhotoUrl: handoverPhoto,
+            }),
+        };
+      case 'ready_for_dispatch':
+        return {
+          label: 'Start Return Delivery',
+          color: colors.accent,
+          disabled: updating,
+          onComplete: () => handleAction('startDelivery'),
+        };
+      case 'en_route':
+        return {
+          label: 'Arrive at Customer',
+          color: colors.primary,
+          disabled: updating,
+          onComplete: () => handleAction('arriveForDelivery'),
+        };
+      case 'at_delivery':
+        return {
+          label: 'Mark Delivered',
+          color: colors.primary,
+          disabled: updating || confCode.length < 4 || !deliveryPhoto,
+          onComplete: () =>
+            handleAction('finalHandover', {
+              confirmationCode: confCode,
+              finalDeliveryPhotoUrl: deliveryPhoto,
+            }),
+        };
+      default:
+        return null;
+    }
+  })();
 
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <View style={styles.screen}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
       {/* ── FULL SCREEN DARK MAP ─────────────────────────────────────────── */}
       <MapView
@@ -840,8 +1055,8 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
         region={mapRegion}
         onRegionChangeComplete={setMapRegion}
         customMapStyle={DARK_MAP_STYLE}
-        showsUserLocation={false}
-        showsMyLocationButton={false}
+        showsUserLocation
+        showsMyLocationButton
         showsCompass={false}
         showsTraffic={false}
       >
@@ -866,30 +1081,34 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
         )}
 
         {/* Customer destination pin */}
-        {delivery.deliveryLatitude && cfg.destination === 'customer' && (
+        {(delivery.deliveryLatitude && delivery.deliveryLongitude) || derivedCustomerCoords ? (
           <Marker
-            coordinate={{ latitude: delivery.deliveryLatitude, longitude: delivery.deliveryLongitude }}
+            coordinate={
+              delivery.deliveryLatitude && delivery.deliveryLongitude
+                ? { latitude: delivery.deliveryLatitude, longitude: delivery.deliveryLongitude }
+                : derivedCustomerCoords
+            }
             anchor={{ x: 0.5, y: 1 }}
             tracksViewChanges={false}
           >
             <View style={styles.pinWrap}>
               <View style={styles.calloutBubble}>
-                <Text style={styles.calloutText}>
-                  {delivery.status === 'at_delivery'
-                    ? `Customer (Delivery)`
-                    : `Customer: ${delivery.customerName}`}
-                </Text>
+                <Text style={styles.calloutText}>Customer: {delivery.customerName}</Text>
               </View>
               <View style={styles.calloutArrow} />
               <View style={styles.redDot} />
             </View>
           </Marker>
-        )}
+        ) : null}
 
         {/* Branch pin — always visible as reference point */}
-        {delivery.branchLatitude && (
+        {(delivery.branchLatitude && delivery.branchLongitude) || derivedBranchCoords ? (
           <Marker
-            coordinate={{ latitude: delivery.branchLatitude, longitude: delivery.branchLongitude }}
+            coordinate={
+              delivery.branchLatitude && delivery.branchLongitude
+                ? { latitude: delivery.branchLatitude, longitude: delivery.branchLongitude }
+                : derivedBranchCoords
+            }
             anchor={{ x: 0, y: 0.5 }}
             tracksViewChanges={false}
           >
@@ -903,12 +1122,12 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
               </Text>
             </View>
           </Marker>
-        )}
+        ) : null}
 
         {/* Route polyline */}
-        {driverCoords && targetCoords && (
+        {(driverCoords || mapRegion) && targetCoords && (
           <MapViewDirections
-            origin={driverCoords}
+            origin={driverCoords || { latitude: mapRegion.latitude, longitude: mapRegion.longitude }}
             destination={targetCoords}
             apikey={GOOGLE_MAPS_API_KEY}
             strokeWidth={4}
@@ -922,7 +1141,12 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
               // Auto-fit camera to show the full route
               if (mapRef.current && result.coordinates?.length > 1) {
                 mapRef.current.fitToCoordinates(result.coordinates, {
-                  edgePadding: { top: 160, right: 60, bottom: 320, left: 60 },
+                  edgePadding: {
+                    top: 160,
+                    right: 60,
+                    bottom: Math.max(currentSheetHeight.current + 40, 220),
+                    left: 60,
+                  },
                   animated: true,
                 });
               }
@@ -935,18 +1159,15 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
       <View
         style={[
           styles.headerOverlay,
-          { paddingTop: insets.top + (Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0) },
+          { paddingTop: Math.max(insets.top, 8) },
         ]}
       >
         <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-            <Ionicons name="chevron-back" size={24} color={colors.text} />
+          <TouchableOpacity style={styles.headerCircle} onPress={() => navigation.goBack()}>
+            <Ionicons name="chevron-back" size={20} color="#0D1B2A" />
           </TouchableOpacity>
 
-          <View style={styles.headerTitleRow}>
-            <Text style={styles.headerTitle} numberOfLines={1}>{delivery.customerName || 'Delivery'}</Text>
-            <Text style={styles.orderId}>{delivery.orderNumber}</Text>
-          </View>
+          <Text style={styles.headerTitle}>Delivery Details</Text>
 
           <TouchableOpacity style={styles.headerCircle} onPress={openExternalNav}>
             <Ionicons name="navigate" size={18} color={colors.primary} />
@@ -967,25 +1188,51 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
       </View>
 
       {/* ── BOTTOM SHEET ─────────────────────────────────────────────────── */}
-      <View
+      <RNAnimated.View
         style={[
           styles.bottomSheet,
           isHandover && styles.bottomSheetHandover,
-          { paddingBottom: insets.bottom > 0 ? insets.bottom : 16 },
+          {
+            paddingBottom: insets.bottom > 0 ? insets.bottom : 16,
+            height: sheetHeightAnim,
+          },
         ]}
       >
-        {/* Drag handle */}
-        <View style={styles.dragHandle} />
+        <View style={styles.dragHandleTouch} {...sheetPanResponder.panHandlers}>
+          <TouchableOpacity style={styles.dragHandleButton} onPress={toggleSheet} activeOpacity={0.8}>
+            <View style={styles.dragHandle} />
+            <Ionicons
+              name={sheetExpanded ? 'chevron-down' : 'chevron-up'}
+              size={16}
+              color={colors.textSecondary}
+            />
+          </TouchableOpacity>
+        </View>
 
         {/* No GPS warning */}
         {!targetCoords && !['handed_over', 'completed', 'pending'].includes(delivery.status) && (
           <View style={styles.noGpsBar}>
             <Ionicons name="warning-outline" size={13} color="#92400E" />
             <Text style={styles.noGpsText}>
-              No GPS saved for this order — navigation unavailable.
+              {['accepted', 'at_customer'].includes(delivery.status)
+                ? 'Branch location unavailable.'
+                : 'Customer location unavailable.'}
             </Text>
           </View>
         )}
+        {locationWarning ? (
+          <View style={styles.noGpsBar}>
+            <Ionicons name="locate-outline" size={13} color="#92400E" />
+            <Text style={styles.noGpsText}>{locationWarning}</Text>
+          </View>
+        ) : null}
+        {!driverCoords && targetCoords ? (
+          <TouchableOpacity style={styles.externalNavBtn} onPress={openExternalNav}>
+            <Ionicons name="navigate-outline" size={14} color={colors.primary} />
+            <Text style={styles.externalNavText}>Open in Google Maps</Text>
+          </TouchableOpacity>
+        ) : null}
+
 
         {/* State-specific content */}
         <ScrollView
@@ -995,6 +1242,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
           contentContainerStyle={[
             styles.sheetScrollContent,
             showCodBanner && styles.sheetScrollWithCodBanner,
+            stickyAction && styles.sheetScrollWithStickyAction,
           ]}
         >
           <View style={styles.deliveryMetaCard}>
@@ -1011,7 +1259,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             <View style={styles.deliveryMetaBlock}>
               <Text style={styles.deliveryMetaLabel}>Branch Address</Text>
               <Text style={[styles.deliveryMetaValue, styles.deliveryMetaValueFull]}>
-                {delivery.branchAddress || 'N/A'}
+                {delivery.branchAddress || delivery.branchName || 'Not provided'}
               </Text>
             </View>
             <View style={styles.deliveryMetaBlock}>
@@ -1036,14 +1284,28 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
                 ]
               )}
             >
-              <Ionicons name="wallet-outline" size={14} color="#FFF" />
-              <Text style={styles.codBannerText}>
-                COD: PHP {delivery.amountToCollect?.toLocaleString()} - Tap to mark collected
-              </Text>
+              <Ionicons name="wallet-outline" size={16} color={colors.primary} />
+              <View style={styles.codBannerTextWrap}>
+                <Text style={styles.codBannerLabel}>COD / Total Payment</Text>
+                <Text style={styles.codBannerText}>
+                  ₱{delivery.amountToCollect?.toLocaleString() || '0'} • Tap to mark collected
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.primary} />
             </TouchableOpacity>
           )}
         </ScrollView>
-      </View>
+        {stickyAction && (
+          <View style={[styles.stickyActionBar, isHandover && styles.stickyActionBarDark]}>
+            <SwipeSlider
+              label={stickyAction.label}
+              color={stickyAction.color}
+              disabled={stickyAction.disabled}
+              onComplete={stickyAction.onComplete}
+            />
+          </View>
+        )}
+      </RNAnimated.View>
 
       {/* ── UPDATING OVERLAY ─────────────────────────────────────────────── */}
       {updating && (
@@ -1060,7 +1322,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F5F8FF',
+    backgroundColor: '#1d2c4d',
   },
 
   // ── Loading / Error ──
@@ -1199,42 +1461,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 2,
     gap: 10,
   },
-  backBtn: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitleRow: {
-    flex: 1,
-    gap: 1,
-  },
-  headerTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: colors.text,
-  },
-  orderId: {
-    fontSize: 11,
-    color: colors.textTertiary,
-  },
   headerCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: '#F0F4FF',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0D1B2A',
+    letterSpacing: 0.2,
   },
   etaStrip: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#1d2c4d',
     paddingHorizontal: 16,
-    paddingVertical: 7,
+    paddingVertical: 4,
     gap: 7,
   },
   etaStatusDot: {
@@ -1244,7 +1495,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#34D399',
   },
   etaText: {
-    fontSize: 12,
+    fontSize: 11,
     color: 'rgba(255,255,255,0.75)',
     fontWeight: '500',
     flex: 1,
@@ -1263,8 +1514,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: SCREEN_HEIGHT * 0.5,
-    minHeight: SCREEN_HEIGHT * 0.34,
+    maxHeight: SCREEN_HEIGHT * 0.8,
+    minHeight: SCREEN_HEIGHT * 0.25,
     elevation: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
@@ -1283,6 +1534,17 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 2,
   },
+  dragHandleTouch: {
+    alignItems: 'center',
+    paddingTop: 6,
+  },
+  dragHandleButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    width: 72,
+    paddingVertical: 2,
+  },
   sheetScrollContent: {
     paddingHorizontal: 18,
     paddingTop: 4,
@@ -1290,6 +1552,9 @@ const styles = StyleSheet.create({
   },
   sheetScrollWithCodBanner: {
     paddingBottom: 28,
+  },
+  sheetScrollWithStickyAction: {
+    paddingBottom: SHEET_ACTION_BAR_HEIGHT + 18,
   },
   sheetScroll: {
     flex: 1,
@@ -1328,11 +1593,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0D1B2A',
     flexShrink: 1,
+    maxWidth: '62%',
     lineHeight: 18,
     textAlign: 'right',
   },
   deliveryMetaValueFull: {
     textAlign: 'left',
+  },
+  stickyActionBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderTopWidth: 1,
+    borderTopColor: '#E3EAF5',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 12,
+  },
+  stickyActionBarDark: {
+    backgroundColor: '#1E0B4A',
+    borderTopColor: 'rgba(255,255,255,0.18)',
   },
 
   // ── Sheet: Titles ──
@@ -1396,10 +1678,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 13,
   },
-
-  // ── Contact Pill ──
-  contactPill: { flexDirection:'row', alignItems:'center', gap:4, backgroundColor:colors.primaryLight, paddingHorizontal:10, paddingVertical:4, borderRadius:100 },
-  contactPillText: { fontSize:12, fontWeight:'700', color:colors.primary },
 
   // ── Destination row ──
   destinationRow: {
@@ -1842,17 +2120,21 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     gap: 10,
   },
+  centerPanelCompact: {
+    paddingVertical: 8,
+    gap: 8,
+  },
   waitTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '900',
     color: '#0D1B2A',
     textAlign: 'center',
   },
   waitSub: {
-    fontSize: 13,
+    fontSize: 12,
     color: colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 19,
+    lineHeight: 16,
     paddingHorizontal: 16,
   },
   freeBadge: {
@@ -1860,10 +2142,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     backgroundColor: '#F0FDF4',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 20,
-    marginTop: 6,
+    marginTop: 4,
   },
   freeBadgeText: {
     fontSize: 12,
@@ -1917,24 +2199,54 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 15,
   },
+  externalNavBtn: {
+    marginHorizontal: 16,
+    marginTop: 6,
+    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+    paddingVertical: 9,
+  },
+  externalNavText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
 
   // ── COD banner ──
   codBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#854D0E',
-    marginHorizontal: 16,
+    gap: 10,
+    backgroundColor: '#EFF6FF',
+    marginHorizontal: 0,
     marginTop: 8,
-    marginBottom: 2,
-    padding: 11,
+    marginBottom: 0,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  codBannerTextWrap: {
+    flex: 1,
+  },
+  codBannerLabel: {
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: '800',
+    marginBottom: 1,
   },
   codBannerText: {
-    color: '#FFF',
+    color: '#1E3A8A',
     fontSize: 12,
     fontWeight: '700',
-    flex: 1,
   },
 
   // ── Updating overlay ──

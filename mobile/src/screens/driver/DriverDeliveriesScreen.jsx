@@ -251,7 +251,7 @@ const DriverDeliveriesScreen = ({ navigation }) => {
                       <TouchableOpacity
                         style={styles.viewBtn}
                         onPress={() => handleAcceptBooking(order.trackingNumber)}
-                        disabled={acceptingTracking === order.trackingNumber}
+                        disabled={acceptingTracking === order.trackingNumber || !order?.trackingNumber}
                       >
                         <Text style={styles.viewBtnText}>
                           {acceptingTracking === order.trackingNumber ? 'Accepting...' : 'Accept Delivery'}
@@ -283,7 +283,13 @@ const DriverDeliveriesScreen = ({ navigation }) => {
                         <Text style={styles.orderId}>Order: {delivery.orderNumber}</Text>
                         <TouchableOpacity
                           style={styles.viewBtn}
-                          onPress={() => navigation.navigate('DeliveryDetail', { deliveryId: delivery.id })}
+                          onPress={() => {
+                            if (!delivery?.id) {
+                              Alert.alert('Unavailable', 'Delivery detail is missing an ID. Please refresh.');
+                              return;
+                            }
+                            navigation.navigate('DeliveryDetail', { deliveryId: delivery.id });
+                          }}
                         >
                           <Text style={styles.viewBtnText}>{getPrimaryActionLabel(delivery.status)}</Text>
                           <Ionicons name="chevron-forward" size={14} color={colors.primary} />
