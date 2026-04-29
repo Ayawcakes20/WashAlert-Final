@@ -145,6 +145,7 @@ public class BookingService {
                 .trackingNumber("TMP-" + UUID.randomUUID())
                 .customerName(req.customerName().trim())
                 .branch(cleanBranch)
+                .branchId(req.branchId())
                 .customerPhone(req.customerPhone().trim())
                 .customerEmail(trimToNull(req.customerEmail()))
                 .serviceType(req.serviceType())

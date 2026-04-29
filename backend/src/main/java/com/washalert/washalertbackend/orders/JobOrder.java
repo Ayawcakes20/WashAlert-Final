@@ -56,6 +56,9 @@ public class JobOrder {
     @Column(name = "branch", length = 80)
     private String branch;
 
+    @Column(name = "branch_id")
+    private Long branchId;
+
     @Column(name = "customer_phone", length = 30)
     private String customerPhone;
 

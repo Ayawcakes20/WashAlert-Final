@@ -36,7 +36,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import java.security.SecureRandom;
 import java.util.ArrayList;
-import java.util.Locale;
 
 import java.time.LocalDateTime;
 import java.util.EnumSet;
@@ -199,7 +198,7 @@ public class DeliveryService {
         if (order.getStatus() != JobOrderStatus.PENDING) {
             throw new IllegalStateException("Only pending bookings can be accepted.");
         }
-        if (driver.getBranch() != null && !sameBranch(driver.getBranch(), order.getBranch())) {
+        if (!matchesDriverBranch(driver, order)) {
             throw new IllegalStateException("This booking belongs to a different branch.");
         }
 
@@ -259,7 +258,7 @@ public class DeliveryService {
         // Phase A: Jobs that are PENDING and haven't been picked up by a driver yet
         List<JobOrder> phaseAOrders = orderRepository.findByStatusAndServiceTypeOrderByCreatedAtDesc(JobOrderStatus.PENDING, ServiceType.PICKUP_DELIVERY)
                 .stream()
-                .filter(order -> sameBranch(driver.getBranch(), order.getBranch()))
+                .filter(order -> matchesDriverBranch(driver, order))
                 .filter(order -> deliveryRepository.findByJobOrder_TrackingNumberAndLeg(
                         order.getTrackingNumber(),
                         DeliveryLeg.PICKUP_FROM_CUSTOMER
@@ -269,7 +268,7 @@ public class DeliveryService {
         // Phase B: Jobs that are READY and don't have an ASSIGNED driver for the return leg yet
         List<JobOrder> phaseBOrders = orderRepository.findByStatusAndServiceTypeOrderByCreatedAtDesc(JobOrderStatus.READY, ServiceType.PICKUP_DELIVERY)
                 .stream()
-                .filter(order -> sameBranch(driver.getBranch(), order.getBranch()))
+                .filter(order -> matchesDriverBranch(driver, order))
                 .filter(order -> {
                     Optional<DeliveryOrder> outbound = deliveryRepository.findByJobOrder_TrackingNumberAndLeg(
                             order.getTrackingNumber(),
@@ -971,28 +970,17 @@ public class DeliveryService {
     }
 
     private boolean sameBranch(String a, String b) {
-        if (a == null || b == null) return false;
-        String normalizedA = normalizeBranchKey(a);
-        String normalizedB = normalizeBranchKey(b);
-        if (normalizedA.isEmpty() || normalizedB.isEmpty()) return false;
-        if (normalizedA.equals(normalizedB)) return true;
-        return normalizedA.contains(normalizedB) || normalizedB.contains(normalizedA);
+        return a != null && b != null && a.trim().equalsIgnoreCase(b.trim());
     }
 
-    private String normalizeBranchKey(String branch) {
-        String normalized = branch.toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9 ]", " ")
-                .replaceAll("\\s+", " ")
-                .trim();
-        normalized = normalized
-                .replace("triplets", "")
-                .replace("speedywash", "")
-                .replace("laundryhubs", "")
-                .replace("laundryhub", "")
-                .replace("branch", "")
-                .replaceAll("\\s+", " ")
-                .trim();
-        return normalized;
+    private boolean matchesDriverBranch(User driver, JobOrder order) {
+        if (driver == null || order == null) return false;
+        Long driverBranchId = driver.getBranchId();
+        Long orderBranchId = order.getBranchId();
+        if (driverBranchId != null && orderBranchId != null) {
+            return driverBranchId.equals(orderBranchId);
+        }
+        return sameBranch(driver.getBranch(), order.getBranch());
     }
 
     private int compareDateDesc(LocalDateTime a, LocalDateTime b) {

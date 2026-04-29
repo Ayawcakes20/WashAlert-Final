@@ -23,6 +23,8 @@ public record CreateBookingRequest(
         @Size(max = 80, message = "Branch is too long.")
         String branch,
 
+        Long branchId,
+
         @NotBlank(message = "Customer phone is required.")
         @Size(max = 30, message = "Customer phone is too long.")
         String customerPhone,

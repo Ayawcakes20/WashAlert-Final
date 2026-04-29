@@ -845,6 +845,7 @@ export const createOrder = async (orderData) => {
   const payload = {
     customerName: user?.fullName || 'Mobile Customer',
     branch: branch?.name || 'Makati Branch',
+    branchId: Number(orderData.branchId || branch?.id || 0) || null,
     customerPhone: user?.phone || '09170000000',
     customerEmail: user?.email || '',
     serviceType: serviceTypeBackend,

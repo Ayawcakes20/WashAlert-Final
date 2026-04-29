@@ -228,6 +228,7 @@ public class JobOrderService {
                 .trackingNumber("TMP-" + UUID.randomUUID())
                 .customerName(req.customerName().trim())
                 .branch(branch)
+                .branchId(actor.getBranchId())
                 .serviceType(req.serviceType())
                 .status(JobOrderStatus.PENDING)
                 .createdBy(actor)
@@ -271,6 +272,9 @@ public class JobOrderService {
         order.setCustomerName(req.customerName().trim());
         order.setServiceType(req.serviceType());
         order.setBranch(req.branch().trim());
+        if (actor.getBranchId() != null) {
+            order.setBranchId(actor.getBranchId());
+        }
 
         JobOrder saved = repo.save(order);
         JobOrderResponse response = toResponse(saved);
