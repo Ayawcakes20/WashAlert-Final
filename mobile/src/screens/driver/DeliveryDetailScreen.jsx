@@ -44,6 +44,12 @@ const SHEET_COLLAPSED_RATIO = 0.24;
 const SHEET_EXPANDED_RATIO = 0.74;
 const SHEET_ACTION_BAR_HEIGHT = 92;
 const TRACKABLE_STATUSES = ['accepted', 'at_customer', 'picked_up', 'at_branch', 'en_route', 'at_delivery'];
+const GPS_MIN_UPDATE_INTERVAL_MS = 3000;
+const GPS_MIN_MOVE_METERS = 8;
+const GPS_BACKEND_SYNC_INTERVAL_MS = 10000;
+const GPS_BACKEND_MIN_MOVE_METERS = 15;
+const GPS_JUMP_GUARD_METERS = 1200;
+const GPS_JUMP_GUARD_INTERVAL_MS = 10000;
 
 // ─── Google Maps Dark / Night Style ──────────────────────────────────────────
 const DARK_MAP_STYLE = [
@@ -82,6 +88,21 @@ const METRO_MANILA = {
   longitude: 120.9842,
   latitudeDelta: 0.04,
   longitudeDelta: 0.04,
+};
+
+const toRadians = (value) => (value * Math.PI) / 180;
+
+const distanceMeters = (a, b) => {
+  if (!a || !b) return Number.POSITIVE_INFINITY;
+  const earthRadiusMeters = 6371000;
+  const dLat = toRadians(b.latitude - a.latitude);
+  const dLon = toRadians(b.longitude - a.longitude);
+  const lat1 = toRadians(a.latitude);
+  const lat2 = toRadians(b.latitude);
+  const h =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return 2 * earthRadiusMeters * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 };
 
 // ─── State Machine Config ─────────────────────────────────────────────────────
@@ -146,6 +167,9 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
   const sheetHeightAnim = useRef(new RNAnimated.Value(collapsedSheetHeight)).current;
   const currentSheetHeight = useRef(collapsedSheetHeight);
   const locationSubscriptionRef = useRef(null);
+  const lastAcceptedLocationRef = useRef(null);
+  const lastBackendSyncRef = useRef(0);
+  const lastCameraFitRef = useRef({ key: '', at: 0 });
 
   // Driver "You" pulse ring animation
   const pulseAnim = useRef(new RNAnimated.Value(1)).current;
@@ -296,11 +320,13 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
 
         const initial = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         if (initial?.coords && active) {
-          setDriverCoords({
+          const startingCoords = {
             latitude: initial.coords.latitude,
             longitude: initial.coords.longitude,
             heading: initial.coords.heading || 0,
-          });
+          };
+          lastAcceptedLocationRef.current = { ...startingCoords, timestamp: Date.now() };
+          setDriverCoords(startingCoords);
         }
         setLocationWarning('');
 
@@ -313,14 +339,41 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
           },
           async (loc) => {
             if (!active || !delivery) return;
-            
-            const coords = { 
+
+            const now = Date.now();
+            const coords = {
               latitude: loc.coords.latitude, 
               longitude: loc.coords.longitude,
               heading: loc.coords.heading || 0
             };
-            
+
+            const previous = lastAcceptedLocationRef.current;
+            const movedMeters = previous ? distanceMeters(previous, coords) : Number.POSITIVE_INFINITY;
+            const elapsedMs = previous?.timestamp ? now - previous.timestamp : Number.POSITIVE_INFINITY;
+            const accuracy = Number(loc?.coords?.accuracy || 0);
+
+            const looksLikeGpsJump =
+              previous &&
+              movedMeters > GPS_JUMP_GUARD_METERS &&
+              elapsedMs < GPS_JUMP_GUARD_INTERVAL_MS &&
+              accuracy > 40;
+
+            if (looksLikeGpsJump) {
+              setLocationWarning('Improving GPS accuracy...');
+              return;
+            }
+
+            if (previous && elapsedMs < GPS_MIN_UPDATE_INTERVAL_MS && movedMeters < GPS_MIN_MOVE_METERS) {
+              return;
+            }
+
+            lastAcceptedLocationRef.current = { ...coords, timestamp: now };
             setDriverCoords(coords);
+            if (accuracy > 60) {
+              setLocationWarning('Improving GPS accuracy...');
+            } else {
+              setLocationWarning('');
+            }
 
             // Firestore real-time sync (Complete Payload)
             if (delivery.orderNumber) {
@@ -338,9 +391,13 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
                 { merge: true }
               );
             }
-            
-            // Backend SQL sync (Debounced via SQL server if needed, but keeping direct for now)
-            if (!mockDelivery) {
+
+            const shouldSyncBackend =
+              now - lastBackendSyncRef.current >= GPS_BACKEND_SYNC_INTERVAL_MS ||
+              movedMeters >= GPS_BACKEND_MIN_MOVE_METERS;
+
+            if (!mockDelivery && shouldSyncBackend) {
+              lastBackendSyncRef.current = now;
               deliveriesApi.updateLocation(delivery.id, coords).catch(() => {});
             }
           }
@@ -1098,8 +1155,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
         provider={PROVIDER_GOOGLE}
         googleMapsApiKey={GOOGLE_MAPS_API_KEY}
         style={StyleSheet.absoluteFillObject}
-        region={mapRegion}
-        onRegionChangeComplete={setMapRegion}
+        initialRegion={mapRegion}
         customMapStyle={DARK_MAP_STYLE}
         showsUserLocation
         showsMyLocationButton
@@ -1185,8 +1241,13 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
                 distance: result.distance.toFixed(1),
                 duration: Math.round(result.duration),
               });
-              // Auto-fit camera to show the full route
-              if (mapRef.current && result.coordinates?.length > 1) {
+              const focusKey = `${delivery?.status || "unknown"}:${Math.round(targetCoords.latitude * 1000)}:${Math.round(targetCoords.longitude * 1000)}`;
+              const shouldFit =
+                lastCameraFitRef.current.key !== focusKey ||
+                Date.now() - lastCameraFitRef.current.at > 20000;
+              // Fit only when destination/status changes (or occasionally), to avoid camera flicker.
+              if (shouldFit && mapRef.current && result.coordinates?.length > 1) {
+                lastCameraFitRef.current = { key: focusKey, at: Date.now() };
                 mapRef.current.fitToCoordinates(result.coordinates, {
                   edgePadding: {
                     top: 160,
