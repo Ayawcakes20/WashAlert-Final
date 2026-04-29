@@ -68,6 +68,8 @@ const getPrimaryActionLabel = (status) => {
       return 'Start Pickup';
     case 'at_customer':
       return 'Confirm Pickup';
+    case 'ready_for_dispatch':
+      return 'Start Delivery';
     case 'picked_up':
     case 'en_route':
       return 'Arrive at Customer';

@@ -81,7 +81,7 @@ const DriverDashboardScreen = ({ navigation }) => {
   }, [loadData]);
 
   // All statuses that mean a delivery is actively in-flight
-  const ACTIVE_STATUSES = ['accepted', 'at_customer', 'picked_up', 'at_branch', 'handed_over', 'ready_for_dispatch', 'en_route', 'at_delivery', 'in_progress'];
+  const ACTIVE_STATUSES = ['accepted', 'at_customer', 'picked_up', 'at_branch', 'ready_for_dispatch', 'en_route', 'at_delivery', 'in_progress'];
   const pending   = deliveries.filter((d) => d.status === 'pending').length;
   const completed = deliveries.filter((d) => d.status === 'completed').length;
   const active    = deliveries.find((d) => ACTIVE_STATUSES.includes(d.status));

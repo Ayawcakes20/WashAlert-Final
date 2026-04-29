@@ -195,11 +195,43 @@ public class DeliveryService {
         if (order.getServiceType() != ServiceType.PICKUP_DELIVERY) {
             throw new IllegalArgumentException("Only pickup and delivery orders are available for drivers.");
         }
-        if (order.getStatus() != JobOrderStatus.PENDING) {
-            throw new IllegalStateException("Only pending bookings can be accepted.");
+        if (order.getStatus() != JobOrderStatus.PENDING && order.getStatus() != JobOrderStatus.READY) {
+            throw new IllegalStateException("Only pending or ready bookings can be accepted.");
         }
         if (!matchesDriverBranch(driver, order)) {
             throw new IllegalStateException("This booking belongs to a different branch.");
+        }
+
+        if (order.getStatus() == JobOrderStatus.READY) {
+            Optional<DeliveryOrder> existingOutbound = deliveryRepository.findByJobOrder_TrackingNumberAndLeg(
+                    order.getTrackingNumber(),
+                    DeliveryLeg.DELIVERY_TO_CUSTOMER
+            );
+
+            DeliveryOrder outbound = existingOutbound.orElseGet(() -> DeliveryOrder.builder()
+                    .jobOrder(order)
+                    .leg(DeliveryLeg.DELIVERY_TO_CUSTOMER)
+                    .status(DeliveryStatus.ASSIGNED_DELIVERY)
+                    .driverName("Unassigned")
+                    .driverPhone("-")
+                    .notes("Driver accepted ready-for-delivery order.")
+                    .build());
+
+            if (outbound.getDriverUser() != null && !outbound.getDriverUser().getId().equals(driver.getId())) {
+                throw new IllegalArgumentException("This delivery was already accepted by another driver.");
+            }
+
+            outbound.setDriverUser(driver);
+            outbound.setDriverName(driver.getFullName());
+            outbound.setDriverPhone(resolveDriverContact(driver));
+            if (outbound.getStatus() == null || outbound.getStatus() == DeliveryStatus.PENDING_PICKUP) {
+                outbound.setStatus(DeliveryStatus.ASSIGNED_DELIVERY);
+            }
+
+            DeliveryOrder savedOutbound = deliveryRepository.save(outbound);
+            timelineService.log(order, order.getStatus(), driver.getEmail(), "Driver accepted ready-for-delivery order.");
+            firestoreSyncService.upsert("deliveries", savedOutbound.getJobOrder().getTrackingNumber(), toResponse(savedOutbound));
+            return toResponse(savedOutbound);
         }
 
         Optional<DeliveryOrder> existingPickup = deliveryRepository.findByJobOrder_TrackingNumberAndLeg(
@@ -1116,7 +1148,11 @@ public class DeliveryService {
         String normalized = blankToNull(statusGroup);
         if (normalized == null || "all".equalsIgnoreCase(normalized)) return List.of();
         return switch (normalized.toLowerCase()) {
-            case "pending" -> List.of(DeliveryStatus.ASSIGNED_PICKUP, DeliveryStatus.PENDING_PICKUP);
+            case "pending" -> List.of(
+                    DeliveryStatus.ASSIGNED_PICKUP,
+                    DeliveryStatus.PENDING_PICKUP,
+                    DeliveryStatus.ASSIGNED_DELIVERY
+            );
             case "in_progress" -> EnumSet.of(
                     DeliveryStatus.ARRIVED_CUSTOMER,
                     DeliveryStatus.PICKED_UP,

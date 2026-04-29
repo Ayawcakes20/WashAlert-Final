@@ -694,6 +694,9 @@ const toMobileDeliveryStatus = (status, workflowStatus) => {
   const workflow = String(workflowStatus || '').toUpperCase();
   const normalized = String(status || '').toUpperCase();
 
+  if (normalized === 'HANDED_TO_BRANCH' && workflow === 'READY') return 'completed';
+  if (normalized === 'HANDED_TO_BRANCH' && workflow === 'COMPLETED') return 'completed';
+
   // Phase A: Inbound
   if (normalized === 'ASSIGNED_PICKUP') return 'accepted';
   if (normalized === 'ARRIVED_CUSTOMER') return 'at_customer';
