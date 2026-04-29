@@ -536,7 +536,7 @@ public class DeliveryService {
         if (!dataReadProperties.prefersFirestoreReads()) {
             List<DeliveryOrder> deliveries = deliveryRepository.findByJobOrder_TrackingNumber(normalized);
             if (deliveries.isEmpty()) throw new IllegalArgumentException("Delivery not found.");
-            return toResponse(deliveries.get(0));
+            return toResponse(selectPreferredDeliveryForTracking(deliveries));
         }
 
         Optional<DeliveryResponse> firestoreDelivery = firestoreReadService.findDeliveryByTracking(normalized);
@@ -551,7 +551,7 @@ public class DeliveryService {
         if (dataReadProperties.allowsMysqlFallback() || !firestoreReadService.isAvailable()) {
             List<DeliveryOrder> deliveries = deliveryRepository.findByJobOrder_TrackingNumber(normalized);
             if (deliveries.isEmpty()) throw new IllegalArgumentException("Delivery not found.");
-            return toResponse(deliveries.get(0));
+            return toResponse(selectPreferredDeliveryForTracking(deliveries));
         }
 
         throw new IllegalArgumentException("Delivery not found.");
@@ -788,6 +788,23 @@ public class DeliveryService {
 
     private List<DeliveryOrder> findDeliveryByTrackingMysql(String normalizedTracking) {
         return deliveryRepository.findByJobOrder_TrackingNumber(normalizedTracking);
+    }
+
+    private DeliveryOrder selectPreferredDeliveryForTracking(List<DeliveryOrder> deliveries) {
+        if (deliveries == null || deliveries.isEmpty()) {
+            throw new IllegalArgumentException("Delivery not found.");
+        }
+
+        Optional<DeliveryOrder> preferredPhaseB = deliveries.stream()
+                .filter(delivery -> delivery.getLeg() == DeliveryLeg.DELIVERY_TO_CUSTOMER)
+                .filter(delivery -> delivery.getStatus() != DeliveryStatus.CANCELLED)
+                .filter(delivery -> delivery.getStatus() != DeliveryStatus.FAILED)
+                .findFirst();
+        if (preferredPhaseB.isPresent()) {
+            return preferredPhaseB.get();
+        }
+
+        return deliveries.get(0);
     }
 
     private String resolveEffectiveBranch(String requestedBranch, User actor) {

@@ -694,9 +694,6 @@ const toMobileDeliveryStatus = (status, workflowStatus) => {
   const workflow = String(workflowStatus || '').toUpperCase();
   const normalized = String(status || '').toUpperCase();
 
-  if (normalized === 'HANDED_TO_BRANCH' && workflow === 'READY') return 'completed';
-  if (normalized === 'HANDED_TO_BRANCH' && workflow === 'COMPLETED') return 'completed';
-
   // Phase A: Inbound
   if (normalized === 'ASSIGNED_PICKUP') return 'accepted';
   if (normalized === 'ARRIVED_CUSTOMER') return 'at_customer';
@@ -797,6 +794,23 @@ const mapDelivery = (delivery) => {
 
 const isValidDeliveryForDetail = (delivery) =>
   Boolean(delivery && isNonEmpty(delivery.id) && isNonEmpty(delivery.orderNumber));
+
+const suppressPhaseAIfPhaseBExists = (deliveries = []) => {
+  const phaseBStatuses = new Set(['ready_for_dispatch', 'en_route', 'at_delivery', 'completed']);
+  const trackingWithPhaseB = new Set(
+    deliveries
+      .filter((delivery) => phaseBStatuses.has(String(delivery?.status || '').toLowerCase()))
+      .map((delivery) => String(delivery?.trackingNumber || '').trim())
+      .filter(Boolean)
+  );
+
+  return deliveries.filter((delivery) => {
+    const trackingNumber = String(delivery?.trackingNumber || '').trim();
+    if (!trackingNumber) return true;
+    if (!trackingWithPhaseB.has(trackingNumber)) return true;
+    return String(delivery?.status || '').toLowerCase() !== 'handed_over';
+  });
+};
 const mapNotificationSeverity = (severity = '') => {
   const normalized = String(severity).toUpperCase();
   if (normalized === 'ERROR') return 'status';
@@ -1070,9 +1084,9 @@ export const deliveries = {
       query.set('page', String(Math.max(0, Number(page) || 0)));
       query.set('size', String(Math.max(1, Number(size) || 10)));
       const response = await apiRequest(`/api/deliveries/my/paged?${query.toString()}`);
-      const mapped = (response?.content || [])
+      const mapped = suppressPhaseAIfPhaseBExists((response?.content || [])
         .map(mapDelivery)
-        .filter(isValidDeliveryForDetail);
+        .filter(isValidDeliveryForDetail));
       return {
         deliveries: mapped,
         total: Number(response?.totalElements || 0),
@@ -1091,6 +1105,7 @@ export const deliveries = {
       }
       let mapped = DEMO_DELIVERIES.map(mapDelivery);
       mapped = mapped.filter(isValidDeliveryForDetail);
+      mapped = suppressPhaseAIfPhaseBExists(mapped);
       if (status !== 'all') mapped = mapped.filter((d) => d.status === status);
       const safePage = Math.max(0, Number(page) || 0);
       const safeSize = Math.max(1, Number(size) || 10);

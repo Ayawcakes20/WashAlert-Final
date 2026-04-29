@@ -679,7 +679,7 @@ public class JobOrderService {
             case PENDING -> to == JobOrderStatus.WASHING;
             case WASHING -> to == JobOrderStatus.DRYING;
             case DRYING -> to == JobOrderStatus.READY;
-            case READY -> to == JobOrderStatus.PICKED_UP || to == JobOrderStatus.DELIVERED;
+            case READY -> to == JobOrderStatus.PICKED_UP;
             case PICKED_UP -> to == JobOrderStatus.DELIVERED;
             case DELIVERED -> false;
             case CANCELLED -> false;
