@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../theme/colors';
@@ -12,15 +12,32 @@ import { colors } from '../theme/colors';
  *   value: string       - Captured photo URI (if any)
  *   onCapture: function - Fired when image is picked
  *   loading: boolean    - If current action is uploading/processing
+ *   onError: function   - Fired when capture/pick fails
  */
-const PhotoProofCapture = ({ label, value, onCapture, loading = false }) => {
+const PhotoProofCapture = ({ label, value, onCapture, loading = false, onError }) => {
   const [localUri, setLocalUri] = useState(value);
 
-  const handlePickImage = async () => {
+  const reportCaptureError = (message) => {
+    const safeMessage = message || 'Unable to capture image. Please try again.';
+    onError?.(safeMessage);
+    Alert.alert('Photo Capture Failed', safeMessage);
+  };
+
+  const validateAsset = (result) => {
+    if (result?.canceled) return null;
+    const asset = result?.assets?.[0];
+    if (!asset?.uri || typeof asset.uri !== 'string') {
+      reportCaptureError('Selected image is invalid. Please try again.');
+      return null;
+    }
+    return asset.uri;
+  };
+
+  const handleCapture = async () => {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        alert('Permission Denied: Camera access is needed to provide proof of delivery.');
+        reportCaptureError('Camera access is needed to provide proof of delivery.');
         return;
       }
 
@@ -31,15 +48,54 @@ const PhotoProofCapture = ({ label, value, onCapture, loading = false }) => {
         quality: 0.7,
       });
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const uri = result.assets[0].uri;
-        setLocalUri(uri);
-        onCapture?.(uri);
-      }
+      const uri = validateAsset(result);
+      if (!uri) return;
+      setLocalUri(uri);
+      onCapture?.(uri);
     } catch (err) {
-      console.warn('Camera Error:', err);
+      console.warn('[PhotoProofCapture] Camera Error:', err);
+      reportCaptureError('Unable to open the camera right now.');
     }
   };
+
+  const handlePickFromGallery = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        reportCaptureError('Photo library access is needed to upload proof.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.7,
+      });
+      const uri = validateAsset(result);
+      if (!uri) return;
+      setLocalUri(uri);
+      onCapture?.(uri);
+    } catch (err) {
+      console.warn('[PhotoProofCapture] Gallery Error:', err);
+      reportCaptureError('Unable to open your photo library right now.');
+    }
+  };
+
+  const handlePickImage = () => {
+    if (loading) return;
+    Alert.alert('Proof Photo', 'Choose a photo source', [
+      { text: 'Take Photo', onPress: () => { void handleCapture(); } },
+      { text: 'Choose from Gallery', onPress: () => { void handlePickFromGallery(); } },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  React.useEffect(() => {
+    if (value && value !== localUri) {
+      setLocalUri(value);
+    }
+  }, [value, localUri]);
 
   return (
     <View style={styles.container}>

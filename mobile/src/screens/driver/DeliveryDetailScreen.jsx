@@ -9,7 +9,7 @@
  *   Phase B (Outbound): ready_for_dispatch → en_route → at_delivery → completed
  */
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -35,6 +35,7 @@ import { db } from '../../services/firebase';
 import { deliveries as deliveriesApi } from '../../services/api';
 import { GOOGLE_MAPS_API_KEY } from '../../config/env';
 import { useAuth } from '../../context/AuthContext';
+import { useFocusEffect } from '@react-navigation/native';
 import SwipeSlider from '../../components/SwipeSlider';
 import PhotoProofCapture from '../../components/PhotoProofCapture';
 
@@ -42,6 +43,7 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SHEET_COLLAPSED_RATIO = 0.24;
 const SHEET_EXPANDED_RATIO = 0.74;
 const SHEET_ACTION_BAR_HEIGHT = 92;
+const TRACKABLE_STATUSES = ['accepted', 'at_customer', 'picked_up', 'at_branch', 'en_route', 'at_delivery'];
 
 // ─── Google Maps Dark / Night Style ──────────────────────────────────────────
 const DARK_MAP_STYLE = [
@@ -136,11 +138,14 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
   const [derivedCustomerCoords, setDerivedCustomerCoords] = useState(null);
   const [etaInfo, setEtaInfo] = useState({ distance: null, duration: null });
   const [locationWarning, setLocationWarning] = useState('');
+  const [routeWarning, setRouteWarning] = useState('');
+  const [trackingRefreshKey, setTrackingRefreshKey] = useState(0);
   const [sheetExpanded, setSheetExpanded] = useState(false);
   const collapsedSheetHeight = Math.round(SCREEN_HEIGHT * SHEET_COLLAPSED_RATIO);
   const expandedSheetHeight = Math.round(SCREEN_HEIGHT * SHEET_EXPANDED_RATIO);
   const sheetHeightAnim = useRef(new RNAnimated.Value(collapsedSheetHeight)).current;
   const currentSheetHeight = useRef(collapsedSheetHeight);
+  const locationSubscriptionRef = useRef(null);
 
   // Driver "You" pulse ring animation
   const pulseAnim = useRef(new RNAnimated.Value(1)).current;
@@ -220,7 +225,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
         setLoading(false);
         return;
       }
-      loadDelivery();
+      void loadDelivery();
     }
   }, [deliveryId]);
 
@@ -275,11 +280,14 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
 
   // ─── Live GPS tracking (High-Accuracy Real-Time) ───────────────────────────
   useEffect(() => {
-    let subscription = null;
     let active = true;
 
     const startTracking = async () => {
       try {
+        if (locationSubscriptionRef.current) {
+          locationSubscriptionRef.current.remove();
+          locationSubscriptionRef.current = null;
+        }
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') {
           setLocationWarning('Location permission not granted.');
@@ -297,7 +305,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
         setLocationWarning('');
 
         // Watch position instead of polling — this is "Real-Time"
-        subscription = await Location.watchPositionAsync(
+        locationSubscriptionRef.current = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.High,
             distanceInterval: 5, // Update every 5 meters
@@ -343,21 +351,28 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
       }
     };
 
-    const TRACKABLE = ['accepted', 'at_customer', 'picked_up', 'at_branch', 'en_route', 'at_delivery'];
-    if (delivery && TRACKABLE.includes(delivery.status)) {
+    if (delivery && TRACKABLE_STATUSES.includes(delivery.status)) {
       startTracking();
+    } else if (locationSubscriptionRef.current) {
+      locationSubscriptionRef.current.remove();
+      locationSubscriptionRef.current = null;
     }
 
     return () => {
       active = false;
-      if (subscription) subscription.remove();
+      if (locationSubscriptionRef.current) {
+        locationSubscriptionRef.current.remove();
+        locationSubscriptionRef.current = null;
+      }
     };
-  }, [delivery?.id, delivery?.status, delivery?.orderNumber, mockDelivery]);
+  }, [delivery?.id, delivery?.status, delivery?.orderNumber, mockDelivery, trackingRefreshKey]);
 
   // ─── Load from backend ─────────────────────────────────────────────────────
-  const loadDelivery = async () => {
+  const loadDelivery = useCallback(async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) {
+        setLoading(true);
+      }
       const data = await deliveriesApi.getById(deliveryId);
       setDelivery(data);
       if (data?.bagCount || data?.loadCount) setBagCount(String(data.bagCount ?? data.loadCount));
@@ -366,9 +381,26 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
     } catch (e) {
       setError(e?.message || 'Unable to load delivery.');
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
-  };
+  }, [deliveryId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!mockDelivery && deliveryId) {
+        void loadDelivery({ silent: true });
+      }
+      setTrackingRefreshKey((prev) => prev + 1);
+      return () => {
+        if (locationSubscriptionRef.current) {
+          locationSubscriptionRef.current.remove();
+          locationSubscriptionRef.current = null;
+        }
+      };
+    }, [deliveryId, loadDelivery, mockDelivery])
+  );
 
   // Returns best initial map center based on delivery status
   const pickBestCoords = (data) => {
@@ -438,12 +470,8 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
   // ─── Helpers ───────────────────────────────────────────────────────────────
   const getTargetCoords = () => {
     if (!delivery) return null;
-    const pickupToBranchStates = new Set(['accepted', 'at_customer']);
+    const pickupToBranchStates = new Set(['accepted', 'at_customer', 'picked_up', 'at_branch', 'handed_over', 'ready_for_dispatch']);
     const deliveryToCustomerStates = new Set([
-      'picked_up',
-      'at_branch',
-      'handed_over',
-      'ready_for_dispatch',
       'en_route',
       'at_delivery',
       'completed',
@@ -482,7 +510,10 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
     const origin = driverCoords?.latitude && driverCoords?.longitude
       ? `&origin=${driverCoords.latitude},${driverCoords.longitude}`
       : '';
-    Linking.openURL(`https://www.google.com/maps/dir/?api=1${origin}&destination=${t.latitude},${t.longitude}&travelmode=driving`);
+    const url = `https://www.google.com/maps/dir/?api=1${origin}&destination=${t.latitude},${t.longitude}&travelmode=driving`;
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Navigation Unavailable', 'Unable to open Google Maps right now.');
+    });
   };
 
   const normalizePhone = (value) => String(value || '').replace(/[^0-9+]/g, '');
@@ -626,7 +657,12 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
           {/* Photo proof card */}
           <View style={styles.photoCard}>
             <Text style={styles.photoCardTitle}>Proof of Pickup Photo Required</Text>
-            <PhotoProofCapture label="Take Photo" value={pickupPhoto} onCapture={setPickupPhoto} />
+            <PhotoProofCapture
+              label="Take Photo"
+              value={pickupPhoto}
+              onCapture={setPickupPhoto}
+              onError={(message) => console.warn('[DeliveryDetail][PickupPhoto]', message)}
+            />
           </View>
 
           <Text style={styles.mandatoryHint}>Mandatory items for processing.</Text>
@@ -676,7 +712,12 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
 
           <View style={[styles.photoCard, { backgroundColor: 'rgba(255,255,255,0.12)', borderColor: 'rgba(255,255,255,0.2)' }]}>
             <Text style={[styles.photoCardTitle, { color: '#E9D5FF' }]}>Branch Counter Photo Required</Text>
-            <PhotoProofCapture label="Take Photo" value={handoverPhoto} onCapture={setHandoverPhoto} />
+            <PhotoProofCapture
+              label="Take Photo"
+              value={handoverPhoto}
+              onCapture={setHandoverPhoto}
+              onError={(message) => console.warn('[DeliveryDetail][BranchHandoverPhoto]', message)}
+            />
           </View>
 
         </View>
@@ -800,7 +841,12 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
 
           {/* Photo proof */}
           <View style={styles.photoCard}>
-            <PhotoProofCapture label="Take Photo" value={deliveryPhoto} onCapture={setDeliveryPhoto} />
+            <PhotoProofCapture
+              label="Take Photo"
+              value={deliveryPhoto}
+              onCapture={setDeliveryPhoto}
+              onError={(message) => console.warn('[DeliveryDetail][FinalDeliveryPhoto]', message)}
+            />
           </View>
 
         </View>
@@ -1134,6 +1180,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             strokeColor={cfg.routeColor}
             mode="DRIVING"
             onReady={(result) => {
+              setRouteWarning('');
               setEtaInfo({
                 distance: result.distance.toFixed(1),
                 duration: Math.round(result.duration),
@@ -1150,6 +1197,10 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
                   animated: true,
                 });
               }
+            }}
+            onError={(errMessage) => {
+              console.warn('[DeliveryDetail][Directions] Route unavailable:', errMessage);
+              setRouteWarning('Live route is temporarily unavailable. You can still open Google Maps for navigation.');
             }}
           />
         )}
@@ -1226,7 +1277,13 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             <Text style={styles.noGpsText}>{locationWarning}</Text>
           </View>
         ) : null}
-        {!driverCoords && targetCoords ? (
+        {routeWarning ? (
+          <View style={styles.noGpsBar}>
+            <Ionicons name="navigate-outline" size={13} color="#92400E" />
+            <Text style={styles.noGpsText}>{routeWarning}</Text>
+          </View>
+        ) : null}
+        {targetCoords ? (
           <TouchableOpacity style={styles.externalNavBtn} onPress={openExternalNav}>
             <Ionicons name="navigate-outline" size={14} color={colors.primary} />
             <Text style={styles.externalNavText}>Open in Google Maps</Text>
