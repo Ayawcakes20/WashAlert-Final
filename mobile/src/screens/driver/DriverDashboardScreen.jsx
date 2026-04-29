@@ -40,6 +40,7 @@ const DriverDashboardScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const [deliveries, setDeliveries] = useState([]);
+  const [availableCount, setAvailableCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -52,11 +53,24 @@ const DriverDashboardScreen = ({ navigation }) => {
   const loadData = useCallback(async () => {
     try {
       setError('');
-      const data = await deliveriesApi.getAssigned('all');
-      setDeliveries(data.deliveries || []);
+      const [assignedResult, availableResult] = await Promise.allSettled([
+        deliveriesApi.getAssigned('all'),
+        deliveriesApi.getAvailable(),
+      ]);
+
+      const assignedData = assignedResult.status === 'fulfilled' ? assignedResult.value : { deliveries: [] };
+      const availableData = availableResult.status === 'fulfilled' ? availableResult.value : { orders: [] };
+
+      setDeliveries(assignedData?.deliveries || []);
+      setAvailableCount((availableData?.orders || []).length);
       setVisibleDeliveries(4);
+
+      if (assignedResult.status === 'rejected') {
+        throw assignedResult.reason;
+      }
     } catch (e) {
       setDeliveries([]);
+      setAvailableCount(0);
       setError(e?.message || 'Unable to load dashboard data.');
     } finally {
       setLoading(false);
@@ -82,7 +96,7 @@ const DriverDashboardScreen = ({ navigation }) => {
 
   // All statuses that mean a delivery is actively in-flight
   const ACTIVE_STATUSES = ['accepted', 'at_customer', 'picked_up', 'at_branch', 'ready_for_dispatch', 'en_route', 'at_delivery', 'in_progress'];
-  const pending   = deliveries.filter((d) => d.status === 'pending').length;
+  const pending   = availableCount;
   const completed = deliveries.filter((d) => d.status === 'completed').length;
   const active    = deliveries.find((d) => ACTIVE_STATUSES.includes(d.status));
 

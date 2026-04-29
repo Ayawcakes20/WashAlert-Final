@@ -434,7 +434,10 @@ public class DeliveryService {
     public List<DeliveryResponse> listMy(AuthUserDetails principal) {
         User driver = principal.getUser();
         return deliveryRepository.findByDriverUser_IdOrderByUpdatedAtDesc(driver.getId())
-                .stream().map(this::toResponse).toList();
+                .stream()
+                .filter(delivery -> !shouldSuppressDriverPhaseARecord(delivery))
+                .map(this::toResponse)
+                .toList();
     }
 
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
@@ -452,9 +455,19 @@ public class DeliveryService {
         Page<DeliveryOrder> page = statuses.isEmpty()
                 ? deliveryRepository.findByDriverUserIdPaged(driver.getId(), pageable)
                 : deliveryRepository.findByDriverUserIdAndStatusInPaged(driver.getId(), statuses, pageable);
-
-        Page<DeliveryResponse> mapped = page.map(this::toResponse);
-        return PagedResponse.from(mapped);
+        List<DeliveryResponse> filteredContent = page.getContent().stream()
+                .filter(delivery -> !shouldSuppressDriverPhaseARecord(delivery))
+                .map(this::toResponse)
+                .toList();
+        return new PagedResponse<>(
+                filteredContent,
+                page.getNumber(),
+                page.getSize(),
+                page.getTotalElements(),
+                page.getTotalPages(),
+                page.hasNext(),
+                page.hasPrevious()
+        );
     }
 
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
@@ -805,6 +818,26 @@ public class DeliveryService {
         }
 
         return deliveries.get(0);
+    }
+
+    private boolean shouldSuppressDriverPhaseARecord(DeliveryOrder delivery) {
+        if (delivery == null || delivery.getJobOrder() == null) return false;
+        if (delivery.getLeg() != DeliveryLeg.PICKUP_FROM_CUSTOMER) return false;
+        if (delivery.getStatus() != DeliveryStatus.HANDED_TO_BRANCH) return false;
+
+        JobOrder order = delivery.getJobOrder();
+        if (order.getServiceType() != ServiceType.PICKUP_DELIVERY) return false;
+        if (order.getStatus() != JobOrderStatus.READY
+                && order.getStatus() != JobOrderStatus.PICKED_UP
+                && order.getStatus() != JobOrderStatus.DELIVERED) {
+            return false;
+        }
+
+        Optional<DeliveryOrder> phaseB = deliveryRepository.findByJobOrder_TrackingNumberAndLeg(
+                order.getTrackingNumber(),
+                DeliveryLeg.DELIVERY_TO_CUSTOMER
+        );
+        return phaseB.isPresent();
     }
 
     private String resolveEffectiveBranch(String requestedBranch, User actor) {
