@@ -491,6 +491,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
         arriveForDelivery: 'at_delivery',
         finalHandover:     'completed',
         collectCodPayment: delivery?.status,
+        resendConfirmationCode: delivery?.status,
       };
       const next = MOCK_NEXT[method];
       if (next) {
@@ -526,6 +527,8 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
       if (method === 'collectCodPayment') {
         await loadDelivery({ silent: true });
         Alert.alert('Payment Collected', 'Cash payment marked as paid.');
+      } else if (method === 'resendConfirmationCode') {
+        Alert.alert('Code Sent', 'A delivery confirmation code was sent to the customer email.');
       }
       setEtaInfo({ distance: null, duration: null }); // reset ETA on transition
       if (method === 'finalHandover' && updated.status === 'completed') {
@@ -911,15 +914,30 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
           {/* Confirmation code card */}
           <View style={styles.codeCard}>
             <Text style={styles.inputLabel}>DELIVERY CONFIRMATION CODE</Text>
-            <TextInput
-              style={styles.codeInput}
-              value={confCode}
-              onChangeText={setConfCode}
-              placeholder="Ask customer — e.g. 9876"
-              placeholderTextColor={colors.textTertiary}
-              keyboardType="number-pad"
-              maxLength={4}
-            />
+            {hasConfirmationCode ? (
+              <TextInput
+                style={styles.codeInput}
+                value={confCode}
+                onChangeText={setConfCode}
+                placeholder="Ask customer - e.g. 9876"
+                placeholderTextColor={colors.textTertiary}
+                keyboardType="number-pad"
+                maxLength={4}
+              />
+            ) : (
+              <View style={styles.codeMissingCard}>
+                <Text style={styles.codeMissingText}>
+                  Confirmation code not available yet. Ask the customer to check email, then tap resend if needed.
+                </Text>
+                <TouchableOpacity
+                  style={styles.codeResendBtn}
+                  onPress={() => handleAction('resendConfirmationCode')}
+                  disabled={updating}
+                >
+                  <Text style={styles.codeResendBtnText}>{updating ? 'Sending...' : 'Resend Code'}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
 
           {/* Photo proof */}
@@ -1101,6 +1119,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
     !delivery.isPaid &&
     isCashCodPaymentMethod(delivery.paymentMethod) &&
     delivery.status !== 'completed';
+  const hasConfirmationCode = Boolean(String(delivery.confirmationCode || '').trim());
   const loadCountValue = delivery.bagCount ?? delivery.loadCount ?? (delivery.loadKg ? `${delivery.loadKg} kg` : (bagCount || 'Not provided'));
   const trackingValue = delivery.orderNumber || delivery.trackingNumber || 'Not provided';
   const stickyAction = (() => {
@@ -1158,7 +1177,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
         return {
           label: 'Mark Delivered',
           color: colors.primary,
-          disabled: updating || confCode.length < 4 || !deliveryPhoto,
+          disabled: updating || !hasConfirmationCode || confCode.length < 4 || !deliveryPhoto,
           onComplete: () =>
             handleAction('finalHandover', {
               confirmationCode: confCode,
@@ -1916,6 +1935,31 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 0,
     letterSpacing: 6,
+  },
+  codeMissingCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#DDE6F3',
+    backgroundColor: '#F8FAFF',
+    padding: 10,
+    gap: 8,
+  },
+  codeMissingText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 17,
+  },
+  codeResendBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  codeResendBtnText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   // ── Contact row (at_delivery) ──

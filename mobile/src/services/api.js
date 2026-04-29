@@ -1283,6 +1283,11 @@ export const deliveries = {
     return mapDelivery(payload);
   },
 
+  resendConfirmationCode: async (id) => {
+    const payload = await apiRequest(`/api/deliveries/${id}/resend-confirmation-code`, { method: 'POST' });
+    return mapDelivery(payload);
+  },
+
   finalHandover: async (id, { confirmationCode, finalDeliveryPhotoUrl }) => {
     const payload = await apiRequest(`/api/deliveries/${id}/final-handover`, {
       method: 'POST',

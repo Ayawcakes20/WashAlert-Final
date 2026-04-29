@@ -229,6 +229,15 @@ public class DeliveryController {
         return deliveryService.arriveForDelivery(deliveryId, principal);
     }
 
+    @PostMapping("/{deliveryId}/resend-confirmation-code")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','DRIVER')")
+    public DeliveryResponse resendConfirmationCode(
+            @PathVariable Long deliveryId,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return deliveryService.resendConfirmationCode(deliveryId, principal);
+    }
+
     /** Phase B: Driver confirms code + photo. ARRIVED_DELIVERY → DELIVERED */
     @PostMapping("/{deliveryId}/final-handover")
     @PreAuthorize("hasRole('DRIVER')")

@@ -35,7 +35,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import java.time.LocalDateTime;
 import java.util.EnumSet;
@@ -46,6 +49,9 @@ import java.util.Optional;
 public class DeliveryService {
     private static final Logger log = LoggerFactory.getLogger(DeliveryService.class);
     private static final SecureRandom random = new SecureRandom();
+    private static final long CONFIRMATION_CODE_RESEND_COOLDOWN_SECONDS = 90;
+    private static final String CONFIRMATION_CODE_EMAIL_SUBJECT = "WashAlert Delivery Confirmation Code";
+    private final Map<Long, LocalDateTime> confirmationCodeLastSentAt = new ConcurrentHashMap<>();
 
     private final DeliveryOrderRepository deliveryRepository;
     private final JobOrderRepository orderRepository;
@@ -371,11 +377,10 @@ public class DeliveryService {
             outbound.setStatus(DeliveryStatus.ASSIGNED_DELIVERY);
         }
 
-        if (outbound.getConfirmationCode() == null) {
-            outbound.setConfirmationCode(generateConfirmationCode());
-        }
+        ensureConfirmationCode(outbound);
 
         DeliveryOrder saved = deliveryRepository.save(outbound);
+        dispatchConfirmationCodeNotice(saved, false, false);
         firestoreSyncService.upsert("deliveries", order.getTrackingNumber(), toResponse(saved));
         log.info("[DeliveryService] Initialized Phase B for order {}, code: {}", order.getTrackingNumber(), saved.getConfirmationCode());
     }
@@ -427,6 +432,75 @@ public class DeliveryService {
 
     private String generateConfirmationCode() {
         return String.format("%04d", random.nextInt(10000));
+    }
+
+    private void ensureConfirmationCode(DeliveryOrder delivery) {
+        if (delivery == null) return;
+        if (blankToNull(delivery.getConfirmationCode()) == null) {
+            delivery.setConfirmationCode(generateConfirmationCode());
+        }
+    }
+
+    private void dispatchConfirmationCodeNotice(DeliveryOrder delivery, boolean forceSend, boolean failFast) {
+        if (delivery == null || delivery.getJobOrder() == null) return;
+        if (delivery.getLeg() != DeliveryLeg.DELIVERY_TO_CUSTOMER) return;
+        if (delivery.getJobOrder().getServiceType() != ServiceType.PICKUP_DELIVERY) return;
+
+        String confirmationCode = blankToNull(delivery.getConfirmationCode());
+        if (confirmationCode == null) {
+            if (failFast) {
+                throw new IllegalStateException("Delivery confirmation code is unavailable. Please try again.");
+            }
+            log.warn("[DeliveryService] Skipping confirmation code notification because code is missing for delivery {}", delivery.getId());
+            return;
+        }
+
+        if (!forceSend) {
+            LocalDateTime lastSentAt = confirmationCodeLastSentAt.get(delivery.getId());
+            if (lastSentAt != null) {
+                long ageSeconds = Duration.between(lastSentAt, LocalDateTime.now()).getSeconds();
+                if (ageSeconds >= 0 && ageSeconds < CONFIRMATION_CODE_RESEND_COOLDOWN_SECONDS) {
+                    return;
+                }
+            }
+        }
+
+        JobOrder order = delivery.getJobOrder();
+        String recipient = blankToNull(order.getCustomerEmail());
+        if (recipient == null) {
+            if (failFast) {
+                throw new IllegalStateException("Customer email is missing. Unable to send confirmation code.");
+            }
+            log.warn("[DeliveryService] Customer email missing for tracking {}; cannot send confirmation code.", order.getTrackingNumber());
+            return;
+        }
+
+        String tracking = order.getTrackingNumber();
+        String body = "Your delivery confirmation code for order %s is %s.\nPlease give this code to the driver only after receiving your laundry."
+                .formatted(tracking, confirmationCode);
+
+        try {
+            notificationService.enqueueEmail(
+                    recipient,
+                    CONFIRMATION_CODE_EMAIL_SUBJECT,
+                    body,
+                    "DELIVERY_CONFIRMATION_CODE",
+                    tracking + ":" + delivery.getId()
+            );
+            notificationService.enqueuePushToUserEmail(
+                    recipient,
+                    "Delivery Confirmation Code",
+                    "Your confirmation code for %s is %s.".formatted(tracking, confirmationCode),
+                    "DELIVERY_CONFIRMATION_CODE",
+                    tracking + ":" + delivery.getId()
+            );
+            confirmationCodeLastSentAt.put(delivery.getId(), LocalDateTime.now());
+        } catch (Exception ex) {
+            log.error("[DeliveryService] Failed to queue confirmation code notification for tracking {}: {}", tracking, ex.getMessage(), ex);
+            if (failFast) {
+                throw new IllegalStateException("Unable to send delivery confirmation code right now. Please try again.");
+            }
+        }
     }
 
     /** Driver-only: returns all deliveries assigned to the calling driver's account. */
@@ -1055,7 +1129,9 @@ public class DeliveryService {
         }
         requireStatus(d, DeliveryStatus.ASSIGNED_DELIVERY, "start delivery");
         d.setStatus(DeliveryStatus.OUT_FOR_DELIVERY);
+        ensureConfirmationCode(d);
         DeliveryOrder saved = deliveryRepository.save(d);
+        dispatchConfirmationCodeNotice(saved, false, false);
         syncToFirestore(saved);
         return toResponse(saved);
     }
@@ -1066,7 +1142,32 @@ public class DeliveryService {
         enforceDriverOwnership(d, principal);
         requireStatus(d, DeliveryStatus.OUT_FOR_DELIVERY, "arrive for delivery");
         d.setStatus(DeliveryStatus.ARRIVED_DELIVERY);
+        ensureConfirmationCode(d);
         DeliveryOrder saved = deliveryRepository.save(d);
+        dispatchConfirmationCodeNotice(saved, false, false);
+        syncToFirestore(saved);
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public DeliveryResponse resendConfirmationCode(Long deliveryId, AuthUserDetails principal) {
+        DeliveryOrder delivery = findDeliveryOrThrow(deliveryId);
+        User actor = principal.getUser();
+
+        if (actor.getRole() == Role.DRIVER) {
+            enforceDriverOwnership(delivery, principal);
+        } else {
+            enforceStaffBranchScope(actor, delivery.getJobOrder().getBranch());
+        }
+
+        if (delivery.getLeg() != DeliveryLeg.DELIVERY_TO_CUSTOMER
+                || delivery.getJobOrder().getServiceType() != ServiceType.PICKUP_DELIVERY) {
+            throw new IllegalStateException("Delivery confirmation code is only available for pickup & delivery phase 2 orders.");
+        }
+
+        ensureConfirmationCode(delivery);
+        DeliveryOrder saved = deliveryRepository.save(delivery);
+        dispatchConfirmationCodeNotice(saved, true, true);
         syncToFirestore(saved);
         return toResponse(saved);
     }
@@ -1076,6 +1177,9 @@ public class DeliveryService {
         DeliveryOrder d = findDeliveryOrThrow(deliveryId);
         enforceDriverOwnership(d, principal);
         requireStatus(d, DeliveryStatus.ARRIVED_DELIVERY, "final handover");
+        if (d.getLeg() == DeliveryLeg.DELIVERY_TO_CUSTOMER && blankToNull(d.getConfirmationCode()) == null) {
+            throw new IllegalStateException("Delivery confirmation code is unavailable. Please resend the code and try again.");
+        }
         // Verify confirmation code
         if (d.getConfirmationCode() != null && !d.getConfirmationCode().equalsIgnoreCase(req.confirmationCode().trim())) {
             throw new IllegalArgumentException("Confirmation code does not match. Please verify with the customer.");
