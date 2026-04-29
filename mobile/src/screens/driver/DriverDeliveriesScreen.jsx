@@ -222,7 +222,7 @@ const DriverDeliveriesScreen = ({ navigation }) => {
           >
             <Ionicons name="bicycle-outline" size={64} color={colors.border} />
             <Text style={styles.emptyText}>
-              {tab === 'available' ? 'No available bookings right now' : 'No deliveries found'}
+              {tab === 'available' ? 'No available deliveries for your branch.' : 'No active deliveries assigned to you.'}
             </Text>
           </ScrollView>
         ) : (

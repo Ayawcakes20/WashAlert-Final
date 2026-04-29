@@ -36,6 +36,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Locale;
 
 import java.time.LocalDateTime;
 import java.util.EnumSet;
@@ -251,11 +252,14 @@ public class DeliveryService {
         if (driver.getRole() != Role.DRIVER) {
             throw new IllegalArgumentException("Only drivers can view available bookings.");
         }
+        if (blankToNull(driver.getBranch()) == null) {
+            return List.of();
+        }
 
         // Phase A: Jobs that are PENDING and haven't been picked up by a driver yet
         List<JobOrder> phaseAOrders = orderRepository.findByStatusAndServiceTypeOrderByCreatedAtDesc(JobOrderStatus.PENDING, ServiceType.PICKUP_DELIVERY)
                 .stream()
-                .filter(order -> driver.getBranch() == null || sameBranch(driver.getBranch(), order.getBranch()))
+                .filter(order -> sameBranch(driver.getBranch(), order.getBranch()))
                 .filter(order -> deliveryRepository.findByJobOrder_TrackingNumberAndLeg(
                         order.getTrackingNumber(),
                         DeliveryLeg.PICKUP_FROM_CUSTOMER
@@ -265,7 +269,7 @@ public class DeliveryService {
         // Phase B: Jobs that are READY and don't have an ASSIGNED driver for the return leg yet
         List<JobOrder> phaseBOrders = orderRepository.findByStatusAndServiceTypeOrderByCreatedAtDesc(JobOrderStatus.READY, ServiceType.PICKUP_DELIVERY)
                 .stream()
-                .filter(order -> driver.getBranch() == null || sameBranch(driver.getBranch(), order.getBranch()))
+                .filter(order -> sameBranch(driver.getBranch(), order.getBranch()))
                 .filter(order -> {
                     Optional<DeliveryOrder> outbound = deliveryRepository.findByJobOrder_TrackingNumberAndLeg(
                             order.getTrackingNumber(),
@@ -967,7 +971,28 @@ public class DeliveryService {
     }
 
     private boolean sameBranch(String a, String b) {
-        return a != null && b != null && a.trim().equalsIgnoreCase(b.trim());
+        if (a == null || b == null) return false;
+        String normalizedA = normalizeBranchKey(a);
+        String normalizedB = normalizeBranchKey(b);
+        if (normalizedA.isEmpty() || normalizedB.isEmpty()) return false;
+        if (normalizedA.equals(normalizedB)) return true;
+        return normalizedA.contains(normalizedB) || normalizedB.contains(normalizedA);
+    }
+
+    private String normalizeBranchKey(String branch) {
+        String normalized = branch.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9 ]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        normalized = normalized
+                .replace("triplets", "")
+                .replace("speedywash", "")
+                .replace("laundryhubs", "")
+                .replace("laundryhub", "")
+                .replace("branch", "")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return normalized;
     }
 
     private int compareDateDesc(LocalDateTime a, LocalDateTime b) {
