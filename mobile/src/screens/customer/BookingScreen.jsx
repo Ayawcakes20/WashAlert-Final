@@ -30,6 +30,54 @@ const FAB_OPTS = [
 const VIS_STEPS = ['Branch','Service','Load','Supplies','Schedule','Confirm'];
 const VIS_MAP   = { 1:1, 2:1, 3:2, 4:3, 5:4, 6:5, 7:6 };
 
+// ── Accurate flat-rate pricing engine ────────────────────────────────────────
+// PACKAGES (flat rate — never multiply by kg):
+//   Wash (7kg): ₱80 · Dry (7kg): ₱90 · Ecowash (5kg): ₱220 · Basic (7kg): ₱280
+// HANDWASH: ≤3kg → ₱150/kg ; >3kg → ₱90/kg
+const getServiceBasePrice = (svc, weightKg) => {
+  const name = String(svc?.name || '').toLowerCase();
+  if (name.includes('handwash')) {
+    return weightKg <= 3 ? weightKg * 150 : weightKg * 90;
+  }
+  if (name.includes('dry'))     return 90;   // Dry: ₱90 flat
+  if (name.includes('eco'))     return 220;  // Ecowash: ₱220 flat
+  if (name.includes('basic'))   return 280;  // Basic Full Service: ₱280 flat
+  if (name.includes('premium')) return weightKg >= 8 ? 275 : 270; // Premium: ₱270/₱275
+  return svc?.price || 0;                    // Fallback flat fee
+};
+
+const getServicePriceLabel = (svc) => {
+  const name = String(svc?.name || '').toLowerCase();
+  if (name.includes('handwash')) return '₱150/kg (≤3kg)  ·  ₱90/kg (>3kg)';
+  if (name.includes('dry'))     return '₱90 / load';
+  if (name.includes('eco'))     return '₱220 / load';
+  if (name.includes('basic'))   return '₱280 / load';
+  if (name.includes('premium')) return '₱270 (7kg)  ·  ₱275 (8kg)';
+  return `₱${svc?.price ?? 0}`;
+};
+
+// Format slot label: "8:00 AM - 9:30 AM" → "8:00–9:30"
+const fmtSlot = (label) => {
+  const p = String(label||'').split(/\s*[-–]\s*/);
+  const strip = (s) => s.replace(/\s*(AM|PM)$/i,'').trim();
+  return p.length >= 2 ? `${strip(p[0])}–${strip(p[1])}` : label;
+};
+
+// Map slot start time to period name for display under the time range
+const slotPeriod = (label) => {
+  const m = String(label||'').match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (!m) return '';
+  let h = parseInt(m[1]);
+  if (m[3].toUpperCase()==='PM' && h!==12) h+=12;
+  if (m[3].toUpperCase()==='AM' && h===12) h=0;
+  if (h < 9)  return 'Morning';
+  if (h < 11) return 'Late morning';
+  if (h < 13) return 'Midday';
+  if (h < 15) return 'Afternoon';
+  if (h < 17) return 'Late afternoon';
+  return 'Evening';
+};
+
 const getSvcIcon = s => {
   const n = String(s?.name||'').toLowerCase();
   if(n.includes('handwash')) return 'hand-wash';
@@ -61,7 +109,7 @@ export default function BookingScreen({ route, navigation }) {
   const [addrSheet, setAddrSheet] = useState(false);
   const [defAddr, setDefAddr]     = useState(null);
   const [service, setService]     = useState(null);
-  const [loadType, setLoadType]   = useState('clothes');
+  const [hasBeddings, setHasBeddings] = useState(false); // true = includes towels/beddings → max 7kg
   const [kg, setKg]               = useState(5);
   const [det, setDet]             = useState('none');
   const [fab, setFab]             = useState('none');
@@ -75,7 +123,7 @@ export default function BookingScreen({ route, navigation }) {
   const dates                     = mkDates(7);
   const mode                      = SERVICE_MODES.find(m=>m.id===svcMode)||SERVICE_MODES[0];
   const needsAddr                 = mode.needsAddress;
-  const maxKg                     = loadType==='beddings' ? 7 : 8;
+  const maxKg                     = hasBeddings ? 7 : 8;
 
   const deliveryFee = useMemo(()=>{
     if(!needsAddr) return 0;
@@ -86,12 +134,11 @@ export default function BookingScreen({ route, navigation }) {
 
   const total = useMemo(()=>{
     if(!service) return 0;
-    const hw=String(service.name||'').toLowerCase().includes('handwash');
-    const base=hw?(kg<=3?kg*150:kg*90):(service.price||0)*kg;
-    const s9=kg>=9?50:0;
-    const d=DET_OPTS.find(o=>o.id===det)?.price||0;
-    const f=FAB_OPTS.find(o=>o.id===fab)?.price||0;
-    return base+s9+d+f+(rush?150:0)+deliveryFee;
+    const base      = getServiceBasePrice(service, kg);       // flat-rate or per-kg (handwash)
+    const surcharge = kg >= 9 ? 50 : 0;                      // 9kg overload surcharge
+    const d         = DET_OPTS.find(o=>o.id===det)?.price||0;
+    const f         = FAB_OPTS.find(o=>o.id===fab)?.price||0;
+    return base + surcharge + d + f + (rush ? 150 : 0) + deliveryFee;
   },[service,kg,det,fab,rush,deliveryFee]);
 
   const hint = useMemo(()=>{
@@ -148,7 +195,11 @@ export default function BookingScreen({ route, navigation }) {
     setSub(true);
     try{
       const dk=needsAddr&&address?.latitude&&branch?.latitude?distKm(branch.latitude,branch.longitude,address.latitude,address.longitude):0;
-      const r=await createOrder({ branchId:branch.id,serviceId:service.id,serviceType:service.name,serviceMode:svcMode,serviceModeLabel:mode.label,serviceTypeBackend:mode.backendServiceType,scheduleDate:schDate,scheduleTime:schTime,loadKg:kg,detergent:DET_OPTS.find(o=>o.id===det)?.label||'None',conditioner:FAB_OPTS.find(o=>o.id===fab)?.label||'None',delivery:needsAddr,isRush:rush,instructions:notes,paymentMethod:payMethod,total,serviceName:service.name,distanceKm:dk,deliveryLatitude:address?.latitude??null,deliveryLongitude:address?.longitude??null,deliveryAddress:address?.address??null,deliveryUnitFloor:address?.unitFloor??null,deliveryContactName:address?.contactName??null,deliveryContactPhone:address?.phone??null,branchLatitude:branch?.latitude||null,branchLongitude:branch?.longitude||null });
+      const _svcPrice  = getServiceBasePrice(service, kg) + (kg>=9?50:0);
+      const _supPrice  = (DET_OPTS.find(o=>o.id===det)?.price||0) + (FAB_OPTS.find(o=>o.id===fab)?.price||0);
+      const _rushPrice = rush ? 150 : 0;
+      const _delPrice  = needsAddr ? deliveryFee : 0;
+      const r=await createOrder({ branchId:branch.id,serviceId:service.id,serviceType:service.name,serviceMode:svcMode,serviceModeLabel:mode.label,serviceTypeBackend:mode.backendServiceType,scheduleDate:schDate,scheduleTime:schTime,loadKg:kg,detergent:DET_OPTS.find(o=>o.id===det)?.label||'None',conditioner:FAB_OPTS.find(o=>o.id===fab)?.label||'None',delivery:needsAddr,isRush:rush,instructions:notes,paymentMethod:payMethod,total,serviceName:service.name,distanceKm:dk,deliveryLatitude:address?.latitude??null,deliveryLongitude:address?.longitude??null,deliveryAddress:address?.address??null,deliveryUnitFloor:address?.unitFloor??null,deliveryContactName:address?.contactName??null,deliveryContactPhone:address?.phone??null,branchLatitude:branch?.latitude||null,branchLongitude:branch?.longitude||null,servicePrice:_svcPrice,suppliesPrice:_supPrice,rushPrice:_rushPrice,deliveryPrice:_delPrice });
       const tn=String(r?.trackingNumber||'').trim(); if(!tn) throw new Error('No tracking number.');
       if(payMethod==='gcash'){
         try{ const cp=await payments.initiateGcashCheckout(tn); const u=cp?.checkout_url||cp?.checkoutUrl||cp?.url||cp; const cu=u?String(u).trim():null; if(cu&&/^https?:\/\//i.test(cu)){ try{ await WebBrowser.openBrowserAsync(cu); }catch{ if(await Linking.canOpenURL(cu)) await Linking.openURL(cu); } } }
@@ -171,13 +222,12 @@ export default function BookingScreen({ route, navigation }) {
     </View>
   );
 
-  // Footer: running total + pill Back/Next buttons — clears floating tab bar
+  // Footer: running total + Back / Continue buttons
   const Footer = ()=>(
     <View style={[S.footer,{paddingBottom:insets.bottom+90}]}>
       {service&&(
         <View style={S.footerTop}>
           <View style={{flex:1}}>
-            <Text style={S.footerLabel}>Running Total</Text>
             <Text style={S.footerHint} numberOfLines={1}>{hint}</Text>
           </View>
           <Text style={S.footerTotal}>₱{total.toLocaleString()}</Text>
@@ -190,7 +240,10 @@ export default function BookingScreen({ route, navigation }) {
         <TouchableOpacity style={[S.contBtn,!ok()&&S.contBtnOff]} onPress={next} disabled={!ok()||submitting}>
           {submitting
             ?<ActivityIndicator color="#fff" size="small"/>
-            :<Text style={S.contTxt}>{step===7?'Confirm & Pay':'Next'}</Text>}
+            :<View style={{flexDirection:'row',alignItems:'center',gap:8}}>
+                <Text style={S.contTxt}>{step===7?'Confirm & Pay':'Continue'}</Text>
+                {step!==7&&<Ionicons name="arrow-down" size={16} color="#fff"/>}
+              </View>}
         </TouchableOpacity>
       </View>
     </View>
@@ -254,24 +307,15 @@ export default function BookingScreen({ route, navigation }) {
 
         {step===3&&(
           <View>
-            <Text style={S.q}>What's in the bag?</Text>
-            <Text style={S.hint}>Pick a laundry package and tell us what type of items.</Text>
-            <Text style={S.sec}>Load Type</Text>
-            <View style={S.toggleRow}>
-              {['clothes','beddings'].map(t=>(
-                <TouchableOpacity key={t} style={[S.toggleBtn,loadType===t&&S.toggleBtnOn]} onPress={()=>{ setLoadType(t); if(t==='beddings'&&kg>7) setKg(7); }}>
-                  <Text style={[S.toggleTxt,loadType===t&&S.toggleTxtOn]}>{t==='clothes'?'👕 Clothes':'🛏 Beddings'}</Text>
-                  <Text style={[S.toggleSub,loadType===t&&S.toggleSubOn]}>{t==='clothes'?'Max 8kg':'Max 7kg'}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <Text style={S.q}>Choose a service</Text>
+            <Text style={S.hint}>Select the laundry package that suits your load. Prices shown are per-load flat rates (except Handwash).</Text>
             <Text style={S.sec}>Laundry Package</Text>
             <View style={S.svcGrid}>
               {services_.map(svc=>(
                 <TouchableOpacity key={svc.id} style={[S.svcCard,service?.id===svc.id&&S.svcCardOn]} onPress={()=>setService(svc)} activeOpacity={0.8}>
                   <MaterialCommunityIcons name={getSvcIcon(svc)} size={26} color={service?.id===svc.id?'#fff':colors.primary}/>
                   <Text style={[S.svcName,service?.id===svc.id&&S.svcNameOn]}>{svc.name}</Text>
-                  <Text style={[S.svcPrice,service?.id===svc.id&&S.svcPriceOn]}>₱{svc.price}/kg</Text>
+                  <Text style={[S.svcPrice,service?.id===svc.id&&S.svcPriceOn]} numberOfLines={2}>{getServicePriceLabel(svc)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -279,21 +323,67 @@ export default function BookingScreen({ route, navigation }) {
         )}
 
         {step===4&&(
-          <View>
-            <Text style={S.q}>How many kilos?</Text>
-            <Text style={S.hint}>Max {maxKg}kg for {loadType}. Absolute limit is 9kg (+₱50 surcharge).</Text>
-            <View style={S.kgRow}>
-              <TouchableOpacity style={S.kgBtn} onPress={()=>setKg(k=>Math.max(1,k-1))}><Text style={S.kgBtnTxt}>−</Text></TouchableOpacity>
-              <View style={S.kgDisplay}><Text style={S.kgNum}>{kg}</Text><Text style={S.kgUnit}>kg</Text></View>
-              <TouchableOpacity style={S.kgBtn} onPress={()=>setKg(k=>Math.min(9,k+1))}><Text style={S.kgBtnTxt}>+</Text></TouchableOpacity>
+          <View style={{gap:14}}>
+            {/* ── Beddings toggle ── */}
+            <View style={S.beddingsCard}>
+              <View style={S.beddingsIconWrap}>
+                <Ionicons name="briefcase-outline" size={18} color={colors.primary}/>
+              </View>
+              <View style={{flex:1}}>
+                <Text style={S.beddingsTitle}>Includes beddings or towels?</Text>
+                <Text style={S.beddingsSub}>
+                  {hasBeddings ? 'Yes — max 7 kg limit applies' : 'No — max 8 kg for clothes'}
+                </Text>
+              </View>
+              <Switch value={hasBeddings} onValueChange={v=>{setHasBeddings(v);if(v&&kg>7)setKg(7);}} trackColor={{false:colors.border,true:colors.primary}} thumbColor="#fff"/>
             </View>
-            {kg>=9&&<View style={S.surcharge}><Ionicons name="warning-outline" size={14} color={colors.warning}/><Text style={S.surchargeTxt}>9kg limit — ₱50 surcharge applies</Text></View>}
-            {kg>maxKg&&kg<9&&<View style={S.surcharge}><Ionicons name="information-circle-outline" size={14} color={colors.info}/><Text style={S.surchargeTxt}>Exceeds recommended limit for {loadType} ({maxKg}kg)</Text></View>}
-            <View style={S.kgBar}><View style={[S.kgFill,{width:`${Math.min(100,(kg/9)*100)}%`,backgroundColor:kg>=9?colors.error:kg>maxKg?colors.warning:colors.primary}]}/></View>
+
+            {/* ── Weight card ── */}
+            <View style={S.weightCard}>
+              <View style={S.weightCardHeader}>
+                <Text style={S.sectionLabel}>WEIGHT</Text>
+                <View style={[S.maxKgBadge,{backgroundColor:kg>maxKg?colors.warningLight:colors.primaryLight}]}>
+                  <Text style={[S.maxKgBadgeTxt,{color:kg>maxKg?colors.warning:colors.primary}]}>Max {maxKg} kg</Text>
+                </View>
+              </View>
+              <View style={S.kgRow}>
+                <TouchableOpacity style={S.kgBtn} onPress={()=>setKg(k=>Math.max(1,k-1))}><Text style={S.kgBtnTxt}>−</Text></TouchableOpacity>
+                <View style={S.kgDisplay}>
+                  <Text style={S.kgNum}>{kg}</Text>
+                  <Text style={S.kgUnit}>kilograms</Text>
+                </View>
+                <TouchableOpacity style={S.kgBtn} onPress={()=>setKg(k=>Math.min(9,k+1))}><Text style={S.kgBtnTxt}>+</Text></TouchableOpacity>
+              </View>
+              {/* labeled track */}
+              <View style={{marginTop:4}}>
+                <View style={S.kgBar}>
+                  <View style={[S.kgFill,{width:`${Math.min(100,((kg-1)/(maxKg-1))*100)}%`,backgroundColor:kg>maxKg?colors.error:colors.text}]}/>
+                </View>
+                <View style={S.kgBarLabels}>
+                  <Text style={S.kgBarLbl}>1 kg</Text>
+                  <Text style={S.kgBarLbl}>{maxKg} kg</Text>
+                </View>
+              </View>
+              {kg>=9&&<View style={S.surcharge}><Ionicons name="warning-outline" size={13} color={colors.error}/><Text style={[S.surchargeTxt,{color:colors.error}]}>Absolute 9 kg cap — ₱50 surcharge applies</Text></View>}
+              {kg>maxKg&&kg<9&&<View style={S.surcharge}><Ionicons name="information-circle-outline" size={13} color={colors.warning}/><Text style={S.surchargeTxt}>Exceeds {hasBeddings?'beddings/towels':'clothes'} limit ({maxKg} kg)</Text></View>}
+            </View>
+
+            {/* ── Price breakdown card ── */}
             <View style={S.liveCard}>
-              <Text style={S.liveLbl}>Service Cost Preview</Text>
-              <Text style={S.liveAmt}>₱{total.toLocaleString()}</Text>
-              <Text style={S.liveBreak}>{service?.name} · {kg}kg{kg>=9?' + ₱50 surcharge':''}</Text>
+              <Text style={S.sectionLabel}>PRICE BREAKDOWN</Text>
+              <View style={{marginTop:12,gap:10}}>
+                <View style={S.liveRow}><Text style={S.liveKey}>{service?.name}</Text><Text style={S.liveVal}>₱{getServiceBasePrice(service,kg)}</Text></View>
+                {kg>=9&&<View style={S.liveRow}><Text style={S.liveKey}>9kg Surcharge</Text><Text style={S.liveVal}>₱50</Text></View>}
+                {det!=='none'&&<View style={S.liveRow}><Text style={S.liveKey}>{DET_OPTS.find(o=>o.id===det)?.label}</Text><Text style={S.liveVal}>₱{DET_OPTS.find(o=>o.id===det)?.price}</Text></View>}
+                {fab!=='none'&&<View style={S.liveRow}><Text style={S.liveKey}>{FAB_OPTS.find(o=>o.id===fab)?.label}</Text><Text style={S.liveVal}>₱{FAB_OPTS.find(o=>o.id===fab)?.price}</Text></View>}
+                {rush&&<View style={S.liveRow}><Text style={S.liveKey}>Rush service</Text><Text style={S.liveVal}>₱150</Text></View>}
+                {needsAddr&&<View style={S.liveRow}><Text style={S.liveKey}>Delivery fee</Text><Text style={S.liveVal}>₱{deliveryFee}</Text></View>}
+                <View style={S.liveDivider}/>
+                <View style={S.liveRow}>
+                  <Text style={[S.liveKey,{fontWeight:'700',color:colors.text,fontSize:15}]}>Total</Text>
+                  <Text style={S.liveTotalAmt}>₱{total}</Text>
+                </View>
+              </View>
             </View>
           </View>
         )}
@@ -322,82 +412,65 @@ export default function BookingScreen({ route, navigation }) {
         )}
 
         {step===6&&(
-          <View>
-            <Text style={S.q}>When should we come?</Text>
-            <Text style={S.hint}>Pick a pickup date and available time slot.</Text>
+          <View style={{gap:14}}>
 
-            {/* ── DATE PICKER ── */}
+            {/* ── DATE ── */}
             <View style={S.dateSection}>
               <View style={S.dateSectionHead}>
-                <Text style={S.dateSectionTitle}>Select Date</Text>
-                <Text style={S.dateSectionMonth}>
-                  {schDate.toLocaleDateString('en-US',{month:'long',year:'numeric'})}
-                </Text>
+                <Text style={S.sectionLabel}>DATE</Text>
+                <Text style={S.dateSectionMonth}>{schDate.toLocaleDateString('en-US',{month:'short',year:'numeric'})}</Text>
               </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={S.weekStrip}>
                 {dates.map(d=>{
                   const sel=schDate.toDateString()===d.toDateString();
                   const isToday=new Date().toDateString()===d.toDateString();
                   return(
-                    <TouchableOpacity key={d.toISOString()} style={[S.dayChip, sel&&S.dayChipOn]} onPress={()=>setSchDate(d)} activeOpacity={0.75}>
-                      <Text style={[S.dayChipName, sel&&S.dayChipNameOn]}>
-                        {d.toLocaleDateString('en-US',{weekday:'short'}).toUpperCase()}
-                      </Text>
-                      <Text style={[S.dayChipNum, sel&&S.dayChipNumOn]}>{d.getDate()}</Text>
-                      {isToday&&!sel&&<View style={S.todayDot}/>}
+                    <TouchableOpacity key={d.toISOString()} style={[S.dayChip,sel&&S.dayChipOn,isToday&&!sel&&S.dayChipToday]} onPress={()=>setSchDate(d)} activeOpacity={0.75}>
+                      <Text style={[S.dayChipName,sel&&S.dayChipNameOn]}>{d.toLocaleDateString('en-US',{weekday:'short'}).toUpperCase()}</Text>
+                      <Text style={[S.dayChipNum,sel&&S.dayChipNumOn]}>{d.getDate()}</Text>
                     </TouchableOpacity>
                   );
                 })}
               </ScrollView>
             </View>
 
-            {/* ── TIME SLOT PICKER ── */}
+            {/* ── TIME SLOT — 2-col grid with period labels ── */}
             <View style={S.timeSection}>
-              <Text style={S.dateSectionTitle}>Select Time</Text>
+              <Text style={S.sectionLabel}>TIME SLOT</Text>
               {slotsLoad ? (
-                <View style={S.slotsLoading}>
-                  <ActivityIndicator color={colors.primary}/>
-                  <Text style={S.slotsLoadingTxt}>Checking availability…</Text>
-                </View>
+                <View style={S.slotsLoading}><ActivityIndicator color={colors.primary}/><Text style={S.slotsLoadingTxt}>Checking availability…</Text></View>
               ) : slots.length === 0 ? (
-                <View style={S.slotsEmpty}>
-                  <Ionicons name="calendar-outline" size={32} color={colors.border}/>
-                  <Text style={S.slotsEmptyTitle}>No slots available</Text>
-                  <Text style={S.slotsEmptyHint}>Try selecting a different date.</Text>
-                </View>
+                <View style={S.slotsEmpty}><Ionicons name="calendar-outline" size={28} color={colors.border}/><Text style={S.slotsEmptyTitle}>No slots available</Text><Text style={S.slotsEmptyHint}>Try a different date.</Text></View>
               ) : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={S.timeStrip}>
+                <View style={S.timeGrid}>
                   {slots.map(sl=>{
                     const sel=schTime===sl.label;
-                    // Parse "8:00 AM - 9:30 AM" → startTime="8:00 AM" → hour="8:00", period="AM"
-                    const startTime = (sl.label||'').split(' - ')[0].trim();
-                    const timeParts = startTime.split(' ');
-                    const period = timeParts.length >= 2 ? timeParts[timeParts.length-1] : '';
-                    const hour   = timeParts.slice(0, timeParts.length >= 2 ? -1 : timeParts.length).join('');
                     return(
-                      <TouchableOpacity
-                        key={sl.label}
-                        style={[S.timeChip, sel&&S.timeChipOn, !sl.available&&S.timeChipOff]}
-                        onPress={()=>sl.available&&setSchTime(sl.label)}
-                        disabled={!sl.available}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={[S.timeChipPeriod, sel&&S.timeChipPeriodOn, !sl.available&&S.timeChipTextOff]}>{period||'--'}</Text>
-                        <Text style={[S.timeChipHour, sel&&S.timeChipHourOn, !sl.available&&S.timeChipTextOff]}>{hour||sl.label}</Text>
-                        {!sl.available&&<Text style={S.timeChipFull}>Full</Text>}
+                      <TouchableOpacity key={sl.label} style={[S.timeItem,sel&&S.timeItemOn,!sl.available&&S.timeItemOff]} onPress={()=>sl.available&&setSchTime(sl.label)} disabled={!sl.available} activeOpacity={0.8}>
+                        <Text style={[S.timeItemTime,sel&&S.timeItemTimeOn,!sl.available&&S.timeItemTextOff]}>{fmtSlot(sl.label)}</Text>
+                        <Text style={[S.timeItemPeriod,sel&&S.timeItemPeriodOn,!sl.available&&S.timeItemTextOff]}>{sl.available?slotPeriod(sl.label):'Full'}</Text>
                       </TouchableOpacity>
                     );
                   })}
-                </ScrollView>
+                </View>
               )}
             </View>
 
+            {/* ── Rush service ── */}
             <View style={S.rushCard}>
-              <View style={{flex:1}}><Text style={S.rushTitle}>Rush Service?</Text><Text style={S.rushSub}>₱150.00 additional fee applies.</Text></View>
+              <View style={{flex:1,gap:4}}>
+                <Text style={S.rushTitle}>Rush service</Text>
+                <Text style={S.rushSub}>Same-day priority processing</Text>
+                <View style={S.rushBadge}><Text style={S.rushBadgeTxt}>+₱150 fee</Text></View>
+              </View>
               <Switch value={rush} onValueChange={setRush} trackColor={{false:colors.border,true:colors.primary}} thumbColor="#fff"/>
             </View>
-            <Text style={S.sec}>Special Instructions</Text>
-            <TextInput style={S.notesInput} multiline value={notes} onChangeText={setNotes} placeholder="e.g. Separate whites, use delicate mode…" placeholderTextColor={colors.textTertiary}/>
+
+            {/* ── Special instructions ── */}
+            <View>
+              <Text style={[S.sectionLabel,{marginBottom:10}]}>SPECIAL INSTRUCTIONS</Text>
+              <TextInput style={S.notesInput} multiline value={notes} onChangeText={setNotes} placeholder="e.g. handle with care, separate whites..." placeholderTextColor={colors.textTertiary}/>
+            </View>
           </View>
         )}
 
@@ -409,7 +482,7 @@ export default function BookingScreen({ route, navigation }) {
               {label:'Branch',       val:branch?.name},
               needsAddr&&{label:'Address',      val:address?.address},
               {label:'Service',      val:service?.name},
-              {label:'Load Type',    val:`${loadType} · ${kg}kg`},
+              {label:'Load',    val:`${kg}kg${hasBeddings?' (with beddings)':''}`},
               {label:'Detergent',    val:DET_OPTS.find(o=>o.id===det)?.label},
               {label:'Fabcon',       val:FAB_OPTS.find(o=>o.id===fab)?.label},
               {label:'Schedule',     val:`${schDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${schTime}`},
@@ -470,7 +543,20 @@ const S = StyleSheet.create({
   brName:{fontSize:14,fontWeight:'700',color:colors.text},
   brNameOn:{color:colors.primary},
   brAddr:{fontSize:12,color:colors.textSecondary,marginTop:1},
-  branchPill:{flexDirection:'row',alignItems:'center',gap:6,backgroundColor:colors.accentLight,paddingHorizontal:12,paddingVertical:7,borderRadius:20,alignSelf:'flex-start',marginBottom:16},
+  // ── Section label (all caps) ─────────────────────────────────────────────────
+  sectionLabel:{fontSize:11,fontWeight:'700',color:colors.textTertiary,letterSpacing:1.2,textTransform:'uppercase',marginBottom:12},
+  // ── Beddings toggle ───────────────────────────────────────────────────
+  beddingsCard:{flexDirection:'row',alignItems:'center',backgroundColor:colors.surface,borderRadius:16,padding:16,borderWidth:1,borderColor:colors.border,gap:12},
+  beddingsIconWrap:{width:38,height:38,borderRadius:12,backgroundColor:colors.primaryLight,alignItems:'center',justifyContent:'center'},
+  beddingsTitle:{fontSize:14,fontWeight:'700',color:colors.text},
+  beddingsSub:{fontSize:12,color:colors.textSecondary,marginTop:2},
+  // ── Weight card ───────────────────────────────────────────────────────────
+  weightCard:{backgroundColor:colors.surface,borderRadius:16,padding:20,borderWidth:1,borderColor:colors.border},
+  weightCardHeader:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:8},
+  maxKgBadge:{paddingHorizontal:12,paddingVertical:5,borderRadius:100},
+  maxKgBadgeTxt:{fontSize:12,fontWeight:'700'},
+  kgBarLabels:{flexDirection:'row',justifyContent:'space-between',marginTop:6},
+  kgBarLbl:{fontSize:11,color:colors.textTertiary,fontWeight:'500'},
   branchPillTxt:{fontSize:13,color:colors.accent},
   addrEmpty:{borderWidth:1.5,borderColor:colors.border,borderStyle:'dashed',borderRadius:18,padding:28,alignItems:'center',gap:8},
   addrEmptyIcon:{width:56,height:56,borderRadius:16,backgroundColor:colors.primaryLight,alignItems:'center',justifyContent:'center'},
@@ -502,58 +588,73 @@ const S = StyleSheet.create({
   svcNameOn:{color:'#fff'},
   svcPrice:{fontSize:12,color:colors.textSecondary},
   svcPriceOn:{color:'rgba(255,255,255,0.8)'},
-  kgRow:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:24,marginVertical:24},
-  kgBtn:{width:52,height:52,borderRadius:26,backgroundColor:colors.primaryLight,alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:colors.primary},
-  kgBtnTxt:{fontSize:24,fontWeight:'300',color:colors.primary},
-  kgDisplay:{alignItems:'center'},
-  kgNum:{fontSize:56,fontWeight:'900',color:colors.text,letterSpacing:-2},
-  kgUnit:{fontSize:16,color:colors.textSecondary,fontWeight:'600'},
+  kgRow:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:24,marginVertical:20},
+  kgBtn:{width:56,height:56,borderRadius:16,backgroundColor:colors.background,alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:colors.border},
+  kgBtnTxt:{fontSize:26,fontWeight:'300',color:colors.text},
+  kgDisplay:{alignItems:'center',minWidth:80},
+  kgNum:{fontSize:72,fontWeight:'900',color:colors.text,letterSpacing:-3},
+  kgUnit:{fontSize:13,color:colors.textTertiary,fontWeight:'500',marginTop:-6},
   surcharge:{flexDirection:'row',alignItems:'center',gap:6,backgroundColor:colors.warningLight,padding:10,borderRadius:10,marginBottom:12},
   surchargeTxt:{fontSize:12,color:colors.warning,fontWeight:'600'},
   kgBar:{height:6,backgroundColor:colors.border,borderRadius:3,marginVertical:16,overflow:'hidden'},
   kgFill:{height:6,borderRadius:3},
-  liveCard:{backgroundColor:colors.primaryLight,borderRadius:14,padding:16,borderWidth:1,borderColor:colors.primary,alignItems:'center',gap:4},
-  liveLbl:{fontSize:11,color:colors.primary,fontWeight:'700',letterSpacing:0.5},
-  liveAmt:{fontSize:28,fontWeight:'900',color:colors.primary},
+  liveCard:{backgroundColor:colors.surface,borderRadius:16,padding:18,borderWidth:1,borderColor:colors.border,gap:6},
+  liveLbl:{fontSize:11,color:colors.primary,fontWeight:'700',letterSpacing:0.5,marginBottom:4},
+  liveRow:{flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
+  liveKey:{fontSize:13,color:colors.textSecondary,flex:1},
+  liveVal:{fontSize:13,fontWeight:'700',color:colors.text},
+  liveAmt:{fontSize:22,fontWeight:'900',color:colors.primary},
+  liveDivider:{height:1,backgroundColor:colors.border,marginVertical:4},
+  liveTotalAmt:{fontSize:22,fontWeight:'900',color:colors.text},
   liveBreak:{fontSize:12,color:colors.textSecondary},
+  // Beddings toggle card
+  beddingsCard:{flexDirection:'row',alignItems:'center',backgroundColor:colors.surface,borderRadius:14,padding:14,borderWidth:1,borderColor:colors.border,marginBottom:16,gap:12},
+  beddingsTitle:{fontSize:14,fontWeight:'700',color:colors.text},
+  beddingsSub:{fontSize:12,color:colors.textSecondary,marginTop:2},
   pillRow:{flexDirection:'row',flexWrap:'wrap',gap:10,marginBottom:4},
   pill:{paddingHorizontal:16,paddingVertical:10,borderRadius:24,borderWidth:1.5,borderColor:colors.border,backgroundColor:colors.surface},
   pillOn:{borderColor:colors.primary,backgroundColor:colors.primary},
   pillTxt:{fontSize:13,fontWeight:'600',color:colors.text},
   pillTxtOn:{color:'#fff'},
   // ── Date section ───────────────────────────────────────────────────────────
-  dateSection:{backgroundColor:colors.surface,borderRadius:20,padding:16,marginBottom:14,borderWidth:1,borderColor:colors.border},
-  dateSectionHead:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:16},
+  dateSection:{backgroundColor:colors.surface,borderRadius:16,padding:16,marginBottom:0,borderWidth:1,borderColor:colors.border},
+  dateSectionHead:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:14},
   dateSectionTitle:{fontSize:15,fontWeight:'800',color:colors.text},
   dateSectionMonth:{fontSize:13,fontWeight:'600',color:colors.textSecondary},
   weekStrip:{gap:8,paddingBottom:4,paddingHorizontal:2},
-  dayChip:{alignItems:'center',justifyContent:'center',width:56,height:72,borderRadius:16,backgroundColor:colors.background,borderWidth:1.5,borderColor:colors.border,gap:4,position:'relative'},
-  dayChipOn:{backgroundColor:colors.primary,borderColor:colors.primary},
+  dayChip:{alignItems:'center',justifyContent:'center',width:58,height:72,borderRadius:14,backgroundColor:colors.background,borderWidth:1.5,borderColor:colors.border,gap:4},
+  dayChipOn:{backgroundColor:colors.text,borderColor:colors.text},
+  dayChipToday:{borderColor:colors.primary,borderWidth:2},
   dayChipName:{fontSize:10,fontWeight:'700',color:colors.textTertiary,letterSpacing:0.5},
-  dayChipNameOn:{color:'rgba(255,255,255,0.75)'},
-  dayChipNum:{fontSize:22,fontWeight:'900',color:colors.text},
+  dayChipNameOn:{color:'rgba(255,255,255,0.65)'},
+  dayChipNum:{fontSize:24,fontWeight:'900',color:colors.text},
   dayChipNumOn:{color:'#fff'},
   todayDot:{width:5,height:5,borderRadius:3,backgroundColor:colors.accent,position:'absolute',bottom:6},
-  // ── Time section ───────────────────────────────────────────────────────────
-  timeSection:{backgroundColor:colors.surface,borderRadius:20,padding:16,marginBottom:14,borderWidth:1,borderColor:colors.border},
-  timeStrip:{gap:10,paddingBottom:4,paddingHorizontal:2},
-  timeChip:{alignItems:'center',justifyContent:'center',width:54,height:68,borderRadius:14,backgroundColor:colors.background,borderWidth:1.5,borderColor:colors.border,gap:1},
-  timeChipOn:{backgroundColor:colors.primary,borderColor:colors.primary},
-  timeChipOff:{opacity:0.45},
-  timeChipPeriod:{fontSize:11,fontWeight:'700',color:colors.textTertiary,letterSpacing:0.5},
-  timeChipPeriodOn:{color:'rgba(255,255,255,0.75)'},
-  timeChipHour:{fontSize:20,fontWeight:'900',color:colors.text},
-  timeChipHourOn:{color:'#fff'},
-  timeChipTextOff:{color:colors.disabled},
-  timeChipFull:{fontSize:9,fontWeight:'700',color:colors.disabled,marginTop:1,letterSpacing:0.3},
+  // ── Time grid (2-col with period labels) ─────────────────────────────────
+  timeSection:{backgroundColor:colors.surface,borderRadius:16,padding:16,borderWidth:1,borderColor:colors.border},
+  timeGrid:{flexDirection:'row',flexWrap:'wrap',gap:10,marginTop:12},
+  timeItem:{width:'47%',backgroundColor:colors.background,borderRadius:12,padding:14,borderWidth:1.5,borderColor:colors.border},
+  timeItemOn:{backgroundColor:colors.text,borderColor:colors.text},
+  timeItemOff:{opacity:0.45},
+  timeItemTime:{fontSize:15,fontWeight:'800',color:colors.text,letterSpacing:-0.5},
+  timeItemTimeOn:{color:'#fff'},
+  timeItemPeriod:{fontSize:12,color:colors.textSecondary,marginTop:3},
+  timeItemPeriodOn:{color:'rgba(255,255,255,0.65)'},
+  timeItemTextOff:{color:colors.disabled},
+  timeItemLabel:{fontSize:13,fontWeight:'700',color:colors.text,flex:1},
+  timeItemLabelOn:{color:'#fff'},
+  timeItemLabelOff:{color:colors.disabled},
+  timeItemFull:{fontSize:10,fontWeight:'700',color:colors.disabled},
   slotsLoading:{flexDirection:'row',alignItems:'center',gap:10,paddingVertical:20,justifyContent:'center'},
   slotsLoadingTxt:{fontSize:13,color:colors.textSecondary},
   slotsEmpty:{alignItems:'center',paddingVertical:28,gap:8},
   slotsEmptyTitle:{fontSize:15,fontWeight:'700',color:colors.text},
   slotsEmptyHint:{fontSize:13,color:colors.textSecondary},
-  rushCard:{flexDirection:'row',alignItems:'center',backgroundColor:colors.surface,borderRadius:14,padding:16,borderWidth:1,borderColor:colors.border,marginTop:16,gap:12},
-  rushTitle:{fontSize:15,fontWeight:'700',color:colors.text},
-  rushSub:{fontSize:12,color:colors.textSecondary,marginTop:2},
+  rushCard:{flexDirection:'row',alignItems:'center',backgroundColor:colors.surface,borderRadius:16,padding:16,borderWidth:1,borderColor:colors.border,gap:12},
+  rushTitle:{fontSize:16,fontWeight:'800',color:colors.text},
+  rushSub:{fontSize:13,color:colors.textSecondary},
+  rushBadge:{alignSelf:'flex-start',backgroundColor:'#FFF3E0',paddingHorizontal:10,paddingVertical:4,borderRadius:100,marginTop:4},
+  rushBadgeTxt:{fontSize:12,fontWeight:'700',color:'#E65100'},
   notesInput:{backgroundColor:colors.surface,borderRadius:12,padding:14,borderWidth:1,borderColor:colors.border,fontSize:13,color:colors.text,minHeight:80,textAlignVertical:'top',marginTop:8},
   sumRow:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingVertical:12,borderBottomWidth:1,borderBottomColor:colors.border},
   sumKey:{fontSize:13,color:colors.textSecondary,fontWeight:'500'},

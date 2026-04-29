@@ -339,9 +339,17 @@ export default function OrderDetailScreen({ route, navigation }) {
 
         {/* PAYMENT ACCORDION */}
         <Accordion title="Payment Summary" icon="receipt-outline">
-          <Row label="Service Fee"   value={`₱${(order.servicePrice||0).toFixed(2)}`}/>
-          <Row label="Supplies"      value={`₱${(order.suppliesPrice||0).toFixed(2)}`}/>
-          <Row label="Delivery Fee"  value={`₱${(order.deliveryPrice||0).toFixed(2)}`}/>
+          <Row label="Service Fee"
+               value={order.servicePrice > 0 ? `₱${order.servicePrice.toFixed(2)}` : '—'}/>
+          <Row label="Supplies"
+               value={order.suppliesPrice > 0 ? `₱${order.suppliesPrice.toFixed(2)}` : '—'}/>
+          {(order.rushPrice > 0) && (
+            <Row label="Rush Service" value={`₱${order.rushPrice.toFixed(2)}`}/>
+          )}
+          {(order.deliveryPrice > 0 || order.delivery) && (
+            <Row label="Delivery Fee"
+                 value={order.deliveryPrice > 0 ? `₱${order.deliveryPrice.toFixed(2)}` : 'Location-based'}/>
+          )}
           <View style={styles.divider}/>
           <Row label="Total" value={`₱${(order.amount||0).toFixed(2)}`} valueStyle={{fontWeight:'800',color:colors.primary,fontSize:16}}/>
           <Row label="Method" value={order.paymentMethod}/>
