@@ -395,7 +395,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
               <Text style={styles.profileSubLabel}>Customer Profile</Text>
               <Text style={styles.profileName}>{customerName}</Text>
               {deliveryAddress ? (
-                <Text style={styles.profileAddress} numberOfLines={1}>{deliveryAddress}</Text>
+                <Text style={styles.profileAddress}>{deliveryAddress}</Text>
               ) : null}
             </View>
             <TouchableOpacity
@@ -738,8 +738,8 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             <View style={[styles.routeDot, { backgroundColor: colors.primary }]} />
             <View style={styles.routeInfo}>
               <Text style={styles.routeLabel}>PICKUP FROM</Text>
-              <Text style={styles.routeValue} numberOfLines={1}>{customerName}</Text>
-              <Text style={styles.routeAddress} numberOfLines={1}>{deliveryAddress || '—'}</Text>
+              <Text style={styles.routeValue} numberOfLines={2}>{customerName}</Text>
+              <Text style={styles.routeAddress} numberOfLines={2}>{deliveryAddress || '—'}</Text>
             </View>
           </View>
           <View style={styles.routeLine} />
@@ -747,10 +747,10 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             <View style={[styles.routeDot, { backgroundColor: '#7C3AED' }]} />
             <View style={styles.routeInfo}>
               <Text style={styles.routeLabel}>DROP-OFF AT</Text>
-              <Text style={styles.routeValue} numberOfLines={1}>
+              <Text style={styles.routeValue} numberOfLines={2}>
                 {delivery.branchAddress?.split(',')[0] || 'Laundry Branch'}
               </Text>
-              <Text style={styles.routeAddress} numberOfLines={1}>{branchAddress || '—'}</Text>
+              <Text style={styles.routeAddress} numberOfLines={2}>{branchAddress || '—'}</Text>
             </View>
           </View>
         </View>
@@ -819,6 +819,12 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
   const cfg = STATE_CONFIG[delivery.status] || STATE_CONFIG['pending'];
   const targetCoords = getTargetCoords();
   const isHandover = delivery.status === 'at_branch';
+  const showCodBanner =
+    !delivery.isPaid &&
+    delivery.paymentMethod?.toLowerCase().includes('cash') &&
+    delivery.status !== 'completed';
+  const loadCountValue = delivery.bagCount ?? bagCount ?? 'N/A';
+  const trackingValue = delivery.orderNumber || delivery.trackingNumber || `DEL-${delivery.id}`;
 
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
@@ -985,31 +991,58 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
         <ScrollView
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.sheetScrollContent}
+          style={styles.sheetScroll}
+          contentContainerStyle={[
+            styles.sheetScrollContent,
+            showCodBanner && styles.sheetScrollWithCodBanner,
+          ]}
         >
-          {renderSheetContent()}
-        </ScrollView>
+          <View style={styles.deliveryMetaCard}>
+            <View style={styles.deliveryMetaRow}>
+              <Text style={styles.deliveryMetaLabel}>Tracking</Text>
+              <Text style={styles.deliveryMetaValue} numberOfLines={2}>
+                {trackingValue}
+              </Text>
+            </View>
+            <View style={styles.deliveryMetaRow}>
+              <Text style={styles.deliveryMetaLabel}>Load Count</Text>
+              <Text style={styles.deliveryMetaValue}>{loadCountValue}</Text>
+            </View>
+            <View style={styles.deliveryMetaBlock}>
+              <Text style={styles.deliveryMetaLabel}>Branch Address</Text>
+              <Text style={[styles.deliveryMetaValue, styles.deliveryMetaValueFull]}>
+                {delivery.branchAddress || 'N/A'}
+              </Text>
+            </View>
+            <View style={styles.deliveryMetaBlock}>
+              <Text style={styles.deliveryMetaLabel}>Delivery Address</Text>
+              <Text style={[styles.deliveryMetaValue, styles.deliveryMetaValueFull]}>
+                {delivery.deliveryAddress || 'N/A'}
+              </Text>
+            </View>
+          </View>
 
-        {/* COD banner — persistent reminder */}
-        {!delivery.isPaid && delivery.paymentMethod?.toLowerCase().includes('cash') &&
-         delivery.status !== 'completed' && (
-          <TouchableOpacity
-            style={styles.codBanner}
-            onPress={() => Alert.alert(
-              'Collect Cash',
-              `Have you received ₱${delivery.amountToCollect?.toLocaleString()} from ${delivery.customerName}?`,
-              [
-                { text: 'Not yet', style: 'cancel' },
-                { text: 'Yes — Collected ✓', onPress: () => handleAction('collectCodPayment') },
-              ]
-            )}
-          >
-            <Ionicons name="wallet-outline" size={14} color="#FFF" />
-            <Text style={styles.codBannerText}>
-              COD:  ₱{delivery.amountToCollect?.toLocaleString()}  ·  Tap to mark collected
-            </Text>
-          </TouchableOpacity>
-        )}
+          {renderSheetContent()}
+
+          {showCodBanner && (
+            <TouchableOpacity
+              style={styles.codBanner}
+              onPress={() => Alert.alert(
+                'Collect Cash',
+                'Have you received PHP ' + (delivery.amountToCollect?.toLocaleString() || '0') + ' from ' + delivery.customerName + '?',
+                [
+                  { text: 'Not yet', style: 'cancel' },
+                  { text: 'Yes - Collected', onPress: () => handleAction('collectCodPayment') },
+                ]
+              )}
+            >
+              <Ionicons name="wallet-outline" size={14} color="#FFF" />
+              <Text style={styles.codBannerText}>
+                COD: PHP {delivery.amountToCollect?.toLocaleString()} - Tap to mark collected
+              </Text>
+            </TouchableOpacity>
+          )}
+        </ScrollView>
       </View>
 
       {/* ── UPDATING OVERLAY ─────────────────────────────────────────────── */}
@@ -1230,7 +1263,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: SCREEN_HEIGHT * 0.56,
+    maxHeight: SCREEN_HEIGHT * 0.5,
+    minHeight: SCREEN_HEIGHT * 0.34,
     elevation: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
@@ -1252,10 +1286,53 @@ const styles = StyleSheet.create({
   sheetScrollContent: {
     paddingHorizontal: 18,
     paddingTop: 4,
-    paddingBottom: 12,
+    paddingBottom: 20,
+  },
+  sheetScrollWithCodBanner: {
+    paddingBottom: 28,
+  },
+  sheetScroll: {
+    flex: 1,
   },
   sheetInner: {
     gap: 13,
+  },
+
+  deliveryMetaCard: {
+    backgroundColor: '#F8FAFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#DDE6F3',
+    padding: 12,
+    gap: 8,
+    marginBottom: 10,
+  },
+  deliveryMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  deliveryMetaBlock: {
+    gap: 3,
+  },
+  deliveryMetaLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.textTertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+  },
+  deliveryMetaValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0D1B2A',
+    flexShrink: 1,
+    lineHeight: 18,
+    textAlign: 'right',
+  },
+  deliveryMetaValueFull: {
+    textAlign: 'left',
   },
 
   // ── Sheet: Titles ──
@@ -1285,7 +1362,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  profileInfo: { flex: 1 },
+  profileInfo: { flex: 1, minWidth: 0 },
   profileSubLabel: {
     fontSize: 10,
     fontWeight: '600',
@@ -1303,6 +1380,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textSecondary,
     marginTop: 1,
+    lineHeight: 16,
   },
   callBtn: {
     flexDirection: 'row',
@@ -1713,6 +1791,7 @@ const styles = StyleSheet.create({
   },
   routeInfo: {
     flex: 1,
+    minWidth: 0,
   },
   routeLabel: {
     fontSize: 9,
@@ -1731,6 +1810,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textSecondary,
     marginTop: 1,
+    lineHeight: 15,
   },
   acceptBtn: {
     flexDirection: 'row',
@@ -1845,7 +1925,8 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: '#854D0E',
     marginHorizontal: 16,
-    marginBottom: 6,
+    marginTop: 8,
+    marginBottom: 2,
     padding: 11,
     borderRadius: 12,
   },
@@ -1873,3 +1954,5 @@ const styles = StyleSheet.create({
 });
 
 export default DeliveryDetailScreen;
+
+
