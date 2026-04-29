@@ -726,14 +726,23 @@ public class DeliveryService {
 
         JobOrder order = delivery.getJobOrder();
         String method = order.getPaymentMethod() == null ? "" : order.getPaymentMethod().trim().toUpperCase();
-        if (!method.contains("CASH")) {
-            throw new IllegalStateException("COD collection is only available for cash orders.");
+        if (!isCodCollectibleMethod(method)) {
+            throw new IllegalStateException("COD collection is only available for cash/COD orders.");
+        }
+
+        Optional<PaymentRecord> existingPayment = paymentRecordRepository.findByJobOrder_TrackingNumber(order.getTrackingNumber());
+        if (order.isPaid()
+                || existingPayment
+                .map(PaymentRecord::getStatus)
+                .map(status -> status == PaymentStatus.PAID || status == PaymentStatus.VERIFIED)
+                .orElse(false)) {
+            throw new IllegalStateException("Payment already collected.");
         }
 
         order.setPaid(true);
         orderRepository.save(order);
 
-        PaymentRecord payment = paymentRecordRepository.findByJobOrder_TrackingNumber(order.getTrackingNumber())
+        PaymentRecord payment = existingPayment
                 .orElseGet(() -> PaymentRecord.builder().jobOrder(order).build());
         payment.setMethod(PaymentMethod.CASH);
         payment.setAmount(order.getTotalPrice());
@@ -1216,5 +1225,12 @@ public class DeliveryService {
         return status == DeliveryStatus.DELIVERED
                 || status == DeliveryStatus.CANCELLED
                 || status == DeliveryStatus.FAILED;
+    }
+
+    private boolean isCodCollectibleMethod(String rawMethod) {
+        String method = blankToNull(rawMethod);
+        if (method == null) return false;
+        String normalized = method.toUpperCase();
+        return normalized.contains("CASH") || normalized.contains("COD");
     }
 }

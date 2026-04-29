@@ -1224,10 +1224,10 @@ export const deliveries = {
     return mapDelivery(payload);
   },
   collectCodPayment: async (id) => {
-    await apiRequest(`/api/deliveries/${id}/collect-cod`, {
+    const payload = await apiRequest(`/api/deliveries/${id}/collect-cod`, {
       method: 'PATCH',
     });
-    return { success: true };
+    return mapDelivery(payload);
   },
 
   // â”€â”€ State Machine Actions â”€â”€

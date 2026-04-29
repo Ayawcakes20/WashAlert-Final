@@ -131,6 +131,11 @@ const PHASE_B_STEPS = [
   { key: 'completed',          label: 'Delivered' },
 ];
 
+const isCashCodPaymentMethod = (method) => {
+  const normalized = String(method || '').trim().toLowerCase();
+  return normalized.includes('cash') || normalized.includes('cod');
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 const DeliveryDetailScreen = ({ route, navigation }) => {
   useAuth(); // Auth context
@@ -500,12 +505,28 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
     }
 
     try {
+      if (method === 'collectCodPayment') {
+        const paymentStatus = String(delivery?.paymentStatus || '').toUpperCase();
+        if (delivery?.isPaid || paymentStatus === 'PAID' || paymentStatus === 'VERIFIED') {
+          Alert.alert('Payment', 'Payment already collected.');
+          return;
+        }
+        if (!isCashCodPaymentMethod(delivery?.paymentMethod)) {
+          Alert.alert('Payment Not Allowed', 'COD collection is only available for cash/COD orders.');
+          return;
+        }
+      }
+
       setUpdating(true);
       const updated = await deliveriesApi[method](delivery.id, args);
       if (!updated?.id || !updated?.orderNumber) {
         throw new Error('Delivery update returned incomplete data. Please refresh and try again.');
       }
       setDelivery(updated);
+      if (method === 'collectCodPayment') {
+        await loadDelivery({ silent: true });
+        Alert.alert('Payment Collected', 'Cash payment marked as paid.');
+      }
       setEtaInfo({ distance: null, duration: null }); // reset ETA on transition
       if (method === 'finalHandover' && updated.status === 'completed') {
         Alert.alert('Delivery Completed', 'Great work. Returning to your dashboard.', [
@@ -514,7 +535,12 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
       }
     } catch (e) {
       const message = String(e?.message || '');
-      if (message.toLowerCase().includes('cannot') || message.toLowerCase().includes('invalid')) {
+      console.warn('[DeliveryDetail][ActionFailed]', { method, deliveryId: delivery?.id, message });
+      if (message.toLowerCase().includes('already collected')) {
+        Alert.alert('Payment', 'Payment already collected.');
+      } else if (message.toLowerCase().includes('cash/cod')) {
+        Alert.alert('Payment Not Allowed', 'COD collection is only available for cash/COD orders.');
+      } else if (message.toLowerCase().includes('cannot') || message.toLowerCase().includes('invalid')) {
         Alert.alert('Action Not Allowed', 'This action is not allowed for the current delivery state.');
       } else {
         Alert.alert('Action Failed', message || 'Something went wrong. Try again.');
@@ -1073,7 +1099,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
   const isHandover = delivery.status === 'at_branch';
   const showCodBanner =
     !delivery.isPaid &&
-    delivery.paymentMethod?.toLowerCase().includes('cash') &&
+    isCashCodPaymentMethod(delivery.paymentMethod) &&
     delivery.status !== 'completed';
   const loadCountValue = delivery.bagCount ?? delivery.loadCount ?? (delivery.loadKg ? `${delivery.loadKg} kg` : (bagCount || 'Not provided'));
   const trackingValue = delivery.orderNumber || delivery.trackingNumber || 'Not provided';
