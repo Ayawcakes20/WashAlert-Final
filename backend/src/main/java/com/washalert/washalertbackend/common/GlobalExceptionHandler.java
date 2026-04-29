@@ -116,6 +116,9 @@ public class GlobalExceptionHandler {
                 || lower.contains("users.email")
                 || lower.contains("for key")) {
             msg = "Email already exists.";
+        } else if (lower.contains("delivery_orders")
+                && (lower.contains("driver_name") || lower.contains("driver_phone"))) {
+            msg = "Unable to set order status because delivery assignment data is incomplete.";
         } else {
             // fallback but still not a 500
             msg = "Request violates database constraints.";

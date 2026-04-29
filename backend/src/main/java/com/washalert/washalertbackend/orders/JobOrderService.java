@@ -20,6 +20,7 @@ import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
 import jakarta.transaction.Transactional;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -322,7 +323,13 @@ public class JobOrderService {
             );
 
             if (jo.getStatus() == JobOrderStatus.READY) {
-                deliveryService.initializePhaseB(jo);
+                try {
+                    deliveryService.initializePhaseB(jo);
+                } catch (DataIntegrityViolationException ex) {
+                    throw new IllegalStateException(
+                            "Unable to move order to Ready for Pickup due to delivery initialization constraints."
+                    );
+                }
             }
             deliveryService.syncWithOrderStatus(jo, actor.getEmail());
         }
@@ -672,7 +679,7 @@ public class JobOrderService {
             case PENDING -> to == JobOrderStatus.WASHING;
             case WASHING -> to == JobOrderStatus.DRYING;
             case DRYING -> to == JobOrderStatus.READY;
-            case READY -> to == JobOrderStatus.PICKED_UP;
+            case READY -> to == JobOrderStatus.PICKED_UP || to == JobOrderStatus.DELIVERED;
             case PICKED_UP -> to == JobOrderStatus.DELIVERED;
             case DELIVERED -> false;
             case CANCELLED -> false;

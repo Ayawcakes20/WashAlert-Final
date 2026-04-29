@@ -91,7 +91,7 @@ const getAllowedStatusTransitions = (status: ApiOrderStatus): ApiOrderStatus[] =
     case "DRYING":
       return ["READY"];
     case "READY":
-      return ["PICKED_UP"];
+      return ["DELIVERED"];
     case "PICKED_UP":
       return ["DELIVERED"];
     default:
@@ -189,7 +189,6 @@ export default function OrderManagementPage() {
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [statusUpdatingId, setStatusUpdatingId] = useState<number | null>(null);
-  const [statusDrafts, setStatusDrafts] = useState<Record<number, ApiOrderStatus>>({});
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearchQuery = useDebouncedValue(searchQuery, 400);
   const [filterBranch, setFilterBranch] = useState(isAdmin ? "" : staffBranch);
@@ -295,7 +294,7 @@ export default function OrderManagementPage() {
   const applyStatusUpdate = async (order: Order) => {
     const allowed = getAllowedStatusTransitions(order.status);
     const fallbackStatus = allowed[0];
-    const nextStatus = statusDrafts[order.id] || fallbackStatus || order.status;
+    const nextStatus = fallbackStatus || order.status;
     if (nextStatus === order.status) return;
     if (!allowed.includes(nextStatus)) {
       toast.error(`Invalid transition from ${statusLabel[order.status]} to ${statusLabel[nextStatus]}.`);
@@ -306,7 +305,6 @@ export default function OrderManagementPage() {
       const updated = await ordersApi.updateStatus(order.id, nextStatus);
       const mapped = mapOrder(updated);
       setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
-      setStatusDrafts((prev) => ({ ...prev, [order.id]: mapped.status }));
       toast.success(`Order ${updated.trackingNumber} moved to ${statusLabel[mapped.status]}.`);
       await loadOrders(Math.max(0, ordersPage - 1), true);
     } catch (err: any) {
@@ -564,7 +562,7 @@ export default function OrderManagementPage() {
               Overview: This table tracks each order lifecycle with status controls and delivery metadata in one place.
             </p>
             <p className="text-xs text-brand-muted">
-              Updating status: Use the status dropdown to move to the next valid stage (Pending → Washing → Drying → Ready → Picked Up → Delivered).
+              Updating status: Use the `Next` action to move the order through valid stages (Pending → Washing → Drying → Ready → Delivered).
             </p>
             <p className="text-xs text-brand-muted">
               Payment status: Order progress status and payment status are separate. Online and e-wallet payments update automatically to PAID after provider webhook confirmation. Cash remains manual confirmation only.
@@ -740,33 +738,15 @@ export default function OrderManagementPage() {
                           <Eye className="h-3.5 w-3.5" /> View
                         </Button>
                         {nextStatuses.length ? (
-                          <div className="flex items-center gap-1.5">
-                            <select
-                              value={statusDrafts[order.id] || nextStatuses[0]}
-                              onChange={(e) =>
-                                setStatusDrafts((prev) => ({
-                                  ...prev,
-                                  [order.id]: e.target.value as ApiOrderStatus,
-                                }))
-                              }
-                              className="h-8 rounded-brand border border-brand-border bg-white px-2 text-xs text-brand-text"
-                            >
-                              {nextStatuses.map((nextStatus) => (
-                                <option key={nextStatus} value={nextStatus}>
-                                  {statusLabel[nextStatus]}
-                                </option>
-                              ))}
-                            </select>
-                            <Button
-                              size="sm"
-                              className="h-8 px-2.5 text-xs bg-brand-navy text-white hover:bg-brand-navyDark"
-                              onClick={() => void applyStatusUpdate(order)}
-                              disabled={statusUpdatingId === order.id}
-                            >
-                              {statusUpdatingId === order.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                              Update
-                            </Button>
-                          </div>
+                          <Button
+                            size="sm"
+                            className="h-8 px-2.5 text-xs bg-brand-navy text-white hover:bg-brand-navyDark"
+                            onClick={() => void applyStatusUpdate(order)}
+                            disabled={statusUpdatingId === order.id}
+                          >
+                            {statusUpdatingId === order.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                            {`Next: ${statusLabel[nextStatuses[0]]}`}
+                          </Button>
                         ) : (
                           <Badge variant="outline" className="text-[10px] text-brand-muted border-brand-border">
                             Closed
@@ -775,8 +755,8 @@ export default function OrderManagementPage() {
                         {order.status === "PENDING" ? (
                           <Button
                             size="sm"
-                            variant="secondary"
-                            className="h-8 px-2.5 text-xs shrink-0"
+                            variant="outline"
+                            className="h-8 px-2.5 text-xs shrink-0 border-brand-border text-brand-muted hover:text-brand-text"
                             onClick={async () => {
                               try {
                                 await ordersApi.cancel(order.id);

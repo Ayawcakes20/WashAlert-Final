@@ -327,6 +327,12 @@ public class DeliveryService {
         DeliveryOrder outbound = existing.orElse(new DeliveryOrder());
         outbound.setJobOrder(order);
         outbound.setLeg(DeliveryLeg.DELIVERY_TO_CUSTOMER);
+        if (blankToNull(outbound.getDriverName()) == null) {
+            outbound.setDriverName("Unassigned");
+        }
+        if (blankToNull(outbound.getDriverPhone()) == null) {
+            outbound.setDriverPhone("-");
+        }
 
         // Only set status to ASSIGNED_DELIVERY if it's new
         if (outbound.getStatus() == null) {
