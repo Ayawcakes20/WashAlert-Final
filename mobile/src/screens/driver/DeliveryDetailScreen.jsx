@@ -97,6 +97,8 @@ const STATE_CONFIG = {
   failed:             { statusLabel: 'Cancelled',            destination: null,       phase: null, routeColor: '#F87171' },
 };
 
+const getStatusLabel = (s) => STATE_CONFIG[s]?.statusLabel || 'Pending';
+
 // ─── Phase B Step Definitions ─────────────────────────────────────────────────
 const PHASE_B_STEPS = [
   { key: 'ready_for_dispatch', label: 'Ready for Pickup' },
@@ -393,7 +395,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             </View>
             <TouchableOpacity
               style={styles.callBtn}
-              onPress={() => Linking.openURL(`tel:${customerPhone}`)}
+              onPress={() => delivery.customerPhone && Linking.openURL(`tel:${delivery.customerPhone.replace(/[^0-9+]/g,'')}`) }
             >
               <Ionicons name="call" size={15} color="#FFF" />
               <Text style={styles.callBtnText}>Call</Text>
@@ -579,7 +581,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             </View>
             <TouchableOpacity
               style={styles.callBtn}
-              onPress={() => Linking.openURL(`tel:${customerPhone}`)}
+              onPress={() => delivery.customerPhone && Linking.openURL(`tel:${delivery.customerPhone.replace(/[^0-9+]/g,'')}`) }
             >
               <Ionicons name="call" size={15} color="#FFF" />
             </TouchableOpacity>
@@ -604,14 +606,14 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
           <View style={styles.contactRow}>
             <TouchableOpacity
               style={styles.contactBtn}
-              onPress={() => Linking.openURL(`tel:${customerPhone}`)}
+              onPress={() => delivery.customerPhone && Linking.openURL(`tel:${delivery.customerPhone.replace(/[^0-9+]/g,'')}`) }
             >
               <Ionicons name="call" size={16} color="#FFF" />
               <Text style={styles.contactBtnText}>Call{'\n'}Customer</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.contactBtn, { backgroundColor: '#334e87' }]}
-              onPress={() => Linking.openURL(`sms:${customerPhone}`)}
+              onPress={() => delivery.customerPhone && Linking.openURL(`sms:${delivery.customerPhone.replace(/[^0-9+]/g,'')}`) }
             >
               <Ionicons name="chatbubble-ellipses" size={16} color="#FFF" />
               <Text style={styles.contactBtnText}>Message{'\n'}Customer</Text>
@@ -697,7 +699,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             </View>
             <TouchableOpacity
               style={styles.callBtn}
-              onPress={() => Linking.openURL(`tel:${customerPhone}`)}
+              onPress={() => delivery.customerPhone && Linking.openURL(`tel:${delivery.customerPhone.replace(/[^0-9+]/g,'')}`) }
             >
               <Ionicons name="call" size={15} color="#FFF" />
               <Text style={styles.callBtnText}>Call</Text>
@@ -826,7 +828,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <View style={styles.screen}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
 
       {/* ── FULL SCREEN DARK MAP ─────────────────────────────────────────── */}
       <MapView
@@ -936,11 +938,14 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
         ]}
       >
         <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.headerCircle} onPress={() => navigation.goBack()}>
-            <Ionicons name="chevron-back" size={20} color="#0D1B2A" />
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
 
-          <Text style={styles.headerTitle}>WashAlert Driver App</Text>
+          <View style={styles.headerTitleRow}>
+            <Text style={styles.headerTitle} numberOfLines={1}>{delivery.customerName || 'Delivery'}</Text>
+            <Text style={styles.orderId}>{delivery.orderNumber}</Text>
+          </View>
 
           <TouchableOpacity style={styles.headerCircle} onPress={openExternalNav}>
             <Ionicons name="navigate" size={18} color={colors.primary} />
@@ -1027,7 +1032,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#1d2c4d',
+    backgroundColor: '#F5F8FF',
   },
 
   // ── Loading / Error ──
@@ -1169,6 +1174,25 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     gap: 10,
   },
+  backBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitleRow: {
+    flex: 1,
+    gap: 1,
+  },
+  headerTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  orderId: {
+    fontSize: 11,
+    color: colors.textTertiary,
+  },
   headerCircle: {
     width: 36,
     height: 36,
@@ -1176,14 +1200,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0F4FF',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0D1B2A',
-    letterSpacing: 0.2,
   },
   etaStrip: {
     flexDirection: 'row',
@@ -1307,6 +1323,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 13,
   },
+
+  // ── Contact Pill ──
+  contactPill: { flexDirection:'row', alignItems:'center', gap:4, backgroundColor:colors.primaryLight, paddingHorizontal:10, paddingVertical:4, borderRadius:100 },
+  contactPillText: { fontSize:12, fontWeight:'700', color:colors.primary },
 
   // ── Destination row ──
   destinationRow: {

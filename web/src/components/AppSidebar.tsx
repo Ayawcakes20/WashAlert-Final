@@ -91,7 +91,7 @@ export function AppSidebar() {
 
   return (
     <>
-      <Sidebar collapsible="icon" className="border-r-0 bg-[radial-gradient(120%_100%_at_0%_0%,hsl(var(--sidebar-primary)/0.2)_0%,transparent_45%),linear-gradient(180deg,hsl(var(--sidebar-background))_0%,hsl(216_65%_16%)_100%)]">
+      <Sidebar collapsible="icon" className="border-r-0 bg-[radial-gradient(120%_100%_at_0%_0%,hsl(var(--sidebar-primary)/0.28)_0%,transparent_45%),linear-gradient(180deg,hsl(var(--sidebar-background))_0%,hsl(214_64%_20%)_100%)]">
         <SidebarHeader className="p-4 border-b border-sidebar-border/60">
           <div className="flex items-center gap-3">
             <img
@@ -117,8 +117,8 @@ export function AppSidebar() {
               <SidebarMenu>
                 {navModules.map((item) => (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={isActive(item.url)} className="h-10 rounded-xl transition-all duration-200 hover:bg-sidebar-accent/85 hover:text-sidebar-primary shadow-[inset_0_0_0_1px_hsl(var(--sidebar-border)/0.2)]">
-                      <NavLink to={item.url} end activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold shadow-[0_0_0_1px_hsl(var(--sidebar-primary)/0.45)] border-l-2 border-[hsl(var(--secondary))] pl-[10px]">
+                    <SidebarMenuButton asChild isActive={isActive(item.url)} className="h-10 rounded-lg transition-all duration-200 hover:bg-sidebar-accent/85 hover:text-sidebar-primary shadow-[inset_0_0_0_1px_hsl(var(--sidebar-border)/0.2)]">
+                      <NavLink to={item.url} end activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold shadow-[0_0_0_1px_hsl(var(--sidebar-primary)/0.45)]">
                         <item.icon className="h-4 w-4" />
                         {!collapsed && <span>{item.title}</span>}
                       </NavLink>
@@ -134,8 +134,8 @@ export function AppSidebar() {
               <SidebarMenu>
                 {otherItems.map((item) => (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={isActive(item.url)} className="h-10 rounded-xl transition-all duration-200 hover:bg-sidebar-accent/85 hover:text-sidebar-primary shadow-[inset_0_0_0_1px_hsl(var(--sidebar-border)/0.2)]">
-                      <NavLink to={item.url} end activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold shadow-[0_0_0_1px_hsl(var(--sidebar-primary)/0.45)] border-l-2 border-[hsl(var(--secondary))] pl-[10px]">
+                    <SidebarMenuButton asChild isActive={isActive(item.url)} className="h-10 rounded-lg transition-all duration-200 hover:bg-sidebar-accent/85 hover:text-sidebar-primary shadow-[inset_0_0_0_1px_hsl(var(--sidebar-border)/0.2)]">
+                      <NavLink to={item.url} end activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold shadow-[0_0_0_1px_hsl(var(--sidebar-primary)/0.45)]">
                         <item.icon className="h-4 w-4" />
                         {!collapsed && <span>{item.title}</span>}
                       </NavLink>

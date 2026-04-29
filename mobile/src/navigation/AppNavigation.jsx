@@ -256,8 +256,8 @@ const AuthStack = () => (
 const CustomerStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="CustomerTabs"   component={CustomerTabs} />
-    <Stack.Screen name="OrderDetail"    component={OrderDetailScreen}    options={stackHeader('Order Details')} />
-    <Stack.Screen name="Tracking"       component={TrackingScreen}       options={stackHeader('Track Order')} />
+    <Stack.Screen name="OrderDetail"    component={OrderDetailScreen}    options={{ headerShown: false }} />
+    <Stack.Screen name="Tracking"       component={TrackingScreen}       options={{ headerShown: false }} />
     <Stack.Screen name="Chat"           component={ChatScreen}           options={stackHeader('Support')} />
     <Stack.Screen name="EditProfile"    component={EditProfileScreen}    options={stackHeader('Edit Profile')} />
     <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={stackHeader('Change Password')} />
@@ -321,12 +321,12 @@ function DriverTabBar({ state, descriptors, navigation }) {
 const DriverTabs = () => (
   <Tab.Navigator
     tabBar={(props) => <DriverTabBar {...props} />}
-    screenOptions={{ headerShown: true, headerStyle: { backgroundColor: colors.surface }, headerTitleStyle: { fontWeight: '700', fontSize: 17, color: colors.text }, headerShadowVisible: false, headerTintColor: colors.primary }}
+    screenOptions={{ headerShown: false }}
   >
-    <Tab.Screen name="Dashboard"           component={DriverDashboardScreen} options={{ title: 'Dashboard' }} />
-    <Tab.Screen name="Deliveries"          component={DriverDeliveriesScreen} options={{ title: 'My Deliveries' }} />
-    <Tab.Screen name="DriverNotifications" component={NotificationsScreen}    options={{ title: 'Alerts' }} />
-    <Tab.Screen name="DriverProfile"       component={DriverProfileScreen}    options={{ title: 'Profile' }} />
+    <Tab.Screen name="Dashboard"           component={DriverDashboardScreen} />
+    <Tab.Screen name="Deliveries"          component={DriverDeliveriesScreen} />
+    <Tab.Screen name="DriverNotifications" component={NotificationsScreen} />
+    <Tab.Screen name="DriverProfile"       component={DriverProfileScreen} />
   </Tab.Navigator>
 );
 

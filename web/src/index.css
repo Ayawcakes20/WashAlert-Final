@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -101,11 +101,7 @@
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
-    font-family: 'Manrope', system-ui, sans-serif;
-    background-image:
-      radial-gradient(circle at 8% 0%, hsl(var(--primary) / 0.06), transparent 35%),
-      radial-gradient(circle at 95% 12%, hsl(var(--secondary) / 0.12), transparent 30%);
-    background-attachment: fixed;
+    font-family: 'Inter', system-ui, sans-serif;
   }
 }
 
@@ -128,44 +124,5 @@
   .text-gradient-navy {
     @apply bg-clip-text text-transparent;
     background-image: var(--gradient-primary);
-  }
-  .surface-card {
-    @apply bg-card border border-border/60 rounded-2xl shadow-[var(--shadow-card)];
-  }
-  .surface-card-soft {
-    @apply bg-card border border-border/50 rounded-xl shadow-[var(--shadow-card)];
-  }
-  .table-modern thead th {
-    @apply text-[11px] uppercase tracking-wider text-muted-foreground font-semibold;
-  }
-  .table-modern tbody tr {
-    @apply border-b border-border/40 last:border-b-0;
-  }
-  .table-modern tbody td {
-    @apply py-3 text-sm;
-  }
-  .status-chip {
-    @apply inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold;
-  }
-  .status-pending {
-    @apply bg-accent/20 text-accent-foreground;
-  }
-  .status-progress {
-    @apply bg-primary/10 text-primary;
-  }
-  .status-drying {
-    @apply bg-secondary/25 text-secondary-foreground;
-  }
-  .status-ready {
-    @apply bg-emerald-500/15 text-emerald-700;
-  }
-  .status-delivering {
-    @apply bg-purple-500/15 text-purple-700;
-  }
-  .status-failed {
-    @apply bg-destructive/10 text-destructive;
-  }
-  .btn-brand {
-    @apply h-10 rounded-xl px-4 text-sm font-semibold transition-all;
   }
 }

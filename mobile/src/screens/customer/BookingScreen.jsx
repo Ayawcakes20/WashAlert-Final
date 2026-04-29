@@ -1,1420 +1,580 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  ActivityIndicator,
-  Alert,
-  Dimensions,
-} from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StyleSheet, Dimensions } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { colors } from '../../theme/colors';
-import { Card, Button } from '../../components';
-import { branches, bookings, laundry, createOrder, estimatePrice, payments } from '../../services/api';
-import { GOOGLE_MAPS_API_KEY } from '../../config/env';
+import { branches, bookings, laundry, createOrder, payments } from '../../services/api';
 import { getDefaultSavedAddress } from '../../services/savedAddresses';
 import AddressPickerSheet from '../../components/AddressPickerSheet';
 
 const { width } = Dimensions.get('window');
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-
 const SERVICE_MODES = [
-  {
-    id: 'FULL_SERVICE',
-    label: 'Full Service',
-    hint: 'Pickup → Laundry → Delivery back to you',
-    icon: 'washing-machine',
-    backendServiceType: 'PICKUP_DELIVERY',
-    needsAddress: true,
-  },
-  {
-    id: 'DROP_OFF_ONLY',
-    label: 'Drop-off Only',
-    hint: 'You bring & pick up at the branch',
-    icon: 'store-outline',
-    backendServiceType: 'DROP_OFF',
-    needsAddress: false,
-  },
-  {
-    id: 'PICKUP_ONLY',
-    label: 'Pickup Only',
-    hint: 'We pick up — you get at branch',
-    icon: 'truck-outline',
-    backendServiceType: 'PICKUP_DELIVERY',
-    needsAddress: true,
-  },
+  { id: 'FULL_SERVICE',  label: 'Full Service',  hint: 'Pickup → Laundry → Delivery', icon: 'washing-machine',  backendServiceType: 'PICKUP_DELIVERY', needsAddress: true  },
+  { id: 'DROP_OFF_ONLY', label: 'Drop-off Only', hint: 'You bring & pick up at branch', icon: 'store-outline',    backendServiceType: 'DROP_OFF',        needsAddress: false },
+  { id: 'PICKUP_ONLY',   label: 'Pickup Only',   hint: 'We pick up — you get at branch',icon: 'truck-outline',   backendServiceType: 'PICKUP_DELIVERY', needsAddress: true  },
 ];
+const DET_OPTS = [
+  { id: 'none',  label: 'None',           price: 0  },
+  { id: 'surf',  label: 'Surf (Basic)',    price: 25 },
+  { id: 'ariel', label: 'Ariel (Premium)', price: 30 },
+];
+const FAB_OPTS = [
+  { id: 'none',  label: 'None',            price: 0  },
+  { id: 'charm', label: 'Charm (Basic)',    price: 15 },
+  { id: 'downy', label: 'Downy (Premium)', price: 25 },
+];
+const VIS_STEPS = ['Branch','Service','Load','Supplies','Schedule','Confirm'];
+const VIS_MAP   = { 1:1, 2:1, 3:2, 4:3, 5:4, 6:5, 7:6 };
 
-const SERVICE_ICON_BY_ID = {
-  wash: 'washing-machine',
-  dry: 'tumble-dryer',
-  'ecowash-full': 'leaf',
-  'basic-full-7': 'tshirt-crew-outline',
-  'basic-full-8': 'tshirt-crew-outline',
-  'premium-full-7': 'star-four-points-outline',
-  'premium-full-8': 'star-four-points-outline',
-  handwash: 'hand-wash',
-};
-
-const STEP_LABELS = ['Branch', 'Address', 'Schedule', 'Prefs', 'Pay', 'Confirm'];
-const DEFAULT_MAX_LOAD_KG = 8;
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const formatDateChipLabel = (date) =>
-  date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
-const formatDateSummary = (date) =>
-  date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-
-const createDateOptions = (days = 7) => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Array.from({ length: days }, (_, idx) => {
-    const date = new Date(today);
-    date.setDate(today.getDate() + idx);
-    return date;
-  });
-};
-
-const resolveServiceIcon = (service = {}) => {
-  const byId = SERVICE_ICON_BY_ID[String(service.id || '').toLowerCase()];
-  if (byId) return byId;
-  const byName = String(service.name || '').toLowerCase();
-  if (byName.includes('dry')) return 'tumble-dryer';
-  if (byName.includes('handwash')) return 'hand-wash';
-  if (byName.includes('premium')) return 'star-four-points-outline';
-  if (byName.includes('wash')) return 'washing-machine';
+const getSvcIcon = s => {
+  const n = String(s?.name||'').toLowerCase();
+  if(n.includes('handwash')) return 'hand-wash';
+  if(n.includes('dry'))      return 'tumble-dryer';
+  if(n.includes('premium'))  return 'star-four-points-outline';
+  if(n.includes('eco'))      return 'leaf';
   return 'washing-machine';
 };
-
-const resolveServiceMaxLoadKg = (service) => {
-  const serviceName = String(service?.name || '');
-  const match = serviceName.match(/(\d+(?:\.\d+)?)\s*kg/i);
-  if (match?.[1]) {
-    const parsed = Number(match[1]);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
-  }
-  return DEFAULT_MAX_LOAD_KG;
+const distKm = (a,b,c,d) => {
+  const R=6371,dL=(c-a)*Math.PI/180,dl=(d-b)*Math.PI/180;
+  const x=Math.sin(dL/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dl/2)**2;
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+};
+const mkDates = (n=7) => {
+  const t=new Date(); t.setHours(0,0,0,0);
+  return Array.from({length:n},(_,i)=>{ const d=new Date(t); d.setDate(t.getDate()+i); return d; });
 };
 
-const normalizeCheckoutUrl = (payload) => {
-  const candidate = payload?.checkout_url || payload?.checkoutUrl || payload?.url || payload || null;
-  if (!candidate) return null;
-  return String(candidate).trim();
-};
-
-const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLon = (lon2 - lon1) * (Math.PI / 180);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * (Math.PI / 180)) *
-      Math.cos(lat2 * (Math.PI / 180)) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-};
-const toFiniteCoordinate = (value) => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-};
-const resolveBranchFallbackCoordinate = (branch) => {
-  const latitude = toFiniteCoordinate(branch?.latitude);
-  const longitude = toFiniteCoordinate(branch?.longitude);
-  if (latitude == null || longitude == null) return null;
-  return { latitude, longitude };
-};
-
-// ─── Component ───────────────────────────────────────────────────────────────
-
-const BookingScreen = ({ route, navigation }) => {
+export default function BookingScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
-  const preSelectedServiceId = route.params?.serviceId;
+  const [step, setStep]           = useState(1);
+  const [loading, setLoading]     = useState(true);
+  const [submitting, setSub]      = useState(false);
+  const [branches_, setBranches]  = useState([]);
+  const [services_, setServices]  = useState([]);
+  const [branch, setBranch]       = useState(null);
+  const [svcMode, setSvcMode]     = useState('FULL_SERVICE');
+  const [address, setAddress]     = useState(null);
+  const [addrSheet, setAddrSheet] = useState(false);
+  const [defAddr, setDefAddr]     = useState(null);
+  const [service, setService]     = useState(null);
+  const [loadType, setLoadType]   = useState('clothes');
+  const [kg, setKg]               = useState(5);
+  const [det, setDet]             = useState('none');
+  const [fab, setFab]             = useState('none');
+  const [schDate, setSchDate]     = useState(()=>{ const d=new Date(); d.setHours(0,0,0,0); return d; });
+  const [schTime, setSchTime]     = useState(null);
+  const [slots, setSlots]         = useState([]);
+  const [slotsLoad, setSlotsLoad] = useState(false);
+  const [rush, setRush]           = useState(false);
+  const [notes, setNotes]         = useState('');
+  const [payMethod, setPay]       = useState('gcash');
+  const dates                     = mkDates(7);
+  const mode                      = SERVICE_MODES.find(m=>m.id===svcMode)||SERVICE_MODES[0];
+  const needsAddr                 = mode.needsAddress;
+  const maxKg                     = loadType==='beddings' ? 7 : 8;
 
-  // ── Step (1–6) ─────────────────────────────────────────────────────────
-  const [step, setStep] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const deliveryFee = useMemo(()=>{
+    if(!needsAddr) return 0;
+    if(!address?.latitude||!branch?.latitude) return 50;
+    const d=distKm(branch.latitude,branch.longitude,address.latitude,address.longitude);
+    return Math.min(100,Math.max(40,Math.round(40+d*12)));
+  },[needsAddr,address,branch]);
 
-  // ── API data ───────────────────────────────────────────────────────────
-  const [availableBranches, setAvailableBranches] = useState([]);
-  const [availableServices, setAvailableServices] = useState([]);
-  const [availableDetergents, setAvailableDetergents] = useState([]);
-  const [availableConditioners, setAvailableConditioners] = useState([]);
+  const total = useMemo(()=>{
+    if(!service) return 0;
+    const hw=String(service.name||'').toLowerCase().includes('handwash');
+    const base=hw?(kg<=3?kg*150:kg*90):(service.price||0)*kg;
+    const s9=kg>=9?50:0;
+    const d=DET_OPTS.find(o=>o.id===det)?.price||0;
+    const f=FAB_OPTS.find(o=>o.id===fab)?.price||0;
+    return base+s9+d+f+(rush?150:0)+deliveryFee;
+  },[service,kg,det,fab,rush,deliveryFee]);
 
-  // ── Step 1: Branch & service ───────────────────────────────────────────
-  const [selectedBranch, setSelectedBranch] = useState(null);
-  const [selectedService, setSelectedService] = useState(null);
-  const [serviceMode, setServiceMode] = useState('FULL_SERVICE');
+  const hint = useMemo(()=>{
+    if(!service) return '';
+    const p=[service.name,`${kg}kg`];
+    if(det!=='none') p.push(DET_OPTS.find(o=>o.id===det)?.label);
+    if(fab!=='none') p.push(FAB_OPTS.find(o=>o.id===fab)?.label);
+    if(rush) p.push('Rush +₱150');
+    return p.filter(Boolean).join(' · ');
+  },[service,kg,det,fab,rush]);
 
-  // ── Step 2: Address ────────────────────────────────────────────────────
-  const [addressSheetVisible, setAddressSheetVisible] = useState(false);
-  const [deliveryAddress, setDeliveryAddress] = useState(null);
-  // deliveryAddress shape: { address, unitFloor, contactName, phone, latitude, longitude, label }
+  useEffect(()=>{ load(); },[]);
+  useFocusEffect(useCallback(()=>{ getDefaultSavedAddress().then(setDefAddr).catch(()=>{}); },[]));
+  useEffect(()=>{
+    if(!branch||!schDate){ setSlots([]); setSchTime(null); return; }
+    (async()=>{
+      try{ setSlotsLoad(true); const s=await bookings.getAvailableSlots(branch.name,schDate); setSlots(s); const f=s.find(x=>x.available); setSchTime(p=>s.find(x=>x.label===p&&x.available)?p:(f?.label||null)); }
+      catch{ setSlots([]); } finally{ setSlotsLoad(false); }
+    })();
+  },[branch,schDate]);
 
-  // ── Step 3: Schedule ───────────────────────────────────────────────────
-  const [scheduleDate, setScheduleDate] = useState(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return today;
-  });
-  const [scheduleTime, setScheduleTime] = useState(null);
-  const [availableSlots, setAvailableSlots] = useState([]);
-  const [slotsLoading, setSlotsLoading] = useState(false);
-  const [slotError, setSlotError] = useState('');
-
-  // ── Step 4: Preferences ────────────────────────────────────────────────
-  const [loadKg, setLoadKg] = useState('5');
-  const [loadKgError, setLoadKgError] = useState('');
-  const [selectedDetergent, setSelectedDetergent] = useState('None');
-  const [selectedConditioner, setSelectedConditioner] = useState('None');
-  const [isRush, setIsRush] = useState(false);
-  const [specialInstructions, setSpecialInstructions] = useState('');
-
-  // ── Step 5: Payment ────────────────────────────────────────────────────
-  const [paymentMethod, setPaymentMethod] = useState('gcash');
-
-  // ── Price  ─────────────────────────────────────────────────────────────
-  const [priceDetails, setPriceDetails] = useState({ deliveryPrice: 0, totalPrice: 0 });
-
-  // ── Default saved address (for auto-fill hint) ─────────────────────────
-  const [defaultSavedAddress, setDefaultSavedAddress] = useState(null);
-
-  const dateOptions = createDateOptions(7);
-  const selectedServiceMode = SERVICE_MODES.find((m) => m.id === serviceMode) || SERVICE_MODES[0];
-  const serviceModeNeedsAddress = selectedServiceMode.needsAddress;
-  const branchFallbackCoordinate = React.useMemo(
-    () => resolveBranchFallbackCoordinate(selectedBranch),
-    [selectedBranch]
-  );
-  const selectedServiceMaxLoadKg = resolveServiceMaxLoadKg(selectedService);
-  const selectedSlot = availableSlots.find((slot) => slot.label === scheduleTime) || null;
-  const isSelectedSlotAvailable = Boolean(selectedSlot?.available);
-
-  const sanitizeLoadKgInput = (value) => {
-    const cleaned = String(value || '').replace(/[^0-9.]/g, '');
-    const firstDot = cleaned.indexOf('.');
-    if (firstDot < 0) return cleaned;
-    return `${cleaned.slice(0, firstDot + 1)}${cleaned.slice(firstDot + 1).replace(/\./g, '')}`;
+  const load = async()=>{
+    try{ setLoading(true); const [b,s]=await Promise.all([branches.getAll(),laundry.getServices()]); setBranches(b.branches||[]); setServices(s.services||[]);
+      const pid=route.params?.serviceId; if(pid){ const f=s.services?.find(x=>x.id===pid); if(f) setService(f); }
+    }catch{ Alert.alert('Error','Failed to load.'); }finally{ setLoading(false); }
   };
 
-  const validateLoadKgInput = (showAlert = false) => {
-    const parsedKg = Number.parseFloat(loadKg);
-    let message = '';
-    if (!Number.isFinite(parsedKg) || parsedKg <= 0) {
-      message = 'Please enter a valid load size in kilograms.';
-    } else if (parsedKg > selectedServiceMaxLoadKg) {
-      message = `Maximum load for this service is ${selectedServiceMaxLoadKg}kg.`;
-    }
-
-    setLoadKgError(message);
-    if (message && showAlert) {
-      Alert.alert('Invalid Load Size', message);
-    }
-    return !message;
+  const ok = ()=>{
+    if(step===1) return !!branch;
+    if(step===2) return !!address?.address;
+    if(step===3) return !!service;
+    if(step===4) return kg>=1&&kg<=9;
+    if(step===6) return !!schTime&&!!slots.find(s=>s.label===schTime&&s.available);
+    return true;
   };
 
-  // ── Lifecycle ──────────────────────────────────────────────────────────
-  useEffect(() => {
-    loadInitialData();
-  }, []);
+  const next = ()=>{
+    if(step===1){ if(!branch) return; setStep(needsAddr?2:3); }
+    else if(step===2){ if(!address?.address){ setAddrSheet(true); return; } setStep(3); }
+    else if(step===3){ if(!service) return; setStep(4); }
+    else if(step===4) setStep(5);
+    else if(step===5) setStep(6);
+    else if(step===6){ if(!ok()) return; setStep(7); }
+    else if(step===7) confirm_();
+  };
+  const back = ()=>{
+    if(step===1){ navigation.goBack(); return; }
+    if(step===3&&!needsAddr){ setStep(1); return; }
+    setStep(s=>s-1);
+  };
 
-  useEffect(() => {
-    if (__DEV__) {
-      console.info(`GOOGLE MAPS KEY LOADED: ${GOOGLE_MAPS_API_KEY ? 'YES' : 'NO'}`);
-    }
-  }, []);
-
-  useFocusEffect(
-    React.useCallback(() => {
-      getDefaultSavedAddress().then(setDefaultSavedAddress).catch(() => setDefaultSavedAddress(null));
-    }, [])
-  );
-
-  useEffect(() => {
-    if (selectedService && loadKg) void handleEstimate();
-  }, [selectedService, loadKg, isRush, selectedDetergent, selectedConditioner, deliveryAddress, selectedBranch]);
-
-  useEffect(() => {
-    void validateLoadKgInput(false);
-  }, [loadKg, selectedServiceMaxLoadKg]);
-
-  useEffect(() => {
-    if (!serviceModeNeedsAddress) setDeliveryAddress(null);
-  }, [serviceModeNeedsAddress]);
-
-  useEffect(() => {
-    const loadSlots = async () => {
-      if (!selectedBranch || !scheduleDate) {
-        setAvailableSlots([]);
-        setScheduleTime(null);
-        return;
+  const confirm_ = async()=>{
+    if(needsAddr&&!address?.address){ Alert.alert('Address Required','Please set an address.',[{text:'Set',onPress:()=>{setStep(2);setAddrSheet(true);}},{text:'Cancel',style:'cancel'}]); return; }
+    setSub(true);
+    try{
+      const dk=needsAddr&&address?.latitude&&branch?.latitude?distKm(branch.latitude,branch.longitude,address.latitude,address.longitude):0;
+      const r=await createOrder({ branchId:branch.id,serviceId:service.id,serviceType:service.name,serviceMode:svcMode,serviceModeLabel:mode.label,serviceTypeBackend:mode.backendServiceType,scheduleDate:schDate,scheduleTime:schTime,loadKg:kg,detergent:DET_OPTS.find(o=>o.id===det)?.label||'None',conditioner:FAB_OPTS.find(o=>o.id===fab)?.label||'None',delivery:needsAddr,isRush:rush,instructions:notes,paymentMethod:payMethod,total,serviceName:service.name,distanceKm:dk,deliveryLatitude:address?.latitude??null,deliveryLongitude:address?.longitude??null,deliveryAddress:address?.address??null,deliveryUnitFloor:address?.unitFloor??null,deliveryContactName:address?.contactName??null,deliveryContactPhone:address?.phone??null,branchLatitude:branch?.latitude||null,branchLongitude:branch?.longitude||null });
+      const tn=String(r?.trackingNumber||'').trim(); if(!tn) throw new Error('No tracking number.');
+      if(payMethod==='gcash'){
+        try{ const cp=await payments.initiateGcashCheckout(tn); const u=cp?.checkout_url||cp?.checkoutUrl||cp?.url||cp; const cu=u?String(u).trim():null; if(cu&&/^https?:\/\//i.test(cu)){ try{ await WebBrowser.openBrowserAsync(cu); }catch{ if(await Linking.canOpenURL(cu)) await Linking.openURL(cu); } } }
+        catch{ Alert.alert('Payment Error','Booking created but payment gateway failed. Check Orders to pay.',[{text:'OK',onPress:()=>navigation.navigate('Orders')}]); return; }
       }
-      try {
-        setSlotsLoading(true);
-        setSlotError('');
-        const slots = await bookings.getAvailableSlots(selectedBranch.name, scheduleDate);
-        setAvailableSlots(slots);
-        if (!slots.find((s) => s.label === scheduleTime && s.available)) {
-          const firstOpen = slots.find((s) => s.available);
-          setScheduleTime(firstOpen?.label || null);
-        }
-      } catch (error) {
-        setAvailableSlots([]);
-        setScheduleTime(null);
-        setSlotError('Unable to load slots for this date. Please try again.');
-      } finally {
-        setSlotsLoading(false);
-      }
-    };
-    void loadSlots();
-  }, [selectedBranch, scheduleDate]);
-
-  // ── Data loaders ───────────────────────────────────────────────────────
-  const loadInitialData = async () => {
-    try {
-      setLoading(true);
-      const [branchesRes, servicesRes, prefsRes] = await Promise.all([
-        branches.getAll(),
-        laundry.getServices(),
-        laundry.getPreferences(),
-      ]);
-      setAvailableBranches(branchesRes.branches || []);
-      setAvailableServices(servicesRes.services || []);
-      setAvailableDetergents(prefsRes.detergents || []);
-      setAvailableConditioners(prefsRes.conditioners || []);
-      if (preSelectedServiceId) {
-        const found = servicesRes.services.find((s) => s.id === preSelectedServiceId);
-        if (found) setSelectedService(found);
-      }
-    } catch {
-      Alert.alert('Error', 'Failed to load services. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+      Alert.alert('Booking Confirmed',`Tracking #: ${tn}`,[{text:'View Order',onPress:()=>{ setStep(1); navigation.navigate('Orders'); }}]);
+    }catch{ Alert.alert('Error','Failed to place booking.'); }finally{ setSub(false); }
   };
 
-  // ── Price estimation ───────────────────────────────────────────────────
-  const handleEstimate = async () => {
-    try {
-      let computedDistance = 0;
-      if (serviceModeNeedsAddress && deliveryAddress?.latitude && selectedBranch?.latitude) {
-        computedDistance = getDistanceFromLatLonInKm(
-          selectedBranch.latitude,
-          selectedBranch.longitude,
-          deliveryAddress.latitude,
-          deliveryAddress.longitude
-        );
-      } else if (serviceModeNeedsAddress) {
-        computedDistance = selectedBranch?.distance || 0;
-      }
-      const estimation = await estimatePrice({
-        branch: selectedBranch?.name || 'Main',
-        serviceName: selectedService?.name,
-        weightKg: parseFloat(loadKg) || 0,
-        isRush,
-        detergent: selectedDetergent,
-        fabcon: selectedConditioner,
-        distanceKm: computedDistance,
-      });
-      setPriceDetails({ ...estimation, calculatedDistance: computedDistance });
-    } catch {
-      // silent
-    }
-  };
+  const vis = VIS_MAP[step]||1;
+  const progress = vis / VIS_STEPS.length;
 
-  // ── Navigation guards ──────────────────────────────────────────────────
-
-  /**
-   * Step 1 → 2:  Branch + service must be selected.
-   * For address-needing modes, Step 2 shows address picker.
-   * For DROP_OFF, no address needed → skip to Step 3.
-   */
-  const handleStep1Continue = () => {
-    if (!selectedBranch || !selectedService) return;
-    if (serviceModeNeedsAddress) {
-      setStep(2); // show address step
-    } else {
-      setStep(3); // skip address for drop-off
-    }
-  };
-
-  /**
-   * Step 2 → 3: Address must be set.
-   * Opens address sheet if missing.
-   */
-  const handleStep2Continue = () => {
-    if (!deliveryAddress?.address) {
-      setAddressSheetVisible(true);
-      return;
-    }
-    setStep(3);
-  };
-
-  const handleAddressConfirmed = (addr) => {
-    setAddressSheetVisible(false);
-    setDeliveryAddress(addr);
-  };
-
-  const handleStep3Continue = () => {
-    if (!scheduleTime || !isSelectedSlotAvailable) {
-      Alert.alert('Schedule Unavailable', 'Please choose an available time slot before continuing.');
-      return;
-    }
-    setStep(4);
-  };
-
-  const handleStep4Continue = () => {
-    if (!validateLoadKgInput(true)) return;
-    setStep(5);
-  };
-
-  // ── Booking confirm ────────────────────────────────────────────────────
-  const handleConfirmBooking = async () => {
-    if (serviceModeNeedsAddress && !deliveryAddress?.address) {
-      Alert.alert('Address Required', 'Please set a pickup/delivery address before placing your booking.', [
-        { text: 'Set Address', onPress: () => { setStep(2); setAddressSheetVisible(true); } },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
-      return;
-    }
-    if (!scheduleTime || !isSelectedSlotAvailable) {
-      Alert.alert('Time Slot Full', 'The selected time slot is no longer available. Please pick another slot.');
-      setStep(3);
-      return;
-    }
-    if (!validateLoadKgInput(true)) {
-      setStep(4);
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const orderData = {
-        branchId: selectedBranch.id,
-        serviceId: selectedService.id,
-        serviceType: selectedService.name,
-        serviceMode,
-        serviceModeLabel: selectedServiceMode.label,
-        serviceTypeBackend: selectedServiceMode.backendServiceType,
-        scheduleDate,
-        scheduleTime,
-        loadKg: parseFloat(loadKg),
-        detergent: selectedDetergent,
-        conditioner: selectedConditioner,
-        delivery: serviceModeNeedsAddress,
-        isRush,
-        instructions: specialInstructions,
-        paymentMethod,
-        total: priceDetails.totalPrice,
-        serviceName: selectedService.name,
-        distanceKm: priceDetails.calculatedDistance || 0,
-        // Address fields — all from deliveryAddress obj
-        deliveryLatitude: deliveryAddress?.latitude ?? null,
-        deliveryLongitude: deliveryAddress?.longitude ?? null,
-        deliveryAddress: deliveryAddress?.address ?? null,
-        deliveryUnitFloor: deliveryAddress?.unitFloor ?? null,
-        deliveryContactName: deliveryAddress?.contactName ?? null,
-        deliveryContactPhone: deliveryAddress?.phone ?? null,
-        branchLatitude: selectedBranch?.latitude || null,
-        branchLongitude: selectedBranch?.longitude || null,
-      };
-
-      const result = await createOrder(orderData);
-      const trackingNumber = String(result?.trackingNumber || '').trim();
-      if (!trackingNumber) throw new Error('Booking created without a tracking number.');
-
-      if (paymentMethod === 'gcash') {
-        try {
-          const checkoutPayload = await payments.initiateGcashCheckout(trackingNumber);
-          const checkoutUrl = normalizeCheckoutUrl(checkoutPayload);
-          if (!checkoutUrl || !/^https?:\/\//i.test(checkoutUrl)) {
-            throw new Error('Missing checkout URL from backend payment response.');
-          }
-          try {
-            await WebBrowser.openBrowserAsync(checkoutUrl);
-          } catch {
-            const canOpen = await Linking.canOpenURL(checkoutUrl);
-            if (canOpen) await Linking.openURL(checkoutUrl);
-          }
-        } catch (payError) {
-          Alert.alert(
-            'Payment Error',
-            'Booking was created but we could not open the payment gateway. Go to Orders to pay.',
-            [{ text: 'OK', onPress: () => navigation.navigate('Orders') }]
-          );
-          return;
-        }
-      }
-
-      Alert.alert(
-        '🧺 Booking Confirmed!',
-        `Tracking #: ${trackingNumber}\n\nWe'll pick up from:\n${deliveryAddress?.address || 'your drop-off location'}`,
-        [{ text: 'View Order', onPress: () => { setStep(1); navigation.navigate('Orders'); } }]
-      );
-    } catch (error) {
-      Alert.alert('Error', 'Failed to place booking. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // ── Loading state ──────────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading services…</Text>
+  // Clean progress bar (no labels) — like Image 3
+  const Stepper = ()=>(
+    <View style={S.stepperWrap}>
+      <View style={S.progressTrack}>
+        <View style={[S.progressFill,{width:`${progress*100}%`}]}/>
       </View>
-    );
-  }
-
-  // ── Step indicator ─────────────────────────────────────────────────────
-  const renderStepIndicator = () => (
-    <View style={styles.indicatorContainer}>
-      {STEP_LABELS.map((label, i) => {
-        const active = step >= i + 1;
-        const done = step > i + 1;
-        return (
-          <View key={label} style={styles.indicatorItem}>
-            <View style={[styles.indicatorCircle, active ? styles.indicatorActive : styles.indicatorInactive]}>
-              {done
-                ? <Ionicons name="checkmark" size={12} color="#FFF" />
-                : <Text style={[styles.indicatorText, active && styles.indicatorTextActive]}>{i + 1}</Text>}
-            </View>
-            <Text style={[styles.indicatorLabel, active && styles.indicatorLabelActive]}>{label}</Text>
-          </View>
-        );
-      })}
+      <Text style={S.stepCounter}>{vis} / {VIS_STEPS.length}</Text>
     </View>
   );
 
-  // ── Render ─────────────────────────────────────────────────────────────
-  return (
-    <SafeAreaView style={styles.container}>
-      {/* Address Picker Modal */}
-      <AddressPickerSheet
-        visible={addressSheetVisible}
-        title={serviceMode === 'PICKUP_ONLY' ? 'Set Pickup Address' : 'Set Pickup & Delivery Address'}
-        onConfirm={handleAddressConfirmed}
-        onClose={() => setAddressSheetVisible(false)}
-        initialValue={deliveryAddress}
-        fallbackCoordinate={branchFallbackCoordinate}
-      />
-
-      <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: 150 + insets.bottom }]}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Booking Header */}
-        <View style={styles.bookingHeader}>
-          <View>
-            <Text style={styles.screenTitle}>New Booking</Text>
-            <Text style={styles.screenSubtitle}>Step {step} of {STEP_LABELS.length}</Text>
+  // Footer: running total + pill Back/Next buttons — clears floating tab bar
+  const Footer = ()=>(
+    <View style={[S.footer,{paddingBottom:insets.bottom+90}]}>
+      {service&&(
+        <View style={S.footerTop}>
+          <View style={{flex:1}}>
+            <Text style={S.footerLabel}>Running Total</Text>
+            <Text style={S.footerHint} numberOfLines={1}>{hint}</Text>
           </View>
-          <View style={styles.stepCountChip}>
-            <Text style={styles.stepCountText}>{step}/{STEP_LABELS.length}</Text>
-          </View>
+          <Text style={S.footerTotal}>₱{total.toLocaleString()}</Text>
         </View>
-        {renderStepIndicator()}
+      )}
+      <View style={S.footerRow}>
+        <TouchableOpacity style={S.backBtn} onPress={back}>
+          <Text style={S.backTxt}>Back</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[S.contBtn,!ok()&&S.contBtnOff]} onPress={next} disabled={!ok()||submitting}>
+          {submitting
+            ?<ActivityIndicator color="#fff" size="small"/>
+            :<Text style={S.contTxt}>{step===7?'Confirm & Pay':'Next'}</Text>}
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
-        {/* ══════════════════════════════════════════════════════════════════
-            STEP 1 — Branch & Service
-        ══════════════════════════════════════════════════════════════════ */}
-        {step === 1 && (
-          <View style={styles.stepContent}>
-            {/* Service Mode */}
-            <Text style={styles.sectionTitle}>How can we help?</Text>
-            <View style={styles.modeGrid}>
-              {SERVICE_MODES.map((mode) => (
-                <TouchableOpacity
-                  key={mode.id}
-                  style={[styles.modeCard, serviceMode === mode.id && styles.modeCardActive]}
-                  onPress={() => setServiceMode(mode.id)}
-                >
-                  <View style={styles.modeCardLeft}>
-                    <View style={[styles.modeIconBox, serviceMode === mode.id && styles.modeIconBoxActive]}>
-                      <MaterialCommunityIcons
-                        name={mode.icon}
-                        size={20}
-                        color={serviceMode === mode.id ? '#FFF' : colors.primary}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.modeTitle, serviceMode === mode.id && styles.modeTitleActive]}>
-                        {mode.label}
-                      </Text>
-                      <Text style={[styles.modeHint, serviceMode === mode.id && styles.modeHintActive]}>
-                        {mode.hint}
-                      </Text>
-                    </View>
-                  </View>
-                  {serviceMode === mode.id && (
-                    <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
+  if(loading) return <View style={S.loadWrap}><ActivityIndicator size="large" color={colors.primary}/><Text style={S.loadTxt}>Loading…</Text></View>;
 
-            {/* Branch */}
-            <Text style={styles.sectionTitle}>Select Branch</Text>
-            <View style={styles.branchGrid}>
-              {availableBranches.map((branch) => (
-                <TouchableOpacity
-                  key={branch.id}
-                  style={[styles.branchCard, selectedBranch?.id === branch.id && styles.selectedCard]}
-                  onPress={() => setSelectedBranch(branch)}
-                >
-                  <View style={[styles.branchIconBox, selectedBranch?.id === branch.id && styles.branchIconBoxActive]}>
-                    <Ionicons
-                      name="storefront-outline"
-                      size={18}
-                      color={selectedBranch?.id === branch.id ? '#FFF' : colors.primary}
-                    />
-                  </View>
-                  <View style={styles.branchInfo}>
-                    <Text style={[styles.branchName, selectedBranch?.id === branch.id && styles.branchNameActive]}>
-                      {branch.name}
-                    </Text>
-                    <Text style={styles.branchAddress} numberOfLines={1}>
-                      {branch.address}
-                    </Text>
-                  </View>
-                  {selectedBranch?.id === branch.id && (
-                    <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
+  return(
+    <SafeAreaView style={S.container} edges={['top']}>
+      <AddressPickerSheet visible={addrSheet} title={svcMode==='PICKUP_ONLY'?'Pickup Address':'Pickup & Delivery Address'} onConfirm={a=>{setAddrSheet(false);setAddress(a);if(step===2)setStep(3);}} onClose={()=>setAddrSheet(false)} initialValue={address} fallbackCoordinate={branch?.latitude?{latitude:Number(branch.latitude),longitude:Number(branch.longitude)}:null}/>
+      <View style={S.hdr}><Text style={S.hdrTitle}>New Booking</Text><Text style={S.hdrSub}>Step {vis} of {VIS_STEPS.length}</Text></View>
+      <Stepper/>
+      <ScrollView style={{flex:1}} contentContainerStyle={S.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
-            {/* Service / Package */}
-            <Text style={styles.sectionTitle}>Laundry Package</Text>
-            <View style={styles.serviceGrid}>
-              {availableServices.map((service) => (
-                <TouchableOpacity
-                  key={service.id}
-                  style={[styles.serviceCard, selectedService?.id === service.id && styles.selectedServiceCard]}
-                  onPress={() => setSelectedService(service)}
-                >
-                  <MaterialCommunityIcons
-                    name={resolveServiceIcon(service)}
-                    size={28}
-                    color={selectedService?.id === service.id ? '#FFF' : colors.primary}
-                  />
-                  <Text style={[styles.serviceName, selectedService?.id === service.id && styles.selectedCardText]}>
-                    {service.name}
-                  </Text>
-                  <Text style={[styles.servicePrice, selectedService?.id === service.id && styles.selectedCardPrice]}>
-                    ₱{service.price}/kg
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Button
-              title="Continue"
-              onPress={handleStep1Continue}
-              disabled={!selectedBranch || !selectedService}
-              style={styles.nextButton}
-            />
+        {step===1&&(
+          <View>
+            <Text style={S.q}>Where are we washing?</Text>
+            <Text style={S.hint}>Choose a branch and your preferred service type.</Text>
+            <Text style={S.sec}>Service Type</Text>
+            {SERVICE_MODES.map(m=>(
+              <TouchableOpacity key={m.id} style={[S.modeCard,svcMode===m.id&&S.modeCardOn]} onPress={()=>setSvcMode(m.id)} activeOpacity={0.8}>
+                <View style={[S.modeIcon,svcMode===m.id&&S.modeIconOn]}><MaterialCommunityIcons name={m.icon} size={20} color={svcMode===m.id?'#fff':colors.primary}/></View>
+                <View style={{flex:1}}><Text style={[S.modeName,svcMode===m.id&&S.modeNameOn]}>{m.label}</Text><Text style={[S.modeHint,svcMode===m.id&&S.modeHintOn]}>{m.hint}</Text></View>
+                {svcMode===m.id&&<Ionicons name="checkmark-circle" size={20} color={colors.primary}/>}
+              </TouchableOpacity>
+            ))}
+            <Text style={S.sec}>Select Branch</Text>
+            {branches_.map(b=>(
+              <TouchableOpacity key={b.id} style={[S.brCard,branch?.id===b.id&&S.brCardOn]} onPress={()=>setBranch(b)} activeOpacity={0.8}>
+                <View style={[S.brIcon,branch?.id===b.id&&S.brIconOn]}><Ionicons name="storefront-outline" size={16} color={branch?.id===b.id?'#fff':colors.primary}/></View>
+                <View style={{flex:1}}><Text style={[S.brName,branch?.id===b.id&&S.brNameOn]}>{b.name}</Text><Text style={S.brAddr} numberOfLines={1}>{b.address}</Text></View>
+                {branch?.id===b.id&&<Ionicons name="checkmark-circle" size={18} color={colors.primary}/>}
+              </TouchableOpacity>
+            ))}
           </View>
         )}
 
-        {/* ══════════════════════════════════════════════════════════════════
-            STEP 2 — Address (only shown if service mode needs it)
-        ══════════════════════════════════════════════════════════════════ */}
-        {step === 2 && (
-          <View style={styles.stepContent}>
-            <Text style={styles.sectionTitle}>
-              {serviceMode === 'PICKUP_ONLY' ? 'Where should we pick up?' : 'Pickup & Delivery Address'}
-            </Text>
-            <Text style={styles.addressStepHint}>
-              {serviceMode === 'FULL_SERVICE'
-                ? "We'll pick up your laundry here and deliver it back clean to the same address."
-                : "We'll come pick up your laundry from this address."}
-            </Text>
-
-            {/* Branch context pill */}
-            <View style={styles.branchContextPill}>
-              <Ionicons name="storefront-outline" size={14} color={colors.accent} />
-              <Text style={styles.branchContextText}>
-                Processing at: <Text style={{ fontWeight: '700' }}>{selectedBranch?.name}</Text>
-              </Text>
-            </View>
-
-            {/* Address card — empty or filled */}
-            {!deliveryAddress ? (
-              <TouchableOpacity
-                style={styles.addressEmptyCard}
-                onPress={() => setAddressSheetVisible(true)}
-                activeOpacity={0.75}
-              >
-                <View style={styles.addressEmptyIconBox}>
-                  <Ionicons name="location-outline" size={28} color={colors.primary} />
-                </View>
-                <Text style={styles.addressEmptyTitle}>Set Your Address</Text>
-                <Text style={styles.addressEmptyHint}>
-                  Search, use GPS, pin on map, or pick from saved addresses
-                </Text>
-                <View style={styles.addressEmptyBtn}>
-                  <Text style={styles.addressEmptyBtnText}>Choose Address</Text>
-                  <Ionicons name="arrow-forward" size={14} color="#FFF" />
-                </View>
-
-                {/* Quick hint for saved address */}
-                {defaultSavedAddress && (
-                  <View style={styles.savedHintBanner}>
-                    <Ionicons name="bookmark-outline" size={13} color={colors.accent} />
-                    <Text style={styles.savedHintText} numberOfLines={1}>
-                      Saved: {defaultSavedAddress.label} — {defaultSavedAddress.address}
-                    </Text>
-                  </View>
-                )}
+        {step===2&&(
+          <View>
+            <Text style={S.q}>{svcMode==='PICKUP_ONLY'?'Where should we pick up?':'Pickup & delivery address?'}</Text>
+            <Text style={S.hint}>{svcMode==='FULL_SERVICE'?"We'll pick up from here and deliver back clean.":"We'll come pick up your laundry from this address."}</Text>
+            <View style={S.branchPill}><Ionicons name="storefront-outline" size={14} color={colors.accent}/><Text style={S.branchPillTxt}>Processing at: <Text style={{fontWeight:'700'}}>{branch?.name}</Text></Text></View>
+            {!address?(
+              <TouchableOpacity style={S.addrEmpty} onPress={()=>setAddrSheet(true)} activeOpacity={0.75}>
+                <View style={S.addrEmptyIcon}><Ionicons name="location-outline" size={28} color={colors.primary}/></View>
+                <Text style={S.addrEmptyTitle}>Set Your Address</Text>
+                <Text style={S.addrEmptyHint}>Search, use GPS, pin on map, or pick from saved</Text>
+                <View style={S.addrEmptyBtn}><Text style={S.addrEmptyBtnTxt}>Choose Address →</Text></View>
+                {defAddr&&<View style={S.savedHint}><Ionicons name="bookmark-outline" size={13} color={colors.accent}/><Text style={S.savedHintTxt} numberOfLines={1}>Saved: {defAddr.label} — {defAddr.address}</Text></View>}
               </TouchableOpacity>
-            ) : (
-              <View style={styles.addressFilledCard}>
-                <View style={styles.addressFilledHeader}>
-                  <View style={styles.addressFilledIconBox}>
-                    <Ionicons name="location" size={18} color="#FFF" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.addressFilledLabel}>{deliveryAddress.label || 'Delivery Address'}</Text>
-                    <Text style={styles.addressFilledMain}>{deliveryAddress.address}</Text>
-                    {deliveryAddress.unitFloor
-                      ? <Text style={styles.addressFilledSub}>{deliveryAddress.unitFloor}</Text>
-                      : null}
-                    {deliveryAddress.contactName
-                      ? (
-                        <Text style={styles.addressFilledSub}>
-                          {deliveryAddress.contactName}
-                          {deliveryAddress.phone ? `  ·  ${deliveryAddress.phone}` : ''}
-                        </Text>
-                      ) : null}
-                  </View>
+            ):(
+              <View style={S.addrFilled}>
+                <View style={S.addrFilledHdr}><View style={S.addrFilledIcon}><Ionicons name="location" size={18} color="#fff"/></View>
+                  <View style={{flex:1}}><Text style={S.addrLabel}>{address.label||'Address'}</Text><Text style={S.addrMain}>{address.address}</Text>{address.unitFloor&&<Text style={S.addrSub}>{address.unitFloor}</Text>}{address.contactName&&<Text style={S.addrSub}>{address.contactName}{address.phone?` · ${address.phone}`:''}</Text>}</View>
                 </View>
-
-                {/* Service mode flow reminder */}
-                {serviceMode === 'FULL_SERVICE' && (
-                  <View style={styles.flowIndicator}>
-                    <View style={styles.flowStep}>
-                      <Ionicons name="home" size={12} color={colors.primary} />
-                      <Text style={styles.flowText}>Your Address</Text>
-                    </View>
-                    <View style={styles.flowArrow}>
-                      <Ionicons name="arrow-forward" size={12} color={colors.textTertiary} />
-                    </View>
-                    <View style={styles.flowStep}>
-                      <Ionicons name="storefront-outline" size={12} color={colors.accent} />
-                      <Text style={styles.flowText}>{selectedBranch?.name || 'Branch'}</Text>
-                    </View>
-                    <View style={styles.flowArrow}>
-                      <Ionicons name="arrow-forward" size={12} color={colors.textTertiary} />
-                    </View>
-                    <View style={styles.flowStep}>
-                      <Ionicons name="home" size={12} color={colors.primary} />
-                      <Text style={styles.flowText}>Back to You</Text>
-                    </View>
-                  </View>
-                )}
-
-                <TouchableOpacity
-                  style={styles.changeAddressBtn}
-                  onPress={() => setAddressSheetVisible(true)}
-                >
-                  <Ionicons name="pencil-outline" size={14} color={colors.primary} />
-                  <Text style={styles.changeAddressBtnText}>Change Address</Text>
-                </TouchableOpacity>
+                <TouchableOpacity style={S.changeAddr} onPress={()=>setAddrSheet(true)}><Ionicons name="pencil-outline" size={14} color={colors.primary}/><Text style={S.changeAddrTxt}>Change Address</Text></TouchableOpacity>
               </View>
             )}
-
-            <View style={styles.buttonRow}>
-              <Button title="Back" variant="ghost" onPress={() => setStep(1)} style={styles.halfButton} />
-              <Button
-                title="Continue"
-                onPress={handleStep2Continue}
-                disabled={!deliveryAddress}
-                style={styles.halfButton}
-              />
-            </View>
           </View>
         )}
 
-        {/* ══════════════════════════════════════════════════════════════════
-            STEP 3 — Schedule
-        ══════════════════════════════════════════════════════════════════ */}
-        {step === 3 && (
-          <View style={styles.stepContent}>
-            {/* ── Premium calendar header ── */}
-            <View style={styles.calendarHeader}>
-              <View>
-                <Text style={styles.calendarMonthLabel}>
-                  {scheduleDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                </Text>
-                <Text style={styles.calendarDayLabel}>
-                  {scheduleDate.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric' })}
-                </Text>
-              </View>
-              <View style={styles.calendarBadge}>
-                <Ionicons name="calendar-outline" size={16} color={colors.primary} />
-              </View>
-            </View>
-
-            {/* ── Week strip: day name + date circle ── */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.weekStrip}
-            >
-              {dateOptions.map((dateOption) => {
-                const isSelected = scheduleDate.toDateString() === dateOption.toDateString();
-                const isToday = new Date().toDateString() === dateOption.toDateString();
-                const dayName = dateOption.toLocaleDateString('en-US', { weekday: 'short' });
-                const dayNum = dateOption.getDate();
-                return (
-                  <TouchableOpacity
-                    key={dateOption.toISOString()}
-                    style={styles.dayColumn}
-                    onPress={() => setScheduleDate(dateOption)}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={[styles.dayName, isSelected && styles.dayNameActive]}>{dayName}</Text>
-                    <View style={[
-                      styles.dayCircle,
-                      isSelected && styles.dayCircleActive,
-                    ]}>
-                      <Text style={[styles.dayNum, isSelected && styles.dayNumActive]}>{dayNum}</Text>
-                    </View>
-                    {isToday && <View style={[styles.todayDot, isSelected && styles.todayDotActive]} />}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-
-            {/* ── Time slots ── */}
-            <Text style={styles.sectionTitle}>Available Time Slots</Text>
-            {slotsLoading ? (
-              <View style={styles.slotLoadingWrap}>
-                <ActivityIndicator size="small" color={colors.primary} />
-                <Text style={styles.slotLoadingText}>Loading available slots…</Text>
-              </View>
-            ) : null}
-            {!!slotError && !slotsLoading ? <Text style={styles.errorText}>{slotError}</Text> : null}
-            <View style={styles.timeGrid2Col}>
-              {availableSlots.map((slot) => {
-                const isTimeSelected = scheduleTime === slot.label;
-                const isSlotAvailable = slot.available !== false;
-                return (
-                  <TouchableOpacity
-                    key={`${slot.slotStartTime}-${slot.slotEndTime}`}
-                    style={[
-                      styles.timeCard2,
-                      isTimeSelected && styles.selectedTimeCard2,
-                      !isSlotAvailable && styles.timeCardUnavailable,
-                    ]}
-                    onPress={() => {
-                      if (!isSlotAvailable) return;
-                      setScheduleTime(slot.label);
-                    }}
-                    disabled={!isSlotAvailable}
-                    activeOpacity={0.75}
-                  >
-                    <Ionicons
-                      name="time-outline"
-                      size={18}
-                      color={isTimeSelected ? '#FFF' : isSlotAvailable ? colors.primary : colors.textTertiary}
-                    />
-                    <Text style={[styles.timeText2, isTimeSelected && styles.selectedTimeText2, !isSlotAvailable && styles.timeTextUnavailable]}>
-                      {slot.label}
-                    </Text>
-                    {!isSlotAvailable ? <Text style={styles.slotTagUnavailable}>Full</Text> : null}
-                    {isTimeSelected && isSlotAvailable && (
-                      <Ionicons name="checkmark-circle" size={16} color="#FFF" style={{ marginLeft: 'auto' }} />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            {!slotsLoading && !!availableSlots.length && !availableSlots.some((slot) => slot.available) ? (
-              <View style={styles.noSlotBox}>
-                <Ionicons name="alert-circle-outline" size={32} color={colors.warning} />
-                <Text style={styles.slotHintText}>All slots are currently full.</Text>
-                <Text style={styles.slotHintSub}>Please pick another day above.</Text>
-              </View>
-            ) : null}
-            {!slotsLoading && !availableSlots.length ? (
-              <View style={styles.noSlotBox}>
-                <Ionicons name="calendar-clear-outline" size={32} color={colors.textTertiary} />
-                <Text style={styles.slotHintText}>No open slots for this date.</Text>
-                <Text style={styles.slotHintSub}>Please pick another day above.</Text>
-              </View>
-            ) : null}
-
-            <View style={styles.buttonRow}>
-              <Button
-                title="Back"
-                variant="ghost"
-                onPress={() => (serviceModeNeedsAddress ? setStep(2) : setStep(1))}
-                style={styles.halfButton}
-              />
-              <Button
-                title="Continue"
-                onPress={handleStep3Continue}
-                disabled={!scheduleTime || !isSelectedSlotAvailable || slotsLoading}
-                style={styles.halfButton}
-              />
-            </View>
-          </View>
-        )}
-
-        {/* ══════════════════════════════════════════════════════════════════
-            STEP 4 — Preferences (load, detergent, conditioner, rush)
-        ══════════════════════════════════════════════════════════════════ */}
-        {step === 4 && (
-          <View style={styles.stepContent}>
-            <Text style={styles.sectionTitle}>Load Size (kg)</Text>
-            <View style={styles.kgInputContainer}>
-              <TextInput
-                style={styles.kgInput}
-                keyboardType="numeric"
-                value={loadKg}
-                onChangeText={(value) => setLoadKg(sanitizeLoadKgInput(value))}
-                onBlur={() => validateLoadKgInput(false)}
-                placeholder="0"
-              />
-              <Text style={styles.kgUnit}>kg</Text>
-            </View>
-            <Text style={styles.kgTip}>Maximum load for this service: {selectedServiceMaxLoadKg}kg.</Text>
-            {!!loadKgError ? <Text style={styles.errorText}>{loadKgError}</Text> : null}
-
-            <Text style={styles.sectionTitle}>Detergent</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
-              {availableDetergents.map((d) => (
-                <TouchableOpacity
-                  key={d}
-                  style={[styles.pill, selectedDetergent === d && styles.pillActive]}
-                  onPress={() => setSelectedDetergent(d)}
-                >
-                  <Text style={[styles.pillText, selectedDetergent === d && styles.pillTextActive]}>{d}</Text>
+        {step===3&&(
+          <View>
+            <Text style={S.q}>What's in the bag?</Text>
+            <Text style={S.hint}>Pick a laundry package and tell us what type of items.</Text>
+            <Text style={S.sec}>Load Type</Text>
+            <View style={S.toggleRow}>
+              {['clothes','beddings'].map(t=>(
+                <TouchableOpacity key={t} style={[S.toggleBtn,loadType===t&&S.toggleBtnOn]} onPress={()=>{ setLoadType(t); if(t==='beddings'&&kg>7) setKg(7); }}>
+                  <Text style={[S.toggleTxt,loadType===t&&S.toggleTxtOn]}>{t==='clothes'?'👕 Clothes':'🛏 Beddings'}</Text>
+                  <Text style={[S.toggleSub,loadType===t&&S.toggleSubOn]}>{t==='clothes'?'Max 8kg':'Max 7kg'}</Text>
                 </TouchableOpacity>
               ))}
-            </ScrollView>
-
-            <Text style={styles.sectionTitle}>Fabric Conditioner</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
-              {availableConditioners.map((c) => (
-                <TouchableOpacity
-                  key={c}
-                  style={[styles.pill, selectedConditioner === c && styles.pillActive]}
-                  onPress={() => setSelectedConditioner(c)}
-                >
-                  <Text style={[styles.pillText, selectedConditioner === c && styles.pillTextActive]}>{c}</Text>
+            </View>
+            <Text style={S.sec}>Laundry Package</Text>
+            <View style={S.svcGrid}>
+              {services_.map(svc=>(
+                <TouchableOpacity key={svc.id} style={[S.svcCard,service?.id===svc.id&&S.svcCardOn]} onPress={()=>setService(svc)} activeOpacity={0.8}>
+                  <MaterialCommunityIcons name={getSvcIcon(svc)} size={26} color={service?.id===svc.id?'#fff':colors.primary}/>
+                  <Text style={[S.svcName,service?.id===svc.id&&S.svcNameOn]}>{svc.name}</Text>
+                  <Text style={[S.svcPrice,service?.id===svc.id&&S.svcPriceOn]}>₱{svc.price}/kg</Text>
                 </TouchableOpacity>
               ))}
-            </ScrollView>
-
-            <View style={styles.deliveryToggleRow}>
-              <View>
-                <Text style={styles.toggleTitle}>Rush Service?</Text>
-                <Text style={styles.toggleSub}>₱150.00 additional fee applies.</Text>
-              </View>
-              <TouchableOpacity onPress={() => setIsRush(!isRush)} style={[styles.toggleSwitch, isRush && styles.toggleSwitchActive]}>
-                <View style={[styles.toggleCircle, isRush && styles.toggleCircleActive]} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.sectionTitle}>Special Instructions</Text>
-            <TextInput
-              style={styles.textArea}
-              multiline
-              numberOfLines={4}
-              value={specialInstructions}
-              onChangeText={setSpecialInstructions}
-              placeholder="e.g. Separate whites, use delicate mode…"
-            />
-
-            <View style={styles.buttonRow}>
-              <Button title="Back" variant="ghost" onPress={() => setStep(3)} style={styles.halfButton} />
-              <Button title="Continue" onPress={handleStep4Continue} style={styles.halfButton} />
             </View>
           </View>
         )}
 
-        {/* ══════════════════════════════════════════════════════════════════
-            STEP 5 — Payment Method
-        ══════════════════════════════════════════════════════════════════ */}
-        {step === 5 && (
-          <View style={styles.stepContent}>
-            <Text style={styles.sectionTitle}>Choose Payment Method</Text>
-
-            <TouchableOpacity
-              style={[styles.paymentCard, paymentMethod === 'gcash' && styles.selectedPaymentCard]}
-              onPress={() => setPaymentMethod('gcash')}
-            >
-              <View style={styles.paymentLeft}>
-                <View style={[styles.paymentIconBox, { backgroundColor: '#EBF5FF' }]}>
-                  <Ionicons name="card-outline" size={24} color="#1D4ED8" />
-                </View>
-                <View>
-                  <Text style={styles.paymentName}>GCash</Text>
-                  <Text style={styles.paymentDesc}>Pay instantly via GCash</Text>
-                </View>
-              </View>
-              {paymentMethod === 'gcash' && <Ionicons name="checkmark-circle" size={24} color={colors.primary} />}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.paymentCard, paymentMethod === 'cash' && styles.selectedPaymentCard]}
-              onPress={() => setPaymentMethod('cash')}
-            >
-              <View style={styles.paymentLeft}>
-                <View style={[styles.paymentIconBox, { backgroundColor: '#F0FDF4' }]}>
-                  <Ionicons name="cash-outline" size={24} color="#15803D" />
-                </View>
-                <View>
-                  <Text style={styles.paymentName}>Cash on Pickup</Text>
-                  <Text style={styles.paymentDesc}>Pay at branch or to rider</Text>
-                </View>
-              </View>
-              {paymentMethod === 'cash' && <Ionicons name="checkmark-circle" size={24} color={colors.primary} />}
-            </TouchableOpacity>
-
-            <View style={styles.buttonRow}>
-              <Button title="Back" variant="ghost" onPress={() => setStep(4)} style={styles.halfButton} />
-              <Button title="Review Order" onPress={() => setStep(6)} style={styles.halfButton} />
+        {step===4&&(
+          <View>
+            <Text style={S.q}>How many kilos?</Text>
+            <Text style={S.hint}>Max {maxKg}kg for {loadType}. Absolute limit is 9kg (+₱50 surcharge).</Text>
+            <View style={S.kgRow}>
+              <TouchableOpacity style={S.kgBtn} onPress={()=>setKg(k=>Math.max(1,k-1))}><Text style={S.kgBtnTxt}>−</Text></TouchableOpacity>
+              <View style={S.kgDisplay}><Text style={S.kgNum}>{kg}</Text><Text style={S.kgUnit}>kg</Text></View>
+              <TouchableOpacity style={S.kgBtn} onPress={()=>setKg(k=>Math.min(9,k+1))}><Text style={S.kgBtnTxt}>+</Text></TouchableOpacity>
+            </View>
+            {kg>=9&&<View style={S.surcharge}><Ionicons name="warning-outline" size={14} color={colors.warning}/><Text style={S.surchargeTxt}>9kg limit — ₱50 surcharge applies</Text></View>}
+            {kg>maxKg&&kg<9&&<View style={S.surcharge}><Ionicons name="information-circle-outline" size={14} color={colors.info}/><Text style={S.surchargeTxt}>Exceeds recommended limit for {loadType} ({maxKg}kg)</Text></View>}
+            <View style={S.kgBar}><View style={[S.kgFill,{width:`${Math.min(100,(kg/9)*100)}%`,backgroundColor:kg>=9?colors.error:kg>maxKg?colors.warning:colors.primary}]}/></View>
+            <View style={S.liveCard}>
+              <Text style={S.liveLbl}>Service Cost Preview</Text>
+              <Text style={S.liveAmt}>₱{total.toLocaleString()}</Text>
+              <Text style={S.liveBreak}>{service?.name} · {kg}kg{kg>=9?' + ₱50 surcharge':''}</Text>
             </View>
           </View>
         )}
 
-        {/* ══════════════════════════════════════════════════════════════════
-            STEP 6 — Review & Confirm
-        ══════════════════════════════════════════════════════════════════ */}
-        {step === 6 && (
-          <View style={styles.stepContent}>
-            <Card style={styles.receiptCard}>
-              <Text style={styles.receiptHeader}>Order Summary</Text>
+        {step===5&&(
+          <View>
+            <Text style={S.q}>Any extras?</Text>
+            <Text style={S.hint}>Add detergent or fabric conditioner — or bring your own.</Text>
+            <Text style={S.sec}>Detergent</Text>
+            <View style={S.pillRow}>
+              {DET_OPTS.map(o=>(
+                <TouchableOpacity key={o.id} style={[S.pill,det===o.id&&S.pillOn]} onPress={()=>setDet(o.id)}>
+                  <Text style={[S.pillTxt,det===o.id&&S.pillTxtOn]}>{o.label}{o.price>0?` +₱${o.price}`:''}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={S.sec}>Fabric Conditioner</Text>
+            <View style={S.pillRow}>
+              {FAB_OPTS.map(o=>(
+                <TouchableOpacity key={o.id} style={[S.pill,fab===o.id&&S.pillOn]} onPress={()=>setFab(o.id)}>
+                  <Text style={[S.pillTxt,fab===o.id&&S.pillTxtOn]}>{o.label}{o.price>0?` +₱${o.price}`:''}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
 
-              <View style={styles.receiptRow}>
-                <Text style={styles.receiptLabel}>Branch</Text>
-                <Text style={styles.receiptValue}>{selectedBranch?.name}</Text>
-              </View>
-              <View style={styles.receiptRow}>
-                <Text style={styles.receiptLabel}>Service Mode</Text>
-                <Text style={styles.receiptValue}>{selectedServiceMode.label}</Text>
-              </View>
-              <View style={styles.receiptRow}>
-                <Text style={styles.receiptLabel}>Package</Text>
-                <Text style={styles.receiptValue}>{selectedService?.name}</Text>
-              </View>
-              <View style={styles.receiptRow}>
-                <Text style={styles.receiptLabel}>Schedule</Text>
-                <Text style={styles.receiptValue}>{formatDateSummary(scheduleDate)} | {scheduleTime}</Text>
-              </View>
-              <View style={styles.receiptRow}>
-                <Text style={styles.receiptLabel}>Load Size</Text>
-                <Text style={styles.receiptValue}>{loadKg} kg</Text>
-              </View>
-              <View style={styles.receiptRow}>
-                <Text style={styles.receiptLabel}>Preferences</Text>
-                <Text style={styles.receiptValue}>{selectedDetergent}, {selectedConditioner}</Text>
-              </View>
+        {step===6&&(
+          <View>
+            <Text style={S.q}>When should we come?</Text>
+            <Text style={S.hint}>Pick a pickup date and available time slot.</Text>
 
-              {/* Address summary */}
-              {serviceModeNeedsAddress && deliveryAddress && (
-                <>
-                  <View style={styles.receiptDivider} />
-                  <View style={styles.receiptAddressBlock}>
-                    <View style={styles.receiptAddressHeader}>
-                      <Ionicons name="location" size={13} color={colors.primary} />
-                      <Text style={styles.receiptAddressTitle}>
-                        {serviceMode === 'FULL_SERVICE' ? 'Pickup & Delivery' : 'Pickup'} Address
+            {/* ── DATE PICKER ── */}
+            <View style={S.dateSection}>
+              <View style={S.dateSectionHead}>
+                <Text style={S.dateSectionTitle}>Select Date</Text>
+                <Text style={S.dateSectionMonth}>
+                  {schDate.toLocaleDateString('en-US',{month:'long',year:'numeric'})}
+                </Text>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={S.weekStrip}>
+                {dates.map(d=>{
+                  const sel=schDate.toDateString()===d.toDateString();
+                  const isToday=new Date().toDateString()===d.toDateString();
+                  return(
+                    <TouchableOpacity key={d.toISOString()} style={[S.dayChip, sel&&S.dayChipOn]} onPress={()=>setSchDate(d)} activeOpacity={0.75}>
+                      <Text style={[S.dayChipName, sel&&S.dayChipNameOn]}>
+                        {d.toLocaleDateString('en-US',{weekday:'short'}).toUpperCase()}
                       </Text>
-                    </View>
-                    <Text style={styles.receiptAddressMain}>{deliveryAddress.address}</Text>
-                    {deliveryAddress.unitFloor
-                      ? <Text style={styles.receiptAddressSub}>{deliveryAddress.unitFloor}</Text>
-                      : null}
-                    {deliveryAddress.contactName
-                      ? <Text style={styles.receiptAddressSub}>Contact: {deliveryAddress.contactName}{deliveryAddress.phone ? `  ·  ${deliveryAddress.phone}` : ''}</Text>
-                      : null}
-
-                    {/* Flow: your address → branch → your address */}
-                    {serviceMode === 'FULL_SERVICE' && (
-                      <View style={[styles.flowIndicator, { marginTop: 10 }]}>
-                        <View style={styles.flowStep}>
-                          <Ionicons name="home" size={11} color={colors.primary} />
-                          <Text style={styles.flowText}>You</Text>
-                        </View>
-                        <Ionicons name="arrow-forward" size={10} color={colors.textTertiary} />
-                        <View style={styles.flowStep}>
-                          <Ionicons name="storefront-outline" size={11} color={colors.accent} />
-                          <Text style={styles.flowText}>{selectedBranch?.name}</Text>
-                        </View>
-                        <Ionicons name="arrow-forward" size={10} color={colors.textTertiary} />
-                        <View style={styles.flowStep}>
-                          <Ionicons name="home" size={11} color={colors.primary} />
-                          <Text style={styles.flowText}>You</Text>
-                        </View>
-                      </View>
-                    )}
-                  </View>
-                </>
-              )}
-
-              <View style={styles.receiptDivider} />
-
-              <View style={styles.receiptRow}>
-                <Text style={styles.receiptLabel}>Service Fee</Text>
-                <Text style={styles.receiptValue}>₱{priceDetails.servicePrice?.toFixed(2)}</Text>
-              </View>
-              <View style={styles.receiptRow}>
-                <Text style={styles.receiptLabel}>Supplies</Text>
-                <Text style={styles.receiptValue}>₱{priceDetails.suppliesPrice?.toFixed(2)}</Text>
-              </View>
-              {serviceModeNeedsAddress && (
-                <View style={styles.receiptRow}>
-                  <Text style={styles.receiptLabel}>Delivery Fee</Text>
-                  <Text style={styles.receiptValue}>₱{priceDetails.deliveryPrice?.toFixed(2)}</Text>
-                </View>
-              )}
-
-              <View style={styles.receiptDivider} />
-
-              <View style={styles.receiptTotalRow}>
-                <Text style={styles.totalLabel}>Grand Total</Text>
-                <Text style={styles.totalValue}>₱{(priceDetails.totalPrice || 0).toFixed(2)}</Text>
-              </View>
-
-              <View style={styles.paymentInfoRow}>
-                <Text style={styles.payInfoLabel}>Payment Method:</Text>
-                <Text style={styles.payInfoValue}>{paymentMethod === 'gcash' ? 'GCash' : 'Cash on Pickup'}</Text>
-              </View>
-            </Card>
-
-            <View style={styles.buttonRow}>
-              <Button title="Back" variant="ghost" onPress={() => setStep(5)} style={styles.halfButton} />
-              <Button
-                title={submitting ? 'Processing…' : 'Place Booking'}
-                onPress={handleConfirmBooking}
-                disabled={submitting}
-                style={styles.halfButton}
-              />
+                      <Text style={[S.dayChipNum, sel&&S.dayChipNumOn]}>{d.getDate()}</Text>
+                      {isToday&&!sel&&<View style={S.todayDot}/>}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             </View>
+
+            {/* ── TIME SLOT PICKER ── */}
+            <View style={S.timeSection}>
+              <Text style={S.dateSectionTitle}>Select Time</Text>
+              {slotsLoad ? (
+                <View style={S.slotsLoading}>
+                  <ActivityIndicator color={colors.primary}/>
+                  <Text style={S.slotsLoadingTxt}>Checking availability…</Text>
+                </View>
+              ) : slots.length === 0 ? (
+                <View style={S.slotsEmpty}>
+                  <Ionicons name="calendar-outline" size={32} color={colors.border}/>
+                  <Text style={S.slotsEmptyTitle}>No slots available</Text>
+                  <Text style={S.slotsEmptyHint}>Try selecting a different date.</Text>
+                </View>
+              ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={S.timeStrip}>
+                  {slots.map(sl=>{
+                    const sel=schTime===sl.label;
+                    // Parse "8:00 AM - 9:30 AM" → startTime="8:00 AM" → hour="8:00", period="AM"
+                    const startTime = (sl.label||'').split(' - ')[0].trim();
+                    const timeParts = startTime.split(' ');
+                    const period = timeParts.length >= 2 ? timeParts[timeParts.length-1] : '';
+                    const hour   = timeParts.slice(0, timeParts.length >= 2 ? -1 : timeParts.length).join('');
+                    return(
+                      <TouchableOpacity
+                        key={sl.label}
+                        style={[S.timeChip, sel&&S.timeChipOn, !sl.available&&S.timeChipOff]}
+                        onPress={()=>sl.available&&setSchTime(sl.label)}
+                        disabled={!sl.available}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[S.timeChipPeriod, sel&&S.timeChipPeriodOn, !sl.available&&S.timeChipTextOff]}>{period||'--'}</Text>
+                        <Text style={[S.timeChipHour, sel&&S.timeChipHourOn, !sl.available&&S.timeChipTextOff]}>{hour||sl.label}</Text>
+                        {!sl.available&&<Text style={S.timeChipFull}>Full</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
+
+            <View style={S.rushCard}>
+              <View style={{flex:1}}><Text style={S.rushTitle}>Rush Service?</Text><Text style={S.rushSub}>₱150.00 additional fee applies.</Text></View>
+              <Switch value={rush} onValueChange={setRush} trackColor={{false:colors.border,true:colors.primary}} thumbColor="#fff"/>
+            </View>
+            <Text style={S.sec}>Special Instructions</Text>
+            <TextInput style={S.notesInput} multiline value={notes} onChangeText={setNotes} placeholder="e.g. Separate whites, use delicate mode…" placeholderTextColor={colors.textTertiary}/>
           </View>
         )}
+
+        {step===7&&(
+          <View>
+            <Text style={S.q}>Review & Confirm</Text>
+            <Text style={S.hint}>Check your order before payment.</Text>
+            {[
+              {label:'Branch',       val:branch?.name},
+              needsAddr&&{label:'Address',      val:address?.address},
+              {label:'Service',      val:service?.name},
+              {label:'Load Type',    val:`${loadType} · ${kg}kg`},
+              {label:'Detergent',    val:DET_OPTS.find(o=>o.id===det)?.label},
+              {label:'Fabcon',       val:FAB_OPTS.find(o=>o.id===fab)?.label},
+              {label:'Schedule',     val:`${schDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${schTime}`},
+              rush&&{label:'Rush',   val:'Yes +₱150'},
+              needsAddr&&{label:'Delivery Fee', val:`₱${deliveryFee}`},
+            ].filter(Boolean).map((row,i)=>(
+              <View key={i} style={S.sumRow}>
+                <Text style={S.sumKey}>{row.label}</Text>
+                <Text style={S.sumVal}>{row.val||'—'}</Text>
+              </View>
+            ))}
+            <View style={[S.sumRow,S.sumTotal]}><Text style={S.sumTotalKey}>Total</Text><Text style={S.sumTotalVal}>₱{total.toLocaleString()}</Text></View>
+            <Text style={S.sec}>Payment Method</Text>
+            {['gcash','cod'].map(p=>(
+              <TouchableOpacity key={p} style={[S.payCard,payMethod===p&&S.payCardOn]} onPress={()=>setPay(p)}>
+                <MaterialCommunityIcons name={p==='gcash'?'cellphone-wireless':'cash'} size={22} color={payMethod===p?'#fff':colors.primary}/>
+                <Text style={[S.payName,payMethod===p&&S.payNameOn]}>{p==='gcash'?'GCash':'Cash on Delivery'}</Text>
+                {payMethod===p&&<Ionicons name="checkmark-circle" size={18} color={payMethod===p?'#fff':colors.primary}/>}
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
       </ScrollView>
+      <Footer/>
     </SafeAreaView>
   );
-};
+}
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 12, fontSize: 14, color: colors.textSecondary, fontWeight: '500' },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 16 },
-  bookingHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8,
-  },
-  screenTitle: { fontSize: 22, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
-  screenSubtitle: { fontSize: 13, color: colors.textSecondary, fontWeight: '500', marginTop: 2 },
-  stepCountChip: {
-    backgroundColor: colors.primaryLight, borderRadius: 20,
-    paddingHorizontal: 14, paddingVertical: 6,
-  },
-  stepCountText: { fontSize: 13, fontWeight: '800', color: colors.primary },
-
-  // ── Indicator ────────────────────────────────────────────────────────────
-  indicatorContainer: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    marginBottom: 32, paddingHorizontal: 4,
-  },
-  indicatorItem: { alignItems: 'center', flex: 1 },
-  indicatorCircle: {
-    width: 24, height: 24, borderRadius: 12,
-    justifyContent: 'center', alignItems: 'center', marginBottom: 6,
-  },
-  indicatorActive: { backgroundColor: colors.primary },
-  indicatorInactive: { backgroundColor: colors.border },
-  indicatorText: { fontSize: 10, fontWeight: '700', color: colors.textSecondary },
-  indicatorTextActive: { color: '#FFF' },
-  indicatorLabel: { fontSize: 8, fontWeight: '600', color: colors.textTertiary },
-  indicatorLabelActive: { color: colors.primary },
-
-  stepContent: { gap: 8 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.text, marginTop: 16, marginBottom: 12 },
-
-  // ── Mode cards ───────────────────────────────────────────────────────────
-  modeGrid: { gap: 10 },
-  modeCard: {
-    flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between',
-    borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
-    backgroundColor: colors.card, padding: 14, gap: 12,
-  },
-  modeCardActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
-  modeCardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  modeIconBox: {
-    width: 38, height: 38, borderRadius: 10,
-    backgroundColor: colors.primaryLight,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  modeIconBoxActive: { backgroundColor: colors.primary },
-  modeTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
-  modeTitleActive: { color: colors.primary },
-  modeHint: { marginTop: 3, fontSize: 12, color: colors.textSecondary },
-  modeHintActive: { color: colors.primary },
-
-  // ── Branch ───────────────────────────────────────────────────────────────
-  branchGrid: { gap: 12 },
-  branchCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    padding: 14, borderRadius: 16,
-    backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.border,
-  },
-  selectedCard: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
-  branchIconBox: {
-    width: 38, height: 38, borderRadius: 10,
-    backgroundColor: colors.primaryLight,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  branchIconBoxActive: { backgroundColor: colors.primary },
-  branchInfo: { flex: 1 },
-  branchName: { fontSize: 14, fontWeight: '700', color: colors.text },
-  branchNameActive: { color: colors.primary },
-  branchAddress: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-
-  // ── Service grid ─────────────────────────────────────────────────────────
-  serviceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  serviceCard: {
-    width: (width - 52) / 2, padding: 20, borderRadius: 20,
-    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-    alignItems: 'center',
-  },
-  selectedServiceCard: { backgroundColor: colors.primary, borderColor: colors.primary },
-  serviceName: { fontSize: 14, fontWeight: '700', color: colors.text, marginTop: 10, marginBottom: 4 },
-  servicePrice: { fontSize: 12, fontWeight: '800', color: colors.accent },
-  selectedCardText: { color: '#FFF' },
-  selectedCardPrice: { color: colors.accentLight },
-
-  nextButton: { marginTop: 32 },
-
-  // ── Address (Step 2) ─────────────────────────────────────────────────────
-  addressStepHint: { fontSize: 13, color: colors.textSecondary, lineHeight: 20, marginBottom: 8 },
-  branchContextPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: colors.accentLight, borderRadius: 20,
-    paddingHorizontal: 12, paddingVertical: 7,
-    alignSelf: 'flex-start',
-  },
-  branchContextText: { fontSize: 12, color: colors.accentDark, fontWeight: '600' },
-
-  addressEmptyCard: {
-    marginTop: 8, borderRadius: 20,
-    borderWidth: 1.5, borderColor: colors.border, borderStyle: 'dashed',
-    backgroundColor: colors.surface, padding: 28,
-    alignItems: 'center', gap: 8,
-  },
-  addressEmptyIconBox: {
-    width: 56, height: 56, borderRadius: 16,
-    backgroundColor: colors.primaryLight,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 4,
-  },
-  addressEmptyTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
-  addressEmptyHint: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
-  addressEmptyBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: colors.primary, borderRadius: 12,
-    paddingVertical: 12, paddingHorizontal: 24, marginTop: 8,
-  },
-  addressEmptyBtnText: { fontSize: 14, fontWeight: '700', color: '#FFF' },
-  savedHintBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: colors.accentLight, borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: 9, marginTop: 8,
-    width: '100%',
-  },
-  savedHintText: { fontSize: 12, color: colors.accentDark, fontWeight: '600', flex: 1 },
-
-  addressFilledCard: {
-    marginTop: 8, borderRadius: 18,
-    borderWidth: 1.5, borderColor: colors.primary + '40',
-    backgroundColor: colors.surface, padding: 16, gap: 12,
-  },
-  addressFilledHeader: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
-  addressFilledIconBox: {
-    width: 36, height: 36, borderRadius: 10,
-    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
-  },
-  addressFilledLabel: { fontSize: 11, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5 },
-  addressFilledMain: { fontSize: 14, fontWeight: '600', color: colors.text, lineHeight: 20, marginTop: 2 },
-  addressFilledSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-
-  // Flow indicator (Customer → Branch → Customer)
-  flowIndicator: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.surfaceVariant, borderRadius: 10,
-    padding: 10, gap: 6, flexWrap: 'nowrap',
-  },
-  flowStep: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  flowArrow: {},
-  flowText: { fontSize: 10, fontWeight: '600', color: colors.textSecondary },
-
-  changeAddressBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    alignSelf: 'flex-start',
-    borderWidth: 1, borderColor: colors.border,
-    borderRadius: 10, paddingVertical: 7, paddingHorizontal: 12,
-    backgroundColor: colors.background,
-  },
-  changeAddressBtnText: { fontSize: 12, fontWeight: '700', color: colors.primary },
-
-  // ── Schedule — Premium Calendar ─────────────────────────────────────────
-  calendarHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    marginBottom: 16, marginTop: 8,
-  },
-  calendarMonthLabel: { fontSize: 18, fontWeight: '800', color: colors.text, letterSpacing: -0.3 },
-  calendarDayLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '500', marginTop: 2 },
-  calendarBadge: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center',
-  },
-  weekStrip: { flexDirection: 'row', gap: 8, paddingVertical: 8, marginBottom: 8 },
-  dayColumn: { alignItems: 'center', gap: 6, width: 52 },
-  dayName: { fontSize: 11, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5 },
-  dayNameActive: { color: colors.primary },
-  dayCircle: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: colors.surface,
-    borderWidth: 1.5, borderColor: colors.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  dayCircleActive: {
-    backgroundColor: colors.primary, borderColor: colors.primary,
-    shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35, shadowRadius: 8, elevation: 4,
-  },
-  dayNum: { fontSize: 16, fontWeight: '700', color: colors.text },
-  dayNumActive: { color: '#FFF' },
-  todayDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.primary },
-  todayDotActive: { backgroundColor: '#FFF' },
-  slotLoadingWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  slotLoadingText: { fontSize: 12, color: colors.textSecondary },
-  timeGrid2Col: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 4 },
-  timeCard2: {
-    width: (width - 60) / 2,
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingVertical: 14, paddingHorizontal: 14, borderRadius: 14,
-    backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.border,
-  },
-  selectedTimeCard2: {
-    backgroundColor: colors.primary, borderColor: colors.primary,
-    shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25, shadowRadius: 8, elevation: 4,
-  },
-  timeCardUnavailable: { backgroundColor: colors.surface, borderColor: colors.border, opacity: 0.7 },
-  timeText2: { fontSize: 13, fontWeight: '700', color: colors.text, flex: 1 },
-  selectedTimeText2: { color: '#FFF' },
-  timeTextUnavailable: { color: colors.textSecondary },
-  slotTagUnavailable: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: colors.warning,
-    backgroundColor: `${colors.warning}1A`,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  noSlotBox: { alignItems: 'center', paddingVertical: 24, gap: 8 },
-  slotHintText: { fontSize: 14, fontWeight: '700', color: colors.textSecondary },
-  slotHintSub: { fontSize: 12, color: colors.textTertiary },
-
-  // ── Preferences ──────────────────────────────────────────────────────────
-  kgInputContainer: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card,
-    borderRadius: 16, borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: 20, height: 60,
-  },
-  kgInput: { flex: 1, fontSize: 24, fontWeight: '800', color: colors.text },
-  kgUnit: { fontSize: 18, fontWeight: '700', color: colors.textTertiary },
-  kgTip: { fontSize: 12, color: colors.textSecondary, marginTop: 8 },
-  pillScroll: { flexDirection: 'row', marginBottom: 8 },
-  pill: {
-    paddingHorizontal: 20, paddingVertical: 10, borderRadius: 100,
-    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginRight: 10,
-  },
-  pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  pillText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
-  pillTextActive: { color: '#FFF' },
-  deliveryToggleRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: 'rgba(22, 189, 202, 0.05)', padding: 20,
-    borderRadius: 20, marginTop: 20, borderWidth: 1, borderColor: 'rgba(22, 189, 202, 0.2)',
-  },
-  toggleTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
-  toggleSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  toggleSwitch: { width: 52, height: 30, borderRadius: 15, backgroundColor: colors.border, padding: 2 },
-  toggleSwitchActive: { backgroundColor: colors.accent },
-  toggleCircle: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#FFF' },
-  toggleCircleActive: { transform: [{ translateX: 22 }] },
-  textArea: {
-    backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border,
-    padding: 16, height: 100, fontSize: 14, color: colors.text, textAlignVertical: 'top',
-  },
-
-  // ── Payment ───────────────────────────────────────────────────────────────
-  paymentCard: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    padding: 20, borderRadius: 20, backgroundColor: colors.card,
-    borderWidth: 1.5, borderColor: colors.border, marginBottom: 16,
-  },
-  selectedPaymentCard: { borderColor: colors.primary, backgroundColor: 'rgba(26, 86, 219, 0.02)' },
-  paymentLeft: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  paymentIconBox: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  paymentName: { fontSize: 16, fontWeight: '700', color: colors.text },
-  paymentDesc: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-
-  // ── Receipt / Confirm ─────────────────────────────────────────────────────
-  receiptCard: {
-    padding: 24, borderRadius: 24, backgroundColor: colors.card,
-    borderWidth: 1, borderColor: colors.border,
-  },
-  receiptHeader: { fontSize: 18, fontWeight: '800', color: colors.text, textAlign: 'center', marginBottom: 24 },
-  receiptRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
-  receiptLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
-  receiptValue: { fontSize: 13, color: colors.text, fontWeight: '700', textAlign: 'right', maxWidth: '60%' },
-  receiptDivider: { height: 1, backgroundColor: colors.border, marginVertical: 16 },
-  receiptAddressBlock: { gap: 4, marginBottom: 4 },
-  receiptAddressHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6 },
-  receiptAddressTitle: { fontSize: 12, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 },
-  receiptAddressMain: { fontSize: 13, fontWeight: '600', color: colors.text, lineHeight: 18 },
-  receiptAddressSub: { fontSize: 12, color: colors.textSecondary },
-  receiptTotalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  totalLabel: { fontSize: 16, fontWeight: '800', color: colors.text },
-  totalValue: { fontSize: 24, fontWeight: '900', color: colors.primary },
-  paymentInfoRow: {
-    backgroundColor: colors.background, padding: 12, borderRadius: 12,
-    flexDirection: 'row', justifyContent: 'center', gap: 6,
-  },
-  payInfoLabel: { fontSize: 12, color: colors.textSecondary },
-  payInfoValue: { fontSize: 12, fontWeight: '700', color: colors.text },
-
-  // ── Shared ────────────────────────────────────────────────────────────────
-  buttonRow: { flexDirection: 'row', gap: 12, marginTop: 32 },
-  halfButton: { flex: 1 },
-  errorText: { fontSize: 12, color: colors.error, fontWeight: '600' },
+const S = StyleSheet.create({
+  container:{flex:1,backgroundColor:colors.background},
+  loadWrap:{flex:1,alignItems:'center',justifyContent:'center',gap:12},
+  loadTxt:{fontSize:14,color:colors.textSecondary},
+  hdr:{paddingHorizontal:20,paddingTop:12,paddingBottom:4,flexDirection:'row',alignItems:'center',justifyContent:'space-between'},
+  hdrTitle:{fontSize:22,fontWeight:'900',color:colors.text,letterSpacing:-0.4},
+  hdrSub:{fontSize:13,color:colors.textSecondary,marginTop:2},
+  // Progress bar stepper
+  stepperWrap:{flexDirection:'row',alignItems:'center',paddingHorizontal:20,paddingBottom:16,gap:12},
+  progressTrack:{flex:1,height:5,backgroundColor:colors.border,borderRadius:3,overflow:'hidden'},
+  progressFill:{height:5,backgroundColor:colors.primary,borderRadius:3},
+  stepCounter:{fontSize:12,fontWeight:'700',color:colors.textSecondary,minWidth:36,textAlign:'right'},
+  scroll:{paddingHorizontal:20,paddingBottom:20},
+  q:{fontSize:22,fontWeight:'900',color:colors.text,letterSpacing:-0.4,marginTop:8,marginBottom:4},
+  hint:{fontSize:14,color:colors.textSecondary,marginBottom:20,lineHeight:20},
+  sec:{fontSize:12,fontWeight:'700',color:colors.textTertiary,letterSpacing:1,textTransform:'uppercase',marginBottom:10,marginTop:16},
+  modeCard:{flexDirection:'row',alignItems:'center',backgroundColor:colors.surface,borderRadius:14,padding:14,marginBottom:10,borderWidth:1,borderColor:colors.border,gap:12},
+  modeCardOn:{borderColor:colors.primary,backgroundColor:colors.primaryLight},
+  modeIcon:{width:38,height:38,borderRadius:10,backgroundColor:colors.primaryLight,alignItems:'center',justifyContent:'center'},
+  modeIconOn:{backgroundColor:colors.primary},
+  modeName:{fontSize:15,fontWeight:'700',color:colors.text},
+  modeNameOn:{color:colors.primary},
+  modeHint:{fontSize:12,color:colors.textSecondary,marginTop:1},
+  modeHintOn:{color:colors.primary},
+  brCard:{flexDirection:'row',alignItems:'center',backgroundColor:colors.surface,borderRadius:14,padding:14,marginBottom:8,borderWidth:1,borderColor:colors.border,gap:12},
+  brCardOn:{borderColor:colors.primary,backgroundColor:colors.primaryLight},
+  brIcon:{width:34,height:34,borderRadius:9,backgroundColor:colors.primaryLight,alignItems:'center',justifyContent:'center'},
+  brIconOn:{backgroundColor:colors.primary},
+  brName:{fontSize:14,fontWeight:'700',color:colors.text},
+  brNameOn:{color:colors.primary},
+  brAddr:{fontSize:12,color:colors.textSecondary,marginTop:1},
+  branchPill:{flexDirection:'row',alignItems:'center',gap:6,backgroundColor:colors.accentLight,paddingHorizontal:12,paddingVertical:7,borderRadius:20,alignSelf:'flex-start',marginBottom:16},
+  branchPillTxt:{fontSize:13,color:colors.accent},
+  addrEmpty:{borderWidth:1.5,borderColor:colors.border,borderStyle:'dashed',borderRadius:18,padding:28,alignItems:'center',gap:8},
+  addrEmptyIcon:{width:56,height:56,borderRadius:16,backgroundColor:colors.primaryLight,alignItems:'center',justifyContent:'center'},
+  addrEmptyTitle:{fontSize:16,fontWeight:'800',color:colors.text},
+  addrEmptyHint:{fontSize:13,color:colors.textSecondary,textAlign:'center'},
+  addrEmptyBtn:{backgroundColor:colors.primary,borderRadius:12,paddingHorizontal:22,paddingVertical:12,marginTop:4},
+  addrEmptyBtnTxt:{color:'#fff',fontWeight:'700',fontSize:14},
+  savedHint:{flexDirection:'row',alignItems:'center',gap:5,marginTop:8},
+  savedHintTxt:{fontSize:12,color:colors.accent},
+  addrFilled:{backgroundColor:colors.surface,borderRadius:16,padding:16,borderWidth:1,borderColor:colors.border,gap:12},
+  addrFilledHdr:{flexDirection:'row',gap:12},
+  addrFilledIcon:{width:36,height:36,borderRadius:10,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'},
+  addrLabel:{fontSize:11,color:colors.textTertiary,fontWeight:'600',marginBottom:2},
+  addrMain:{fontSize:14,fontWeight:'700',color:colors.text},
+  addrSub:{fontSize:12,color:colors.textSecondary,marginTop:1},
+  changeAddr:{flexDirection:'row',alignItems:'center',gap:6,paddingTop:10,borderTopWidth:1,borderTopColor:colors.border},
+  changeAddrTxt:{fontSize:13,color:colors.primary,fontWeight:'600'},
+  toggleRow:{flexDirection:'row',gap:10,marginBottom:4},
+  toggleBtn:{flex:1,borderWidth:1.5,borderColor:colors.border,borderRadius:14,padding:14,alignItems:'center',gap:4},
+  toggleBtnOn:{borderColor:colors.primary,backgroundColor:colors.primaryLight},
+  toggleTxt:{fontSize:15,fontWeight:'700',color:colors.text},
+  toggleTxtOn:{color:colors.primary},
+  toggleSub:{fontSize:11,color:colors.textTertiary},
+  toggleSubOn:{color:colors.primary},
+  svcGrid:{flexDirection:'row',flexWrap:'wrap',gap:10},
+  svcCard:{width:(width-50)/2,backgroundColor:colors.surface,borderRadius:14,padding:14,alignItems:'center',gap:6,borderWidth:1,borderColor:colors.border},
+  svcCardOn:{backgroundColor:colors.primary,borderColor:colors.primary},
+  svcName:{fontSize:12,fontWeight:'700',color:colors.text,textAlign:'center'},
+  svcNameOn:{color:'#fff'},
+  svcPrice:{fontSize:12,color:colors.textSecondary},
+  svcPriceOn:{color:'rgba(255,255,255,0.8)'},
+  kgRow:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:24,marginVertical:24},
+  kgBtn:{width:52,height:52,borderRadius:26,backgroundColor:colors.primaryLight,alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:colors.primary},
+  kgBtnTxt:{fontSize:24,fontWeight:'300',color:colors.primary},
+  kgDisplay:{alignItems:'center'},
+  kgNum:{fontSize:56,fontWeight:'900',color:colors.text,letterSpacing:-2},
+  kgUnit:{fontSize:16,color:colors.textSecondary,fontWeight:'600'},
+  surcharge:{flexDirection:'row',alignItems:'center',gap:6,backgroundColor:colors.warningLight,padding:10,borderRadius:10,marginBottom:12},
+  surchargeTxt:{fontSize:12,color:colors.warning,fontWeight:'600'},
+  kgBar:{height:6,backgroundColor:colors.border,borderRadius:3,marginVertical:16,overflow:'hidden'},
+  kgFill:{height:6,borderRadius:3},
+  liveCard:{backgroundColor:colors.primaryLight,borderRadius:14,padding:16,borderWidth:1,borderColor:colors.primary,alignItems:'center',gap:4},
+  liveLbl:{fontSize:11,color:colors.primary,fontWeight:'700',letterSpacing:0.5},
+  liveAmt:{fontSize:28,fontWeight:'900',color:colors.primary},
+  liveBreak:{fontSize:12,color:colors.textSecondary},
+  pillRow:{flexDirection:'row',flexWrap:'wrap',gap:10,marginBottom:4},
+  pill:{paddingHorizontal:16,paddingVertical:10,borderRadius:24,borderWidth:1.5,borderColor:colors.border,backgroundColor:colors.surface},
+  pillOn:{borderColor:colors.primary,backgroundColor:colors.primary},
+  pillTxt:{fontSize:13,fontWeight:'600',color:colors.text},
+  pillTxtOn:{color:'#fff'},
+  // ── Date section ───────────────────────────────────────────────────────────
+  dateSection:{backgroundColor:colors.surface,borderRadius:20,padding:16,marginBottom:14,borderWidth:1,borderColor:colors.border},
+  dateSectionHead:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:16},
+  dateSectionTitle:{fontSize:15,fontWeight:'800',color:colors.text},
+  dateSectionMonth:{fontSize:13,fontWeight:'600',color:colors.textSecondary},
+  weekStrip:{gap:8,paddingBottom:4,paddingHorizontal:2},
+  dayChip:{alignItems:'center',justifyContent:'center',width:56,height:72,borderRadius:16,backgroundColor:colors.background,borderWidth:1.5,borderColor:colors.border,gap:4,position:'relative'},
+  dayChipOn:{backgroundColor:colors.primary,borderColor:colors.primary},
+  dayChipName:{fontSize:10,fontWeight:'700',color:colors.textTertiary,letterSpacing:0.5},
+  dayChipNameOn:{color:'rgba(255,255,255,0.75)'},
+  dayChipNum:{fontSize:22,fontWeight:'900',color:colors.text},
+  dayChipNumOn:{color:'#fff'},
+  todayDot:{width:5,height:5,borderRadius:3,backgroundColor:colors.accent,position:'absolute',bottom:6},
+  // ── Time section ───────────────────────────────────────────────────────────
+  timeSection:{backgroundColor:colors.surface,borderRadius:20,padding:16,marginBottom:14,borderWidth:1,borderColor:colors.border},
+  timeStrip:{gap:10,paddingBottom:4,paddingHorizontal:2},
+  timeChip:{alignItems:'center',justifyContent:'center',width:54,height:68,borderRadius:14,backgroundColor:colors.background,borderWidth:1.5,borderColor:colors.border,gap:1},
+  timeChipOn:{backgroundColor:colors.primary,borderColor:colors.primary},
+  timeChipOff:{opacity:0.45},
+  timeChipPeriod:{fontSize:11,fontWeight:'700',color:colors.textTertiary,letterSpacing:0.5},
+  timeChipPeriodOn:{color:'rgba(255,255,255,0.75)'},
+  timeChipHour:{fontSize:20,fontWeight:'900',color:colors.text},
+  timeChipHourOn:{color:'#fff'},
+  timeChipTextOff:{color:colors.disabled},
+  timeChipFull:{fontSize:9,fontWeight:'700',color:colors.disabled,marginTop:1,letterSpacing:0.3},
+  slotsLoading:{flexDirection:'row',alignItems:'center',gap:10,paddingVertical:20,justifyContent:'center'},
+  slotsLoadingTxt:{fontSize:13,color:colors.textSecondary},
+  slotsEmpty:{alignItems:'center',paddingVertical:28,gap:8},
+  slotsEmptyTitle:{fontSize:15,fontWeight:'700',color:colors.text},
+  slotsEmptyHint:{fontSize:13,color:colors.textSecondary},
+  rushCard:{flexDirection:'row',alignItems:'center',backgroundColor:colors.surface,borderRadius:14,padding:16,borderWidth:1,borderColor:colors.border,marginTop:16,gap:12},
+  rushTitle:{fontSize:15,fontWeight:'700',color:colors.text},
+  rushSub:{fontSize:12,color:colors.textSecondary,marginTop:2},
+  notesInput:{backgroundColor:colors.surface,borderRadius:12,padding:14,borderWidth:1,borderColor:colors.border,fontSize:13,color:colors.text,minHeight:80,textAlignVertical:'top',marginTop:8},
+  sumRow:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingVertical:12,borderBottomWidth:1,borderBottomColor:colors.border},
+  sumKey:{fontSize:13,color:colors.textSecondary,fontWeight:'500'},
+  sumVal:{fontSize:13,color:colors.text,fontWeight:'700',flex:1,textAlign:'right'},
+  sumTotal:{borderBottomWidth:0,marginTop:4,paddingTop:16,borderTopWidth:2,borderTopColor:colors.primary},
+  sumTotalKey:{fontSize:16,fontWeight:'900',color:colors.text},
+  sumTotalVal:{fontSize:20,fontWeight:'900',color:colors.primary},
+  payCard:{flexDirection:'row',alignItems:'center',gap:12,backgroundColor:colors.surface,borderRadius:14,padding:14,marginBottom:10,borderWidth:1.5,borderColor:colors.border},
+  payCardOn:{borderColor:colors.primary,backgroundColor:colors.primary},
+  payName:{fontSize:14,fontWeight:'700',color:colors.text,flex:1},
+  payNameOn:{color:'#fff'},
+  footer:{backgroundColor:colors.surface,borderTopWidth:1,borderTopColor:colors.border,paddingHorizontal:20,paddingTop:14,gap:12},
+  footerTop:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',backgroundColor:colors.primaryLight,borderRadius:14,paddingHorizontal:14,paddingVertical:10},
+  footerLabel:{fontSize:10,fontWeight:'700',color:colors.primary,letterSpacing:0.5,textTransform:'uppercase'},
+  footerHint:{fontSize:11,color:colors.textSecondary,marginTop:1},
+  footerTotal:{fontSize:22,fontWeight:'900',color:colors.primary},
+  footerRow:{flexDirection:'row',gap:12},
+  // Pill buttons — matching Image 3 style
+  backBtn:{flex:1,paddingVertical:16,borderRadius:50,borderWidth:1.5,borderColor:colors.border,alignItems:'center',justifyContent:'center'},
+  backTxt:{fontSize:16,fontWeight:'700',color:colors.text},
+  contBtn:{flex:2,paddingVertical:16,borderRadius:50,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'},
+  contBtnOff:{opacity:0.35},
+  contTxt:{fontSize:16,fontWeight:'700',color:'#fff'},
 });
-
-export default BookingScreen;

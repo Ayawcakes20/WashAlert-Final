@@ -1,838 +1,499 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Linking, Alert, Image } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View, Text, StyleSheet, TouchableOpacity,
+  ActivityIndicator, Linking, Animated, Dimensions,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { MapView, Marker, PROVIDER_GOOGLE, AnimatedRegion, MapViewDirections } from '../../components/SafeMap';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { colors } from '../../theme/colors';
 import { bookings as bookingsApi } from '../../services/api';
-import { WashingMachineLoader } from '../../components';
-import { GOOGLE_MAPS_API_KEY } from '../../config/env';
 
-const SILVER_MAP_STYLE = [
-  { "elementType": "geometry", "stylers": [{ "color": "#f5f5f5" }] },
-  { "elementType": "labels.icon", "stylers": [{ "visibility": "off" }] },
-  { "elementType": "labels.text.fill", "stylers": [{ "color": "#616161" }] },
-  { "elementType": "labels.text.stroke", "stylers": [{ "color": "#f5f5f5" }] },
-  { "featureType": "administrative.land_parcel", "elementType": "labels.text.fill", "stylers": [{ "color": "#bdbdbd" }] },
-  { "featureType": "poi", "elementType": "geometry", "stylers": [{ "color": "#eeeeee" }] },
-  { "featureType": "poi", "elementType": "labels.text.fill", "stylers": [{ "color": "#757575" }] },
-  { "featureType": "poi.park", "elementType": "geometry", "stylers": [{ "color": "#e5e5e5" }] },
-  { "featureType": "poi.park", "elementType": "labels.text.fill", "stylers": [{ "color": "#9e9e9e" }] },
-  { "featureType": "road", "elementType": "geometry", "stylers": [{ "color": "#ffffff" }] },
-  { "featureType": "road.arterial", "elementType": "labels.text.fill", "stylers": [{ "color": "#757575" }] },
-  { "featureType": "road.highway", "elementType": "geometry", "stylers": [{ "color": "#dadada" }] },
-  { "featureType": "road.highway", "elementType": "labels.text.fill", "stylers": [{ "color": "#616161" }] },
-  { "featureType": "road.local", "elementType": "labels.text.fill", "stylers": [{ "color": "#9e9e9e" }] },
-  { "featureType": "transit.line", "elementType": "geometry", "stylers": [{ "color": "#e5e5e5" }] },
-  { "featureType": "transit.station", "elementType": "geometry", "stylers": [{ "color": "#eeeeee" }] },
-  { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#c9c9c9" }] },
-  { "featureType": "water", "elementType": "labels.text.fill", "stylers": [{ "color": "#9e9e9e" }] }
+const GOOGLE_MAPS_API_KEY = 'AIzaSyAzAGBAijqpEZki3ZZBYe-9rxtzjF55RSY';
+const { width: SCREEN_W } = Dimensions.get('window');
+const SHEET_H = 310; // fixed px — never clips content
+
+const MAP_STYLE = [
+  { elementType: 'geometry', stylers: [{ color: '#e8edf2' }] },
+  { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#7a8a99' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#d8dfe6' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#c5cdd6' }] },
+  { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#edf0f3' }] },
 ];
 
-const STEPS = [
-  { id: 'pending',          label: 'Order Received',          icon: 'cube-outline',            desc: 'Your order has been received by the branch.' },
-  { id: 'pickup_heading',   label: 'Rider Heading to You',    icon: 'bicycle-outline',          desc: 'Your rider is on the way to collect your laundry.' },
-  { id: 'pickup_arrived',   label: 'Rider at Your Door',      icon: 'location-outline',         desc: 'Your rider has arrived! Please hand over your laundry.' },
-  { id: 'at_shop',          label: 'Laundry at Branch',       icon: 'storefront-outline',       desc: 'Your laundry is at the branch and being processed.' },
-  { id: 'washing',          label: 'Washing',                 icon: 'water-outline',            desc: 'Your clothes are being washed with care.' },
-  { id: 'drying',           label: 'Drying',                  icon: 'bonfire-outline',          desc: 'Your clothes are in the dryer now.' },
-  { id: 'ready',            label: 'Ready for Delivery',      icon: 'checkmark-circle-outline', desc: 'Your laundry is clean and ready!' },
-  { id: 'delivering',       label: 'Out for Delivery',        icon: 'bicycle-outline',          desc: 'Your rider is on the way to deliver your clean laundry.' },
-  { id: 'delivery_arrived', label: 'Rider at Your Door',      icon: 'location-outline',         desc: 'Your clean laundry has arrived!' },
-  { id: 'delivered',        label: 'Delivered',               icon: 'checkmark-done-outline',   desc: 'Your laundry has been delivered. Enjoy!' },
+// ── 4 clean milestones (industry standard like Grab / Lalamove) ───────────────
+const MILESTONES = [
+  { label: 'Collected',  icon: 'bag-handle-outline',       mat: null },
+  { label: 'Washing',    icon: 'water-outline',            mat: null },
+  { label: 'Ready',      icon: 'checkmark-circle-outline', mat: null },
+  { label: 'Delivered',  icon: 'home-outline',             mat: null },
 ];
 
-// Maps all 9 driver workflow statuses to a customer-facing order status
-const mapWorkflowToOrderStatus = (workflowStatus, fallback = 'pending') => {
-  const normalized = String(workflowStatus || '').toLowerCase();
-  switch (normalized) {
-    // Phase A — driver picking up from customer
-    case 'accepted':           return 'pickup_heading';   // Rider heading to you
-    case 'at_customer':        return 'pickup_arrived';   // Rider at your door
-    case 'picked_up':          return 'at_shop';          // On the way to branch
-    case 'at_branch':          return 'at_shop';          // At branch
-    case 'handed_over':        return 'washing';          // Being processed
-    // Phase B — driver delivering clean laundry
-    case 'ready_for_dispatch': return 'ready';            // Ready to deliver
-    case 'en_route':           return 'delivering';       // On the way to you
-    case 'at_delivery':        return 'delivery_arrived'; // Driver at your door
-    case 'completed':          return 'delivered';
-    case 'cancelled':          return 'cancelled';
-    default:
-      if (normalized) return fallback;
-      return fallback;
-  }
+// Map order.status → milestone index (0-3)
+const statusToMilestone = (status) => {
+  if (!status) return 0;
+  const s = String(status).toLowerCase();
+  if (['pending', 'received'].includes(s))              return 0;
+  if (['washing', 'drying'].includes(s))                return 1;
+  if (s === 'ready')                                    return 2;
+  if (['delivering', 'delivered'].includes(s))          return 3;
+  return 0;
 };
 
-const TrackingScreen = ({ route, navigation }) => {
+const STATUS_HEADLINE = {
+  pending:    'Order received!',
+  received:   'Rider is heading to you',
+  washing:    'Laundry is being washed',
+  drying:     'Laundry is being dried',
+  ready:      'Ready for delivery!',
+  delivering: 'Your order is on its way!',
+  delivered:  'Successfully delivered!',
+};
+
+export default function TrackingScreen({ route, navigation }) {
+  const insets = useSafeAreaInsets();
   const { orderId } = route.params;
-  const [order, setOrder] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [driverLocation, setDriverLocation] = useState(null);
-  const [deliveryData, setDeliveryData] = useState(null);
-  const [mapRef, setMapRef] = useState(null);
-  const [driverCoordAnimated] = useState(new AnimatedRegion({
-    latitude: 14.5995,
-    longitude: 120.9842,
-    latitudeDelta: 0.005,
-    longitudeDelta: 0.005,
-  }));
 
-  const [etaData, setEtaData] = useState({ distance: '0.0 km', duration: '0 min' });
+  const [order,     setOrder]     = useState(null);
+  const [loading,   setLoading]   = useState(true);
+  const [driverLoc, setDriverLoc] = useState(null);
+  const [delivData, setDelivData] = useState(null);
+  const [etaData,   setEtaData]   = useState({ distance: null, duration: null });
+  const [mapRef,    setMapRef]    = useState(null);
 
-  // Leg Switching Logic
-  const getDestination = () => {
-    if (deliveryData?.status === 'DELIVERED') return destinationLoc; // Hold last loc if delivered immediately
-    if (deliveryData?.leg) {
-      if (deliveryData.leg === 'PICKUP_FROM_CUSTOMER') {
-        if (deliveryData.status === 'EN_ROUTE_TO_PICKUP' || deliveryData.status === 'PENDING_PICKUP') {
-          return {
-            latitude: order?.deliveryLatitude || 14.6042,
-            longitude: order?.deliveryLongitude || 121.0022,
-            label: "Home",
-            address: order?.deliveryAddress || "Your Location",
-            type: 'home'
-          };
-        } else {
-          return {
-            latitude: order?.branchLatitude || 14.5995,
-            longitude: order?.branchLongitude || 120.9842,
-            label: "Branch: " + (order?.branch || "Main"),
-            type: 'branch'
-          };
-        }
-      } else if (deliveryData.leg === 'DELIVERY_TO_CUSTOMER') {
-        if (deliveryData.status === 'EN_ROUTE_TO_PICKUP' || deliveryData.status === 'PENDING_PICKUP') {
-          return {
-            latitude: order?.branchLatitude || 14.5995,
-            longitude: order?.branchLongitude || 120.9842,
-            label: "Branch: " + (order?.branch || "Main"),
-            type: 'branch'
-          };
-        } else {
-          return {
-            latitude: order?.deliveryLatitude || 14.6042,
-            longitude: order?.deliveryLongitude || 121.0022,
-            label: "Home",
-            address: order?.deliveryAddress || "Your Location",
-            type: 'home'
-          };
-        }
-      }
-    }
-
-    if (order?.status === 'pending' || order?.status === 'washing' || order?.status === 'drying' || order?.status === 'ready') {
-      return {
-        latitude: order?.branchLatitude || 14.5995,
-        longitude: order?.branchLongitude || 120.9842,
-        label: "Branch: " + (order?.branch || "Main"),
-        type: 'branch'
-      };
-    }
-    return {
-      latitude: order?.deliveryLatitude || 14.6042,
-      longitude: order?.deliveryLongitude || 121.0022,
-      label: "Home",
-      address: order?.deliveryAddress || "Your Location",
-      type: 'home'
-    };
-  };
-
-  const getDeliveryStatusMessage = () => {
-    const wf = String(deliveryData?.status || '').toLowerCase();
-    switch (wf) {
-      case 'accepted':           return '🏍️  Rider is heading to pick up your laundry.';
-      case 'at_customer':        return '📦  Rider has arrived at your location!';
-      case 'picked_up':          return '🚀  Laundry picked up — heading to the branch.';
-      case 'at_branch':          return '🏬  Laundry arrived at the branch.';
-      case 'handed_over':        return '🧺  Your laundry is being processed at the branch.';
-      case 'ready_for_dispatch': return '✅  Clean laundry is ready — waiting for dispatch!';
-      case 'en_route':           return '🏍️  Rider is on the way to deliver your clean laundry!';
-      case 'at_delivery':        return '🎉  Rider has arrived at your door!';
-      case 'completed':          return '✅  Delivered successfully. Enjoy!';
-      default:                   return '📍  Tracking your laundry order...';
-    }
-  };
-
-  const destinationLoc = getDestination();
+  const pulseAnim  = useRef(new Animated.Value(1)).current;
+  const scaleAnim  = useRef(new Animated.Value(0.95)).current;
+  const driverCoord = useRef(new AnimatedRegion({
+    latitude: 14.5995, longitude: 120.9842,
+    latitudeDelta: 0.005, longitudeDelta: 0.005,
+  })).current;
 
   useEffect(() => {
-    loadOrderDetails();
-  }, [orderId]);
+    Animated.loop(Animated.sequence([
+      Animated.timing(pulseAnim, { toValue: 0.15, duration: 900, useNativeDriver: true }),
+      Animated.timing(pulseAnim, { toValue: 1,    duration: 900, useNativeDriver: true }),
+    ])).start();
+    Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, tension: 50 }).start();
+  }, []);
+
+  useEffect(() => { loadOrder(); }, [orderId]);
 
   useEffect(() => {
-    // Try trackingNumber first, fall back to order.id — both may be used as Firestore doc key
-    const firestoreKey = order?.trackingNumber || order?.id;
-    if (!firestoreKey) return;
-
-    console.log('[Tracking] Attaching Firestore listener key=', firestoreKey);
-    const unsub = onSnapshot(
-      doc(db, 'deliveries', String(firestoreKey)),
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          console.log('[Tracking] Firestore update key=', firestoreKey, 'status=', data?.status, 'workflow=', data?.workflowStatus, 'lat=', data?.currentLatitude);
-          setDeliveryData(data);
-          setOrder((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  // Use workflowStatus if present, otherwise fall back to Firestore status field
-                  status: mapWorkflowToOrderStatus(
-                    data?.workflowStatus || data?.status,
-                    prev.status
-                  ),
-                  delivery: {
-                    ...(prev.delivery || {}),
-                    driver: data?.driverName || prev.delivery?.driver || 'Assigned Driver',
-                    driverPhone: data?.driverPhone || prev.delivery?.driverPhone || '',
-                    driverPhotoUrl: data?.driverPhotoUrl || prev.delivery?.driverPhotoUrl || null,
-                    driverVehicle: data?.driverVehicle || prev.delivery?.driverVehicle || null,
-                    eta: data?.estimatedArrivalAt || prev.delivery?.eta || null,
-                  },
-                }
-              : prev
-          );
-          if (data.currentLatitude && data.currentLongitude) {
-            const newCoord = {
-              latitude: data.currentLatitude,
-              longitude: data.currentLongitude,
-            };
-            setDriverLocation(newCoord);
-            if (driverCoordAnimated) {
-              driverCoordAnimated.timing({
-                ...newCoord,
-                duration: 2000, // Faster glide (2s) for more responsive feel
-                useNativeDriver: false
-              }).start();
-            }
-            
-            // Only auto-fit once or when significantly moved to avoid camera jitter
-            if (mapRef && !prev.driverLocation) {
-              mapRef.fitToCoordinates([newCoord, destinationLoc], {
-                edgePadding: { top: 120, right: 80, bottom: 250, left: 80 },
-                animated: true,
-              });
-            }
-          }
-        } else {
-          console.log('[Tracking] Firestore doc does not exist yet key=', firestoreKey);
-        }
-      },
-      (error) => {
-        console.warn('[Tracking] Firestore listener failed:', error?.message || error);
+    if (!order?.trackingNumber) return;
+    const unsub = onSnapshot(doc(db, 'deliveries', order.trackingNumber), snap => {
+      if (!snap.exists()) return;
+      const d = snap.data();
+      setDelivData(d);
+      if (d.currentLatitude && d.currentLongitude) {
+        const c = { latitude: d.currentLatitude, longitude: d.currentLongitude };
+        setDriverLoc(c);
+        driverCoord.timing({ ...c, duration: 10000, useNativeDriver: false }).start();
       }
-    );
+    });
     return () => unsub();
-  }, [order?.trackingNumber, order?.id, mapRef, destinationLoc.latitude, destinationLoc.longitude]);
+  }, [order?.trackingNumber]);
 
-
-  // ETA Refresh Loop (Every 30 seconds)
-  useEffect(() => {
-    let etaInterval = null;
-    if (order?.status === 'delivering' && driverLocation) {
-      etaInterval = setInterval(() => {
-        // Triggering a re-render or internal logic to refresh MapViewDirections 
-        // usually happens automatically if state changes, but we can explicitly 
-        // force a refresh if necessary. For now, we trust MapViewDirections 
-        // component re-renders when driverLocation updates.
-        console.log('Refreshing ETA calculation...');
-      }, 30000);
-    }
-    return () => {
-      if (etaInterval) clearInterval(etaInterval);
-    };
-  }, [order?.status, driverLocation]);
-
-  const loadOrderDetails = async () => {
+  const loadOrder = async () => {
     try {
       setLoading(true);
-      const data = await bookingsApi.getById(orderId);
-      setOrder(data);
-    } catch (error) {
-      console.error('Error fetching order details:', error);
-    } finally {
-      setLoading(false);
-    }
+      const d = await bookingsApi.getById(orderId);
+      setOrder(d);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   };
 
-  const openPhoneDriver = async () => {
-    const phone = String(order?.delivery?.driverPhone || '').replace(/[^0-9+]/g, '');
-    if (!phone) {
-      Alert.alert('No Contact', 'Driver phone number is not available yet.');
-      return;
-    }
-    const url = `tel:${phone}`;
-    const canOpen = await Linking.canOpenURL(url);
-    if (!canOpen) {
-      Alert.alert('Unable to Call', 'This device cannot open the dialer.');
-      return;
-    }
-    await Linking.openURL(url);
+  if (loading) return (
+    <View style={S.center}>
+      <ActivityIndicator size="large" color={colors.primary} />
+      <Text style={S.loadingText}>Loading your order…</Text>
+    </View>
+  );
+
+  if (!order) return (
+    <View style={S.center}>
+      <Ionicons name="alert-circle-outline" size={52} color={colors.border} />
+      <Text style={S.errorTitle}>Order not found</Text>
+      <TouchableOpacity onPress={() => navigation.goBack()} style={S.goBackBtn}>
+        <Text style={S.goBackText}>Go Back</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const milestoneIdx  = statusToMilestone(order.status);
+  const isDelivering  = order.status === 'delivering' && !!driverLoc;
+  const driverPhone   = order?.delivery?.driverPhone || '';
+  const callDriver    = () => driverPhone && Linking.openURL(`tel:${driverPhone.replace(/[^0-9+]/g, '')}`);
+  const smsDriver     = () => driverPhone && Linking.openURL(`sms:${driverPhone.replace(/[^0-9+]/g, '')}`);
+  const headline      = STATUS_HEADLINE[order.status] || 'Tracking your order…';
+  const etaLabel      = isDelivering && etaData.duration ? etaData.duration : (order.estimatedTime || '2–4 hrs');
+
+  const destLoc = {
+    latitude:  order.deliveryLatitude  || order.branchLatitude  || 14.5995,
+    longitude: order.deliveryLongitude || order.branchLongitude || 120.9842,
   };
-
-  const openMessageDriver = async () => {
-    const phone = String(order?.delivery?.driverPhone || '').replace(/[^0-9+]/g, '');
-    if (!phone) {
-      Alert.alert('No Contact', 'Driver phone number is not available yet.');
-      return;
-    }
-    const url = `sms:${phone}`;
-    const canOpen = await Linking.canOpenURL(url);
-    if (!canOpen) {
-      Alert.alert('Unable to Message', 'This device cannot open messaging.');
-      return;
-    }
-    await Linking.openURL(url);
-  };
-
-  if (loading) {
-    return (
-      <View style={[styles.safeArea, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
-
-  if (!order) {
-    return (
-      <View style={[styles.safeArea, { justifyContent: 'center', alignItems: 'center' }]}>
-        <Text>Order not found</Text>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={{ color: colors.primary, marginTop: 10 }}>Go Back</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  const currentStepIndex = STEPS.findIndex(s => s.id === order.status);
-  const activeStep = currentStepIndex !== -1 ? STEPS[currentStepIndex] : STEPS[0];
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+    <View style={S.root}>
 
-        <View style={styles.trackContent}>
-          {/* Status message banner — always visible */}
-          {deliveryData && (
-            <View style={styles.messageBanner}>
-              <Text style={styles.messageBannerText}>{getDeliveryStatusMessage()}</Text>
-            </View>
-          )}
-
-          {/* Map — always show when we have any coordinate reference */}
-          {(driverLocation || destinationLoc) ? (
-            <View style={styles.mapContainer}>
-              <MapView
-                ref={(ref) => setMapRef(ref)}
-                provider={PROVIDER_GOOGLE}
-                googleMapsApiKey={GOOGLE_MAPS_API_KEY}
-                style={styles.map}
-                customMapStyle={SILVER_MAP_STYLE}
-                initialRegion={{
-                  ...(driverLocation || destinationLoc),
-                  latitudeDelta: 0.015,
-                  longitudeDelta: 0.015,
-                }}
-              >
-                {/* Route polyline — only when driver is moving */}
-                {driverLocation && (
-                  <MapViewDirections
-                    origin={driverLocation}
-                    destination={destinationLoc}
-                    apikey={GOOGLE_MAPS_API_KEY}
-                    strokeWidth={5}
-                    strokeColor={colors.primary}
-                    optimizeWaypoints={true}
-                    onReady={result => {
-                      setEtaData({
-                        distance: `${result.distance.toFixed(1)} km`,
-                        duration: `${Math.ceil(result.duration)} min`
-                      });
-                      if (mapRef) {
-                        mapRef.fitToCoordinates(result.coordinates, {
-                          edgePadding: { top: 120, right: 80, bottom: 280, left: 80 },
-                        });
-                      }
-                    }}
-                  />
-                )}
-
-                {/* Destination pin */}
-                <Marker
-                  coordinate={destinationLoc}
-                  title={destinationLoc.label}
-                  description={destinationLoc.address}
-                >
-                  <View style={[
-                    styles.destinationMarker,
-                    destinationLoc.type === 'branch' && { backgroundColor: colors.primary }
-                  ]}>
-                    <Ionicons
-                      name={destinationLoc.type === 'branch' ? 'business' : 'home'}
-                      size={22}
-                      color="#FFF"
-                    />
-                  </View>
-                </Marker>
-
-                {/* Driver marker — animated when moving */}
-                {driverLocation && (
-                  <Marker.Animated
-                    coordinate={driverCoordAnimated}
-                    title="Driver"
-                    flat
-                    anchor={{ x: 0.5, y: 0.5 }}
-                  >
-                    <View style={[styles.driverMarkerBox, { transform: [{ rotate: `${deliveryData?.heading || 0}deg` }] }]}>
-                      <MaterialCommunityIcons name="motorbike" size={28} color="#FFF" />
-                    </View>
-                  </Marker.Animated>
-                )}
-              </MapView>
-
-              {/* Order number chip — top left */}
-              <View style={styles.orderChip}>
-                <Ionicons name="receipt-outline" size={12} color={colors.primary} />
-                <Text style={styles.orderChipText}>{order.trackingNumber}</Text>
-              </View>
-
-              {/* Live ETA overlay — top right */}
-              {driverLocation && (
-                <View style={styles.mapOverlay}>
-                  <Ionicons name="timer-outline" size={14} color="#FFF" />
-                  <Text style={styles.mapOverlayText}>
-                    {' '}{etaData.duration}  •  {etaData.distance}
-                  </Text>
-                </View>
-              )}
-
-              {/* Driver name chip — bottom */}
-              {order?.delivery?.driver && (
-                <View style={styles.driverChip}>
-                  <View style={styles.driverChipAvatar}>
-                    <Ionicons name="person" size={12} color={colors.primary} />
-                  </View>
-                  <Text style={styles.driverChipText}>{order.delivery.driver}</Text>
-                  {order.delivery.driverPhone ? (
-                    <TouchableOpacity
-                      style={styles.driverChipCall}
-                      onPress={() => void openPhoneDriver()}
-                    >
-                      <Ionicons name="call" size={12} color="#FFF" />
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-              )}
-            </View>
-          ) : (
-            /* Fallback animation when no coordinates at all */
-            <View style={styles.animationSection}>
-              {order.status === 'washing' || order.status === 'drying' || order.status === 'at_shop' ? (
-                <WashingMachineLoader size={120} />
-              ) : (
-                <View style={styles.statusIconBox}>
-                  <Ionicons name={activeStep.icon} size={80} color={colors.primary} />
-                </View>
-              )}
-              <Text style={styles.activeStatusText}>{activeStep.label}</Text>
-              <Text style={styles.activeStatusDesc}>{activeStep.desc}</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.etaCard}>
-          <View style={styles.etaInfo}>
-            <Text style={styles.etaLabel}>
-              {order.status === 'delivering' ? 'Real-time Arrival' : 'Estimated Completion'}
-            </Text>
-            <Text style={styles.etaValue}>
-              {order.status === 'delivering' ? etaData.duration : (order.estimatedTime || '---')}
-            </Text>
-          </View>
-          <View style={styles.etaDivider} />
-          <View style={styles.etaInfo}>
-            <Text style={styles.etaLabel}>Distance</Text>
-            <Text style={styles.etaValue}>
-              {order.status === 'delivering' ? etaData.distance : '---'}
-            </Text>
-          </View>
-          <TouchableOpacity 
-            style={styles.callBox}
-            onPress={() => void openPhoneDriver()}
+      {/* ── MAP AREA — flex:1 fills all space above the sheet ── */}
+      <View style={S.mapWrap}>
+        {isDelivering ? (
+          <MapView
+            ref={r => setMapRef(r)}
+            provider={PROVIDER_GOOGLE}
+            style={StyleSheet.absoluteFillObject}
+            customMapStyle={MAP_STYLE}
+            initialRegion={{ ...driverLoc, latitudeDelta: 0.025, longitudeDelta: 0.025 }}
           >
-            <Ionicons name="call" size={24} color={colors.primary} />
-          </TouchableOpacity>
-        </View>
-
-        {order?.delivery ? (
-          <View style={styles.driverCard}>
-            <Text style={styles.timelineTitle}>Driver Details</Text>
-            {order.delivery.driverPhotoUrl ? (
-              <Image source={{ uri: order.delivery.driverPhotoUrl }} style={styles.driverPhoto} />
-            ) : null}
-            <View style={styles.infoRow}>
-              <Text style={styles.infoKey}>Name</Text>
-              <Text style={styles.infoValue}>{order.delivery.driver || 'Assigned Driver'}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoKey}>Phone</Text>
-              <Text style={styles.infoValue}>{order.delivery.driverPhone || 'N/A'}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoKey}>Vehicle</Text>
-              <Text style={styles.infoValue}>{order.delivery.driverVehicle || 'Not provided'}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoKey}>ETA</Text>
-              <Text style={styles.infoValue}>
-                {order.delivery.eta ? new Date(order.delivery.eta).toLocaleString() : etaData.duration}
+            <MapViewDirections
+              origin={driverLoc}
+              destination={destLoc}
+              apikey={GOOGLE_MAPS_API_KEY}
+              strokeWidth={4}
+              strokeColor={colors.primary}
+              onReady={r => {
+                setEtaData({
+                  distance: `${r.distance.toFixed(1)} km`,
+                  duration: `${Math.ceil(r.duration)} min`,
+                });
+                mapRef?.fitToCoordinates(r.coordinates, {
+                  edgePadding: { top: 80, right: 50, bottom: SHEET_H + 40, left: 50 },
+                });
+              }}
+            />
+            <Marker coordinate={destLoc} title="Destination">
+              <View style={S.pinDest}>
+                <Ionicons name="home" size={14} color="#FFF" />
+              </View>
+            </Marker>
+            <Marker.Animated coordinate={driverCoord} flat anchor={{ x: 0.5, y: 0.5 }}>
+              <View style={[S.pinDriver, {
+                transform: [{ rotate: `${delivData?.heading || 0}deg` }],
+              }]}>
+                <MaterialCommunityIcons name="motorbike" size={18} color="#FFF" />
+              </View>
+            </Marker.Animated>
+          </MapView>
+        ) : (
+          /* ── PREMIUM STATIC STATE ── */
+          <View style={S.staticBg}>
+            {/* Subtle grid pattern via nested views */}
+            <View style={S.staticInner}>
+              <View style={S.staticIconRing}>
+                <View style={S.staticIconRingInner}>
+                  <MaterialCommunityIcons
+                    name={
+                      order.status === 'washing' || order.status === 'drying'
+                        ? 'washing-machine'
+                        : order.status === 'ready'
+                        ? 'package-variant-closed-check'
+                        : 'truck-delivery-outline'
+                    }
+                    size={38}
+                    color={colors.primary}
+                  />
+                </View>
+              </View>
+              <Text style={S.staticLabel}>
+                {order.status === 'washing' ? 'Washing in progress…'
+                  : order.status === 'drying' ? 'Drying in progress…'
+                  : order.status === 'ready'  ? 'Ready for delivery!'
+                  : 'Order confirmed'}
               </Text>
             </View>
-            <View style={styles.contactRow}>
-              <TouchableOpacity style={styles.contactBtn} onPress={() => void openPhoneDriver()}>
-                <Ionicons name="call-outline" size={14} color={colors.primary} />
-                <Text style={styles.contactBtnText}>Call</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.contactBtn} onPress={() => void openMessageDriver()}>
-                <Ionicons name="chatbubble-ellipses-outline" size={14} color={colors.primary} />
-                <Text style={styles.contactBtnText}>Message</Text>
-              </TouchableOpacity>
-            </View>
           </View>
-        ) : null}
+        )}
 
-        <View style={styles.timelineCard}>
-          <Text style={styles.timelineTitle}>Status Timeline</Text>
-          <View style={styles.timelineWrapper}>
-            {STEPS.map((step, index) => {
-              const isPast = index < currentStepIndex;
-              const isCurrent = index === currentStepIndex;
-              return (
-                <View key={step.id} style={styles.timelineRow}>
-                  <View style={styles.timelineLeading}>
-                    <View style={[
-                      styles.dot, 
-                      isPast || isCurrent ? styles.dotActive : styles.dotInactive
-                    ]} />
-                    {index < STEPS.length - 1 && (
-                      <View style={[
-                        styles.line, 
-                        isPast ? styles.lineActive : styles.lineInactive
-                      ]} />
-                    )}
-                  </View>
-                  <View style={styles.timelineContent}>
-                    <Text style={[
-                      styles.stepLabel, 
-                      isPast || isCurrent ? styles.stepLabelActive : styles.stepLabelInactive
-                    ]}>
-                      {step.label}
-                    </Text>
-                    {isCurrent && <Text style={styles.currentIndicator}>Current Stage</Text>}
-                  </View>
-                </View>
-              );
-            })}
+        {/* Floating back */}
+        <TouchableOpacity
+          style={[S.fabBack, { top: insets.top + 10 }]}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="arrow-back" size={18} color={colors.text} />
+          <Text style={S.fabBackText}>Back</Text>
+        </TouchableOpacity>
+
+        {/* Floating order tag */}
+        <View style={[S.fabTag, { top: insets.top + 10 }]}>
+          <Ionicons name="receipt-outline" size={12} color={colors.primary} />
+          <Text style={S.fabTagText}>{order.trackingNumber || `#${order.id}`}</Text>
+        </View>
+      </View>
+
+      {/* ── BOTTOM SHEET — fixed height, sits below map ── */}
+      <View style={[S.sheet, { paddingBottom: insets.bottom + 8 }]}>
+        <View style={S.sheetHandle} />
+
+        {/* Status + ETA */}
+        <View style={S.sheetHead}>
+          <Text style={S.sheetHeadline}>{headline}</Text>
+          <View style={S.etaBadge}>
+            <Ionicons name="time-outline" size={13} color={colors.primary} />
+            <Text style={S.etaBadgeText}>{etaLabel}</Text>
           </View>
         </View>
 
-        <TouchableOpacity 
-          style={styles.detailsBtn}
+        {/* ── 4-STEP MILESTONE TRACKER ── */}
+        <View style={S.milestoneRow}>
+          {MILESTONES.map((m, i) => {
+            const done    = i < milestoneIdx;
+            const active  = i === milestoneIdx;
+            const upcoming = i > milestoneIdx;
+            return (
+              <React.Fragment key={m.label}>
+                <View style={S.milestoneNode}>
+                  {/* Circle */}
+                  <View style={[
+                    S.mCircle,
+                    done    && S.mCircleDone,
+                    active  && S.mCircleActive,
+                    upcoming && S.mCircleUpcoming,
+                  ]}>
+                    {done ? (
+                      <Ionicons name="checkmark" size={16} color="#FFF" />
+                    ) : (
+                      <Ionicons
+                        name={m.icon}
+                        size={16}
+                        color={active ? '#FFF' : '#B0BEC5'}
+                      />
+                    )}
+                  </View>
+                  {/* Active glow ring */}
+                  {active && <View style={S.mGlowRing} />}
+                  {/* Label */}
+                  <Text style={[
+                    S.mLabel,
+                    done    && S.mLabelDone,
+                    active  && S.mLabelActive,
+                    upcoming && S.mLabelUpcoming,
+                  ]}>
+                    {m.label}
+                  </Text>
+                </View>
+
+                {/* Connector */}
+                {i < MILESTONES.length - 1 && (
+                  <View style={S.connector}>
+                    <View style={[S.connLine, done && S.connLineDone]} />
+                  </View>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </View>
+
+        {/* ── DRIVER CARD ── */}
+        {order.delivery ? (
+          <View style={S.driverCard}>
+            <View style={S.driverAvatarWrap}>
+              <Ionicons name="person" size={24} color={colors.primary} />
+              {isDelivering && (
+                <Animated.View style={[S.liveRing, { opacity: pulseAnim }]} />
+              )}
+            </View>
+
+            <View style={S.driverMeta}>
+              <Text style={S.driverName} numberOfLines={1}>
+                {order.delivery.driver || 'Assigned Driver'}
+              </Text>
+              <View style={S.driverSubRow}>
+                {isDelivering && (
+                  <View style={S.livePill}>
+                    <View style={S.liveDot} />
+                    <Text style={S.livePillText}>Live</Text>
+                  </View>
+                )}
+                <Text style={S.driverRole}>Courier</Text>
+              </View>
+            </View>
+
+            <View style={S.driverBtns}>
+              <TouchableOpacity style={S.roundBtn} onPress={callDriver} activeOpacity={0.75}>
+                <Ionicons name="call" size={18} color={colors.text} />
+              </TouchableOpacity>
+              <TouchableOpacity style={S.roundBtn} onPress={smsDriver} activeOpacity={0.75}>
+                <Ionicons name="chatbubble-ellipses" size={17} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <View style={S.noDriverCard}>
+            <Ionicons name="hourglass-outline" size={18} color={colors.textSecondary} />
+            <Text style={S.noDriverText}>Driver will be assigned soon</Text>
+          </View>
+        )}
+
+        {/* Details link */}
+        <TouchableOpacity
+          style={S.detailsLink}
           onPress={() => navigation.navigate('OrderDetail', { orderId: order.id })}
+          activeOpacity={0.7}
         >
-          <Text style={styles.detailsBtnText}>View Full Details</Text>
-          <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+          <Text style={S.detailsLinkText}>View Full Details</Text>
+          <Ionicons name="chevron-forward" size={15} color={colors.accent} />
         </TouchableOpacity>
-
-        <View style={{ height: 40 }} />
-      </ScrollView>
-    </SafeAreaView>
+      </View>
+    </View>
   );
-};
+}
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24 },
-  trackContent: { marginBottom: 20 },
-  mapContainer: {
-    height: 440,
-    borderRadius: 24,
-    overflow: 'hidden',
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginTop: 12,
+/* ── Styles ─────────────────────────────────────────────────────────────────── */
+const S = StyleSheet.create({
+  root:   { flex: 1, backgroundColor: '#EDF2F7' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, backgroundColor: '#F4F7FA' },
+  loadingText: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
+  errorTitle:  { fontSize: 16, fontWeight: '700', color: colors.text, marginTop: 8 },
+  goBackBtn:   { marginTop: 14, paddingHorizontal: 28, paddingVertical: 12, backgroundColor: colors.primaryLight, borderRadius: 14 },
+  goBackText:  { fontSize: 14, fontWeight: '700', color: colors.primary },
+
+  /* Map — flex:1 so it grows to fill all space ABOVE the sheet */
+  mapWrap:  { flex: 1, overflow: 'hidden' },
+
+  /* Static state */
+  staticBg: { flex: 1, backgroundColor: '#EDF2F7', alignItems: 'center', justifyContent: 'center' },
+  staticInner: { alignItems: 'center', gap: 14 },
+  staticIconRing: {
+    width: 100, height: 100, borderRadius: 50,
+    backgroundColor: 'rgba(28,47,62,0.07)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  messageBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(26, 86, 219, 0.08)',
-    padding: 12,
-    borderRadius: 12,
-    gap: 8,
+  staticIconRingInner: {
+    width: 70, height: 70, borderRadius: 35,
+    backgroundColor: 'rgba(28,47,62,0.10)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  messageBannerText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.primary,
+  staticLabel: { fontSize: 14, fontWeight: '700', color: colors.primary, opacity: 0.75 },
+
+  /* Floating buttons over map */
+  fabBack: {
+    position: 'absolute', left: 14,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderRadius: 50,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 6,
   },
-  map: { ...StyleSheet.absoluteFillObject },
-  orderChip: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 4,
+  fabBackText: { fontSize: 14, fontWeight: '700', color: colors.text },
+  fabTag: {
+    position: 'absolute', right: 14,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    paddingHorizontal: 13, paddingVertical: 10,
+    borderRadius: 50,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 6,
   },
-  orderChipText: { fontSize: 12, fontWeight: '700', color: colors.primary },
-  mapOverlay: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    backgroundColor: 'rgba(26, 86, 219, 0.9)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 6,
-  },
-  mapOverlayText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
-  driverChip: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    right: 16,
+  fabTagText: { fontSize: 12, fontWeight: '700', color: colors.text },
+
+  /* Map markers */
+  pinDest: { backgroundColor: colors.text, padding: 9, borderRadius: 50, borderWidth: 2.5, borderColor: '#FFF' },
+  pinDriver: { backgroundColor: '#2E86C1', padding: 9, borderRadius: 50, borderWidth: 2.5, borderColor: '#FFF' },
+
+  /* Bottom Sheet — fixed height, sits below map naturally in flex column */
+  sheet: {
+    height: SHEET_H,
     backgroundColor: '#FFF',
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 8,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: 20, paddingTop: 10,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.10, shadowRadius: 18, elevation: 20,
   },
-  driverChipAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
+  sheetHandle: {
+    alignSelf: 'center', width: 36, height: 4,
+    backgroundColor: '#DDE3EB', borderRadius: 4, marginBottom: 14,
   },
-  driverChipText: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0D1B2A',
+
+  /* Sheet head — row: headline left, ETA badge right */
+  sheetHead:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  sheetHeadline: { fontSize: 16, fontWeight: '800', color: colors.text, flex: 1, marginRight: 10 },
+  sheetSub:      { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  etaBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#EBF4FF', paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 50, flexShrink: 0,
   },
-  driverChipCall: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+  etaBadgeText: { fontSize: 12, fontWeight: '800', color: colors.primary },
+
+  /* Milestone tracker — compact to fit fixed sheet height */
+  milestoneRow: {
+    flexDirection: 'row', alignItems: 'center',
+    marginBottom: 12, paddingHorizontal: 2,
+  },
+  milestoneNode: { alignItems: 'center', position: 'relative' },
+
+  mCircle: {
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#EDF2F7', marginBottom: 5,
+  },
+  mCircleDone:     { backgroundColor: colors.primary },
+  mCircleActive:   {
     backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35, shadowRadius: 8, elevation: 6,
   },
-  driverMarkerBox: {
-    backgroundColor: colors.primary,
-    padding: 6,
-    borderRadius: 100,
-    borderWidth: 2,
-    borderColor: '#FFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 6,
+  mCircleUpcoming: { backgroundColor: '#EDF2F7' },
+  mGlowRing: {
+    position: 'absolute', top: -5, width: 50, height: 50,
+    borderRadius: 25, borderWidth: 1.5, borderColor: `${colors.primary}28`,
   },
-  destinationMarker: {
-    backgroundColor: colors.accent,
-    padding: 8,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#FFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  animationSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 32,
-    backgroundColor: colors.card,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  statusIconBox: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(26, 86, 219, 0.05)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  activeStatusText: { fontSize: 20, fontWeight: '800', color: colors.text, marginTop: 8 },
-  activeStatusDesc: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: 8,
-    paddingHorizontal: 40,
-    lineHeight: 18,
-  },
-  etaCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 20,
-  },
-  etaInfo: { flex: 1 },
-  etaLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: 'rgba(255, 255, 255, 0.7)',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  etaValue: { fontSize: 22, fontWeight: '900', color: '#FFF', marginTop: 4 },
-  etaDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    marginHorizontal: 20,
-  },
-  callBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#FFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+
+  mLabel:        { fontSize: 10, color: '#B0BEC5', fontWeight: '600', textAlign: 'center', maxWidth: 56 },
+  mLabelActive:  { color: colors.primary, fontWeight: '800' },
+  mLabelDone:    { color: colors.textSecondary, fontWeight: '700' },
+  mLabelUpcoming:{ color: '#C8D0DB' },
+
+  /* Connectors */
+  connector: { flex: 1, alignItems: 'center', marginBottom: 15, paddingHorizontal: 2 },
+  connLine:  { width: '100%', height: 2.5, backgroundColor: '#E8EDF3', borderRadius: 2 },
+  connLineDone: { backgroundColor: colors.primary },
+
+  /* Driver card — compact */
   driverCard: {
-    backgroundColor: colors.card,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 20,
-    marginBottom: 20,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16, paddingVertical: 10, paddingHorizontal: 12, marginBottom: 8,
+    borderWidth: 1, borderColor: '#EDF2F7',
   },
-  driverPhoto: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignSelf: 'center',
-    marginBottom: 12,
-    backgroundColor: colors.border,
+  driverAvatarWrap: {
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: '#E8EFF4',
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 10, position: 'relative',
   },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+  liveRing: {
+    position: 'absolute', width: 50, height: 50, borderRadius: 25,
+    borderWidth: 2, borderColor: '#22C55E', top: -4, left: -4,
   },
-  infoKey: {
-    fontSize: 13,
-    color: colors.textSecondary,
+  driverMeta: { flex: 1, gap: 2 },
+  driverName: { fontSize: 14, fontWeight: '800', color: colors.text },
+  driverSubRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  driverRole: { fontSize: 11, color: colors.textSecondary, fontWeight: '500' },
+  livePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#F0FDF4', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 50,
   },
-  infoValue: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.text,
-    maxWidth: '65%',
-    textAlign: 'right',
+  liveDot:     { width: 5, height: 5, borderRadius: 3, backgroundColor: '#22C55E' },
+  livePillText:{ fontSize: 9, fontWeight: '800', color: '#16A34A' },
+  driverBtns: { flexDirection: 'row', gap: 7, marginLeft: 6 },
+  roundBtn: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: '#E8EDF3',
   },
-  contactRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 10,
+  noDriverCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#F8FAFC', borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 11, marginBottom: 8,
   },
-  contactBtn: {
-    flex: 1,
-    height: 38,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
+  noDriverText: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },
+  detailsLink: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 4, paddingVertical: 6,
   },
-  contactBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  timelineCard: {
-    backgroundColor: colors.card,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 20,
-    marginBottom: 20,
-  },
-  timelineTitle: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 20 },
-  timelineWrapper: { paddingLeft: 4 },
-  timelineRow: { flexDirection: 'row', height: 50 },
-  timelineLeading: { alignItems: 'center', width: 20, marginRight: 16 },
-  dot: { width: 12, height: 12, borderRadius: 6, zIndex: 1 },
-  dotActive: { backgroundColor: colors.primary },
-  dotInactive: { backgroundColor: colors.border },
-  line: { width: 2, flex: 1, marginTop: -2, marginBottom: -10 },
-  lineActive: { backgroundColor: colors.primary },
-  lineInactive: { backgroundColor: colors.border },
-  timelineContent: { flex: 1, paddingBottom: 20 },
-  stepLabel: { fontSize: 14, fontWeight: '600' },
-  stepLabelActive: { color: colors.text },
-  stepLabelInactive: { color: colors.textTertiary },
-  currentIndicator: { fontSize: 11, color: colors.primary, fontWeight: '700', marginTop: 2 },
-  detailsBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 56,
-    backgroundColor: 'rgba(26, 86, 219, 0.05)',
-    borderRadius: 16,
-    gap: 8,
-  },
-  detailsBtnText: { fontSize: 15, fontWeight: '700', color: colors.primary },
+  detailsLinkText: { fontSize: 13, fontWeight: '700', color: '#2E86C1' },
 });
-
-export default TrackingScreen;

@@ -29,7 +29,6 @@ import UnauthorizedPage from "./pages/UnauthorizedPage";
 import NotFound from "./pages/NotFound";
 import ProfilePage from "./pages/ProfilePage";
 import { getSessionUser } from "./lib/session";
-import ScrollToTop from "./components/ScrollToTop";
 
 const queryClient = new QueryClient();
 
@@ -53,13 +52,11 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <ScrollToTop />
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/features" element={<FeaturesPage />} />
           <Route path="/about-public" element={<PublicAboutPage />} />
           <Route path="/branches-public" element={<BranchesPage />} />
-          <Route path="/branches" element={<BranchesPage />} />
           <Route path="/download" element={<DownloadPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/login-otp" element={<LoginOtpPage />} />

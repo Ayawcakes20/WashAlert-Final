@@ -13,10 +13,8 @@ import {
   Loader2,
   Plus,
   Pencil,
-  Search,
 } from "lucide-react";
 import { deliveriesApi, type DeliveryRecord } from "@/lib/api";
-import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,11 +47,11 @@ interface Delivery {
 }
 
 const statusStyle: Record<DeliveryStatusLabel, { color: string; icon: typeof Truck }> = {
-  "Pending Pickup": { color: "bg-brand-goldSoft text-brand-gold", icon: Package },
-  "Picked Up": { color: "bg-blue-100 text-blue-600", icon: CheckCircle2 },
-  "In Transit": { color: "bg-purple-500/15 text-purple-700", icon: Navigation },
-  Delivered: { color: "bg-green-200 text-green-700", icon: CheckCircle2 },
-  Failed: { color: "bg-red-100 text-red-600", icon: AlertCircle },
+  "Pending Pickup": { color: "bg-accent/15 text-accent-foreground", icon: Package },
+  "Picked Up": { color: "bg-primary/10 text-primary", icon: CheckCircle2 },
+  "In Transit": { color: "bg-mint/15 text-mint-foreground", icon: Navigation },
+  Delivered: { color: "bg-secondary/20 text-secondary-foreground", icon: CheckCircle2 },
+  Failed: { color: "bg-destructive/10 text-destructive", icon: AlertCircle },
 };
 
 const statusMap: Record<DeliveryStatusApi, DeliveryStatusLabel> = {
@@ -95,8 +93,6 @@ const mapDelivery = (d: DeliveryRecord): Delivery => ({
 
 export default function DeliveryManagementPage() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const debouncedSearchQuery = useDebouncedValue(searchQuery, 400);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [statusDrafts, setStatusDrafts] = useState<Record<number, DeliveryStatusApi>>({});
@@ -136,7 +132,6 @@ export default function DeliveryManagementPage() {
         size: DELIVERIES_PAGE_SIZE,
         sort: "updatedAt",
         direction: "desc",
-        search: debouncedSearchQuery.trim() || undefined,
       });
       const mapped = (response.content || []).map(mapDelivery);
       setDeliveries(mapped);
@@ -172,7 +167,7 @@ export default function DeliveryManagementPage() {
       setLoading(false);
     };
     void run();
-  }, [debouncedSearchQuery]);
+  }, []);
 
   const riders = useMemo(() => {
     const unique = new Map<string, { name: string; phone: string; activeDeliveries: number; status: string }>();
@@ -198,20 +193,6 @@ export default function DeliveryManagementPage() {
   useEffect(() => {
     setRidersPage(1);
   }, [riders.length]);
-
-  useEffect(() => {
-    setDeliveriesPage(1);
-  }, [searchQuery]);
-
-  const displayDeliveries = useMemo(() => {
-    const term = debouncedSearchQuery.trim().toLowerCase();
-    if (!term) return deliveries;
-    return deliveries.filter((d) =>
-      [d.orderId, d.customer, d.branch, d.rider, d.status].some((value) =>
-        String(value).toLowerCase().includes(term),
-      ),
-    );
-  }, [deliveries, debouncedSearchQuery]);
 
   const submitCreate = async () => {
     if (!createForm.trackingNumber.trim() || !createForm.driverName.trim() || !createForm.driverPhone.trim()) {
@@ -303,73 +284,60 @@ export default function DeliveryManagementPage() {
     <motion.div initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.06 } } }} className="space-y-8">
       <motion.div variants={item} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-brand-text tracking-tight">Delivery Management</h1>
-          <p className="text-sm text-brand-muted mt-1">Driver assignment, live delivery status, and pickup/delivery schedules</p>
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">Delivery Management</h1>
+          <p className="text-sm text-muted-foreground mt-1">Driver assignment, live delivery status, and pickup/delivery schedules</p>
         </div>
-        <Button className="h-10 px-5 rounded-brand bg-brand-navy text-white hover:bg-brand-navyDark" onClick={() => setCreateOpen(true)}>
+        <Button className="h-10 px-5 rounded-xl gradient-navy" onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4" /> Create Delivery
         </Button>
       </motion.div>
 
-      <motion.div variants={item} className="max-w-md">
-        <div className="flex items-center gap-2 bg-brand-mintSoft rounded-brand border border-brand-border px-4 py-2.5">
-          <Search className="h-4 w-4 text-brand-muted" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by order, driver, or status..."
-            className="bg-transparent text-sm outline-none w-full text-brand-text placeholder:text-brand-muted"
-          />
-        </div>
-      </motion.div>
-
-      {loading ? <p className="text-sm text-brand-muted">Loading deliveries...</p> : null}
+      {loading ? <p className="text-sm text-muted-foreground">Loading deliveries...</p> : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         {[
-          { label: "Total Deliveries", value: deliveries.length, color: "bg-brand-mintSoft text-brand-navy", icon: Truck },
-          { label: "In Transit", value: deliveries.filter((d) => d.status === "In Transit").length, color: "bg-indigo-100 text-indigo-700", icon: Navigation },
-          { label: "Pending Pickup", value: deliveries.filter((d) => d.status === "Pending Pickup").length, color: "bg-brand-goldSoft text-brand-gold", icon: Package },
-          { label: "Active Riders", value: riders.filter((r) => r.status === "On Route").length, color: "bg-brand-mintSoft text-brand-text", icon: User },
+          { label: "Total Deliveries", value: deliveries.length, color: "bg-primary/10 text-primary", icon: Truck },
+          { label: "In Transit", value: deliveries.filter((d) => d.status === "In Transit").length, color: "bg-mint/15 text-mint", icon: Navigation },
+          { label: "Pending Pickup", value: deliveries.filter((d) => d.status === "Pending Pickup").length, color: "bg-accent/15 text-accent", icon: Package },
+          { label: "Active Riders", value: riders.filter((r) => r.status === "On Route").length, color: "bg-secondary/20 text-secondary-foreground", icon: User },
         ].map((s) => (
-          <motion.div key={s.label} variants={item} className="bg-white rounded-brand border border-brand-border shadow-brand p-5">
+          <motion.div key={s.label} variants={item} className="glass-card rounded-2xl p-5">
             <div className={`p-2.5 rounded-xl ${s.color} w-fit mb-3`}>
               <s.icon className="h-5 w-5" />
             </div>
-            <p className="text-2xl font-bold text-brand-text">{s.value}</p>
-            <p className="text-xs text-brand-muted mt-1">{s.label}</p>
+            <p className="text-2xl font-bold text-foreground">{s.value}</p>
+            <p className="text-xs text-muted-foreground mt-1">{s.label}</p>
           </motion.div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <motion.div variants={item} className="lg:col-span-2 bg-white rounded-brand border border-brand-border shadow-brand p-6">
-          <h2 className="text-lg font-semibold text-brand-text mb-4">Delivery Schedule</h2>
+        <motion.div variants={item} className="lg:col-span-2 glass-card rounded-2xl p-6">
+          <h2 className="text-lg font-semibold text-foreground mb-4">Delivery Schedule</h2>
           <div className="space-y-3">
-            {displayDeliveries.map((d) => {
+            {deliveries.map((d) => {
               const cfg = statusStyle[d.status];
               const StatusIcon = cfg.icon;
               return (
-                <div key={d.id} className="rounded-brand border border-brand-border p-4 hover:bg-brand-mintSoft/50 transition-colors">
+                <div key={d.id} className="rounded-xl border border-border/30 p-4 hover:bg-muted/20 transition-colors">
                   <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-2">
                     <div className="flex items-center gap-3">
-                      <span className="text-xs font-mono font-bold text-brand-navy">{d.orderId}</span>
+                      <span className="text-xs font-mono font-bold text-primary">{d.orderId}</span>
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold ${cfg.color}`}>
                         <StatusIcon className="h-3 w-3" /> {d.status}
                       </span>
                     </div>
                     {d.eta ? (
-                      <span className="text-xs font-semibold text-brand-mint flex items-center gap-1">
+                      <span className="text-xs font-semibold text-mint flex items-center gap-1">
                         <Clock className="h-3 w-3" /> ETA: {d.eta}
                       </span>
                     ) : null}
                   </div>
-                  <div className="grid grid-cols-2 gap-3 text-xs text-brand-muted mt-3">
+                  <div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground mt-3">
                     <div className="flex items-center gap-1.5">
                       <User className="h-3 w-3" />
-                      <span className="font-medium text-brand-text">{d.customer}</span>
+                      <span className="font-medium text-foreground">{d.customer}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <MapPin className="h-3 w-3" />
@@ -378,7 +346,7 @@ export default function DeliveryManagementPage() {
                     <div className="flex items-center gap-1.5">
                       <Truck className="h-3 w-3" />
                       <span>
-                        Rider: <span className="font-medium text-brand-text">{d.rider}</span>
+                        Rider: <span className="font-medium text-foreground">{d.rider}</span>
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -392,7 +360,7 @@ export default function DeliveryManagementPage() {
                       onChange={(e) =>
                         setStatusDrafts((prev) => ({ ...prev, [d.id]: e.target.value as DeliveryStatusApi }))
                       }
-                      className="h-9 rounded-brand border border-brand-border bg-brand-bg px-3 text-sm text-brand-text"
+                      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
                     >
                       {Object.entries(statusMap).map(([api, label]) => (
                         <option key={api} value={api}>
@@ -418,11 +386,7 @@ export default function DeliveryManagementPage() {
                 </div>
               );
             })}
-            {!displayDeliveries.length ? (
-              <p className="text-sm text-brand-muted">
-                {debouncedSearchQuery.trim() ? "No results found" : "No deliveries found."}
-              </p>
-            ) : null}
+            {!deliveries.length ? <p className="text-sm text-muted-foreground">No deliveries found.</p> : null}
             {totalDeliveries > DELIVERIES_PAGE_SIZE ? (
               <div className="flex items-center justify-end gap-2 pt-1">
                 <Button
@@ -435,7 +399,7 @@ export default function DeliveryManagementPage() {
                 >
                   Previous
                 </Button>
-                <span className="text-xs text-brand-muted">
+                <span className="text-xs text-muted-foreground">
                   Page {deliveriesPage} of {totalDeliveryPages}
                 </span>
                 <Button
@@ -453,13 +417,13 @@ export default function DeliveryManagementPage() {
           </div>
         </motion.div>
 
-        <motion.div variants={item} className="bg-white rounded-brand border border-brand-border shadow-brand p-6">
-          <h2 className="text-lg font-semibold text-brand-text mb-4">Active Riders</h2>
+        <motion.div variants={item} className="glass-card rounded-2xl p-6">
+          <h2 className="text-lg font-semibold text-foreground mb-4">Active Riders</h2>
           <div className="space-y-4">
             {paginatedRiders.map((r) => (
-              <div key={r.name} className="rounded-brand border border-brand-border p-4">
+              <div key={r.name} className="rounded-xl border border-border/30 p-4">
                 <div className="flex items-center gap-3 mb-2">
-                  <div className="h-10 w-10 rounded-full bg-brand-navy flex items-center justify-center text-xs font-bold text-white">
+                  <div className="h-10 w-10 rounded-full gradient-navy flex items-center justify-center text-xs font-bold text-primary-foreground">
                     {r.name
                       .split(" ")
                       .filter(Boolean)
@@ -468,21 +432,21 @@ export default function DeliveryManagementPage() {
                       .join("")}
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-brand-text">{r.name}</p>
-                    <p className="text-xs text-brand-muted flex items-center gap-1">
+                    <p className="text-sm font-semibold text-foreground">{r.name}</p>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
                       <Phone className="h-3 w-3" /> {r.phone}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center justify-between mt-3">
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg ${r.status === "On Route" ? "bg-brand-mintSoft text-brand-text" : "bg-brand-bg text-brand-muted"}`}>
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg ${r.status === "On Route" ? "bg-mint/15 text-mint-foreground" : "bg-muted text-muted-foreground"}`}>
                     {r.status}
                   </span>
-                  <span className="text-xs text-brand-muted">{r.activeDeliveries} active</span>
+                  <span className="text-xs text-muted-foreground">{r.activeDeliveries} active</span>
                 </div>
               </div>
             ))}
-            {!riders.length ? <p className="text-sm text-brand-muted">No rider data yet.</p> : null}
+            {!riders.length ? <p className="text-sm text-muted-foreground">No rider data yet.</p> : null}
             {riders.length > RIDERS_PAGE_SIZE ? (
               <div className="flex items-center justify-end gap-2 pt-1">
                 <Button
@@ -495,7 +459,7 @@ export default function DeliveryManagementPage() {
                 >
                   Previous
                 </Button>
-                <span className="text-xs text-brand-muted">
+                <span className="text-xs text-muted-foreground">
                   Page {ridersPage} of {totalRiderPages}
                 </span>
                 <Button

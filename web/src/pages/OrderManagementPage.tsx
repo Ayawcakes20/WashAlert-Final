@@ -28,7 +28,6 @@ import {
   type UpdateOrderPayload,
   type UserAdminRecord,
 } from "@/lib/api";
-import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { getSessionUser } from "@/lib/session";
 import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
@@ -76,15 +75,15 @@ type Order = {
 };
 
 const LAUNDRY_COLUMNS: { status: ApiOrderStatus; label: string; color: string; bgColor: string }[] = [
-  { status: "PENDING", label: "Pending", color: "border-brand-gold", bgColor: "bg-brand-goldSoft" },
-  { status: "WASHING", label: "Washing", color: "border-blue-400", bgColor: "bg-blue-50" },
-  { status: "DRYING", label: "Drying", color: "border-brand-mint", bgColor: "bg-brand-mintSoft" },
-  { status: "READY", label: "Ready for Pickup", color: "border-green-400", bgColor: "bg-green-50" },
+  { status: "PENDING", label: "Pending", color: "border-amber-400", bgColor: "bg-amber-50 dark:bg-amber-950/20" },
+  { status: "WASHING", label: "Washing", color: "border-blue-400", bgColor: "bg-blue-50 dark:bg-blue-950/20" },
+  { status: "DRYING", label: "Drying", color: "border-orange-400", bgColor: "bg-orange-50 dark:bg-orange-950/20" },
+  { status: "READY", label: "Ready for Pickup", color: "border-green-400", bgColor: "bg-green-50 dark:bg-green-950/20" },
 ];
 
 const DELIVERY_COLUMNS: { status: ApiOrderStatus; label: string; color: string; bgColor: string }[] = [
-  { status: "PICKED_UP", label: "Out for Delivery", color: "border-indigo-400", bgColor: "bg-indigo-50" },
-  { status: "DELIVERED", label: "Delivered", color: "border-green-500", bgColor: "bg-green-100" },
+  { status: "PICKED_UP", label: "Out for Delivery", color: "border-purple-400", bgColor: "bg-purple-50 dark:bg-purple-950/20" },
+  { status: "DELIVERED", label: "Delivered", color: "border-teal-400", bgColor: "bg-teal-50 dark:bg-teal-950/20" },
 ];
 
 const statusLabel: Record<ApiOrderStatus, string> = {
@@ -176,7 +175,6 @@ export default function OrderManagementPage() {
   const [draggedOrderId, setDraggedOrderId] = useState<number | null>(null);
   const [statusUpdatingId, setStatusUpdatingId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const debouncedSearchQuery = useDebouncedValue(searchQuery, 400);
   const [filterBranch, setFilterBranch] = useState(isAdmin ? "" : staffBranch);
   const [filterPaymentStatus, setFilterPaymentStatus] = useState("");
   const [filterPaymentMethod, setFilterPaymentMethod] = useState("");
@@ -233,7 +231,7 @@ export default function OrderManagementPage() {
         sort: "updatedAt",
         direction: "desc",
         branch: isAdmin ? (filterBranch || undefined) : (staffBranch || undefined),
-        search: debouncedSearchQuery.trim() || undefined,
+        search: searchQuery.trim() || undefined,
         paymentStatus: filterPaymentStatus || undefined,
         paymentMethod: filterPaymentMethod || undefined,
       });
@@ -257,7 +255,7 @@ export default function OrderManagementPage() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [isAdmin, staffBranch, filterBranch, debouncedSearchQuery, filterPaymentStatus, filterPaymentMethod]);
+  }, [isAdmin, staffBranch, filterBranch, searchQuery, filterPaymentStatus, filterPaymentMethod]);
 
   const handleManualRefresh = async () => {
     setRefreshing(true);
@@ -266,11 +264,11 @@ export default function OrderManagementPage() {
   };
 
   useEffect(() => {
-    setOrdersPage(1);
-    void loadOrders(0, false);
-  }, [loadOrders]);
+    const run = async () => {
+      await loadOrders(0, false);
+    };
+    void run();
 
-  useEffect(() => {
     // Poll frequently so webhook-confirmed payment updates surface quickly in Order Management.
     autoRefreshRef.current = setInterval(() => {
       void loadOrders(Math.max(0, ordersPage - 1), true);
@@ -466,19 +464,7 @@ export default function OrderManagementPage() {
     }
   };
 
-  const filteredOrders = useMemo(() => {
-    const term = debouncedSearchQuery.trim().toLowerCase();
-    if (!term) return orders;
-    return orders.filter((order) =>
-      [
-        order.orderId,
-        order.customerName,
-        order.branch,
-        statusLabel[order.status],
-        resolvePaymentStatusLabel(order),
-      ].some((value) => String(value).toLowerCase().includes(term)),
-    );
-  }, [orders, debouncedSearchQuery]);
+  const filteredOrders = orders;
 
   useEffect(() => {
     setColumnPages({});
@@ -502,25 +488,25 @@ export default function OrderManagementPage() {
       draggable={DRAGGABLE_STATUSES.includes(order.status)}
       onDragStart={() => handleDragStart(order.id)}
       onClick={() => void openDetails(order.id)}
-      className={`bg-white rounded-brand border border-brand-border shadow-brand p-4 cursor-pointer hover:shadow-lg transition-all ${
+      className={`glass-card rounded-xl p-4 cursor-pointer hover:shadow-[var(--shadow-elevated)] transition-all ${
         draggedOrderId === order.id ? "opacity-60" : ""
       }`}
     >
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <GripVertical className="h-3.5 w-3.5 text-brand-muted/60" />
-          <span className="text-xs font-mono font-bold text-brand-navy">{order.orderId}</span>
+          <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40" />
+          <span className="text-xs font-mono font-bold text-primary">{order.orderId}</span>
         </div>
         {statusUpdatingId === order.id ? (
-          <Loader2 className="h-3.5 w-3.5 text-brand-muted animate-spin" />
+          <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />
         ) : null}
       </div>
 
-      <p className="text-sm font-semibold text-brand-text flex items-center gap-1.5">
-        <User className="h-3.5 w-3.5 text-brand-muted" />
+      <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+        <User className="h-3.5 w-3.5 text-muted-foreground" />
         {order.customerName}
       </p>
-      <div className="flex items-center gap-3 mt-2 text-xs text-brand-muted">
+      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
         <span className="flex items-center gap-1">
           <Weight className="h-3 w-3" />
           {order.estimatedWeightKg}kg {serviceTypeLabel[order.serviceType]}
@@ -533,19 +519,19 @@ export default function OrderManagementPage() {
         </div>
       )}
       <div className="flex items-center justify-between mt-2">
-        <span className="text-[10px] text-brand-muted">{order.branch}</span>
+        <span className="text-[10px] text-muted-foreground">{order.branch}</span>
         <span
           className={`text-[10px] font-medium ${resolvePaymentStatusLabel(order) === "PAID" || resolvePaymentStatusLabel(order) === "VERIFIED" ? "text-green-600" : resolvePaymentStatusLabel(order) === "REJECTED" ? "text-destructive" : "text-amber-600"}`}
         >
           {resolvePaymentStatusLabel(order)}
         </span>
       </div>
-      <div className="text-[10px] text-brand-muted mt-0.5">
+      <div className="text-[10px] text-muted-foreground mt-0.5">
         Method: {order.paymentMethod || "N/A"}
       </div>
       <div className="flex items-center gap-1 mt-1">
-        <Clock className="h-3 w-3 text-brand-muted" />
-        <span className="text-[10px] text-brand-muted">{formatTime(order.updatedAt || order.createdAt)}</span>
+        <Clock className="h-3 w-3 text-muted-foreground" />
+        <span className="text-[10px] text-muted-foreground">{formatTime(order.updatedAt || order.createdAt)}</span>
       </div>
 
       <div className="mt-3 flex items-center gap-2 flex-wrap">
@@ -590,14 +576,14 @@ export default function OrderManagementPage() {
         className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
       >
         <div>
-          <h1 className="text-2xl font-bold text-brand-text tracking-tight">Order Management</h1>
-          <p className="text-sm text-brand-muted mt-1">
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">Order Management</h1>
+          <p className="text-sm text-muted-foreground mt-1">
             {isAdmin
               ? "View and manage all laundry orders across all branches."
               : `Viewing orders for ${staffBranch || "your branch"}. Drag cards to update status.`}
           </p>
           {lastRefreshed && (
-            <p className="text-[11px] text-brand-muted/80 mt-0.5">
+            <p className="text-[11px] text-muted-foreground/60 mt-0.5">
               Last updated: {lastRefreshed.toLocaleTimeString()} - auto-refreshes every 10s
             </p>
           )}
@@ -606,7 +592,7 @@ export default function OrderManagementPage() {
           <Button
             variant="outline"
             size="sm"
-            className="h-9 px-3 rounded-brand border-brand-border text-brand-text hover:bg-brand-mintSoft"
+            className="h-9 px-3 rounded-xl"
             onClick={() => setShowHelp((prev) => !prev)}
           >
             <HelpCircle className="h-4 w-4" />
@@ -615,7 +601,7 @@ export default function OrderManagementPage() {
           <Button
             variant="outline"
             size="sm"
-            className="h-9 px-3 rounded-brand border-brand-border text-brand-text hover:bg-brand-mintSoft"
+            className="h-9 px-3 rounded-xl"
             onClick={() => void handleManualRefresh()}
             disabled={refreshing}
           >
@@ -623,7 +609,7 @@ export default function OrderManagementPage() {
             {refreshing ? "Refreshing..." : "Refresh"}
           </Button>
           {isAdmin && (
-            <Button className="h-10 px-5 rounded-brand bg-brand-navy text-white hover:bg-brand-navyDark" onClick={openCreateModal}>
+            <Button className="h-10 px-5 rounded-xl gradient-navy" onClick={openCreateModal}>
               <Plus className="h-4 w-4" /> Create Order
             </Button>
           )}
@@ -632,50 +618,50 @@ export default function OrderManagementPage() {
 
       <motion.div variants={item} className="overflow-hidden">
         {showHelp ? (
-          <div className="rounded-brand border border-brand-border bg-brand-bg p-4 sm:p-5 space-y-2.5">
-            <p className="text-sm font-semibold text-brand-text flex items-center gap-2">
-              <Info className="h-4 w-4 text-brand-navy" /> Order Management Guide
+          <div className="rounded-2xl border border-border/50 bg-muted/30 p-4 sm:p-5 space-y-2.5">
+            <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Info className="h-4 w-4 text-primary" /> Order Management Guide
             </p>
-            <p className="text-xs text-brand-muted">
+            <p className="text-xs text-muted-foreground">
               Overview: This board tracks each order lifecycle. Drag laundry cards through status columns (Pending to Washing to Drying to Ready), then monitor delivery in the read-only delivery columns.
             </p>
-            <p className="text-xs text-brand-muted">
+            <p className="text-xs text-muted-foreground">
               Updating status: Drag a card to its next valid stage, or open details to review timestamps and order info before updating.
             </p>
-            <p className="text-xs text-brand-muted">
+            <p className="text-xs text-muted-foreground">
               Payment status: Order progress status and payment status are separate. Online and e-wallet payments update automatically to PAID after provider webhook confirmation. Cash remains manual confirmation only.
             </p>
-            <p className="text-xs text-brand-muted">
+            <p className="text-xs text-muted-foreground">
               Search and filter: Use keyword search for customer or order ID and branch filters (admin only) to narrow visible cards.
             </p>
-            <p className="text-xs text-brand-muted">
+            <p className="text-xs text-muted-foreground">
               When status changes: The backend writes timeline history updates, refreshes dashboard data, and syncs the latest order state for live visibility.
             </p>
           </div>
         ) : null}
       </motion.div>
 
-      {loading ? <p className="text-sm text-brand-muted">Loading orders...</p> : null}
+      {loading ? <p className="text-sm text-muted-foreground">Loading orders...</p> : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       <motion.div variants={item} className="flex flex-wrap gap-3">
-        <div className="flex items-center gap-2 bg-brand-mintSoft rounded-brand border border-brand-border px-4 py-2.5 flex-1 min-w-[200px] max-w-md">
-          <Search className="h-4 w-4 text-brand-muted" />
+        <div className="flex items-center gap-2 bg-muted/50 rounded-xl px-4 py-2.5 flex-1 min-w-[200px] max-w-md">
+          <Search className="h-4 w-4 text-muted-foreground" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search by customer or order ID..."
-            className="bg-transparent text-sm outline-none w-full text-brand-text placeholder:text-brand-muted"
+            className="bg-transparent text-sm outline-none w-full text-foreground placeholder:text-muted-foreground"
           />
         </div>
         {isAdmin && (
-          <div className="flex items-center gap-2 bg-brand-mintSoft rounded-brand border border-brand-border px-4 py-2.5">
-            <Filter className="h-4 w-4 text-brand-muted" />
+          <div className="flex items-center gap-2 bg-muted/50 rounded-xl px-4 py-2.5">
+            <Filter className="h-4 w-4 text-muted-foreground" />
             <select
               value={filterBranch}
               onChange={(e) => setFilterBranch(e.target.value)}
-              className="bg-transparent text-sm outline-none text-brand-text"
+              className="bg-transparent text-sm outline-none text-foreground"
             >
               <option value="">All Branches</option>
               {uniqueBranches.map((branch) => (
@@ -686,12 +672,12 @@ export default function OrderManagementPage() {
             </select>
           </div>
         )}
-        <div className="flex items-center gap-2 bg-brand-mintSoft rounded-brand border border-brand-border px-4 py-2.5">
-          <Filter className="h-4 w-4 text-brand-muted" />
+        <div className="flex items-center gap-2 bg-muted/50 rounded-xl px-4 py-2.5">
+          <Filter className="h-4 w-4 text-muted-foreground" />
           <select
             value={filterPaymentStatus}
             onChange={(e) => setFilterPaymentStatus(e.target.value)}
-            className="bg-transparent text-sm outline-none text-brand-text"
+            className="bg-transparent text-sm outline-none text-foreground"
           >
             <option value="">All Payment Statuses</option>
             <option value="PENDING">Pending</option>
@@ -700,12 +686,12 @@ export default function OrderManagementPage() {
             <option value="REJECTED">Rejected</option>
           </select>
         </div>
-        <div className="flex items-center gap-2 bg-brand-mintSoft rounded-brand border border-brand-border px-4 py-2.5">
-          <Filter className="h-4 w-4 text-brand-muted" />
+        <div className="flex items-center gap-2 bg-muted/50 rounded-xl px-4 py-2.5">
+          <Filter className="h-4 w-4 text-muted-foreground" />
           <select
             value={filterPaymentMethod}
             onChange={(e) => setFilterPaymentMethod(e.target.value)}
-            className="bg-transparent text-sm outline-none text-brand-text"
+            className="bg-transparent text-sm outline-none text-foreground"
           >
             <option value="">All Payment Methods</option>
             <option value="GCASH">GCash / E-Wallet</option>
@@ -726,7 +712,7 @@ export default function OrderManagementPage() {
           >
             Previous Page
           </Button>
-          <span className="text-xs text-brand-muted">
+          <span className="text-xs text-muted-foreground">
             Data page {ordersPage} of {totalOrdersPages}
           </span>
           <Button
@@ -742,15 +728,9 @@ export default function OrderManagementPage() {
         </motion.div>
       ) : null}
 
-      {!filteredOrders.length && debouncedSearchQuery.trim() ? (
-        <motion.div variants={item} className="rounded-brand border border-brand-border bg-white p-4 text-sm text-brand-muted shadow-brand">
-          No results found
-        </motion.div>
-      ) : null}
-
       {/* Laundry Progress Board */}
       <motion.div variants={item}>
-        <h2 className="text-sm font-semibold text-brand-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-full bg-blue-400 inline-block" />
           Laundry Progress
         </h2>
@@ -769,20 +749,20 @@ export default function OrderManagementPage() {
                 onDrop={() => void handleDrop(col.status)}
               >
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-bold text-brand-text">{col.label}</h3>
-                  <span className="text-xs font-semibold bg-white px-2 py-0.5 rounded-full text-brand-muted border border-brand-border">
+                  <h3 className="text-sm font-bold text-foreground">{col.label}</h3>
+                  <span className="text-xs font-semibold bg-card px-2 py-0.5 rounded-full text-muted-foreground">
                     {colOrders.length}
                   </span>
                 </div>
                 <div className="space-y-3">
                   {pagedOrders.map(renderOrderCard)}
                   {!colOrders.length ? (
-                    <div className="text-xs text-brand-muted text-center py-8">
+                    <div className="text-xs text-muted-foreground text-center py-8">
                       No orders in this stage.
                     </div>
                   ) : null}
                   {!!colOrders.length && !pagedOrders.length ? (
-                    <div className="text-xs text-brand-muted text-center py-6">
+                    <div className="text-xs text-muted-foreground text-center py-6">
                       No orders on this page.
                     </div>
                   ) : null}
@@ -798,7 +778,7 @@ export default function OrderManagementPage() {
                       >
                         Prev
                       </Button>
-                      <span className="text-[10px] text-brand-muted">
+                      <span className="text-[10px] text-muted-foreground">
                         {Math.min(currentPage, totalPages)}/{totalPages}
                       </span>
                       <Button
@@ -822,7 +802,7 @@ export default function OrderManagementPage() {
 
       {/* Delivery Tracking Board */}
       <motion.div variants={item}>
-        <h2 className="text-sm font-semibold text-brand-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
           <Truck className="h-3.5 w-3.5 text-purple-500" />
           Delivery Tracking (Read-only)
         </h2>
@@ -839,20 +819,20 @@ export default function OrderManagementPage() {
                 className={`shrink-0 w-64 rounded-2xl ${col.bgColor} border-t-4 ${col.color} p-4 min-h-[200px]`}
               >
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-bold text-brand-text">{col.label}</h3>
-                  <span className="text-xs font-semibold bg-white px-2 py-0.5 rounded-full text-brand-muted border border-brand-border">
+                  <h3 className="text-sm font-bold text-foreground">{col.label}</h3>
+                  <span className="text-xs font-semibold bg-card px-2 py-0.5 rounded-full text-muted-foreground">
                     {colOrders.length}
                   </span>
                 </div>
                 <div className="space-y-3">
                   {pagedOrders.map(renderOrderCard)}
                   {!colOrders.length ? (
-                    <div className="text-xs text-brand-muted text-center py-8">
+                    <div className="text-xs text-muted-foreground text-center py-8">
                       No orders here.
                     </div>
                   ) : null}
                   {!!colOrders.length && !pagedOrders.length ? (
-                    <div className="text-xs text-brand-muted text-center py-6">
+                    <div className="text-xs text-muted-foreground text-center py-6">
                       No orders on this page.
                     </div>
                   ) : null}
@@ -868,7 +848,7 @@ export default function OrderManagementPage() {
                       >
                         Prev
                       </Button>
-                      <span className="text-[10px] text-brand-muted">
+                      <span className="text-[10px] text-muted-foreground">
                         {Math.min(currentPage, totalPages)}/{totalPages}
                       </span>
                       <Button

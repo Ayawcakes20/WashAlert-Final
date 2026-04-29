@@ -17,20 +17,6 @@ export default {
         sans: ["Inter", "system-ui", "sans-serif"],
       },
       colors: {
-        brand: {
-          navy: "#0F2A44",
-          navyDark: "#081C33",
-          navyLight: "#173B63",
-          mint: "#2ED1C1",
-          mintLight: "#BFF5EE",
-          mintSoft: "#E8FBF8",
-          gold: "#F5C542",
-          goldSoft: "#FFF7D6",
-          bg: "#F7F9FC",
-          text: "#111827",
-          muted: "#6B7280",
-          border: "#E5EAF0",
-        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -100,13 +86,9 @@ export default {
         },
       },
       borderRadius: {
-        brand: "12px",
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
-      },
-      boxShadow: {
-        brand: "0 8px 24px rgba(15, 42, 68, 0.08)",
       },
       keyframes: {
         "accordion-down": {
