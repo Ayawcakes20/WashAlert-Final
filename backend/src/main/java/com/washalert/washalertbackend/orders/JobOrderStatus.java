@@ -21,6 +21,9 @@ public enum JobOrderStatus {
         if ("READY_FOR_PICKUP".equals(normalized)) {
             return READY;
         }
+        if ("COMPLETED".equals(normalized)) {
+            return DELIVERED;
+        }
         return JobOrderStatus.valueOf(normalized);
     }
 

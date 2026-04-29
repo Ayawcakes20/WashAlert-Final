@@ -324,6 +324,7 @@ public class JobOrderService {
             if (jo.getStatus() == JobOrderStatus.READY) {
                 deliveryService.initializePhaseB(jo);
             }
+            deliveryService.syncWithOrderStatus(jo, actor.getEmail());
         }
 
         JobOrder saved = repo.save(jo);

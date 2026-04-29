@@ -2,11 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   CheckCircle2,
-  Clock,
   Info,
   Eye,
   Filter,
-  GripVertical,
   HelpCircle,
   Loader2,
   Pencil,
@@ -14,9 +12,6 @@ import {
   RefreshCw,
   Search,
   Trash2,
-  Truck,
-  User,
-  Weight,
 } from "lucide-react";
 import {
   ordersApi,
@@ -25,6 +20,7 @@ import {
   type JobOrderResponse,
   type UpdateOrderPayload,
 } from "@/lib/api";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { getSessionUser } from "@/lib/session";
 import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
@@ -76,18 +72,6 @@ type DeliveryAssignmentMeta = {
   status: string;
 };
 
-const LAUNDRY_COLUMNS: { status: ApiOrderStatus; label: string; color: string; bgColor: string }[] = [
-  { status: "PENDING", label: "Pending", color: "border-amber-400", bgColor: "bg-amber-50 dark:bg-amber-950/20" },
-  { status: "WASHING", label: "Washing", color: "border-blue-400", bgColor: "bg-blue-50 dark:bg-blue-950/20" },
-  { status: "DRYING", label: "Drying", color: "border-orange-400", bgColor: "bg-orange-50 dark:bg-orange-950/20" },
-  { status: "READY", label: "Ready for Pickup", color: "border-green-400", bgColor: "bg-green-50 dark:bg-green-950/20" },
-];
-
-const DELIVERY_COLUMNS: { status: ApiOrderStatus; label: string; color: string; bgColor: string }[] = [
-  { status: "PICKED_UP", label: "Out for Delivery", color: "border-purple-400", bgColor: "bg-purple-50 dark:bg-purple-950/20" },
-  { status: "DELIVERED", label: "Delivered", color: "border-teal-400", bgColor: "bg-teal-50 dark:bg-teal-950/20" },
-];
-
 const statusLabel: Record<ApiOrderStatus, string> = {
   PENDING: "Pending",
   WASHING: "Washing",
@@ -96,6 +80,23 @@ const statusLabel: Record<ApiOrderStatus, string> = {
   PICKED_UP: "Out for Delivery",
   DELIVERED: "Delivered",
   CANCELLED: "Cancelled",
+};
+
+const getAllowedStatusTransitions = (status: ApiOrderStatus): ApiOrderStatus[] => {
+  switch (status) {
+    case "PENDING":
+      return ["WASHING"];
+    case "WASHING":
+      return ["DRYING"];
+    case "DRYING":
+      return ["READY"];
+    case "READY":
+      return ["PICKED_UP"];
+    case "PICKED_UP":
+      return ["DELIVERED"];
+    default:
+      return [];
+  }
 };
 
 const statusBadgeVariant = (status: ApiOrderStatus): "default" | "secondary" | "destructive" | "outline" => {
@@ -110,9 +111,8 @@ const serviceTypeLabel: Record<ApiServiceType, string> = {
 };
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
-const LAUNDRY_COLUMN_PAGE_SIZE = 8;
-const DELIVERY_COLUMN_PAGE_SIZE = 8;
 const ORDERS_SERVER_PAGE_SIZE = 60;
+const TABLE_PAGE_SIZE_OPTIONS = [10, 20, 30];
 
 const mapOrder = (order: JobOrderResponse): Order => ({
   id: order.id,
@@ -131,11 +131,6 @@ const mapOrder = (order: JobOrderResponse): Order => ({
   isPaid: order.isPaid,
   totalPrice: order.totalPrice,
 });
-
-const formatTime = (timestamp?: string) =>
-  timestamp
-    ? new Date(timestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
-    : "-";
 
 const formatDateTime = (timestamp?: string) =>
   timestamp
@@ -193,9 +188,10 @@ export default function OrderManagementPage() {
   const staffBranch = currentUser?.branch || "";
 
   const [orders, setOrders] = useState<Order[]>([]);
-  const [draggedOrderId, setDraggedOrderId] = useState<number | null>(null);
   const [statusUpdatingId, setStatusUpdatingId] = useState<number | null>(null);
+  const [statusDrafts, setStatusDrafts] = useState<Record<number, ApiOrderStatus>>({});
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, 400);
   const [filterBranch, setFilterBranch] = useState(isAdmin ? "" : staffBranch);
   const [filterPaymentStatus, setFilterPaymentStatus] = useState("");
   const [filterPaymentMethod, setFilterPaymentMethod] = useState("");
@@ -205,7 +201,8 @@ export default function OrderManagementPage() {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const autoRefreshRef = useRef<NodeJS.Timeout | null>(null);
-  const [columnPages, setColumnPages] = useState<Partial<Record<ApiOrderStatus, number>>>({});
+  const [tablePage, setTablePage] = useState(1);
+  const [tablePageSize, setTablePageSize] = useState(10);
   const [ordersPage, setOrdersPage] = useState(1);
   const [totalOrdersPages, setTotalOrdersPages] = useState(1);
   const [hasNextOrders, setHasNextOrders] = useState(false);
@@ -247,7 +244,7 @@ export default function OrderManagementPage() {
         sort: "updatedAt",
         direction: "desc",
         branch: isAdmin ? (filterBranch || undefined) : (staffBranch || undefined),
-        search: searchQuery.trim() || undefined,
+        search: debouncedSearchQuery.trim() || undefined,
         paymentStatus: filterPaymentStatus || undefined,
         paymentMethod: filterPaymentMethod || undefined,
       });
@@ -271,7 +268,7 @@ export default function OrderManagementPage() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [isAdmin, staffBranch, filterBranch, searchQuery, filterPaymentStatus, filterPaymentMethod]);
+  }, [isAdmin, staffBranch, filterBranch, debouncedSearchQuery, filterPaymentStatus, filterPaymentMethod]);
 
   const handleManualRefresh = async () => {
     setRefreshing(true);
@@ -280,11 +277,11 @@ export default function OrderManagementPage() {
   };
 
   useEffect(() => {
-    const run = async () => {
-      await loadOrders(0, false);
-    };
-    void run();
+    setOrdersPage(1);
+    void loadOrders(0, false);
+  }, [loadOrders]);
 
+  useEffect(() => {
     // Poll frequently so webhook-confirmed payment updates surface quickly in Order Management.
     autoRefreshRef.current = setInterval(() => {
       void loadOrders(Math.max(0, ordersPage - 1), true);
@@ -295,38 +292,32 @@ export default function OrderManagementPage() {
     };
   }, [loadOrders, ordersPage]);
 
-  // Only allow dragging active laundry columns (not delivery columns)
-  const DRAGGABLE_STATUSES: ApiOrderStatus[] = ["PENDING", "WASHING", "DRYING", "READY"];
-
-  const handleDragStart = (orderId: number) => setDraggedOrderId(orderId);
-
-  const handleDrop = async (targetStatus: ApiOrderStatus) => {
-    if (!draggedOrderId) return;
-    const dragged = orders.find((o) => o.id === draggedOrderId);
-    if (!dragged || dragged.status === targetStatus || !DRAGGABLE_STATUSES.includes(targetStatus)) {
-      setDraggedOrderId(null);
+  const applyStatusUpdate = async (order: Order) => {
+    const allowed = getAllowedStatusTransitions(order.status);
+    const fallbackStatus = allowed[0];
+    const nextStatus = statusDrafts[order.id] || fallbackStatus || order.status;
+    if (nextStatus === order.status) return;
+    if (!allowed.includes(nextStatus)) {
+      toast.error(`Invalid transition from ${statusLabel[order.status]} to ${statusLabel[nextStatus]}.`);
       return;
     }
-
-    const previous = [...orders];
-    setStatusUpdatingId(draggedOrderId);
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === draggedOrderId
-          ? { ...o, status: targetStatus, updatedAt: new Date().toISOString() }
-          : o,
-      ),
-    );
-
+    setStatusUpdatingId(order.id);
     try {
-      const updated = await ordersApi.updateStatus(draggedOrderId, targetStatus);
-      setOrders((prev) => prev.map((o) => (o.id === updated.id ? mapOrder(updated) : o)));
-      toast.success(`Order ${updated.trackingNumber} moved to ${statusLabel[targetStatus]}.`);
+      const updated = await ordersApi.updateStatus(order.id, nextStatus);
+      const mapped = mapOrder(updated);
+      setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
+      setStatusDrafts((prev) => ({ ...prev, [order.id]: mapped.status }));
+      toast.success(`Order ${updated.trackingNumber} moved to ${statusLabel[mapped.status]}.`);
+      await loadOrders(Math.max(0, ordersPage - 1), true);
     } catch (err: any) {
-      setOrders(previous);
-      toast.error(err?.message || "Unable to update order status.");
+      const isTransitionError = err?.status === 409 || err?.status === 400;
+      toast.error(
+        isTransitionError
+          ? err?.message || "Status transition was rejected. Refreshing orders..."
+          : err?.message || "Unable to update order status.",
+      );
+      await loadOrders(Math.max(0, ordersPage - 1), true);
     } finally {
-      setDraggedOrderId(null);
       setStatusUpdatingId(null);
     }
   };
@@ -483,106 +474,33 @@ export default function OrderManagementPage() {
     };
   }, [orders]);
 
-  const filteredOrders = orders;
+  const filteredOrders = useMemo(() => {
+    const term = debouncedSearchQuery.trim().toLowerCase();
+    if (!term) return orders;
+    return orders.filter((order) =>
+      [
+        order.orderId,
+        order.customerName,
+        order.branch,
+        statusLabel[order.status],
+        resolvePaymentStatusLabel(order),
+      ].some((value) => String(value).toLowerCase().includes(term)),
+    );
+  }, [orders, debouncedSearchQuery]);
 
   useEffect(() => {
-    setColumnPages({});
-  }, [orders.length, ordersPage]);
-
-  const getColumnPage = (status: ApiOrderStatus) => Math.max(1, columnPages[status] || 1);
-
-  const setColumnPage = (status: ApiOrderStatus, page: number) => {
-    setColumnPages((prev) => ({ ...prev, [status]: Math.max(1, page) }));
-  };
+    setTablePage(1);
+  }, [debouncedSearchQuery, filterBranch, filterPaymentMethod, filterPaymentStatus]);
 
   const uniqueBranches = useMemo(() => {
     const set = new Set(orders.map((o) => o.branch).filter(Boolean));
     if (filterBranch) set.add(filterBranch);
     return Array.from(set).sort();
   }, [orders, filterBranch]);
-
-  const renderOrderCard = (order: Order) => (
-    <div
-      key={order.id}
-      draggable={DRAGGABLE_STATUSES.includes(order.status)}
-      onDragStart={() => handleDragStart(order.id)}
-      onClick={() => void openDetails(order.id)}
-      className={`glass-card rounded-xl p-4 cursor-pointer hover:shadow-[var(--shadow-elevated)] transition-all ${
-        draggedOrderId === order.id ? "opacity-60" : ""
-      }`}
-    >
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40" />
-          <span className="text-xs font-mono font-bold text-primary">{order.orderId}</span>
-        </div>
-        {statusUpdatingId === order.id ? (
-          <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />
-        ) : null}
-      </div>
-
-      <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-        <User className="h-3.5 w-3.5 text-muted-foreground" />
-        {order.customerName}
-      </p>
-      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1">
-          <Weight className="h-3 w-3" />
-          {order.estimatedWeightKg}kg {serviceTypeLabel[order.serviceType]}
-        </span>
-      </div>
-      {order.serviceType === "PICKUP_DELIVERY" && (
-        <div className="mt-1 space-y-0.5">
-          <div className="flex items-center gap-1">
-            <Truck className="h-3 w-3 text-purple-500" />
-            <span className="text-[10px] text-purple-600 font-medium">Delivery Order</span>
-          </div>
-          <div className="text-[10px] text-brand-muted">
-            Driver:{" "}
-            <span className="font-semibold text-brand-text">
-              {deliveryMetaByTracking[order.orderId]?.driverName || "Unassigned"}
-            </span>
-          </div>
-          <div className="text-[10px] text-brand-muted">
-            Delivery Status:{" "}
-            <span className="font-semibold text-brand-text">
-              {resolveDeliveryStatusLabel(deliveryMetaByTracking[order.orderId]?.status)}
-            </span>
-          </div>
-        </div>
-      )}
-      <div className="flex items-center justify-between mt-2">
-        <span className="text-[10px] text-muted-foreground">{order.branch}</span>
-        <span
-          className={`text-[10px] font-medium ${resolvePaymentStatusLabel(order) === "PAID" || resolvePaymentStatusLabel(order) === "VERIFIED" ? "text-green-600" : resolvePaymentStatusLabel(order) === "REJECTED" ? "text-destructive" : "text-amber-600"}`}
-        >
-          {resolvePaymentStatusLabel(order)}
-        </span>
-      </div>
-      <div className="text-[10px] text-muted-foreground mt-0.5">
-        Method: {order.paymentMethod || "N/A"}
-      </div>
-      <div className="flex items-center gap-1 mt-1">
-        <Clock className="h-3 w-3 text-muted-foreground" />
-        <span className="text-[10px] text-muted-foreground">{formatTime(order.updatedAt || order.createdAt)}</span>
-      </div>
-
-      <div className="mt-3 flex items-center gap-2 flex-wrap">
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 px-2 text-[10px]"
-          onClick={(e) => {
-            e.stopPropagation();
-            void openDetails(order.id);
-          }}
-        >
-          <Eye className="h-3 w-3" />
-          Details
-        </Button>
-      </div>
-    </div>
-  );
+  const totalTablePages = Math.max(1, Math.ceil(filteredOrders.length / tablePageSize));
+  const safeTablePage = Math.min(tablePage, totalTablePages);
+  const tableStart = (safeTablePage - 1) * tablePageSize;
+  const pagedOrders = filteredOrders.slice(tableStart, tableStart + tablePageSize);
 
   return (
     <motion.div
@@ -596,14 +514,14 @@ export default function OrderManagementPage() {
         className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
       >
         <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Order Management</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <h1 className="text-2xl font-bold text-brand-text tracking-tight">Order Management</h1>
+          <p className="text-sm text-brand-muted mt-1">
             {isAdmin
               ? "View and manage all laundry orders across all branches."
-              : `Viewing orders for ${staffBranch || "your branch"}. Drag cards to update status.`}
+              : `Viewing orders for ${staffBranch || "your branch"}. Update order status from the table actions.`}
           </p>
           {lastRefreshed && (
-            <p className="text-[11px] text-muted-foreground/60 mt-0.5">
+            <p className="text-[11px] text-brand-muted/80 mt-0.5">
               Last updated: {lastRefreshed.toLocaleTimeString()} - auto-refreshes every 10s
             </p>
           )}
@@ -612,7 +530,7 @@ export default function OrderManagementPage() {
           <Button
             variant="outline"
             size="sm"
-            className="h-9 px-3 rounded-xl"
+            className="h-9 px-3 rounded-brand border-brand-border text-brand-text hover:bg-brand-mintSoft"
             onClick={() => setShowHelp((prev) => !prev)}
           >
             <HelpCircle className="h-4 w-4" />
@@ -621,7 +539,7 @@ export default function OrderManagementPage() {
           <Button
             variant="outline"
             size="sm"
-            className="h-9 px-3 rounded-xl"
+            className="h-9 px-3 rounded-brand border-brand-border text-brand-text hover:bg-brand-mintSoft"
             onClick={() => void handleManualRefresh()}
             disabled={refreshing}
           >
@@ -629,7 +547,7 @@ export default function OrderManagementPage() {
             {refreshing ? "Refreshing..." : "Refresh"}
           </Button>
           {isAdmin && (
-            <Button className="h-10 px-5 rounded-xl gradient-navy" onClick={openCreateModal}>
+            <Button className="h-10 px-5 rounded-brand bg-brand-navy text-white hover:bg-brand-navyDark" onClick={openCreateModal}>
               <Plus className="h-4 w-4" /> Create Order
             </Button>
           )}
@@ -638,50 +556,50 @@ export default function OrderManagementPage() {
 
       <motion.div variants={item} className="overflow-hidden">
         {showHelp ? (
-          <div className="rounded-2xl border border-border/50 bg-muted/30 p-4 sm:p-5 space-y-2.5">
-            <p className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <Info className="h-4 w-4 text-primary" /> Order Management Guide
+          <div className="rounded-brand border border-brand-border bg-brand-bg p-4 sm:p-5 space-y-2.5">
+            <p className="text-sm font-semibold text-brand-text flex items-center gap-2">
+              <Info className="h-4 w-4 text-brand-navy" /> Order Management Guide
             </p>
-            <p className="text-xs text-muted-foreground">
-              Overview: This board tracks each order lifecycle. Drag laundry cards through status columns (Pending to Washing to Drying to Ready), then monitor delivery in the read-only delivery columns.
+            <p className="text-xs text-brand-muted">
+              Overview: This table tracks each order lifecycle with status controls and delivery metadata in one place.
             </p>
-            <p className="text-xs text-muted-foreground">
-              Updating status: Drag a card to its next valid stage, or open details to review timestamps and order info before updating.
+            <p className="text-xs text-brand-muted">
+              Updating status: Use the status dropdown to move to the next valid stage (Pending → Washing → Drying → Ready → Picked Up → Delivered).
             </p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-brand-muted">
               Payment status: Order progress status and payment status are separate. Online and e-wallet payments update automatically to PAID after provider webhook confirmation. Cash remains manual confirmation only.
             </p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-brand-muted">
               Search and filter: Use keyword search for customer or order ID and branch filters (admin only) to narrow visible cards.
             </p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-brand-muted">
               When status changes: The backend writes timeline history updates, refreshes dashboard data, and syncs the latest order state for live visibility.
             </p>
           </div>
         ) : null}
       </motion.div>
 
-      {loading ? <p className="text-sm text-muted-foreground">Loading orders...</p> : null}
+      {loading ? <p className="text-sm text-brand-muted">Loading orders...</p> : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       <motion.div variants={item} className="flex flex-wrap gap-3">
-        <div className="flex items-center gap-2 bg-muted/50 rounded-xl px-4 py-2.5 flex-1 min-w-[200px] max-w-md">
-          <Search className="h-4 w-4 text-muted-foreground" />
+        <div className="flex items-center gap-2 bg-brand-mintSoft rounded-brand border border-brand-border px-4 py-2.5 flex-1 min-w-[200px] max-w-md">
+          <Search className="h-4 w-4 text-brand-muted" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search by customer or order ID..."
-            className="bg-transparent text-sm outline-none w-full text-foreground placeholder:text-muted-foreground"
+            className="bg-transparent text-sm outline-none w-full text-brand-text placeholder:text-brand-muted"
           />
         </div>
         {isAdmin && (
-          <div className="flex items-center gap-2 bg-muted/50 rounded-xl px-4 py-2.5">
-            <Filter className="h-4 w-4 text-muted-foreground" />
+          <div className="flex items-center gap-2 bg-brand-mintSoft rounded-brand border border-brand-border px-4 py-2.5">
+            <Filter className="h-4 w-4 text-brand-muted" />
             <select
               value={filterBranch}
               onChange={(e) => setFilterBranch(e.target.value)}
-              className="bg-transparent text-sm outline-none text-foreground"
+              className="bg-transparent text-sm outline-none text-brand-text"
             >
               <option value="">All Branches</option>
               {uniqueBranches.map((branch) => (
@@ -692,12 +610,12 @@ export default function OrderManagementPage() {
             </select>
           </div>
         )}
-        <div className="flex items-center gap-2 bg-muted/50 rounded-xl px-4 py-2.5">
-          <Filter className="h-4 w-4 text-muted-foreground" />
+        <div className="flex items-center gap-2 bg-brand-mintSoft rounded-brand border border-brand-border px-4 py-2.5">
+          <Filter className="h-4 w-4 text-brand-muted" />
           <select
             value={filterPaymentStatus}
             onChange={(e) => setFilterPaymentStatus(e.target.value)}
-            className="bg-transparent text-sm outline-none text-foreground"
+            className="bg-transparent text-sm outline-none text-brand-text"
           >
             <option value="">All Payment Statuses</option>
             <option value="PENDING">Pending</option>
@@ -706,12 +624,12 @@ export default function OrderManagementPage() {
             <option value="REJECTED">Rejected</option>
           </select>
         </div>
-        <div className="flex items-center gap-2 bg-muted/50 rounded-xl px-4 py-2.5">
-          <Filter className="h-4 w-4 text-muted-foreground" />
+        <div className="flex items-center gap-2 bg-brand-mintSoft rounded-brand border border-brand-border px-4 py-2.5">
+          <Filter className="h-4 w-4 text-brand-muted" />
           <select
             value={filterPaymentMethod}
             onChange={(e) => setFilterPaymentMethod(e.target.value)}
-            className="bg-transparent text-sm outline-none text-foreground"
+            className="bg-transparent text-sm outline-none text-brand-text"
           >
             <option value="">All Payment Methods</option>
             <option value="GCASH">GCash / E-Wallet</option>
@@ -732,7 +650,7 @@ export default function OrderManagementPage() {
           >
             Previous Page
           </Button>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-brand-muted">
             Data page {ordersPage} of {totalOrdersPages}
           </span>
           <Button
@@ -748,145 +666,185 @@ export default function OrderManagementPage() {
         </motion.div>
       ) : null}
 
-      {/* Laundry Progress Board */}
-      <motion.div variants={item}>
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-blue-400 inline-block" />
-          Laundry Progress
-        </h2>
-        <div className="flex gap-4 overflow-x-auto pb-4">
-          {LAUNDRY_COLUMNS.map((col) => {
-            const colOrders = filteredOrders.filter((o) => o.status === col.status);
-            const currentPage = getColumnPage(col.status);
-            const totalPages = Math.max(1, Math.ceil(colOrders.length / LAUNDRY_COLUMN_PAGE_SIZE));
-            const pageStart = (Math.min(currentPage, totalPages) - 1) * LAUNDRY_COLUMN_PAGE_SIZE;
-            const pagedOrders = colOrders.slice(pageStart, pageStart + LAUNDRY_COLUMN_PAGE_SIZE);
-            return (
-              <div
-                key={col.status}
-                className={`shrink-0 w-64 rounded-2xl ${col.bgColor} border-t-4 ${col.color} p-4 min-h-[400px]`}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => void handleDrop(col.status)}
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-bold text-foreground">{col.label}</h3>
-                  <span className="text-xs font-semibold bg-card px-2 py-0.5 rounded-full text-muted-foreground">
-                    {colOrders.length}
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {pagedOrders.map(renderOrderCard)}
-                  {!colOrders.length ? (
-                    <div className="text-xs text-muted-foreground text-center py-8">
-                      No orders in this stage.
-                    </div>
-                  ) : null}
-                  {!!colOrders.length && !pagedOrders.length ? (
-                    <div className="text-xs text-muted-foreground text-center py-6">
-                      No orders on this page.
-                    </div>
-                  ) : null}
-                  {colOrders.length > LAUNDRY_COLUMN_PAGE_SIZE ? (
-                    <div className="flex items-center justify-end gap-2 pt-1">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2 text-[10px]"
-                        onClick={() => setColumnPage(col.status, Math.max(1, currentPage - 1))}
-                        disabled={currentPage === 1}
-                      >
-                        Prev
-                      </Button>
-                      <span className="text-[10px] text-muted-foreground">
-                        {Math.min(currentPage, totalPages)}/{totalPages}
-                      </span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2 text-[10px]"
-                        onClick={() => setColumnPage(col.status, Math.min(totalPages, currentPage + 1))}
-                        disabled={currentPage >= totalPages}
-                      >
-                        Next
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </motion.div>
+      {!filteredOrders.length && debouncedSearchQuery.trim() ? (
+        <motion.div variants={item} className="rounded-brand border border-brand-border bg-white p-4 text-sm text-brand-muted shadow-brand">
+          No results found
+        </motion.div>
+      ) : null}
 
-      {/* Delivery Tracking Board */}
-      <motion.div variants={item}>
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
-          <Truck className="h-3.5 w-3.5 text-purple-500" />
-          Delivery Tracking (Read-only)
-        </h2>
-        <div className="flex gap-4 overflow-x-auto pb-4">
-          {DELIVERY_COLUMNS.map((col) => {
-            const colOrders = filteredOrders.filter((o) => o.status === col.status);
-            const currentPage = getColumnPage(col.status);
-            const totalPages = Math.max(1, Math.ceil(colOrders.length / DELIVERY_COLUMN_PAGE_SIZE));
-            const pageStart = (Math.min(currentPage, totalPages) - 1) * DELIVERY_COLUMN_PAGE_SIZE;
-            const pagedOrders = colOrders.slice(pageStart, pageStart + DELIVERY_COLUMN_PAGE_SIZE);
-            return (
-              <div
-                key={col.status}
-                className={`shrink-0 w-64 rounded-2xl ${col.bgColor} border-t-4 ${col.color} p-4 min-h-[200px]`}
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-bold text-foreground">{col.label}</h3>
-                  <span className="text-xs font-semibold bg-card px-2 py-0.5 rounded-full text-muted-foreground">
-                    {colOrders.length}
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {pagedOrders.map(renderOrderCard)}
-                  {!colOrders.length ? (
-                    <div className="text-xs text-muted-foreground text-center py-8">
-                      No orders here.
-                    </div>
-                  ) : null}
-                  {!!colOrders.length && !pagedOrders.length ? (
-                    <div className="text-xs text-muted-foreground text-center py-6">
-                      No orders on this page.
-                    </div>
-                  ) : null}
-                  {colOrders.length > DELIVERY_COLUMN_PAGE_SIZE ? (
-                    <div className="flex items-center justify-end gap-2 pt-1">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2 text-[10px]"
-                        onClick={() => setColumnPage(col.status, Math.max(1, currentPage - 1))}
-                        disabled={currentPage === 1}
+      <motion.div variants={item} className="bg-white rounded-brand shadow-brand border border-brand-border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm table-modern">
+            <thead>
+              <tr className="bg-brand-mintSoft text-brand-muted text-xs uppercase tracking-wider border-b border-brand-border">
+                <th className="text-left p-4 font-medium">Order ID</th>
+                <th className="text-left p-4 font-medium">Customer</th>
+                <th className="text-left p-4 font-medium">Branch</th>
+                <th className="text-left p-4 font-medium">Service</th>
+                <th className="text-left p-4 font-medium">Load/KG</th>
+                <th className="text-left p-4 font-medium">Payment</th>
+                <th className="text-left p-4 font-medium">Status</th>
+                <th className="text-left p-4 font-medium">Driver</th>
+                <th className="text-left p-4 font-medium">Created At</th>
+                <th className="text-right p-4 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pagedOrders.map((order) => {
+                const paymentStatus = resolvePaymentStatusLabel(order);
+                const driverName = order.serviceType === "PICKUP_DELIVERY"
+                  ? (deliveryMetaByTracking[order.orderId]?.driverName || "Unassigned")
+                  : "-";
+                const nextStatuses = getAllowedStatusTransitions(order.status);
+                return (
+                  <tr key={order.id} className="border-b border-brand-border last:border-0 hover:bg-brand-mintSoft/40 transition-colors">
+                    <td className="p-4 font-mono text-xs font-semibold text-brand-navy">{order.orderId}</td>
+                    <td className="p-4">
+                      <div className="font-medium text-brand-text">{order.customerName}</div>
+                      <div className="text-xs text-brand-muted">{order.customerPhone || "-"}</div>
+                    </td>
+                    <td className="p-4 text-brand-muted">{order.branch}</td>
+                    <td className="p-4">
+                      <div className="text-brand-text">{serviceTypeLabel[order.serviceType]}</div>
+                      <div className="text-xs text-brand-muted">{order.paymentMethod || "N/A"}</div>
+                    </td>
+                    <td className="p-4 text-brand-muted">{order.estimatedWeightKg}kg</td>
+                    <td className="p-4">
+                      <span
+                        className={`text-xs font-semibold ${
+                          paymentStatus === "PAID" || paymentStatus === "VERIFIED"
+                            ? "text-green-700"
+                            : paymentStatus === "REJECTED"
+                            ? "text-destructive"
+                            : "text-brand-gold"
+                        }`}
                       >
-                        Prev
-                      </Button>
-                      <span className="text-[10px] text-muted-foreground">
-                        {Math.min(currentPage, totalPages)}/{totalPages}
+                        {paymentStatus}
                       </span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2 text-[10px]"
-                        onClick={() => setColumnPage(col.status, Math.min(totalPages, currentPage + 1))}
-                        disabled={currentPage >= totalPages}
-                      >
-                        Next
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            );
-          })}
+                    </td>
+                    <td className="p-4">
+                      <Badge variant={statusBadgeVariant(order.status)} className="text-[11px]">
+                        {statusLabel[order.status]}
+                      </Badge>
+                    </td>
+                    <td className="p-4 text-brand-muted">{driverName}</td>
+                    <td className="p-4 text-brand-muted text-xs">{formatDateTime(order.createdAt)}</td>
+                    <td className="p-4">
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-2.5 text-xs shrink-0"
+                          onClick={() => void openDetails(order.id)}
+                        >
+                          <Eye className="h-3.5 w-3.5" /> View
+                        </Button>
+                        {nextStatuses.length ? (
+                          <div className="flex items-center gap-1.5">
+                            <select
+                              value={statusDrafts[order.id] || nextStatuses[0]}
+                              onChange={(e) =>
+                                setStatusDrafts((prev) => ({
+                                  ...prev,
+                                  [order.id]: e.target.value as ApiOrderStatus,
+                                }))
+                              }
+                              className="h-8 rounded-brand border border-brand-border bg-white px-2 text-xs text-brand-text"
+                            >
+                              {nextStatuses.map((nextStatus) => (
+                                <option key={nextStatus} value={nextStatus}>
+                                  {statusLabel[nextStatus]}
+                                </option>
+                              ))}
+                            </select>
+                            <Button
+                              size="sm"
+                              className="h-8 px-2.5 text-xs bg-brand-navy text-white hover:bg-brand-navyDark"
+                              onClick={() => void applyStatusUpdate(order)}
+                              disabled={statusUpdatingId === order.id}
+                            >
+                              {statusUpdatingId === order.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                              Update
+                            </Button>
+                          </div>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px] text-brand-muted border-brand-border">
+                            Closed
+                          </Badge>
+                        )}
+                        {order.status === "PENDING" ? (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="h-8 px-2.5 text-xs shrink-0"
+                            onClick={async () => {
+                              try {
+                                await ordersApi.cancel(order.id);
+                                toast.success("Order cancelled successfully.");
+                                await loadOrders(Math.max(0, ordersPage - 1), true);
+                              } catch (err: any) {
+                                toast.error(err?.message || "Unable to cancel order.");
+                              }
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!pagedOrders.length ? (
+                <tr>
+                  <td colSpan={10} className="p-6 text-center text-sm text-brand-muted">
+                    No orders found for the current filters.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-brand-border px-4 py-3">
+          <div className="flex items-center gap-2 text-xs text-brand-muted">
+            <span>Rows per page</span>
+            <select
+              value={tablePageSize}
+              onChange={(e) => {
+                const nextSize = Number(e.target.value) || 10;
+                setTablePageSize(nextSize);
+                setTablePage(1);
+              }}
+              className="h-8 rounded-brand border border-brand-border bg-white px-2 text-xs text-brand-text"
+            >
+              {TABLE_PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 px-3 text-xs"
+              onClick={() => setTablePage(Math.max(1, safeTablePage - 1))}
+              disabled={safeTablePage <= 1}
+            >
+              Previous
+            </Button>
+            <span className="text-xs text-brand-muted">Page {safeTablePage} of {totalTablePages}</span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 px-3 text-xs"
+              onClick={() => setTablePage(Math.min(totalTablePages, safeTablePage + 1))}
+              disabled={safeTablePage >= totalTablePages}
+            >
+              Next
+            </Button>
+          </div>
         </div>
       </motion.div>
 

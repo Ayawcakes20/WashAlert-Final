@@ -342,6 +342,51 @@ public class DeliveryService {
         log.info("[DeliveryService] Initialized Phase B for order {}, code: {}", order.getTrackingNumber(), saved.getConfirmationCode());
     }
 
+    @Transactional
+    public void syncWithOrderStatus(JobOrder order, String changedBy) {
+        if (order == null || order.getServiceType() != ServiceType.PICKUP_DELIVERY) return;
+        String trackingNumber = normalizeTracking(order.getTrackingNumber());
+        DeliveryStatus targetStatus = null;
+
+        if (order.getStatus() == JobOrderStatus.CANCELLED) {
+            targetStatus = DeliveryStatus.CANCELLED;
+        } else if (order.getStatus() == JobOrderStatus.DELIVERED) {
+            targetStatus = DeliveryStatus.DELIVERED;
+        }
+
+        if (targetStatus == null) return;
+
+        List<DeliveryOrder> deliveries = deliveryRepository.findByJobOrder_TrackingNumber(trackingNumber);
+        if (deliveries.isEmpty()) return;
+
+        boolean changed = false;
+        for (DeliveryOrder delivery : deliveries) {
+            DeliveryStatus currentStatus = delivery.getStatus();
+            if (currentStatus == null || currentStatus == targetStatus || isTerminalDeliveryState(currentStatus)) {
+                continue;
+            }
+            if (targetStatus == DeliveryStatus.DELIVERED && currentStatus == DeliveryStatus.CANCELLED) {
+                continue;
+            }
+            delivery.setStatus(targetStatus);
+            changed = true;
+        }
+
+        if (!changed) return;
+
+        List<DeliveryOrder> saved = deliveryRepository.saveAll(deliveries);
+        for (DeliveryOrder delivery : saved) {
+            syncToFirestore(delivery);
+        }
+        log.info(
+                "[DeliveryService] Synced {} deliveries for order {} to {} (updated by {})",
+                saved.size(),
+                trackingNumber,
+                targetStatus,
+                blankToNull(changedBy) != null ? changedBy : "system"
+        );
+    }
+
     private String generateConfirmationCode() {
         return String.format("%04d", random.nextInt(10000));
     }
@@ -1123,5 +1168,11 @@ public class DeliveryService {
             case IN_TRANSIT         -> to == DeliveryStatus.DELIVERED || to == DeliveryStatus.FAILED;
             default -> false;
         };
+    }
+
+    private boolean isTerminalDeliveryState(DeliveryStatus status) {
+        return status == DeliveryStatus.DELIVERED
+                || status == DeliveryStatus.CANCELLED
+                || status == DeliveryStatus.FAILED;
     }
 }
