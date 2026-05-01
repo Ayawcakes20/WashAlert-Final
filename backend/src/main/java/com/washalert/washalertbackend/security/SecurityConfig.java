@@ -84,9 +84,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST,
                                 "/api/auth/register",
                                 "/api/auth/login",
-                                "/api/auth/firebase-login-otp/request",
-                                "/api/auth/firebase-login-otp/resend",
-                                "/api/auth/firebase-login-otp/verify",
+                                "/api/auth/firebase-login-otp/**",
                                 "/api/auth/firebase/complete-first-login-password",
                                 "/api/auth/mobile/register-profile",
                                 "/api/auth/complete-invitation",
@@ -101,6 +99,8 @@ public class SecurityConfig {
                                 "/api/payments/webhook",
                                 "/api/support/chat"
                         ).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/test").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/auth/firebase-login-otp/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/bookings/slots").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/orders/track/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/payments/track/**").permitAll()

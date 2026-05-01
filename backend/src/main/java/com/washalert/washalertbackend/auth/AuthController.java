@@ -20,6 +20,11 @@ import org.springframework.security.web.context.HttpSessionSecurityContextReposi
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -75,6 +80,7 @@ public class AuthController {
             @Valid @RequestBody FirebaseLoginOtpRequest req,
             HttpServletRequest request
     ) {
+        log.info("[AUTH][LOGIN][OTP] endpoint start path={} method={}", request.getRequestURI(), request.getMethod());
         String incomingToken = req.idToken();
         String tokenSnapshot = incomingToken == null ? "" : incomingToken.substring(0, Math.min(20, incomingToken.length()));
         log.info(
@@ -87,13 +93,21 @@ public class AuthController {
         );
         User user;
         try {
+            log.info("[AUTH][LOGIN][OTP] before Firebase token verification");
             user = authService.resolveFirebaseUserForLoginChallenge(req.idToken(), req.platform(), req.selectedBranch());
+            log.info("[AUTH][LOGIN][OTP] after Firebase token verification userId={} role={} email={}",
+                    user.getId(), user.getRole(), maskEmail(user.getEmail()));
         } catch (IllegalArgumentException ex) {
+            log.warn("[AUTH][LOGIN][OTP] Firebase verification failed: {}", ex.getMessage());
             return ResponseEntity.status(403).body(apiError(request, 403, ex.getMessage()));
+        } catch (Exception ex) {
+            log.error("[AUTH][LOGIN][OTP] Unexpected error during Firebase verification", ex);
+            return ResponseEntity.status(500).body(apiError(request, 500, "Unable to verify login token right now."));
         }
 
         try {
             if (user.getRole() == com.washalert.washalertbackend.user.Role.DRIVER && user.isMustChangePassword()) {
+                log.info("[AUTH][LOGIN][OTP] driver requires password update userId={}", user.getId());
                 return ResponseEntity.ok(new FirebaseLoginOtpChallengeResponse(
                         maskEmail(user.getEmail()),
                         "Password update required before continuing.",
@@ -103,17 +117,51 @@ public class AuthController {
                 ));
             }
 
-            otpService.sendForLogin(user);
-            return ResponseEntity.ok(new FirebaseLoginOtpChallengeResponse(
+            log.info("[AUTH][LOGIN][OTP] before sending OTP email userId={} email={}", user.getId(), maskEmail(user.getEmail()));
+            CompletableFuture.runAsync(() -> otpService.sendForLogin(user)).get(20, TimeUnit.SECONDS);
+            log.info("[AUTH][LOGIN][OTP] after sending OTP email userId={}", user.getId());
+
+            FirebaseLoginOtpChallengeResponse response = new FirebaseLoginOtpChallengeResponse(
                     maskEmail(user.getEmail()),
                     "Login OTP sent to email.",
                     otpService.getTtlMinutes() * 60,
                     otpService.getResendCooldownSeconds(),
                     false
+            );
+            log.info("[AUTH][LOGIN][OTP] before returning response userId={} ttlSeconds={} cooldownSeconds={}",
+                    user.getId(), otpService.getTtlMinutes() * 60, otpService.getResendCooldownSeconds());
+            return ResponseEntity.ok(response);
+        } catch (TimeoutException ex) {
+            log.error("[AUTH][LOGIN][OTP] OTP send timed out for userId={}", user.getId(), ex);
+            return ResponseEntity.status(504).body(apiError(
+                    request,
+                    504,
+                    "OTP request timed out while sending email. Please try again."
+            ));
+        } catch (ExecutionException ex) {
+            Throwable root = ex.getCause() != null ? ex.getCause() : ex;
+            log.error("[AUTH][LOGIN][OTP] OTP send execution failed for userId={}: {}", user.getId(), root.getMessage(), root);
+            return ResponseEntity.status(503).body(apiError(
+                    request,
+                    503,
+                    mailFailureMessage(
+                            root instanceof Exception ? (Exception) root : new Exception(root),
+                            "Login OTP email could not be sent. Please retry in a moment."
+                    )
+            ));
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            log.error("[AUTH][LOGIN][OTP] OTP send interrupted for userId={}", user.getId(), ex);
+            return ResponseEntity.status(503).body(apiError(
+                    request,
+                    503,
+                    "OTP send was interrupted. Please try again."
             ));
         } catch (IllegalArgumentException ex) {
+            log.warn("[AUTH][LOGIN][OTP] OTP send rejected for userId={}: {}", user.getId(), ex.getMessage());
             return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
         } catch (Exception mailEx) {
+            log.error("[AUTH][LOGIN][OTP] OTP send failed for userId={}", user.getId(), mailEx);
             return ResponseEntity.status(503).body(apiError(
                     request,
                     503,
@@ -123,6 +171,14 @@ public class AuthController {
                     )
             ));
         }
+    }
+
+    @GetMapping("/firebase-login-otp/ping")
+    public ResponseEntity<Map<String, Object>> pingFirebaseLoginOtp() {
+        return ResponseEntity.ok(Map.of(
+                "ok", true,
+                "route", "firebase-login-otp"
+        ));
     }
 
     @PostMapping("/firebase-login-otp/verify")
