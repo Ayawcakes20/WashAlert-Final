@@ -75,6 +75,16 @@ public class AuthController {
             @Valid @RequestBody FirebaseLoginOtpRequest req,
             HttpServletRequest request
     ) {
+        String incomingToken = req.idToken();
+        String tokenSnapshot = incomingToken == null ? "" : incomingToken.substring(0, Math.min(20, incomingToken.length()));
+        log.info(
+                "[AUTH][LOGIN][OTP] request received platform={} idTokenNull={} idTokenBlank={} idTokenLength={} idTokenPrefix20='{}'",
+                req.platform(),
+                incomingToken == null,
+                incomingToken != null && incomingToken.isBlank(),
+                incomingToken == null ? 0 : incomingToken.length(),
+                tokenSnapshot
+        );
         User user;
         try {
             user = authService.resolveFirebaseUserForLoginChallenge(req.idToken(), req.platform(), req.selectedBranch());

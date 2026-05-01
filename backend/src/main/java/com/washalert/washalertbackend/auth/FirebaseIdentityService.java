@@ -4,6 +4,8 @@ import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.*;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -16,6 +18,7 @@ import java.util.Map;
 
 @Service
 public class FirebaseIdentityService {
+    private static final Logger log = LoggerFactory.getLogger(FirebaseIdentityService.class);
 
     private final FirebaseApp firebaseApp;
     private static final int INVITE_BOOTSTRAP_PASSWORD_BYTES = 16;
@@ -30,12 +33,42 @@ public class FirebaseIdentityService {
 
     public FirebaseToken verifyIdToken(String idToken) {
         if (idToken == null || idToken.isBlank()) {
+            log.warn("[AUTH][FIREBASE] verifyIdToken rejected: token is null/blank");
             throw new IllegalArgumentException("Firebase ID token is required.");
         }
 
+        String normalizedToken = normalizeIncomingIdToken(idToken);
+        String configuredProjectId = firebaseApp != null && firebaseApp.getOptions() != null
+                ? firebaseApp.getOptions().getProjectId()
+                : "<no-firebase-app>";
+
+        log.info(
+                "[AUTH][FIREBASE] verifyIdToken start nullOrBlank={} length={} prefix20='{}' firebaseProjectId='{}'",
+                normalizedToken.isBlank(),
+                normalizedToken.length(),
+                snapshotPrefix(normalizedToken),
+                configuredProjectId
+        );
+
         try {
-            return firebaseAuth().verifyIdToken(idToken, true);
+            FirebaseToken token = firebaseAuth().verifyIdToken(normalizedToken, true);
+            Object aud = token.getClaims() == null ? null : token.getClaims().get("aud");
+            Object exp = token.getClaims() == null ? null : token.getClaims().get("exp");
+            log.info(
+                    "[AUTH][FIREBASE] verifyIdToken success uid={} aud={} iss={} exp={}",
+                    token.getUid(),
+                    aud,
+                    token.getIssuer(),
+                    exp
+            );
+            return token;
         } catch (FirebaseAuthException ex) {
+            log.error(
+                    "[AUTH][FIREBASE] verifyIdToken failed class={} authCode={} message={}",
+                    ex.getClass().getName(),
+                    ex.getAuthErrorCode(),
+                    ex.getMessage()
+            );
             throw new IllegalArgumentException("Invalid Firebase ID token.");
         }
     }
@@ -182,8 +215,22 @@ public class FirebaseIdentityService {
 
     private FirebaseAuth firebaseAuth() {
         if (firebaseApp == null) {
+            log.error("[AUTH][FIREBASE] FirebaseApp is null during FirebaseAuth access.");
             throw new IllegalStateException("Firebase authentication is not configured.");
         }
         return FirebaseAuth.getInstance(firebaseApp);
+    }
+
+    private String normalizeIncomingIdToken(String idToken) {
+        String normalized = idToken == null ? "" : idToken.trim();
+        if (normalized.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            normalized = normalized.substring(7).trim();
+        }
+        return normalized;
+    }
+
+    private String snapshotPrefix(String value) {
+        if (value == null || value.isBlank()) return "";
+        return value.substring(0, Math.min(20, value.length()));
     }
 }
