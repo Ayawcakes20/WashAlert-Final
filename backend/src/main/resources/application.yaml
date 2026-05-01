@@ -1,5 +1,5 @@
 server:
-  port: ${SERVER_PORT:8081}
+  port: ${SERVER_PORT:8080}
   servlet:
     session:
       cookie:
@@ -47,9 +47,9 @@ spring:
 washalert:
 
   gemini:
-    api-key: ${GEMINI_API_KEY:${GOOGLE_API_KEY:}}
-    model: ${GEMINI_MODEL:gemini-1.5-flash}
-    base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com/v1beta}
+    api-key: AIzaSyDHMgAqr_I-nUG2vnEgJPW5n2eqw29dFc0
+    model: gemini-2.5-flash
+    base-url: https://generativelanguage.googleapis.com/v1beta
 
   paymongo:
     secret-key: ${PAYMONGO_SECRET_KEY}

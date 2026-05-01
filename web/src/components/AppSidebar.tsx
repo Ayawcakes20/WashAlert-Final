@@ -60,7 +60,7 @@ export function AppSidebar() {
         { title: "Order Management", url: "/orders", icon: ClipboardList, visible: !isAdmin },
         { title: "Predictive Inventory", url: "/inventory", icon: Package, visible: true },
         { title: "AI Analytics & Reports", url: "/analytics", icon: BarChart3, visible: isAdmin },
-        { title: "AI Chat Support", url: "/chat-support", icon: MessageCircle, visible: true },
+        { title: "IkotAsk", url: "/chat-support", icon: MessageCircle, visible: true },
         { title: "Announcements", url: "/announcements", icon: Megaphone, visible: true },
       ].filter((item) => item.visible),
     [isAdmin],

@@ -28,10 +28,15 @@ const createSupportSessionId = () => `mobile-${Date.now()}-${Math.random().toStr
 
 const getSupportSessionId = async () => {
   try {
-    const existing = await AsyncStorage.getItem(SUPPORT_SESSION_KEY);
+    const userRaw = await AsyncStorage.getItem(USER_STORAGE_KEY);
+    const user = userRaw ? JSON.parse(userRaw) : null;
+    const userId = user?.uid || user?.id || 'anonymous';
+    const userSessionKey = `${SUPPORT_SESSION_KEY}_${userId}`;
+    
+    const existing = await AsyncStorage.getItem(userSessionKey);
     if (existing) return existing;
     const next = createSupportSessionId();
-    await AsyncStorage.setItem(SUPPORT_SESSION_KEY, next);
+    await AsyncStorage.setItem(userSessionKey, next);
     return next;
   } catch {
     return createSupportSessionId();
@@ -1392,6 +1397,10 @@ export const support = {
         sessionId,
       },
     });
+  },
+  getHistory: async () => {
+    const sessionId = await getSupportSessionId();
+    return await apiRequest(`/api/support/history?sessionId=${encodeURIComponent(sessionId)}`);
   },
 };
 

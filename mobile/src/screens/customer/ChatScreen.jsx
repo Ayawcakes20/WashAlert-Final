@@ -1,9 +1,10 @@
-import React, { useState, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
 import { support } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 const QUICK_REPLIES = [
   'How much is wash and dry?',
@@ -17,14 +18,50 @@ const QUICK_REPLIES = [
 const TRACKING_RE = /WA-\d+/i;
 
 const ChatScreen = ({ navigation }) => {
+  const { user } = useAuth();
   const scrollRef = useRef();
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [messages, setMessages] = useState([
-    { id: 1, text: "Hi! I'm IkotAsk, your WashAlert assistant. How can I help you today?", sender: 'bot', time: 'Just now' },
-  ]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [messages, setMessages] = useState([]);
 
   const msgId = useRef(2);
+
+  useEffect(() => {
+    loadChatHistory();
+  }, []);
+
+  const loadChatHistory = async () => {
+    try {
+      setIsLoading(true);
+      console.log('[Chat] Loading chat history...');
+      const history = await support.getHistory();
+      console.log('[Chat] History response:', history);
+      
+      if (history?.messages && history.messages.length > 0) {
+        console.log('[Chat] Found', history.messages.length, 'messages');
+        const loadedMessages = history.messages.map((msg, index) => ({
+          id: msg.id || index + 1,
+          text: msg.message,
+          sender: msg.senderType === 'USER' ? 'user' : 'bot',
+          time: msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+        }));
+        setMessages(loadedMessages);
+        msgId.current = loadedMessages.length + 1;
+      } else {
+        console.log('[Chat] No history found, showing welcome message');
+        setMessages([{ id: 1, text: "Hi! I'm IkotAsk, your WashAlert assistant. How can I help you today?", sender: 'bot', time: 'Just now' }]);
+      }
+    } catch (error) {
+      console.error('[Chat] Failed to load history:', error);
+      setMessages([{ id: 1, text: "Hi! I'm IkotAsk, your WashAlert assistant. How can I help you today?", sender: 'bot', time: 'Just now' }]);
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => {
+        scrollRef.current?.scrollToEnd({ animated: false });
+      }, 100);
+    }
+  };
 
   const sendMessage = async (text) => {
     const trimmed = String(text || '').trim();
@@ -62,10 +99,11 @@ const ChatScreen = ({ navigation }) => {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView
         style={styles.keyboardWrap}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4 }}>
@@ -85,34 +123,46 @@ const ChatScreen = ({ navigation }) => {
           style={styles.chatArea}
           contentContainerStyle={styles.chatContent}
         >
-          {messages.map((msg) => (
-            <View key={msg.id} style={[styles.msgRow, msg.sender === 'user' ? styles.msgRowUser : styles.msgRowBot]}>
-              {msg.sender === 'bot' && (
-                <View style={[styles.avatarBox, { backgroundColor: 'hsla(174, 79%, 44%, 0.1)' }]}>
-                  <Ionicons name="chatbubbles" size={12} color={colors.accent} />
+          {isLoading ? (
+            <View style={styles.loadingContainer}>
+              <Text style={styles.loadingText}>Loading chat history...</Text>
+            </View>
+          ) : (
+            <>
+              {messages.map((msg) => (
+                <View key={msg.id} style={[styles.msgRow, msg.sender === 'user' ? styles.msgRowUser : styles.msgRowBot]}>
+                  {msg.sender === 'bot' && (
+                    <View style={[styles.avatarBox, { backgroundColor: colors.mintSoft }]}>
+                      <Ionicons name="chatbubbles" size={12} color={colors.accent} />
+                    </View>
+                  )}
+
+                  <View style={[styles.msgBubble, msg.sender === 'user' ? styles.bubbleUser : styles.bubbleBot]}>
+                    <Text style={[styles.msgText, msg.sender === 'user' ? styles.msgTextUser : styles.msgTextBot]} selectable={true}>{msg.text}</Text>
+                  </View>
+
+                  {msg.sender === 'user' && (
+                    user?.profileImageUrl ? (
+                      <Image source={{ uri: user.profileImageUrl }} style={styles.avatarImage} />
+                    ) : (
+                      <View style={[styles.avatarBox, { backgroundColor: colors.goldSoft }]}>
+                        <Ionicons name="person" size={12} color={colors.primary} />
+                      </View>
+                    )
+                  )}
+                </View>
+              ))}
+              {isTyping && (
+                <View style={[styles.msgRow, styles.msgRowBot]}>
+                  <View style={[styles.avatarBox, { backgroundColor: colors.mintSoft }]}>
+                    <Ionicons name="chatbubbles" size={12} color={colors.accent} />
+                  </View>
+                  <View style={[styles.msgBubble, styles.bubbleBot]}>
+                    <Text style={styles.msgTextBot}>Typing...</Text>
+                  </View>
                 </View>
               )}
-
-              <View style={[styles.msgBubble, msg.sender === 'user' ? styles.bubbleUser : styles.bubbleBot]}>
-                <Text style={[styles.msgText, msg.sender === 'user' ? styles.msgTextUser : styles.msgTextBot]}>{msg.text}</Text>
-              </View>
-
-              {msg.sender === 'user' && (
-                <View style={[styles.avatarBox, { backgroundColor: 'hsla(224, 82%, 48%, 0.1)' }]}>
-                  <Ionicons name="person" size={12} color={colors.primary} />
-                </View>
-              )}
-            </View>
-          ))}
-          {isTyping && (
-            <View style={[styles.msgRow, styles.msgRowBot]}>
-              <View style={[styles.avatarBox, { backgroundColor: 'hsla(174, 79%, 44%, 0.1)' }]}>
-                <Ionicons name="chatbubbles" size={12} color={colors.accent} />
-              </View>
-              <View style={[styles.msgBubble, styles.bubbleBot]}>
-                <Text style={styles.msgTextBot}>Typing...</Text>
-              </View>
-            </View>
+            </>
           )}
         </ScrollView>
 
@@ -152,8 +202,8 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   keyboardWrap: { flex: 1 },
 
-  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: colors.border, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
-  headerAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'hsla(174, 79%, 44%, 0.1)', alignItems: 'center', justifyContent: 'center', marginHorizontal: 12 },
+  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: colors.border, shadowColor: colors.navy, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
+  headerAvatar: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.mintSoft, alignItems: 'center', justifyContent: 'center', marginHorizontal: 12 },
   headerInfo: { flex: 1 },
   headerName: { fontSize: 14, fontWeight: 'bold', color: colors.text },
   headerOnline: { fontSize: 10, fontWeight: 'bold', color: colors.success },
@@ -165,20 +215,24 @@ const styles = StyleSheet.create({
   msgRowBot: { justifyContent: 'flex-start' },
 
   avatarBox: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  msgBubble: { maxWidth: '75%', paddingHorizontal: 16, paddingVertical: 12 },
-  bubbleUser: { backgroundColor: colors.primary, borderRadius: 16, borderBottomRightRadius: 4 },
-  bubbleBot: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, borderBottomLeftRadius: 4 },
+  avatarImage: { width: 28, height: 28, borderRadius: 14 },
+  msgBubble: { maxWidth: '78%', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 16 },
+  bubbleUser: { backgroundColor: colors.primary, borderBottomRightRadius: 8 },
+  bubbleBot: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderBottomLeftRadius: 8 },
   msgText: { fontSize: 14, lineHeight: 20 },
   msgTextUser: { color: colors.card },
   msgTextBot: { color: colors.text },
 
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 32 },
+  loadingText: { fontSize: 14, color: colors.textSecondary },
+
   quickRepliesWrap: { paddingHorizontal: 16, paddingBottom: 8 },
-  qrBtn: { backgroundColor: 'hsla(224, 82%, 48%, 0.05)', borderWidth: 1, borderColor: 'hsla(224, 82%, 48%, 0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100, marginRight: 8 },
+  qrBtn: { backgroundColor: colors.goldSoft, borderWidth: 1, borderColor: colors.gold, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 100, marginRight: 8 },
   qrText: { color: colors.primary, fontSize: 12, fontWeight: '500' },
 
   inputBox: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.border, gap: 8 },
-  inputField: { flex: 1, backgroundColor: colors.background, borderRadius: 12, paddingHorizontal: 16, fontSize: 14, color: colors.text },
-  sendBtn: { width: 44, height: 44, backgroundColor: colors.primary, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  inputField: { flex: 1, backgroundColor: colors.background, borderRadius: 14, paddingHorizontal: 16, fontSize: 14, color: colors.text, borderWidth: 1, borderColor: colors.border },
+  sendBtn: { width: 48, height: 48, backgroundColor: colors.primary, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   sendBtnDisabled: { opacity: 0.5 },
 });
 

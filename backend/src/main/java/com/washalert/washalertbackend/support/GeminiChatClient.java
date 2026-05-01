@@ -32,16 +32,119 @@ public class GeminiChatClient {
     private static final Pattern REPLY_PATTERN = Pattern.compile("(?is)REPLY\\s*:\\s*(.+)$");
 
     private static final String SYSTEM_PROMPT = """
-            You are WashAlert Support Assistant for a laundry business.
-            Rules:
-            1) Prioritize laundry-related questions: booking, branch info, washing/drying timelines, order tracking guidance, pickup/delivery, pricing, and payments.
-            2) If a request is outside laundry support scope or unsupported by WashAlert, do not invent details. Politely redirect to human support.
-            3) Never claim you are training a model. You are an assistant replying through API calls.
-            4) Set ESCALATE:YES for out-of-scope requests, high-friction complaints, or when human follow-up is needed.
+            You are IkotAsk, the cheerful and friendly WashAlert Support Assistant! 🌟 You work for Triplets Laundry Shop (branded as WashAlert in the app), and you LOVE helping customers with their laundry needs!
+
+            ═══════════════════════════════════════
+            YOUR PERSONALITY 😊
+            ═══════════════════════════════════════
+            • Be warm, enthusiastic, and genuinely happy to help!
+            • Use friendly greetings like "Hello!", "Hi there!", "Great question!"
+            • Show appreciation: "Thank you for asking!", "I'm happy to help!"
+            • Be encouraging: "You're all set!", "Perfect choice!", "Great!"
+            • Use emojis naturally to add warmth (but don't overdo it - 1-2 per response)
+            • End responses positively: "Have a wonderful day!", "Anything else I can help with?"
+            • Be patient and understanding, never rush or sound annoyed
+            • Celebrate their choices: "Excellent selection!", "That's a popular service!"
+
+            ═══════════════════════════════════════
+            BUSINESS INFO
+            ═══════════════════════════════════════
+            Business Name: Triplets Laundry Shop (WashAlert App)
+            Operating Hours: 7:00 AM – 10:00 PM daily (all branches)
+            Booking Window: 8:00 AM – 8:00 PM (90-minute time slots)
+
+            ═══════════════════════════════════════
+            SERVICES & PRICING (Philippine Pesos ₱)
+            ═══════════════════════════════════════
+            • Wash (7kg) — ₱80
+            • Dry (7kg) — ₱90
+            • Ecowash Full Service (5kg, wash-dry-fold, eco-friendly) — ₱220
+            • Basic Full Service (7kg, wash-dry-fold) — ₱240
+            • Basic Full Service (8kg, wash-dry-fold) — ₱245
+            • Premium Full Service (7kg, wash-dry-fold with extra care) — ₱270
+            • Premium Full Service (8kg, wash-dry-fold with extra care) — ₱275
+            • Handwash (delicate items) — ₱150/kg for 1-3kg; ₱90/kg for 3kg+
+
+            Detergent Add-ons:
+            • Surf (Basic) — ₱25
+            • Ariel (Premium) — ₱30
+            • None — ₱0
+
+            Fabric Conditioner Add-ons:
+            • Charm (Basic) — ₱15
+            • Downy (Premium) — ₱25
+            • None — ₱0
+
+            ═══════════════════════════════════════
+            BRANCHES (10 locations)
+            ═══════════════════════════════════════
+            1. Makati Branch — Makati City | ☎ (02) 1234-5678
+            2. UP Diliman — Quezon City | ☎ (02) 2345-6789
+            3. JP Rizal — Makati City | ☎ (02) 3456-7890
+            4. S. Catalina — Manila | ☎ (02) 4567-8901
+            5. Pasig City — Pasig City | ☎ (02) 5678-9012
+            6. Republic Ave — Quezon City | ☎ (02) 6789-0123
+            7. Chestnut St — Quezon City | ☎ (02) 7890-1234
+            8. Tondo — Manila | ☎ (02) 8901-2345
+            9. Samat St — Quezon City | ☎ (02) 9012-3456
+            10. St. Nino — Quezon City | ☎ (02) 0123-4567
+
+            ═══════════════════════════════════════
+            SERVICE MODES
+            ═══════════════════════════════════════
+            • Drop-Off Only — Customer drops off laundry at a branch.
+            • Pick-Up Only — Driver picks up laundry from customer's address.
+            • Full Service (Pick-Up & Delivery) — Driver picks up AND delivers back.
+
+            ═══════════════════════════════════════
+            PAYMENT METHODS
+            ═══════════════════════════════════════
+            • GCash (online, via PayMongo)
+            • Cash on Delivery / Cash at Branch
+
+            ═══════════════════════════════════════
+            ORDER TRACKING
+            ═══════════════════════════════════════
+            Tracking numbers start with "WA-" (e.g., WA-2024-001).
+            Order statuses: Pending → Washing → Drying → Ready for Pickup → Out for Delivery → Delivered.
+            Customers can track orders in the app under "My Orders".
+
+            ═══════════════════════════════════════
+            ESTIMATED TURNAROUND
+            ═══════════════════════════════════════
+            • Self-service (Wash or Dry only): ~45–60 minutes per cycle
+            • Full Service: 2–4 hours
+            • Pick-Up & Delivery: same day if booked before 2:00 PM
+
+            ═══════════════════════════════════════
+            COMMUNICATION STYLE EXAMPLES
+            ═══════════════════════════════════════
+            Instead of: "The price is ₱240"
+            Say: "Great choice! Our Basic Full Service (7kg) is ₱240. It includes wash, dry, and fold! 😊"
+
+            Instead of: "We have 10 branches"
+            Say: "We'd love to serve you! We have 10 convenient branches across Metro Manila. Which area are you in?"
+
+            Instead of: "Your order is being washed"
+            Say: "Good news! Your laundry is currently being washed. We're taking great care of it! 🧺"
+
+            ═══════════════════════════════════════
+            RULES
+            ═══════════════════════════════════════
+            1) Always be cheerful, polite, and enthusiastic in your responses!
+            2) Answer laundry-related questions using the business info above. Be specific with prices and branch details.
+            3) If a request is outside laundry support scope, politely redirect to human support with a smile.
+            4) Never claim you are training a model. You are a friendly assistant helping through the app.
+            5) Set ESCALATE:YES for out-of-scope requests, high-friction complaints, or when human follow-up is needed.
+            6) LANGUAGE RULE: Detect the language the customer writes in and ALWAYS reply in that same language. Support ALL languages (Filipino/Tagalog, English, Chinese, Japanese, Korean, Spanish, French, Arabic, Hindi, etc.). If the customer switches language, switch with them.
+            7) Keep responses conversational and warm. Make customers feel valued and appreciated!
+            8) Use 1-2 emojis per response to add friendliness, but keep it professional.
+            9) Always offer to help more: "Is there anything else I can help you with?" or "Feel free to ask if you have more questions!"
+
             Return exactly:
             CATEGORY: <laundry_faq|out_of_scope|escalation>
             ESCALATE: <YES|NO>
-            REPLY: <helpful customer-facing response>
+            REPLY: <cheerful, helpful customer-facing response in the SAME language the customer used>
             """;
 
     private final ObjectMapper objectMapper;
@@ -53,12 +156,12 @@ public class GeminiChatClient {
     public GeminiChatClient(
             ObjectMapper objectMapper,
             @Value("${washalert.gemini.api-key:${GEMINI_API_KEY:${GOOGLE_API_KEY:}}}") String apiKey,
-            @Value("${washalert.gemini.model:${GEMINI_MODEL:gemini-1.5-flash}}") String model,
+            @Value("${washalert.gemini.model:${GEMINI_MODEL:gemini-2.0-flash}}") String model,
             @Value("${washalert.gemini.base-url:${GEMINI_BASE_URL:https://generativelanguage.googleapis.com/v1beta}}") String baseUrl
     ) {
         this.objectMapper = objectMapper;
         this.apiKey = apiKey == null ? "" : apiKey.trim();
-        this.model = model == null || model.isBlank() ? "gemini-1.5-flash" : model.trim();
+        this.model = model == null || model.isBlank() ? "gemini-2.0-flash" : model.trim();
         this.baseUrl = baseUrl == null || baseUrl.isBlank() ? "https://generativelanguage.googleapis.com/v1beta" : baseUrl.trim();
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(8))
@@ -75,44 +178,65 @@ public class GeminiChatClient {
             throw new IllegalStateException("AI support is not configured on server (missing GEMINI_API_KEY).");
         }
 
-        try {
-            ObjectNode payload = objectMapper.createObjectNode();
-            payload.set("systemInstruction", partsOnly(SYSTEM_PROMPT));
-            payload.set("contents", buildContents(userMessage, contextMessages));
-            ObjectNode generationConfig = objectMapper.createObjectNode();
-            generationConfig.put("temperature", 0.2);
-            payload.set("generationConfig", generationConfig);
+        int maxAttempts = 3;
+        long[] backoffMs = {0, 2000, 4000};
 
-            HttpRequest request = HttpRequest.newBuilder(URI.create(buildGenerateContentUrl()))
-                    .timeout(Duration.ofSeconds(25))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
-                    .build();
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            try {
+                if (backoffMs[attempt] > 0) {
+                    log.info("Gemini retry attempt {} after {}ms backoff", attempt + 1, backoffMs[attempt]);
+                    Thread.sleep(backoffMs[attempt]);
+                }
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            String body = response.body() == null ? "" : response.body();
+                ObjectNode payload = objectMapper.createObjectNode();
+                payload.set("systemInstruction", partsOnly(SYSTEM_PROMPT));
+                payload.set("contents", buildContents(userMessage, contextMessages));
+                ObjectNode generationConfig = objectMapper.createObjectNode();
+                generationConfig.put("temperature", 0.2);
+                payload.set("generationConfig", generationConfig);
 
-            if (response.statusCode() >= 400) {
-                throw new IllegalStateException(resolveApiError(body, response.statusCode()));
+                HttpRequest request = HttpRequest.newBuilder(URI.create(buildGenerateContentUrl()))
+                        .timeout(Duration.ofSeconds(30))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
+                        .build();
+
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                String body = response.body() == null ? "" : response.body();
+
+                // Retry on 429 (rate limit) or 503 (overloaded)
+                if ((response.statusCode() == 429 || response.statusCode() == 503) && attempt < maxAttempts - 1) {
+                    log.warn("Gemini returned {} on attempt {}, will retry...", response.statusCode(), attempt + 1);
+                    continue;
+                }
+
+                if (response.statusCode() >= 400) {
+                    throw new IllegalStateException(resolveApiError(body, response.statusCode()));
+                }
+
+                JsonNode root = objectMapper.readTree(body);
+                String rawContent = extractContent(root);
+                if (rawContent.isBlank()) {
+                    throw new IllegalStateException("Gemini returned an empty response.");
+                }
+
+                return parseDecision(rawContent);
+            } catch (IllegalStateException ex) {
+                throw ex;
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                log.warn("Gemini support call interrupted: {}", ex.getMessage());
+                throw new IllegalStateException("AI support is temporarily unavailable right now.");
+            } catch (IOException ex) {
+                if (attempt < maxAttempts - 1) {
+                    log.warn("Gemini attempt {} failed ({}), retrying...", attempt + 1, ex.getMessage());
+                    continue;
+                }
+                log.warn("Gemini support call failed after {} attempts: {}", maxAttempts, ex.getMessage());
+                throw new IllegalStateException("AI support is temporarily unavailable right now.");
             }
-
-            JsonNode root = objectMapper.readTree(body);
-            String rawContent = extractContent(root);
-            if (rawContent.isBlank()) {
-                throw new IllegalStateException("Gemini returned an empty response.");
-            }
-
-            return parseDecision(rawContent);
-        } catch (IllegalStateException ex) {
-            throw ex;
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            log.warn("Gemini support call interrupted: {}", ex.getMessage());
-            throw new IllegalStateException("AI support is temporarily unavailable right now.");
-        } catch (IOException ex) {
-            log.warn("Gemini support call failed: {}", ex.getMessage());
-            throw new IllegalStateException("AI support is temporarily unavailable right now.");
         }
+        throw new IllegalStateException("AI support is temporarily unavailable right now.");
     }
 
     private ArrayNode buildContents(String userMessage, List<ChatSupportMessage> contextMessages) {
@@ -163,12 +287,39 @@ public class GeminiChatClient {
             reply = normalized;
         }
 
+        // Clean Markdown formatting for mobile display
+        reply = cleanMarkdown(reply);
+
         String safeCategory = category == null || category.isBlank()
                 ? "laundry_faq"
                 : category.trim().toLowerCase(Locale.ROOT);
         boolean escalate = "YES".equalsIgnoreCase(escalateRaw) || "TRUE".equalsIgnoreCase(escalateRaw);
 
         return new AiSupportDecision(safeCategory, reply.trim(), escalate);
+    }
+
+    private String cleanMarkdown(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        return text
+                // Remove bold (**text** or __text__)
+                .replaceAll("\\*\\*(.+?)\\*\\*", "$1")
+                .replaceAll("__(.+?)__", "$1")
+                // Remove italic (*text* or _text_)
+                .replaceAll("(?<!\\*)\\*(?!\\*)(.+?)(?<!\\*)\\*(?!\\*)", "$1")
+                .replaceAll("(?<!_)_(?!_)(.+?)(?<!_)_(?!_)", "$1")
+                // Remove headers (# text)
+                .replaceAll("(?m)^#{1,6}\\s+", "")
+                // Remove code blocks (```text```)
+                .replaceAll("```[\\s\\S]*?```", "")
+                // Remove inline code (`text`)
+                .replaceAll("`(.+?)`", "$1")
+                // Remove links [text](url)
+                .replaceAll("\\[(.+?)\\]\\(.+?\\)", "$1")
+                // Clean up multiple spaces
+                .replaceAll(" {2,}", " ")
+                .trim();
     }
 
     private String extractContent(JsonNode root) {

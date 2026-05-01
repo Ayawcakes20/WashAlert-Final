@@ -161,6 +161,16 @@ public class GlobalExceptionHandler {
         };
     }
 
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public ResponseEntity<ApiError> noResourceFound(org.springframework.web.servlet.resource.NoResourceFoundException ex, HttpServletRequest req) {
+        return build(HttpStatus.NOT_FOUND, "Resource not found", req);
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotAcceptableException.class)
+    public ResponseEntity<String> mediaTypeNotAcceptable(org.springframework.web.HttpMediaTypeNotAcceptableException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE).body("");
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> fallback(Exception ex, HttpServletRequest req) {
         ex.printStackTrace();
