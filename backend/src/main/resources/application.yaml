@@ -22,15 +22,19 @@ spring:
 
   mail:
     host: ${MAIL_HOST:smtp.resend.com}
-    port: ${MAIL_PORT:465}
+    port: ${MAIL_PORT:587}
     username: ${MAIL_USERNAME}
     password: ${MAIL_PASSWORD}
     properties:
       mail:
         smtp:
           auth: true
-          ssl:
+          starttls:
             enable: true
+            required: true
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000
 
   security:
     oauth2:
@@ -47,7 +51,7 @@ spring:
 washalert:
 
   gemini:
-    api-key: AIzaSyDHMgAqr_I-nUG2vnEgJPW5n2eqw29dFc0
+    api-key: ${GEMINI_API_KEY:${GOOGLE_API_KEY:}}
     model: gemini-2.5-flash
     base-url: https://generativelanguage.googleapis.com/v1beta
 
