@@ -51,7 +51,9 @@ public class FirebaseIdentityService {
         );
 
         try {
-            FirebaseToken token = firebaseAuth().verifyIdToken(normalizedToken, true);
+            // Use non-revocation verification for login OTP bootstrap to avoid
+            // extra Auth API dependencies during project/API propagation.
+            FirebaseToken token = firebaseAuth().verifyIdToken(normalizedToken);
             Object aud = token.getClaims() == null ? null : token.getClaims().get("aud");
             Object exp = token.getClaims() == null ? null : token.getClaims().get("exp");
             log.info(
@@ -63,13 +65,16 @@ public class FirebaseIdentityService {
             );
             return token;
         } catch (FirebaseAuthException ex) {
+            String reason = ex.getAuthErrorCode() != null
+                    ? ex.getAuthErrorCode().name()
+                    : "VERIFICATION_FAILED";
             log.error(
                     "[AUTH][FIREBASE] verifyIdToken failed class={} authCode={} message={}",
                     ex.getClass().getName(),
                     ex.getAuthErrorCode(),
                     ex.getMessage()
             );
-            throw new IllegalArgumentException("Invalid Firebase ID token.");
+            throw new IllegalArgumentException("Firebase ID token verification failed (" + reason + ").");
         }
     }
 
