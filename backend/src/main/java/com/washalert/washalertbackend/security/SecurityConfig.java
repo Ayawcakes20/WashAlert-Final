@@ -80,11 +80,12 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
+                        .requestMatchers("/test").permitAll()
+                        .requestMatchers("/api/auth/firebase-login-otp/**").permitAll()
 
                         .requestMatchers(HttpMethod.POST,
                                 "/api/auth/register",
                                 "/api/auth/login",
-                                "/api/auth/firebase-login-otp/**",
                                 "/api/auth/firebase/complete-first-login-password",
                                 "/api/auth/mobile/register-profile",
                                 "/api/auth/complete-invitation",
@@ -99,8 +100,6 @@ public class SecurityConfig {
                                 "/api/payments/webhook",
                                 "/api/support/chat"
                         ).permitAll()
-                        .requestMatchers(HttpMethod.GET, "/test").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/auth/firebase-login-otp/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/bookings/slots").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/orders/track/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/payments/track/**").permitAll()
@@ -113,9 +112,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/machines/**").hasAnyRole("ADMIN", "STAFF")
                         .requestMatchers("/api/orders/**").hasAnyRole("ADMIN", "STAFF")
-
-                        .requestMatchers("/api/**").authenticated()
-                        .anyRequest().permitAll()
+                        .anyRequest().authenticated()
                 );
 
         return http.build();
