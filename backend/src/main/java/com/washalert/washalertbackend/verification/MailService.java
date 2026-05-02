@@ -2,7 +2,6 @@ package com.washalert.washalertbackend.verification;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -10,9 +9,16 @@ import org.springframework.mail.MailAuthenticationException;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestTemplate;
 
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -23,6 +29,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class MailService {
     private static final Logger log = LoggerFactory.getLogger(MailService.class);
     private static final AtomicInteger LOGIN_OTP_WORKER_COUNTER = new AtomicInteger(1);
+    private static final String RESEND_EMAILS_URL = "https://api.resend.com/emails";
 
     private final JavaMailSender mailSender;
     private final ThreadPoolExecutor loginOtpExecutor = new ThreadPoolExecutor(
@@ -51,6 +58,9 @@ public class MailService {
 
     @Value("${spring.mail.username:}")
     private String mailUsername;
+
+    @Value("${RESEND_API_KEY:}")
+    private String resendApiKey;
 
     public MailService(JavaMailSender mailSender) {
         this.mailSender = mailSender;
@@ -144,21 +154,47 @@ public class MailService {
                       <p style="margin:0;">If you did not attempt to sign in, ignore this email.</p>
                     </div>
                     """.formatted(code);
-
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setFrom(from);
-            helper.setTo(to);
-            helper.setSubject("WashAlert Login Verification Code");
-            // Send HTML body with plain-text fallback for clients that do not render HTML.
-            helper.setText(plainText, html);
-
-            mailSender.send(message);
+            sendViaResendApi(to, "WashAlert Login Verification Code", plainText, html);
             log.info("[MAIL][LOGIN_OTP] Login OTP email dispatch succeeded to {}", maskEmail(to));
         } catch (RuntimeException ex) {
             throw toMailDispatchException("LOGIN_OTP", to, ex);
         } catch (Exception ex) {
             throw toMailDispatchException("LOGIN_OTP", to, ex);
+        }
+    }
+
+    private void sendViaResendApi(String to, String subject, String plainText, String html) {
+        String apiKey = hasText(resendApiKey) ? resendApiKey.trim() : System.getenv("RESEND_API_KEY");
+        if (!hasText(apiKey)) {
+            log.warn("[MAIL] RESEND_API_KEY is missing. Skipping send for {}", maskEmail(to));
+            return;
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(apiKey);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, Object> body = Map.of(
+                "from", from,
+                "to", List.of(to),
+                "subject", subject,
+                "html", html,
+                "text", plainText
+        );
+
+        try {
+            RestTemplate restTemplate = new RestTemplate();
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+            ResponseEntity<String> response = restTemplate.postForEntity(RESEND_EMAILS_URL, entity, String.class);
+            if (response.getStatusCode().is2xxSuccessful()) {
+                log.info("[MAIL] Resend API success");
+            } else {
+                log.error("[MAIL] Resend API failed: {}", response.getStatusCode().value());
+                throw new IllegalStateException("Resend API returned non-success status.");
+            }
+        } catch (RestClientException ex) {
+            log.error("[MAIL] Resend API failed: {}", ex.getMessage());
+            throw new IllegalStateException("Resend API request failed.", ex);
         }
     }
 
