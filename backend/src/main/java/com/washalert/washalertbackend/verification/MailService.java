@@ -68,18 +68,20 @@ public class MailService {
 
     @PostConstruct
     void logMailConfiguration() {
+        boolean resendConfigured = hasText(resolveResendApiKey());
         log.info(
-                "[MAIL] Configuration loaded host={} port={} from={} authUserConfigured={}",
+                "[MAIL] Configuration loaded host={} port={} from={} authUserConfigured={} resendApiConfigured={}",
                 display(mailHost),
                 display(mailPort),
                 display(from),
-                hasText(mailUsername)
+                hasText(mailUsername),
+                resendConfigured
         );
 
         if (!hasText(from)) {
             log.error("[MAIL] Sender address is not configured. Set MAIL_FROM.");
         }
-        if (!hasText(mailUsername)) {
+        if (!resendConfigured && !hasText(mailUsername)) {
             log.error("[MAIL] SMTP username is not configured. Set MAIL_USERNAME (Resend expects 'resend').");
         }
     }
@@ -113,12 +115,12 @@ public class MailService {
     }
 
     public void sendLoginOtpEmail(String to, String code) {
-        validateMailBasics();
+        validateResendMailBasics();
         sendLoginOtpEmailInternal(to, code);
     }
 
     public void queueLoginOtpEmail(String to, String code) {
-        validateMailBasics();
+        validateResendMailBasics();
         String masked = maskEmail(to);
         try {
             log.info("[MAIL][LOGIN_OTP] Queueing async login OTP email for {}", masked);
@@ -164,7 +166,7 @@ public class MailService {
     }
 
     private void sendViaResendApi(String to, String subject, String plainText, String html) {
-        String apiKey = hasText(resendApiKey) ? resendApiKey.trim() : System.getenv("RESEND_API_KEY");
+        String apiKey = resolveResendApiKey();
         if (!hasText(apiKey)) {
             log.warn("[MAIL] RESEND_API_KEY is missing. Skipping send for {}", maskEmail(to));
             return;
@@ -285,6 +287,19 @@ public class MailService {
         }
     }
 
+    private void validateResendMailBasics() {
+        if (!hasText(from)) {
+            throw new IllegalStateException("Mail sender is not configured. Set MAIL_FROM.");
+        }
+        String senderEmail = extractSenderEmail(from);
+        if (!senderEmail.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            throw new IllegalStateException("MAIL_FROM is invalid. Use a valid sender email, optionally as 'Name <email@domain>'.");
+        }
+        if (senderEmail.contains("your_verified_domain") || senderEmail.endsWith("@example.com")) {
+            throw new IllegalStateException("MAIL_FROM is still using a placeholder domain. Use a verified Resend sender domain.");
+        }
+    }
+
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
     }
@@ -311,6 +326,12 @@ public class MailService {
 
     private String classifyMailFailure(Exception ex) {
         String message = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
+
+        if (message.contains("resend api")
+                || message.contains("resend")
+                || message.contains("api.resend.com")) {
+            return "Email dispatch failed at Resend API. Check RESEND_API_KEY and provider logs.";
+        }
 
         if (ex instanceof MailAuthenticationException
                 || message.contains("535")
@@ -349,5 +370,13 @@ public class MailService {
             return "*@" + email.substring(at + 1);
         }
         return local.substring(0, 2) + "***@" + email.substring(at + 1);
+    }
+
+    private String resolveResendApiKey() {
+        if (hasText(resendApiKey)) {
+            return resendApiKey.trim();
+        }
+        String envApiKey = System.getenv("RESEND_API_KEY");
+        return hasText(envApiKey) ? envApiKey.trim() : null;
     }
 }

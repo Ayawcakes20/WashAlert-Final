@@ -139,7 +139,7 @@ public class JobOrder {
     private String paymentMethod;
 
     @Convert(converter = JobOrderStatusConverter.class)
-    @Column(name = "status", nullable = false, length = 20)
+    @Column(name = "status", nullable = false, length = 40)
     private JobOrderStatus status;
 
     @ManyToOne(fetch = FetchType.LAZY)
