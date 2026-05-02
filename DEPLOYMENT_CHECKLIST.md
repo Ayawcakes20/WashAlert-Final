@@ -17,6 +17,12 @@ Use this checklist before deploying to Railway (backend) and running web/mobile 
 ## Backend Recommended Values
 - `JPA_DDL_AUTO=validate` (or `none`) once schema is stable in production.
 - Keep `JPA_DDL_AUTO=update` only while actively evolving schema and validating migrations.
+- Bootstrap admin (optional, one-time seed only):
+  - `ADMIN_BOOTSTRAP_ENABLED=false` (set to `true` only when intentionally seeding)
+  - `ADMIN_BOOTSTRAP_EMAIL`
+  - `ADMIN_BOOTSTRAP_PASSWORD`
+  - `ADMIN_BOOTSTRAP_FULL_NAME`
+  - `ADMIN_BOOTSTRAP_BRANCH`
 
 ## Frontend/Mobile Required Vars
 - Web: `VITE_API_BASE_URL`
