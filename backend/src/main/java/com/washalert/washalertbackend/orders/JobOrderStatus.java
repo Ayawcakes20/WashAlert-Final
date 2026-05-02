@@ -3,7 +3,9 @@ package com.washalert.washalertbackend.orders;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
+import java.util.Arrays;
 import java.util.Locale;
+import java.util.stream.Collectors;
 
 public enum JobOrderStatus {
     PENDING,
@@ -18,7 +20,11 @@ public enum JobOrderStatus {
     @JsonCreator
     public static JobOrderStatus fromJson(String raw) {
         if (raw == null) return null;
-        return fromValueOrFallback(raw, null);
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        return fromValueOrThrow(trimmed);
     }
 
     public static JobOrderStatus fromValueOrFallback(String raw, JobOrderStatus fallback) {
@@ -38,6 +44,20 @@ public enum JobOrderStatus {
         } catch (IllegalArgumentException ex) {
             return fallback;
         }
+    }
+
+    public static JobOrderStatus fromValueOrThrow(String raw) {
+        JobOrderStatus parsed = fromValueOrFallback(raw, null);
+        if (parsed != null) {
+            return parsed;
+        }
+        throw new IllegalArgumentException("Invalid job order status. Allowed values: " + allowedValuesCsv());
+    }
+
+    private static String allowedValuesCsv() {
+        return Arrays.stream(values())
+                .map(Enum::name)
+                .collect(Collectors.joining(", "));
     }
 
     @JsonValue
