@@ -15,8 +15,10 @@ export const API_BASE_URL = normalizeBaseUrl(rawApiBaseUrl) || normalizeBaseUrl(
 export const FIREBASE_API_KEY = (process.env.EXPO_PUBLIC_FIREBASE_API_KEY || '').trim();
 export const FIREBASE_STORAGE_BUCKET =
   (process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || 'washalert-b8ce8.firebasestorage.app').trim();
-export const FIREBASE_AUTH_DOMAIN = (process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || '').trim();
-export const FIREBASE_PROJECT_ID = (process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || '').trim();
+export const FIREBASE_AUTH_DOMAIN =
+  (process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || 'washalert-b8ce8.firebaseapp.com').trim();
+export const FIREBASE_PROJECT_ID =
+  (process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || 'washalert-b8ce8').trim();
 export const FIREBASE_MESSAGING_SENDER_ID = (process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '').trim();
 export const FIREBASE_APP_ID = (process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '').trim();
 const mapsApiKeyFromExpoConfig =
