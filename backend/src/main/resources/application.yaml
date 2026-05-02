@@ -3,8 +3,8 @@ server:
   servlet:
     session:
       cookie:
-        same-site: lax
-        secure: false
+        same-site: ${SESSION_COOKIE_SAME_SITE:none}
+        secure: ${SESSION_COOKIE_SECURE:true}
         http-only: true
 
 spring:
