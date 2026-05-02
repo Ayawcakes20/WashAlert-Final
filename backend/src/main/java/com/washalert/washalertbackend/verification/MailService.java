@@ -2,6 +2,7 @@ package com.washalert.washalertbackend.verification;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,6 +10,7 @@ import org.springframework.mail.MailAuthenticationException;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.ArrayBlockingQueue;
@@ -126,22 +128,36 @@ public class MailService {
     private void sendLoginOtpEmailInternal(String to, String code) {
         try {
             log.info("[MAIL][LOGIN_OTP] Dispatching login OTP email to {}", maskEmail(to));
-            SimpleMailMessage msg = new SimpleMailMessage();
-            msg.setFrom(from);
-            msg.setTo(to);
-            msg.setSubject("WashAlert Login Verification Code");
-            msg.setText("""
+            String plainText = """
                     Your WashAlert login code is:
 
                     %s
 
                     This code expires soon and can only be used once.
                     If you did not attempt to sign in, ignore this email.
-                    """.formatted(code));
+                    """.formatted(code);
+            String html = """
+                    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">
+                      <p style="margin:0 0 12px 0;">Your WashAlert login code is:</p>
+                      <p style="margin:0 0 16px 0;font-size:28px;font-weight:700;letter-spacing:4px;">%s</p>
+                      <p style="margin:0 0 8px 0;">This code expires soon and can only be used once.</p>
+                      <p style="margin:0;">If you did not attempt to sign in, ignore this email.</p>
+                    </div>
+                    """.formatted(code);
 
-            mailSender.send(msg);
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, "UTF-8");
+            helper.setFrom(from);
+            helper.setTo(to);
+            helper.setSubject("WashAlert Login Verification Code");
+            // Send HTML body with plain-text fallback for clients that do not render HTML.
+            helper.setText(plainText, html);
+
+            mailSender.send(message);
             log.info("[MAIL][LOGIN_OTP] Login OTP email dispatch succeeded to {}", maskEmail(to));
         } catch (RuntimeException ex) {
+            throw toMailDispatchException("LOGIN_OTP", to, ex);
+        } catch (Exception ex) {
             throw toMailDispatchException("LOGIN_OTP", to, ex);
         }
     }
