@@ -53,15 +53,8 @@ const ChatScreen = ({ navigation }) => {
           sender: msg.senderType === 'USER' ? 'user' : (msg.senderType === 'HUMAN' ? 'staff' : 'bot'),
           time: msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
         }));
-        const hasNewMessages = loadedMessages.length > msgId.current - 1;
         setMessages(loadedMessages);
         msgId.current = loadedMessages.length + 1;
-        // Auto-scroll when new messages arrive (even during silent polling)
-        if (hasNewMessages) {
-          setTimeout(() => {
-            scrollRef.current?.scrollToEnd({ animated: true });
-          }, 150);
-        }
       } else {
         if (!isSilent) {
           console.log('[Chat] No history found, showing welcome message');
@@ -77,14 +70,6 @@ const ChatScreen = ({ navigation }) => {
       }
     } finally {
       if (!isSilent) setIsLoading(false);
-      if (!isSilent) {
-        setTimeout(() => {
-          scrollRef.current?.scrollToEnd({ animated: false });
-        }, 300);
-        setTimeout(() => {
-          scrollRef.current?.scrollToEnd({ animated: false });
-        }, 600);
-      }
     }
   };
 
@@ -104,9 +89,7 @@ const ChatScreen = ({ navigation }) => {
     setInput('');
     setIsTyping(true);
 
-    setTimeout(() => {
-      scrollRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+
 
     let reply = 'Support service is temporarily unavailable. Please try again or ask for staff assistance.';
 
@@ -132,9 +115,7 @@ const ChatScreen = ({ navigation }) => {
     const botMsg = { id: `opt-b-${Date.now()}`, text: reply, sender: 'bot', time: 'Just now' };
     setMessages((prev) => [...prev, botMsg]);
 
-    setTimeout(() => {
-      scrollRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+
   };
 
   const proceedWithEscalation = async (branchName) => {
@@ -147,9 +128,7 @@ const ChatScreen = ({ navigation }) => {
     setInput('');
     setIsTyping(true);
 
-    setTimeout(() => {
-      scrollRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+
 
     let reply = 'Support service is temporarily unavailable. Please try again or ask for staff assistance.';
 
@@ -173,9 +152,7 @@ const ChatScreen = ({ navigation }) => {
     const botMsg = { id: `opt-eb-${Date.now()}`, text: reply, sender: 'bot', time: 'Just now' };
     setMessages((prev) => [...prev, botMsg]);
 
-    setTimeout(() => {
-      scrollRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+
   };
 
   return (
@@ -207,14 +184,9 @@ const ChatScreen = ({ navigation }) => {
             ref={scrollRef}
             style={styles.chatArea}
             contentContainerStyle={styles.chatContent}
-            data={isTyping ? [...messages, { id: '__typing__', sender: 'typing' }] : messages}
+            inverted
+            data={[...(isTyping ? [{ id: '__typing__', sender: 'typing' }] : []), ...messages].reverse()}
             keyExtractor={(item) => String(item.id)}
-            onContentSizeChange={() => {
-              scrollRef.current?.scrollToEnd({ animated: false });
-            }}
-            onLayout={() => {
-              scrollRef.current?.scrollToEnd({ animated: false });
-            }}
             renderItem={({ item: msg }) => {
               if (msg.sender === 'typing') {
                 return (
