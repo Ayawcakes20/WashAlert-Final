@@ -953,7 +953,12 @@ export const createOrder = async (orderData) => {
     serviceName: orderData.serviceName || 'Wash & Dry',
     isRush: !!orderData.isRush,
     distanceKm: Number(orderData.distanceKm || 0),
-    paymentMethod: normalizedPaymentMethod === 'cod' || normalizedPaymentMethod === 'cash' ? 'COD' : 'GCASH',
+    paymentMethod:
+      normalizedPaymentMethod === 'cod' ||
+      normalizedPaymentMethod === 'cash' ||
+      normalizedPaymentMethod === 'cash_on_delivery'
+        ? 'CASH'
+        : 'GCASH',
     deliveryLatitude: orderData.deliveryLatitude,
     deliveryLongitude: orderData.deliveryLongitude,
     deliveryUnitFloor: orderData.deliveryUnitFloor,

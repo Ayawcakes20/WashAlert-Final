@@ -128,6 +128,9 @@ public class GlobalExceptionHandler {
                 || lower.contains("users.email")
                 || lower.contains("for key")) {
             msg = "Email already exists.";
+        } else if (lower.contains("job_orders")
+                && lower.contains("payment_method")) {
+            msg = "Invalid payment method. Allowed values: GCASH, CASH, MAYA.";
         } else if (lower.contains("delivery_orders")
                 && (lower.contains("driver_name") || lower.contains("driver_phone"))) {
             msg = "Unable to set order status because delivery assignment data is incomplete.";

@@ -24,6 +24,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -105,6 +106,7 @@ public class BookingService {
     @Transactional
     public JobOrderResponse createBooking(CreateBookingRequest req) {
         String cleanBranch = normalizeBranch(req.branch());
+        String paymentMethod = normalizePaymentMethod(req.paymentMethod());
         validateDate(req.preferredDate());
         validateLoadSize(req.serviceName(), req.estimatedWeightKg(), req.containsBulkyItems());
 
@@ -169,7 +171,7 @@ public class BookingService {
                 .suppliesPrice(est.suppliesPrice())
                 .deliveryPrice(est.deliveryPrice())
                 .totalPrice(est.totalPrice())
-                .paymentMethod(req.paymentMethod())
+                .paymentMethod(paymentMethod)
                 .status(JobOrderStatus.PENDING)
                 .createdAt(LocalDateTime.now())
                 .build();
@@ -248,6 +250,26 @@ public class BookingService {
         if (value == null) return null;
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String normalizePaymentMethod(String rawPaymentMethod) {
+        if (rawPaymentMethod == null || rawPaymentMethod.isBlank()) {
+            throw new IllegalArgumentException("Payment method is required.");
+        }
+
+        String normalized = rawPaymentMethod
+                .trim()
+                .toUpperCase(Locale.ROOT)
+                .replace('-', '_')
+                .replace(' ', '_');
+
+        if (normalized.contains("COD")) return "CASH";
+        if (normalized.equals("CASH_ON_DELIVERY")) return "CASH";
+        if (normalized.equals("CASH")) return "CASH";
+        if (normalized.equals("GCASH")) return "GCASH";
+        if (normalized.equals("MAYA")) return "MAYA";
+
+        throw new IllegalArgumentException("Invalid payment method. Allowed values: GCASH, CASH, MAYA.");
     }
 
     private String formatTrackingNumber(Long id) {
