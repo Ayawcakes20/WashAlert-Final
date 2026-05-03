@@ -76,10 +76,21 @@ public class InventoryController {
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public List<InventoryForecastResponse> forecast(
             @RequestParam(required = false) String branch,
-            @RequestParam(required = false) Integer days,
+            @RequestParam(required = false) String days,
             @AuthenticationPrincipal AuthUserDetails principal
     ) {
-        return inventoryService.forecast(branch, days, principal);
+        return inventoryService.forecast(branch, parsePositiveIntOrNull(days), principal);
+    }
+
+    private Integer parsePositiveIntOrNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) return null;
+        try {
+            return Integer.parseInt(trimmed);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     @DeleteMapping("/items/{itemId}")

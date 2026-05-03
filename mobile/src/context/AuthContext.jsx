@@ -1,12 +1,16 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_BASE_URL, FIREBASE_API_KEY } from '../config/env';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { API_BASE_URL, FIREBASE_API_KEY, FIREBASE_PROJECT_ID } from '../config/env';
+import { auth as firebaseAuth } from '../services/firebase';
 
 const AuthContext = createContext(undefined);
 
 const USER_STORAGE_KEY = 'userData';
 const FIREBASE_SESSION_STORAGE_KEY = 'firebaseSessionData';
 const HAS_SEEN_ONBOARDING_STORAGE_KEY = 'hasSeenOnboarding';
+const EXPECTED_FIREBASE_PROJECT_ID = 'washalert-b8ce8';
+const EXPECTED_FIREBASE_ISSUER = `https://securetoken.google.com/${EXPECTED_FIREBASE_PROJECT_ID}`;
 const normalizeEmail = (email) => (email || '').trim().toLowerCase();
 const looksLikeHtml = (value) => /<!doctype html|<html[\s>]/i.test(String(value || ''));
 const looksLikeNgrokWarningPage = (value) =>
@@ -102,6 +106,60 @@ const parseResponse = async (res) => {
   }
 
   return payload;
+};
+
+const decodeBase64Url = (value = '') => {
+  const normalized = String(value).replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+  try {
+    if (typeof globalThis?.atob === 'function') {
+      return globalThis.atob(padded);
+    }
+  } catch {
+    return '';
+  }
+  return '';
+};
+
+const parseJwtPayload = (token = '') => {
+  const parts = String(token).split('.');
+  if (parts.length < 2) return {};
+  try {
+    const decoded = decodeBase64Url(parts[1]);
+    return decoded ? JSON.parse(decoded) : {};
+  } catch {
+    return {};
+  }
+};
+
+const logFirebaseTokenDiagnostics = (token, contextLabel) => {
+  const payload = parseJwtPayload(token);
+  const aud = String(payload?.aud || '');
+  const iss = String(payload?.iss || '');
+  const exp = Number(payload?.exp || 0);
+  const expIso = Number.isFinite(exp) && exp > 0 ? new Date(exp * 1000).toISOString() : null;
+
+  console.info('[Auth][Mobile] Firebase token diagnostics', {
+    context: contextLabel,
+    tokenLength: String(token || '').length,
+    aud: aud || '(missing)',
+    iss: iss || '(missing)',
+    exp: exp || null,
+    expIso,
+  });
+
+  if (aud && aud !== EXPECTED_FIREBASE_PROJECT_ID) {
+    console.warn('[Auth][Mobile] Firebase token aud mismatch', {
+      expectedAud: EXPECTED_FIREBASE_PROJECT_ID,
+      actualAud: aud,
+    });
+  }
+  if (iss && iss !== EXPECTED_FIREBASE_ISSUER) {
+    console.warn('[Auth][Mobile] Firebase token iss mismatch', {
+      expectedIss: EXPECTED_FIREBASE_ISSUER,
+      actualIss: iss,
+    });
+  }
 };
 
 const formatAuthError = (error) => {
@@ -310,23 +368,28 @@ export const AuthProvider = ({ children }) => {
 
     try {
       console.info('[Auth][Mobile] Firebase sign-in started', { email: normalizedEmail });
-      const firebaseLogin = await firebaseRequest('accounts:signInWithPassword', {
-        email: normalizedEmail,
-        password,
-        returnSecureToken: true,
-      });
+      if (String(FIREBASE_PROJECT_ID || '').trim() !== EXPECTED_FIREBASE_PROJECT_ID) {
+        console.warn('[Auth][Mobile] Firebase project mismatch detected', {
+          configuredProjectId: FIREBASE_PROJECT_ID || '(missing)',
+          expectedProjectId: EXPECTED_FIREBASE_PROJECT_ID,
+        });
+      }
+      const userCredential = await signInWithEmailAndPassword(firebaseAuth, normalizedEmail, password);
+      const firebaseIdToken = await userCredential.user.getIdToken(true);
+      const firebaseRefreshToken = String(userCredential.user.refreshToken || '');
       console.info('[Auth][Mobile] Firebase sign-in success', { email: normalizedEmail });
       await persistFirebaseSession({
-        idToken: firebaseLogin.idToken,
-        refreshToken: firebaseLogin.refreshToken,
+        idToken: firebaseIdToken,
+        refreshToken: firebaseRefreshToken,
         email: normalizedEmail,
       });
 
       console.info('[Auth][Mobile] OTP request started', { email: normalizedEmail });
+      logFirebaseTokenDiagnostics(firebaseIdToken, 'firebase-login-otp/request');
       const challenge = await authRequest('/api/auth/firebase-login-otp/request', {
         method: 'POST',
         body: {
-          idToken: firebaseLogin.idToken,
+          idToken: firebaseIdToken,
           platform: 'MOBILE',
         },
       });

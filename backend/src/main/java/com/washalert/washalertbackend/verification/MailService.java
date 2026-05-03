@@ -9,8 +9,16 @@ import org.springframework.mail.MailAuthenticationException;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestTemplate;
 
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -21,6 +29,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class MailService {
     private static final Logger log = LoggerFactory.getLogger(MailService.class);
     private static final AtomicInteger LOGIN_OTP_WORKER_COUNTER = new AtomicInteger(1);
+    private static final String RESEND_EMAILS_URL = "https://api.resend.com/emails";
 
     private final JavaMailSender mailSender;
     private final ThreadPoolExecutor loginOtpExecutor = new ThreadPoolExecutor(
@@ -50,24 +59,29 @@ public class MailService {
     @Value("${spring.mail.username:}")
     private String mailUsername;
 
+    @Value("${RESEND_API_KEY:}")
+    private String resendApiKey;
+
     public MailService(JavaMailSender mailSender) {
         this.mailSender = mailSender;
     }
 
     @PostConstruct
     void logMailConfiguration() {
+        boolean resendConfigured = hasText(resolveResendApiKey());
         log.info(
-                "[MAIL] Configuration loaded host={} port={} from={} authUserConfigured={}",
+                "[MAIL] Configuration loaded host={} port={} from={} authUserConfigured={} resendApiConfigured={}",
                 display(mailHost),
                 display(mailPort),
                 display(from),
-                hasText(mailUsername)
+                hasText(mailUsername),
+                resendConfigured
         );
 
         if (!hasText(from)) {
             log.error("[MAIL] Sender address is not configured. Set MAIL_FROM.");
         }
-        if (!hasText(mailUsername)) {
+        if (!resendConfigured && !hasText(mailUsername)) {
             log.error("[MAIL] SMTP username is not configured. Set MAIL_USERNAME (Resend expects 'resend').");
         }
     }
@@ -101,12 +115,12 @@ public class MailService {
     }
 
     public void sendLoginOtpEmail(String to, String code) {
-        validateMailBasics();
+        validateResendMailBasics();
         sendLoginOtpEmailInternal(to, code);
     }
 
     public void queueLoginOtpEmail(String to, String code) {
-        validateMailBasics();
+        validateResendMailBasics();
         String masked = maskEmail(to);
         try {
             log.info("[MAIL][LOGIN_OTP] Queueing async login OTP email for {}", masked);
@@ -126,23 +140,63 @@ public class MailService {
     private void sendLoginOtpEmailInternal(String to, String code) {
         try {
             log.info("[MAIL][LOGIN_OTP] Dispatching login OTP email to {}", maskEmail(to));
-            SimpleMailMessage msg = new SimpleMailMessage();
-            msg.setFrom(from);
-            msg.setTo(to);
-            msg.setSubject("WashAlert Login Verification Code");
-            msg.setText("""
+            String plainText = """
                     Your WashAlert login code is:
 
                     %s
 
                     This code expires soon and can only be used once.
                     If you did not attempt to sign in, ignore this email.
-                    """.formatted(code));
-
-            mailSender.send(msg);
+                    """.formatted(code);
+            String html = """
+                    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">
+                      <p style="margin:0 0 12px 0;">Your WashAlert login code is:</p>
+                      <p style="margin:0 0 16px 0;font-size:28px;font-weight:700;letter-spacing:4px;">%s</p>
+                      <p style="margin:0 0 8px 0;">This code expires soon and can only be used once.</p>
+                      <p style="margin:0;">If you did not attempt to sign in, ignore this email.</p>
+                    </div>
+                    """.formatted(code);
+            sendViaResendApi(to, "WashAlert Login Verification Code", plainText, html);
             log.info("[MAIL][LOGIN_OTP] Login OTP email dispatch succeeded to {}", maskEmail(to));
         } catch (RuntimeException ex) {
             throw toMailDispatchException("LOGIN_OTP", to, ex);
+        } catch (Exception ex) {
+            throw toMailDispatchException("LOGIN_OTP", to, ex);
+        }
+    }
+
+    private void sendViaResendApi(String to, String subject, String plainText, String html) {
+        String apiKey = resolveResendApiKey();
+        if (!hasText(apiKey)) {
+            log.warn("[MAIL] RESEND_API_KEY is missing. Skipping send for {}", maskEmail(to));
+            return;
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(apiKey);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, Object> body = Map.of(
+                "from", from,
+                "to", List.of(to),
+                "subject", subject,
+                "html", html,
+                "text", plainText
+        );
+
+        try {
+            RestTemplate restTemplate = new RestTemplate();
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+            ResponseEntity<String> response = restTemplate.postForEntity(RESEND_EMAILS_URL, entity, String.class);
+            if (response.getStatusCode().is2xxSuccessful()) {
+                log.info("[MAIL] Resend API success");
+            } else {
+                log.error("[MAIL] Resend API failed: {}", response.getStatusCode().value());
+                throw new IllegalStateException("Resend API returned non-success status.");
+            }
+        } catch (RestClientException ex) {
+            log.error("[MAIL] Resend API failed: {}", ex.getMessage());
+            throw new IllegalStateException("Resend API request failed.", ex);
         }
     }
 
@@ -233,6 +287,19 @@ public class MailService {
         }
     }
 
+    private void validateResendMailBasics() {
+        if (!hasText(from)) {
+            throw new IllegalStateException("Mail sender is not configured. Set MAIL_FROM.");
+        }
+        String senderEmail = extractSenderEmail(from);
+        if (!senderEmail.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            throw new IllegalStateException("MAIL_FROM is invalid. Use a valid sender email, optionally as 'Name <email@domain>'.");
+        }
+        if (senderEmail.contains("your_verified_domain") || senderEmail.endsWith("@example.com")) {
+            throw new IllegalStateException("MAIL_FROM is still using a placeholder domain. Use a verified Resend sender domain.");
+        }
+    }
+
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
     }
@@ -259,6 +326,12 @@ public class MailService {
 
     private String classifyMailFailure(Exception ex) {
         String message = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
+
+        if (message.contains("resend api")
+                || message.contains("resend")
+                || message.contains("api.resend.com")) {
+            return "Email dispatch failed at Resend API. Check RESEND_API_KEY and provider logs.";
+        }
 
         if (ex instanceof MailAuthenticationException
                 || message.contains("535")
@@ -297,5 +370,13 @@ public class MailService {
             return "*@" + email.substring(at + 1);
         }
         return local.substring(0, 2) + "***@" + email.substring(at + 1);
+    }
+
+    private String resolveResendApiKey() {
+        if (hasText(resendApiKey)) {
+            return resendApiKey.trim();
+        }
+        String envApiKey = System.getenv("RESEND_API_KEY");
+        return hasText(envApiKey) ? envApiKey.trim() : null;
     }
 }

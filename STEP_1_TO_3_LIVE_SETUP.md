@@ -15,11 +15,11 @@ Open backend run configuration in IntelliJ and set environment variables:
 - `DB_URL=<your mysql url>`
 - `DB_USERNAME=<your mysql user>`
 - `DB_PASSWORD=<your mysql password>`
-- `MAIL_HOST=<smtp host>`
-- `MAIL_PORT=<smtp port>`
-- `MAIL_USERNAME=<smtp username>`
-- `MAIL_PASSWORD=<smtp password>`
-- `MAIL_FROM=WashAlert <noreply@washalert.local>`
+- `MAIL_HOST=smtp.resend.com`
+- `MAIL_PORT=587`
+- `MAIL_USERNAME=resend`
+- `MAIL_PASSWORD=<resend_api_key>`
+- `MAIL_FROM=WashAlert Support <noreply@washalert.com>`
 
 Reference template:
 - `backend/.env.example`

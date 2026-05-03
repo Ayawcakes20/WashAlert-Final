@@ -80,13 +80,12 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
+                        .requestMatchers("/test").permitAll()
+                        .requestMatchers("/api/auth/firebase-login-otp/**").permitAll()
 
                         .requestMatchers(HttpMethod.POST,
                                 "/api/auth/register",
                                 "/api/auth/login",
-                                "/api/auth/firebase-login-otp/request",
-                                "/api/auth/firebase-login-otp/resend",
-                                "/api/auth/firebase-login-otp/verify",
                                 "/api/auth/firebase/complete-first-login-password",
                                 "/api/auth/mobile/register-profile",
                                 "/api/auth/complete-invitation",
@@ -113,9 +112,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/machines/**").hasAnyRole("ADMIN", "STAFF")
                         .requestMatchers("/api/orders/**").hasAnyRole("ADMIN", "STAFF")
-
-                        .requestMatchers("/api/**").authenticated()
-                        .anyRequest().permitAll()
+                        .anyRequest().authenticated()
                 );
 
         return http.build();

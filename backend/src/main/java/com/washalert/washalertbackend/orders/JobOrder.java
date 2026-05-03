@@ -2,6 +2,7 @@ package com.washalert.washalertbackend.orders;
 
 import com.washalert.washalertbackend.user.User;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -137,8 +138,8 @@ public class JobOrder {
     @Column(name = "payment_method", length = 30)
     private String paymentMethod;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 20)
+    @Convert(converter = JobOrderStatusConverter.class)
+    @Column(name = "status", nullable = false, length = 40)
     private JobOrderStatus status;
 
     @ManyToOne(fetch = FetchType.LAZY)

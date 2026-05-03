@@ -1,10 +1,10 @@
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${PORT:${SERVER_PORT:8081}}
   servlet:
     session:
       cookie:
-        same-site: lax
-        secure: false
+        same-site: ${SESSION_COOKIE_SAME_SITE:none}
+        secure: ${SESSION_COOKIE_SECURE:true}
         http-only: true
 
 spring:
@@ -16,21 +16,25 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: ${JPA_DDL_AUTO:update}
     show-sql: false
     open-in-view: false
 
   mail:
     host: ${MAIL_HOST:smtp.resend.com}
-    port: ${MAIL_PORT:465}
+    port: ${MAIL_PORT:587}
     username: ${MAIL_USERNAME}
     password: ${MAIL_PASSWORD}
     properties:
       mail:
         smtp:
           auth: true
-          ssl:
+          starttls:
             enable: true
+            required: true
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000
 
   security:
     oauth2:
