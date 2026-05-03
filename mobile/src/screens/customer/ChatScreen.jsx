@@ -184,7 +184,7 @@ const ChatScreen = ({ navigation }) => {
             ref={scrollRef}
             style={styles.chatArea}
             contentContainerStyle={styles.chatContent}
-            inverted
+            inverted={true}
             data={[...(isTyping ? [{ id: '__typing__', sender: 'typing' }] : []), ...messages].reverse()}
             keyExtractor={(item) => String(item.id)}
             renderItem={({ item: msg }) => {
