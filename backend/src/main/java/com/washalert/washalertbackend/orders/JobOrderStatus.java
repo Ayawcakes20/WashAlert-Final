@@ -8,15 +8,14 @@ import java.util.Locale;
 import java.util.stream.Collectors;
 
 public enum JobOrderStatus {
-    PENDING, <<<<<<<HEAD
+    PENDING,
     ASSIGNED_FOR_PICKUP,
     EN_ROUTE_TO_CUSTOMER,
     LAUNDRY_COLLECTED,
     EN_ROUTE_TO_BRANCH,
     ORDER_RECEIVED,
     AWAITING_PRICE_CONFIRMATION,
-    PRICE_CONFIRMED, =======
-    AWAITING_PRICE_CONFIRMATION, >>>>>>>6 c38a50ed45ad393e9b6df90b2245ac750cada53
+    PRICE_CONFIRMED,
     WASHING,
     DRYING,
     READY,
@@ -44,13 +43,14 @@ public enum JobOrderStatus {
         if (normalized.isBlank()) {
             return fallback;
         }
+        
+        // Custom mappings for common variations
         if ("READY_FOR_PICKUP".equals(normalized)) {
             return READY;
         }
         if ("COMPLETED".equals(normalized)) {
             return DELIVERED;
         }
-<<<<<<< HEAD
         if ("AWAITING_CONFIRMATION".equals(normalized) || "AWAITING_PRICE_CONFIRMATION".equals(normalized) || "PRICE_CONFIRMATION".equals(normalized)) {
             return AWAITING_PRICE_CONFIRMATION;
         }
@@ -60,8 +60,7 @@ public enum JobOrderStatus {
         if ("PRICE_CONFIRMED".equals(normalized)) {
             return PRICE_CONFIRMED;
         }
-        return JobOrderStatus.valueOf(normalized);
-=======
+
         try {
             return JobOrderStatus.valueOf(normalized);
         } catch (IllegalArgumentException ex) {
@@ -74,14 +73,17 @@ public enum JobOrderStatus {
         if (parsed != null) {
             return parsed;
         }
-        throw new IllegalArgumentException("Invalid job order status. Allowed values: " + allowedValuesCsv());
+        try {
+            return JobOrderStatus.valueOf(raw.trim().toUpperCase(Locale.ROOT));
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid job order status: " + raw + ". Allowed values: " + allowedValuesCsv());
+        }
     }
 
     private static String allowedValuesCsv() {
         return Arrays.stream(values())
                 .map(Enum::name)
                 .collect(Collectors.joining(", "));
->>>>>>> 6c38a50ed45ad393e9b6df90b2245ac750cada53
     }
 
     @JsonValue

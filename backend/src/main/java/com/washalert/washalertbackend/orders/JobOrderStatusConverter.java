@@ -2,7 +2,8 @@ package com.washalert.washalertbackend.orders;
 
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
-<<<<<<< HEAD
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Converter(autoApply = false)
 public class JobOrderStatusConverter implements AttributeConverter<JobOrderStatus, String> {
