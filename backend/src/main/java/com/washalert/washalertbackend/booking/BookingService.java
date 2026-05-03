@@ -33,7 +33,7 @@ public class BookingService {
     private static final BigDecimal MACHINE_ABSOLUTE_MAX_LOAD_KG = new BigDecimal("9.0");
     private static final BigDecimal PURE_CLOTHES_MAX_LOAD_KG = new BigDecimal("8.0");
     private static final BigDecimal BULKY_ITEMS_MAX_LOAD_KG = new BigDecimal("7.0");
-    private static final BigDecimal MIN_LOAD_KG = new BigDecimal("1.0");
+    private static final BigDecimal MIN_LOAD_KG = new BigDecimal("5.0");
     private static final Pattern SERVICE_KG_LIMIT_PATTERN = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*kg", Pattern.CASE_INSENSITIVE);
 
     private final JobOrderRepository jobOrderRepository;
@@ -263,7 +263,7 @@ public class BookingService {
         }
 
         if (weightKg.compareTo(MIN_LOAD_KG) < 0) {
-            throw new IllegalArgumentException("Minimum load is 1 kg.");
+            throw new IllegalArgumentException("Minimum load is 5 kg.");
         }
 
         if (weightKg.compareTo(MACHINE_ABSOLUTE_MAX_LOAD_KG) > 0) {

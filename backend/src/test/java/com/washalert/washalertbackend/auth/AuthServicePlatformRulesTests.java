@@ -115,7 +115,7 @@ class AuthServicePlatformRulesTests {
     }
 
     @Test
-    void staffIsDeniedWhenSelectedBranchDoesNotMatchAssignedBranch() {
+    void staffIsDeniedOnWebWhenAssignedBranchIsMissing() {
         UserRepository users = mock(UserRepository.class);
         PasswordEncoder encoder = mock(PasswordEncoder.class);
         FirestoreSyncService firestoreSyncService = mock(FirestoreSyncService.class);
@@ -152,7 +152,7 @@ class AuthServicePlatformRulesTests {
                 .role(Role.STAFF)
                 .status(UserStatus.ACTIVE)
                 .enabled(true)
-                .branch("SpeedyWash - Pasig")
+                .branch(null)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .provider(AuthProvider.LOCAL)
@@ -160,6 +160,6 @@ class AuthServicePlatformRulesTests {
         when(users.findByFirebaseUid("uid-3")).thenReturn(Optional.of(staff));
 
         assertThatThrownBy(() -> service.authenticateWithFirebase("id-token-3", "WEB", "SpeedyWash - UP Diliman"))
-                .hasMessageContaining("not assigned to this branch");
+                .hasMessageContaining("no assigned branch");
     }
 }

@@ -15,16 +15,16 @@ import { db } from '../../services/firebase';
 const { width: SW } = Dimensions.get('window');
 
 const STEPS = [
-  { key: 'pending',    label: 'Order Received' },
-  { key: 'washing',   label: 'Washing' },
-  { key: 'drying',    label: 'Drying' },
-  { key: 'ready',     label: 'Ready' },
-  { key: 'delivering',label: 'Out for Delivery' },
+  { key: 'pending', label: 'Booking Confirmed' },
+  { key: 'washing', label: 'Laundry Washing' },
+  { key: 'drying', label: 'Laundry Drying' },
+  { key: 'ready', label: 'Ready for Pickup/Dispatch' },
+  { key: 'delivering', label: 'Out for Delivery' },
   { key: 'delivered', label: 'Delivered' },
 ];
 
 const STATUS_BADGE = {
-  pending:    { bg: '#EFF6FF', text: '#3B82F6', label: 'Pending' },
+  pending:    { bg: '#EFF6FF', text: '#3B82F6', label: 'Booking Confirmed' },
   washing:    { bg: '#FFF7ED', text: '#F97316', label: 'Washing' },
   drying:     { bg: '#FFFBEB', text: '#F59E0B', label: 'Drying' },
   ready:      { bg: '#F0FDF4', text: '#22C55E', label: 'Ready' },
@@ -37,8 +37,8 @@ const normalize = (s) => {
   const raw = String(s||'').trim().toLowerCase();
   const map = {
     received:'pending', pending:'pending', washing:'washing', drying:'drying',
-    ready:'ready', pending_pickup:'delivering', en_route_to_pickup:'delivering',
-    picked_up:'delivering', in_transit:'delivering', delivering:'delivering',
+    ready:'ready', pending_pickup:'pending', en_route_to_pickup:'pending',
+    picked_up:'pending', in_transit:'pending', delivering:'delivering',
     delivered:'delivered', cancelled:'cancelled', failed:'cancelled',
   };
   return map[raw] || 'pending';
@@ -95,7 +95,6 @@ export default function OrderDetailScreen({ route, navigation }) {
   const [order, setOrder]       = useState(null);
   const [loading, setLoading]   = useState(true);
   const [branchPhones, setBP]   = useState({});
-  const [showFullTL, setShowTL] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -141,6 +140,20 @@ export default function OrderDetailScreen({ route, navigation }) {
     finally { setLoading(false); }
   };
 
+  const isPaymentCompleted = (value) => ['paid', 'verified', 'completed'].includes(String(value || '').toLowerCase());
+
+  useEffect(() => {
+    if (!order?.id || isPaymentCompleted(order?.paymentStatus)) return;
+    const timer = setInterval(() => {
+      bookingsApi.getById(order.id)
+        .then((nextOrder) => {
+          if (nextOrder) setOrder(nextOrder);
+        })
+        .catch(() => {});
+    }, 12000);
+    return () => clearInterval(timer);
+  }, [order?.id, order?.paymentStatus]);
+
   if (loading) return (
     <View style={styles.center}><ActivityIndicator size="large" color={colors.primary}/></View>
   );
@@ -183,10 +196,6 @@ export default function OrderDetailScreen({ route, navigation }) {
   const prevStep = idx > 0 ? STEPS[idx-1] : null;
   const currStep = STEPS[idx>=0?idx:0];
   const nextStep = idx < STEPS.length-1 ? STEPS[idx+1] : null;
-
-  const timeline = (order.timeline && order.timeline.length
-    ? order.timeline
-    : STEPS.map((s,i) => ({step:s.label, time: i===0?order.date:'', done:i<=idx})));
 
   const payNow = async () => {
     try {
@@ -244,55 +253,35 @@ export default function OrderDetailScreen({ route, navigation }) {
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
             <Text style={styles.cardTitle}>Progress</Text>
-            <TouchableOpacity onPress={() => setShowTL(!showFullTL)}>
-              <Text style={styles.viewAll}>{showFullTL ? 'Collapse' : 'View Full History'}</Text>
-            </TouchableOpacity>
           </View>
 
-          {!showFullTL ? (
-            <View style={styles.threePoint}>
-              {prevStep && (
-                <View style={styles.tpRow}>
-                  <View style={[styles.tpDot,{backgroundColor:colors.success}]}/>
-                  <View>
-                    <Text style={styles.tpLabel}>Completed</Text>
-                    <Text style={styles.tpStep}>{prevStep.label}</Text>
-                  </View>
-                </View>
-              )}
-              <View style={[styles.tpRow,styles.tpActive]}>
-                <View style={[styles.tpDot,{backgroundColor:sb.text,width:14,height:14,borderRadius:7}]}/>
+          <View style={styles.threePoint}>
+            {prevStep && (
+              <View style={styles.tpRow}>
+                <View style={[styles.tpDot,{backgroundColor:colors.success}]}/>
                 <View>
-                  <Text style={[styles.tpLabel,{color:sb.text}]}>Active Now</Text>
-                  <Text style={[styles.tpStep,{fontWeight:'800',color:colors.text}]}>{currStep.label}</Text>
+                  <Text style={styles.tpLabel}>Completed</Text>
+                  <Text style={styles.tpStep}>{prevStep.label}</Text>
                 </View>
               </View>
-              {nextStep && (
-                <View style={styles.tpRow}>
-                  <View style={[styles.tpDot,{backgroundColor:colors.border}]}/>
-                  <View>
-                    <Text style={styles.tpLabel}>Up Next</Text>
-                    <Text style={[styles.tpStep,{color:colors.textTertiary}]}>{nextStep.label}</Text>
-                  </View>
-                </View>
-              )}
+            )}
+            <View style={[styles.tpRow,styles.tpActive]}>
+              <View style={[styles.tpDot,{backgroundColor:sb.text,width:14,height:14,borderRadius:7}]}/>
+              <View>
+                <Text style={[styles.tpLabel,{color:sb.text}]}>Current Step</Text>
+                <Text style={[styles.tpStep,{fontWeight:'800',color:colors.text}]}>{currStep.label}</Text>
+              </View>
             </View>
-          ) : (
-            <View style={{paddingTop:8}}>
-              {timeline.map((t,i) => (
-                <View key={i} style={styles.tlRow}>
-                  <View style={styles.tlIconCol}>
-                    <View style={[styles.tlDot, t.done?styles.tlDotOn:styles.tlDotOff]}/>
-                    {i<timeline.length-1&&<View style={[styles.tlLine,t.done?styles.tlLineOn:styles.tlLineOff]}/>}
-                  </View>
-                  <View style={styles.tlContent}>
-                    <Text style={[styles.tlStep, t.done?{color:colors.text}:{color:colors.textTertiary}]}>{t.step}</Text>
-                    {t.time?<Text style={styles.tlTime}>{t.time}</Text>:null}
-                  </View>
+            {nextStep && (
+              <View style={styles.tpRow}>
+                <View style={[styles.tpDot,{backgroundColor:colors.border}]}/>
+                <View>
+                  <Text style={styles.tpLabel}>Up Next</Text>
+                  <Text style={[styles.tpStep,{color:colors.textTertiary}]}>{nextStep.label}</Text>
                 </View>
-              ))}
-            </View>
-          )}
+              </View>
+            )}
+          </View>
         </View>
 
         {/* DRIVER CARD — only when delivering */}
@@ -329,7 +318,7 @@ export default function OrderDetailScreen({ route, navigation }) {
         {/* LAUNDRY DETAILS ACCORDION */}
         <Accordion title="Laundry Details" icon="shirt-outline">
           <Row label="Branch"      value={order.branchName||order.branch}/>
-          <Row label="Service"     value={order.serviceType||order.service}/>
+          <Row label="Laundry Services Details" value={order.serviceType||order.service}/>
           <Row label="Load"        value={`${order.loadKg} kg`}/>
           <Row label="Detergent"   value={order.detergent||'None'}/>
           <Row label="Conditioner" value={order.conditioner||'None'}/>
@@ -356,16 +345,16 @@ export default function OrderDetailScreen({ route, navigation }) {
           <View style={styles.infoRow}>
             <Text style={styles.infoKey}>Status</Text>
             <View style={{
-              backgroundColor:order.paymentStatus==='Paid'?'#F0FDF4':'#FFFBEB',
+              backgroundColor:isPaymentCompleted(order.paymentStatus)?'#F0FDF4':'#FFFBEB',
               paddingHorizontal:10, paddingVertical:3, borderRadius:100
             }}>
               <Text style={{fontSize:12,fontWeight:'700',
-                color:order.paymentStatus==='Paid'?colors.success:colors.warning}}>
+                color:isPaymentCompleted(order.paymentStatus)?colors.success:colors.warning}}>
                 {order.paymentStatus||'Pending'}
               </Text>
             </View>
           </View>
-          {order.paymentMethod?.toLowerCase()==='gcash'&&order.paymentStatus?.toLowerCase()!=='paid'&&(
+          {order.paymentMethod?.toLowerCase()==='gcash' && !isPaymentCompleted(order.paymentStatus) && !['delivered', 'cancelled'].includes(ns) && (
             <TouchableOpacity style={[styles.trackBtn,{marginTop:12}]} onPress={payNow}>
               <Ionicons name="card-outline" size={16} color="#FFF"/>
               <Text style={styles.trackBtnText}>Pay Now with GCash</Text>

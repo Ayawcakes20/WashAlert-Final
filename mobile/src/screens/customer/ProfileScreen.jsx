@@ -131,25 +131,6 @@ const ProfileScreen = ({ navigation }) => {
             <Text style={styles.editProfileText}>Edit Profile</Text>
           </TouchableOpacity>
         </View>
-
-        {/* Stats Grid */}
-        <View style={styles.statsGrid}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>12</Text>
-            <Text style={styles.statLabel}>Total Bookings</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>₱4.5k</Text>
-            <Text style={styles.statLabel}>Total Spent</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>5</Text>
-            <Text style={styles.statLabel}>Active Vouchers</Text>
-          </View>
-        </View>
-
         {/* Menu Groups */}
         {MENU_GROUPS.map((group, gIdx) => (
           <View key={group.title} style={styles.menuGroup}>
@@ -361,3 +342,4 @@ const styles = StyleSheet.create({
 });
 
 export default ProfileScreen;
+

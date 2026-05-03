@@ -230,6 +230,20 @@ const SERVICE_CATALOG = [
     description: 'Premium full service with care (8kg)',
   },
   {
+    id: 'double-basic-full-9',
+    name: 'Double Basic Full Service (9kg)',
+    price: 295,
+    icon: 'layers-outline',
+    description: 'Double basic full service load (up to 9kg)',
+  },
+  {
+    id: 'double-full-9',
+    name: 'Double Full Service (9kg)',
+    price: 325,
+    icon: 'layers-outline',
+    description: 'Double full service load (up to 9kg)',
+  },
+  {
     id: 'handwash',
     name: 'Handwash',
     price: 150,
@@ -403,12 +417,20 @@ const toMobileOrderStatus = (status) => {
     WASHING: 'washing',
     DRYING: 'drying',
     READY: 'ready',
-    PENDING_PICKUP: 'delivering',
-    EN_ROUTE_TO_PICKUP: 'delivering',
-    PICKED_UP: 'delivering',
-    IN_TRANSIT: 'delivering',
+    ASSIGNED_PICKUP: 'pending',
+    ARRIVED_CUSTOMER: 'pending',
+    PENDING_PICKUP: 'pending',
+    EN_ROUTE_TO_PICKUP: 'pending',
+    PICKED_UP: 'pending',
+    ARRIVED_BRANCH: 'pending',
+    HANDED_TO_BRANCH: 'pending',
+    IN_TRANSIT: 'pending',
+    ASSIGNED_DELIVERY: 'ready',
+    OUT_FOR_DELIVERY: 'delivering',
+    ARRIVED_DELIVERY: 'delivering',
     DELIVERED: 'delivered',
     FAILED: 'cancelled',
+    CANCELLED: 'cancelled',
   };
   return map[String(status || '').toUpperCase()] || String(status || '').toLowerCase();
 };
@@ -731,7 +753,21 @@ const toMobileOrderStatusFromWorkflow = (workflowStatus, fallbackStatus) => {
   const workflow = String(workflowStatus || '').toUpperCase();
   if (workflow === 'COMPLETED') return 'delivered';
   if (workflow === 'CANCELLED') return 'cancelled';
-  if (workflow) return 'delivering';
+  if (workflow === 'READY') return 'ready';
+  if (
+    [
+      'PENDING',
+      'DRIVER_ACCEPTED',
+      'PICKING_UP',
+      'PICKED_UP',
+      'AT_SHOP',
+    ].includes(workflow)
+  ) {
+    if (['washing', 'drying', 'ready', 'delivering', 'delivered'].includes(String(fallbackStatus || ''))) {
+      return fallbackStatus;
+    }
+    return 'pending';
+  }
   return fallbackStatus;
 };
 
@@ -901,7 +937,7 @@ export const createOrder = async (orderData) => {
     detergentPreference: orderData.detergent || 'None',
     fabricConditionerPreference: orderData.conditioner || 'None',
     loadSize: getLoadSize(Number(orderData.loadKg || 0)),
-    estimatedWeightKg: Number(orderData.loadKg || 1),
+    estimatedWeightKg: Number(orderData.loadKg || 5),
     containsBulkyItems: Boolean(orderData.containsBulkyItems),
     specialInstructions: mergedInstructions,
     deliveryAddress: orderData.delivery ? orderData.deliveryAddress || 'To be provided' : null,

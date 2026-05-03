@@ -13,9 +13,9 @@ import AddressPickerSheet from '../../components/AddressPickerSheet';
 const { width } = Dimensions.get('window');
 
 const SERVICE_MODES = [
-  { id: 'FULL_SERVICE',  label: 'Full Service',  hint: 'Pickup → Laundry → Delivery', icon: 'washing-machine',  backendServiceType: 'PICKUP_DELIVERY', needsAddress: true  },
+  { id: 'FULL_SERVICE',  label: 'Full Service',  hint: 'Pickup -> Laundry -> Delivery', icon: 'washing-machine',  backendServiceType: 'PICKUP_DELIVERY', needsAddress: true  },
   { id: 'DROP_OFF_ONLY', label: 'Drop-off Only', hint: 'You bring & pick up at branch', icon: 'store-outline',    backendServiceType: 'DROP_OFF',        needsAddress: false },
-  { id: 'PICKUP_ONLY',   label: 'Pickup Only',   hint: 'We pick up — you get at branch',icon: 'truck-outline',   backendServiceType: 'PICKUP_DELIVERY', needsAddress: true  },
+  { id: 'PICKUP_ONLY',   label: 'Pickup Only',   hint: 'We pick up - you get at branch',icon: 'truck-outline',   backendServiceType: 'PICKUP_DELIVERY', needsAddress: true  },
 ];
 const DET_OPTS = [
   { id: 'none',  label: 'None',           price: 0  },
@@ -30,52 +30,52 @@ const FAB_OPTS = [
 const VIS_STEPS = ['Branch','Service','Load','Supplies','Schedule','Confirm'];
 const VIS_MAP   = { 1:1, 2:1, 3:2, 4:3, 5:4, 6:5, 7:6 };
 
-// ── Accurate flat-rate pricing engine ────────────────────────────────────────
-// PACKAGES (flat rate — never multiply by kg):
-//   Wash (7kg): ₱80 · Dry (7kg): ₱90 · Ecowash (5kg): ₱220 · Basic (7kg): ₱280
-// HANDWASH: ≤3kg → ₱150/kg ; >3kg → ₱90/kg
+// â”€â”€ Accurate flat-rate pricing engine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// PACKAGES (flat rate â€” never multiply by kg):
+//   Wash (7kg): PHP 80 Â· Dry (7kg): PHP 90 Â· Ecowash (5kg): PHP 220 Â· Basic (7kg): PHP 280
+// HANDWASH: â‰¤3kg â†’ PHP 150/kg ; >3kg â†’ PHP 90/kg
+const MIN_LOAD_KG = 5;
+const MACHINE_MAX_KG = 9;
+
+// Keep mobile pricing dynamic when backend/catalog provides it; fall back to business defaults.
 const getServiceBasePrice = (svc, weightKg) => {
+  const configuredPrice = Number(svc?.price || 0);
+  if (Number.isFinite(configuredPrice) && configuredPrice > 0) {
+    return configuredPrice;
+  }
+
   const name = String(svc?.name || '').toLowerCase();
+  if (name.includes('double basic full')) return 295;
+  if (name.includes('double full')) return 325;
   if (name.includes('handwash')) {
     return weightKg <= 3 ? weightKg * 150 : weightKg * 90;
   }
-  if (name.includes('dry'))     return 90;   // Dry: ₱90 flat
-  if (name.includes('eco'))     return 220;  // Ecowash: ₱220 flat
-  if (name.includes('basic'))   return 280;  // Basic Full Service: ₱280 flat
-  if (name.includes('premium')) return weightKg >= 8 ? 275 : 270; // Premium: ₱270/₱275
-  return svc?.price || 0;                    // Fallback flat fee
+  if (name.includes('dry')) return 90;
+  if (name.includes('ecowash')) return 220;
+  if (name.includes('basic full')) return weightKg >= 8 ? 245 : 240;
+  if (name.includes('premium full')) return weightKg >= 8 ? 275 : 270;
+  if (name.includes('wash')) return 80;
+  return 0;
 };
 
 const getServicePriceLabel = (svc) => {
   const name = String(svc?.name || '').toLowerCase();
-  if (name.includes('handwash')) return '₱150/kg (≤3kg)  ·  ₱90/kg (>3kg)';
-  if (name.includes('dry'))     return '₱90 / load';
-  if (name.includes('eco'))     return '₱220 / load';
-  if (name.includes('basic'))   return '₱280 / load';
-  if (name.includes('premium')) return '₱270 (7kg)  ·  ₱275 (8kg)';
-  return `₱${svc?.price ?? 0}`;
+  if (name.includes('double basic full')) return 'PHP 295 / load (9kg max)';
+  if (name.includes('double full')) return 'PHP 325 / load (9kg max)';
+  if (name.includes('handwash')) return 'PHP 150/kg (<=3kg)  ·  PHP 90/kg (>3kg)';
+  if (name.includes('dry')) return 'PHP 90 / load';
+  if (name.includes('ecowash')) return 'PHP 220 / load';
+  if (name.includes('basic full')) return 'PHP 240 (7kg)  ·  PHP 245 (8kg)';
+  if (name.includes('premium full')) return 'PHP 270 (7kg)  ·  PHP 275 (8kg)';
+  if (name.includes('wash')) return 'PHP 80 / load';
+  return `PHP ${Number(svc?.price ?? 0)}`;
 };
 
-// Format slot label: "8:00 AM - 9:30 AM" → "8:00–9:30"
+// Format slot label: "8:00 AM - 9:30 AM" -> "8:00-9:30"
 const fmtSlot = (label) => {
-  const p = String(label||'').split(/\s*[-–]\s*/);
+  const p = String(label||'').split(/\s*-\s*/);
   const strip = (s) => s.replace(/\s*(AM|PM)$/i,'').trim();
-  return p.length >= 2 ? `${strip(p[0])}–${strip(p[1])}` : label;
-};
-
-// Map slot start time to period name for display under the time range
-const slotPeriod = (label) => {
-  const m = String(label||'').match(/(\d+):(\d+)\s*(AM|PM)/i);
-  if (!m) return '';
-  let h = parseInt(m[1]);
-  if (m[3].toUpperCase()==='PM' && h!==12) h+=12;
-  if (m[3].toUpperCase()==='AM' && h===12) h=0;
-  if (h < 9)  return 'Morning';
-  if (h < 11) return 'Late morning';
-  if (h < 13) return 'Midday';
-  if (h < 15) return 'Afternoon';
-  if (h < 17) return 'Late afternoon';
-  return 'Evening';
+  return p.length >= 2 ? `${strip(p[0])}-${strip(p[1])}` : label;
 };
 
 const getSvcIcon = s => {
@@ -109,7 +109,7 @@ export default function BookingScreen({ route, navigation }) {
   const [addrSheet, setAddrSheet] = useState(false);
   const [defAddr, setDefAddr]     = useState(null);
   const [service, setService]     = useState(null);
-  const [hasBeddings, setHasBeddings] = useState(false); // true = includes towels/beddings → max 7kg
+  const [hasBeddings, setHasBeddings] = useState(false); // true = includes towels/beddings â†’ max 7kg
   const [kg, setKg]               = useState(5);
   const [det, setDet]             = useState('none');
   const [fab, setFab]             = useState('none');
@@ -135,7 +135,7 @@ export default function BookingScreen({ route, navigation }) {
   const total = useMemo(()=>{
     if(!service) return 0;
     const base      = getServiceBasePrice(service, kg);       // flat-rate or per-kg (handwash)
-    const surcharge = kg >= 9 ? 50 : 0;                      // 9kg overload surcharge
+    const surcharge = kg >= MACHINE_MAX_KG ? 50 : 0;
     const d         = DET_OPTS.find(o=>o.id===det)?.price||0;
     const f         = FAB_OPTS.find(o=>o.id===fab)?.price||0;
     return base + surcharge + d + f + (rush ? 150 : 0) + deliveryFee;
@@ -146,8 +146,8 @@ export default function BookingScreen({ route, navigation }) {
     const p=[service.name,`${kg}kg`];
     if(det!=='none') p.push(DET_OPTS.find(o=>o.id===det)?.label);
     if(fab!=='none') p.push(FAB_OPTS.find(o=>o.id===fab)?.label);
-    if(rush) p.push('Rush +₱150');
-    return p.filter(Boolean).join(' · ');
+    if(rush) p.push('Rush +PHP 150');
+    return p.filter(Boolean).join(' Â· ');
   },[service,kg,det,fab,rush]);
 
   useEffect(()=>{ load(); },[]);
@@ -170,7 +170,7 @@ export default function BookingScreen({ route, navigation }) {
     if(step===1) return !!branch;
     if(step===2) return !!address?.address;
     if(step===3) return !!service;
-    if(step===4) return kg>=1&&kg<=9;
+    if(step===4) return kg>=MIN_LOAD_KG&&kg<=MACHINE_MAX_KG&&kg<=maxKg;
     if(step===6) return !!schTime&&!!slots.find(s=>s.label===schTime&&s.available);
     return true;
   };
@@ -179,7 +179,17 @@ export default function BookingScreen({ route, navigation }) {
     if(step===1){ if(!branch) return; setStep(needsAddr?2:3); }
     else if(step===2){ if(!address?.address){ setAddrSheet(true); return; } setStep(3); }
     else if(step===3){ if(!service) return; setStep(4); }
-    else if(step===4) setStep(5);
+    else if(step===4){
+      if (kg < MIN_LOAD_KG) {
+        Alert.alert('Invalid Load', `Minimum load is ${MIN_LOAD_KG} kg.`);
+        return;
+      }
+      if (kg > maxKg || kg > MACHINE_MAX_KG) {
+        Alert.alert('Invalid Load', hasBeddings ? 'Loads with towels/beddings are limited to 7 kg.' : 'Pure clothes loads are limited to 8 kg.');
+        return;
+      }
+      setStep(5);
+    }
     else if(step===5) setStep(6);
     else if(step===6){ if(!ok()) return; setStep(7); }
     else if(step===7) confirm_();
@@ -195,11 +205,11 @@ export default function BookingScreen({ route, navigation }) {
     setSub(true);
     try{
       const dk=needsAddr&&address?.latitude&&branch?.latitude?distKm(branch.latitude,branch.longitude,address.latitude,address.longitude):0;
-      const _svcPrice  = getServiceBasePrice(service, kg) + (kg>=9?50:0);
+      const _svcPrice  = getServiceBasePrice(service, kg) + (kg>=MACHINE_MAX_KG?50:0);
       const _supPrice  = (DET_OPTS.find(o=>o.id===det)?.price||0) + (FAB_OPTS.find(o=>o.id===fab)?.price||0);
       const _rushPrice = rush ? 150 : 0;
       const _delPrice  = needsAddr ? deliveryFee : 0;
-      const r=await createOrder({ branchId:branch.id,serviceId:service.id,serviceType:service.name,serviceMode:svcMode,serviceModeLabel:mode.label,serviceTypeBackend:mode.backendServiceType,scheduleDate:schDate,scheduleTime:schTime,loadKg:kg,detergent:DET_OPTS.find(o=>o.id===det)?.label||'None',conditioner:FAB_OPTS.find(o=>o.id===fab)?.label||'None',delivery:needsAddr,isRush:rush,instructions:notes,paymentMethod:payMethod,total,serviceName:service.name,distanceKm:dk,deliveryLatitude:address?.latitude??null,deliveryLongitude:address?.longitude??null,deliveryAddress:address?.address??null,deliveryUnitFloor:address?.unitFloor??null,deliveryContactName:address?.contactName??null,deliveryContactPhone:address?.phone??null,branchLatitude:branch?.latitude||null,branchLongitude:branch?.longitude||null,servicePrice:_svcPrice,suppliesPrice:_supPrice,rushPrice:_rushPrice,deliveryPrice:_delPrice });
+      const r=await createOrder({ branchId:branch.id,serviceId:service.id,serviceType:service.name,serviceMode:svcMode,serviceModeLabel:mode.label,serviceTypeBackend:mode.backendServiceType,scheduleDate:schDate,scheduleTime:schTime,loadKg:kg,containsBulkyItems:hasBeddings,detergent:DET_OPTS.find(o=>o.id===det)?.label||'None',conditioner:FAB_OPTS.find(o=>o.id===fab)?.label||'None',delivery:needsAddr,isRush:rush,instructions:notes,paymentMethod:payMethod,total,serviceName:service.name,distanceKm:dk,deliveryLatitude:address?.latitude??null,deliveryLongitude:address?.longitude??null,deliveryAddress:address?.address??null,deliveryUnitFloor:address?.unitFloor??null,deliveryContactName:address?.contactName??null,deliveryContactPhone:address?.phone??null,branchLatitude:branch?.latitude||null,branchLongitude:branch?.longitude||null,servicePrice:_svcPrice,suppliesPrice:_supPrice,rushPrice:_rushPrice,deliveryPrice:_delPrice });
       const tn=String(r?.trackingNumber||'').trim(); if(!tn) throw new Error('No tracking number.');
       if(payMethod==='gcash'){
         try{ const cp=await payments.initiateGcashCheckout(tn); const u=cp?.checkout_url||cp?.checkoutUrl||cp?.url||cp; const cu=u?String(u).trim():null; if(cu&&/^https?:\/\//i.test(cu)){ try{ await WebBrowser.openBrowserAsync(cu); }catch{ if(await Linking.canOpenURL(cu)) await Linking.openURL(cu); } } }
@@ -212,7 +222,7 @@ export default function BookingScreen({ route, navigation }) {
   const vis = VIS_MAP[step]||1;
   const progress = vis / VIS_STEPS.length;
 
-  // Clean progress bar (no labels) — like Image 3
+  // Clean progress bar (no labels) â€” like Image 3
   const Stepper = ()=>(
     <View style={S.stepperWrap}>
       <View style={S.progressTrack}>
@@ -230,7 +240,7 @@ export default function BookingScreen({ route, navigation }) {
           <View style={{flex:1}}>
             <Text style={S.footerHint} numberOfLines={1}>{hint}</Text>
           </View>
-          <Text style={S.footerTotal}>₱{total.toLocaleString()}</Text>
+          <Text style={S.footerTotal}>PHP {total.toLocaleString()}</Text>
         </View>
       )}
       <View style={S.footerRow}>
@@ -249,7 +259,7 @@ export default function BookingScreen({ route, navigation }) {
     </View>
   );
 
-  if(loading) return <View style={S.loadWrap}><ActivityIndicator size="large" color={colors.primary}/><Text style={S.loadTxt}>Loading…</Text></View>;
+  if(loading) return <View style={S.loadWrap}><ActivityIndicator size="large" color={colors.primary}/><Text style={S.loadTxt}>Loadingâ€¦</Text></View>;
 
   return(
     <SafeAreaView style={S.container} edges={['top']}>
@@ -291,13 +301,13 @@ export default function BookingScreen({ route, navigation }) {
                 <View style={S.addrEmptyIcon}><Ionicons name="location-outline" size={28} color={colors.primary}/></View>
                 <Text style={S.addrEmptyTitle}>Set Your Address</Text>
                 <Text style={S.addrEmptyHint}>Search, use GPS, pin on map, or pick from saved</Text>
-                <View style={S.addrEmptyBtn}><Text style={S.addrEmptyBtnTxt}>Choose Address →</Text></View>
-                {defAddr&&<View style={S.savedHint}><Ionicons name="bookmark-outline" size={13} color={colors.accent}/><Text style={S.savedHintTxt} numberOfLines={1}>Saved: {defAddr.label} — {defAddr.address}</Text></View>}
+                <View style={S.addrEmptyBtn}><Text style={S.addrEmptyBtnTxt}>Choose Address â†’</Text></View>
+                {defAddr&&<View style={S.savedHint}><Ionicons name="bookmark-outline" size={13} color={colors.accent}/><Text style={S.savedHintTxt} numberOfLines={1}>Saved: {defAddr.label} â€” {defAddr.address}</Text></View>}
               </TouchableOpacity>
             ):(
               <View style={S.addrFilled}>
                 <View style={S.addrFilledHdr}><View style={S.addrFilledIcon}><Ionicons name="location" size={18} color="#fff"/></View>
-                  <View style={{flex:1}}><Text style={S.addrLabel}>{address.label||'Address'}</Text><Text style={S.addrMain}>{address.address}</Text>{address.unitFloor&&<Text style={S.addrSub}>{address.unitFloor}</Text>}{address.contactName&&<Text style={S.addrSub}>{address.contactName}{address.phone?` · ${address.phone}`:''}</Text>}</View>
+                  <View style={{flex:1}}><Text style={S.addrLabel}>{address.label||'Address'}</Text><Text style={S.addrMain}>{address.address}</Text>{address.unitFloor&&<Text style={S.addrSub}>{address.unitFloor}</Text>}{address.contactName&&<Text style={S.addrSub}>{address.contactName}{address.phone?` Â· ${address.phone}`:''}</Text>}</View>
                 </View>
                 <TouchableOpacity style={S.changeAddr} onPress={()=>setAddrSheet(true)}><Ionicons name="pencil-outline" size={14} color={colors.primary}/><Text style={S.changeAddrTxt}>Change Address</Text></TouchableOpacity>
               </View>
@@ -324,7 +334,7 @@ export default function BookingScreen({ route, navigation }) {
 
         {step===4&&(
           <View style={{gap:14}}>
-            {/* ── Beddings toggle ── */}
+            {/* â”€â”€ Beddings toggle â”€â”€ */}
             <View style={S.beddingsCard}>
               <View style={S.beddingsIconWrap}>
                 <Ionicons name="briefcase-outline" size={18} color={colors.primary}/>
@@ -332,13 +342,13 @@ export default function BookingScreen({ route, navigation }) {
               <View style={{flex:1}}>
                 <Text style={S.beddingsTitle}>Includes beddings or towels?</Text>
                 <Text style={S.beddingsSub}>
-                  {hasBeddings ? 'Yes — max 7 kg limit applies' : 'No — max 8 kg for clothes'}
+                  {hasBeddings ? 'Yes â€” max 7 kg limit applies' : 'No â€” max 8 kg for clothes'}
                 </Text>
               </View>
               <Switch value={hasBeddings} onValueChange={v=>{setHasBeddings(v);if(v&&kg>7)setKg(7);}} trackColor={{false:colors.border,true:colors.primary}} thumbColor="#fff"/>
             </View>
 
-            {/* ── Weight card ── */}
+            {/* â”€â”€ Weight card â”€â”€ */}
             <View style={S.weightCard}>
               <View style={S.weightCardHeader}>
                 <Text style={S.sectionLabel}>WEIGHT</Text>
@@ -347,41 +357,42 @@ export default function BookingScreen({ route, navigation }) {
                 </View>
               </View>
               <View style={S.kgRow}>
-                <TouchableOpacity style={S.kgBtn} onPress={()=>setKg(k=>Math.max(1,k-1))}><Text style={S.kgBtnTxt}>−</Text></TouchableOpacity>
+                <TouchableOpacity style={S.kgBtn} onPress={()=>setKg(k=>Math.max(MIN_LOAD_KG,k-1))}><Text style={S.kgBtnTxt}>âˆ’</Text></TouchableOpacity>
                 <View style={S.kgDisplay}>
                   <Text style={S.kgNum}>{kg}</Text>
                   <Text style={S.kgUnit}>kilograms</Text>
                 </View>
-                <TouchableOpacity style={S.kgBtn} onPress={()=>setKg(k=>Math.min(9,k+1))}><Text style={S.kgBtnTxt}>+</Text></TouchableOpacity>
+                <TouchableOpacity style={S.kgBtn} onPress={()=>setKg(k=>Math.min(MACHINE_MAX_KG,k+1))}><Text style={S.kgBtnTxt}>+</Text></TouchableOpacity>
               </View>
               {/* labeled track */}
               <View style={{marginTop:4}}>
                 <View style={S.kgBar}>
-                  <View style={[S.kgFill,{width:`${Math.min(100,((kg-1)/(maxKg-1))*100)}%`,backgroundColor:kg>maxKg?colors.error:colors.text}]}/>
+                  <View style={[S.kgFill,{width:`${Math.min(100,((kg-MIN_LOAD_KG)/(maxKg-MIN_LOAD_KG))*100)}%`,backgroundColor:kg>maxKg?colors.error:colors.text}]}/>
                 </View>
                 <View style={S.kgBarLabels}>
-                  <Text style={S.kgBarLbl}>1 kg</Text>
+                  <Text style={S.kgBarLbl}>{MIN_LOAD_KG} kg</Text>
                   <Text style={S.kgBarLbl}>{maxKg} kg</Text>
                 </View>
               </View>
-              {kg>=9&&<View style={S.surcharge}><Ionicons name="warning-outline" size={13} color={colors.error}/><Text style={[S.surchargeTxt,{color:colors.error}]}>Absolute 9 kg cap — ₱50 surcharge applies</Text></View>}
-              {kg>maxKg&&kg<9&&<View style={S.surcharge}><Ionicons name="information-circle-outline" size={13} color={colors.warning}/><Text style={S.surchargeTxt}>Exceeds {hasBeddings?'beddings/towels':'clothes'} limit ({maxKg} kg)</Text></View>}
+              {kg>=MACHINE_MAX_KG&&<View style={S.surcharge}><Ionicons name="warning-outline" size={13} color={colors.error}/><Text style={[S.surchargeTxt,{color:colors.error}]}>Absolute 9 kg cap - PHP 50 surcharge applies</Text></View>}
+              {kg>maxKg&&kg<MACHINE_MAX_KG&&<View style={S.surcharge}><Ionicons name="information-circle-outline" size={13} color={colors.warning}/><Text style={S.surchargeTxt}>Exceeds {hasBeddings?'beddings/towels':'clothes'} limit ({maxKg} kg)</Text></View>}
+              {kg<MIN_LOAD_KG&&<View style={S.surcharge}><Ionicons name="information-circle-outline" size={13} color={colors.warning}/><Text style={S.surchargeTxt}>Minimum load is {MIN_LOAD_KG} kg.</Text></View>}
             </View>
 
-            {/* ── Price breakdown card ── */}
+            {/* â”€â”€ Price breakdown card â”€â”€ */}
             <View style={S.liveCard}>
               <Text style={S.sectionLabel}>PRICE BREAKDOWN</Text>
               <View style={{marginTop:12,gap:10}}>
-                <View style={S.liveRow}><Text style={S.liveKey}>{service?.name}</Text><Text style={S.liveVal}>₱{getServiceBasePrice(service,kg)}</Text></View>
-                {kg>=9&&<View style={S.liveRow}><Text style={S.liveKey}>9kg Surcharge</Text><Text style={S.liveVal}>₱50</Text></View>}
-                {det!=='none'&&<View style={S.liveRow}><Text style={S.liveKey}>{DET_OPTS.find(o=>o.id===det)?.label}</Text><Text style={S.liveVal}>₱{DET_OPTS.find(o=>o.id===det)?.price}</Text></View>}
-                {fab!=='none'&&<View style={S.liveRow}><Text style={S.liveKey}>{FAB_OPTS.find(o=>o.id===fab)?.label}</Text><Text style={S.liveVal}>₱{FAB_OPTS.find(o=>o.id===fab)?.price}</Text></View>}
-                {rush&&<View style={S.liveRow}><Text style={S.liveKey}>Rush service</Text><Text style={S.liveVal}>₱150</Text></View>}
-                {needsAddr&&<View style={S.liveRow}><Text style={S.liveKey}>Delivery fee</Text><Text style={S.liveVal}>₱{deliveryFee}</Text></View>}
+                <View style={S.liveRow}><Text style={S.liveKey}>{service?.name}</Text><Text style={S.liveVal}>PHP {getServiceBasePrice(service,kg)}</Text></View>
+                {kg>=MACHINE_MAX_KG&&<View style={S.liveRow}><Text style={S.liveKey}>9kg Surcharge</Text><Text style={S.liveVal}>PHP 50</Text></View>}
+                {det!=='none'&&<View style={S.liveRow}><Text style={S.liveKey}>{DET_OPTS.find(o=>o.id===det)?.label}</Text><Text style={S.liveVal}>PHP {DET_OPTS.find(o=>o.id===det)?.price}</Text></View>}
+                {fab!=='none'&&<View style={S.liveRow}><Text style={S.liveKey}>{FAB_OPTS.find(o=>o.id===fab)?.label}</Text><Text style={S.liveVal}>PHP {FAB_OPTS.find(o=>o.id===fab)?.price}</Text></View>}
+                {rush&&<View style={S.liveRow}><Text style={S.liveKey}>Rush service</Text><Text style={S.liveVal}>PHP 150</Text></View>}
+                {needsAddr&&<View style={S.liveRow}><Text style={S.liveKey}>Delivery fee</Text><Text style={S.liveVal}>PHP {deliveryFee}</Text></View>}
                 <View style={S.liveDivider}/>
                 <View style={S.liveRow}>
                   <Text style={[S.liveKey,{fontWeight:'700',color:colors.text,fontSize:15}]}>Total</Text>
-                  <Text style={S.liveTotalAmt}>₱{total}</Text>
+                  <Text style={S.liveTotalAmt}>PHP {total}</Text>
                 </View>
               </View>
             </View>
@@ -391,12 +402,12 @@ export default function BookingScreen({ route, navigation }) {
         {step===5&&(
           <View>
             <Text style={S.q}>Any extras?</Text>
-            <Text style={S.hint}>Add detergent or fabric conditioner — or bring your own.</Text>
+            <Text style={S.hint}>Add detergent or fabric conditioner â€” or bring your own.</Text>
             <Text style={S.sec}>Detergent</Text>
             <View style={S.pillRow}>
               {DET_OPTS.map(o=>(
                 <TouchableOpacity key={o.id} style={[S.pill,det===o.id&&S.pillOn]} onPress={()=>setDet(o.id)}>
-                  <Text style={[S.pillTxt,det===o.id&&S.pillTxtOn]}>{o.label}{o.price>0?` +₱${o.price}`:''}</Text>
+                  <Text style={[S.pillTxt,det===o.id&&S.pillTxtOn]}>{o.label}{o.price>0?` +PHP ${o.price}`:''}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -404,7 +415,7 @@ export default function BookingScreen({ route, navigation }) {
             <View style={S.pillRow}>
               {FAB_OPTS.map(o=>(
                 <TouchableOpacity key={o.id} style={[S.pill,fab===o.id&&S.pillOn]} onPress={()=>setFab(o.id)}>
-                  <Text style={[S.pillTxt,fab===o.id&&S.pillTxtOn]}>{o.label}{o.price>0?` +₱${o.price}`:''}</Text>
+                  <Text style={[S.pillTxt,fab===o.id&&S.pillTxtOn]}>{o.label}{o.price>0?` +PHP ${o.price}`:''}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -414,7 +425,7 @@ export default function BookingScreen({ route, navigation }) {
         {step===6&&(
           <View style={{gap:14}}>
 
-            {/* ── DATE ── */}
+            {/* â”€â”€ DATE â”€â”€ */}
             <View style={S.dateSection}>
               <View style={S.dateSectionHead}>
                 <Text style={S.sectionLabel}>DATE</Text>
@@ -434,11 +445,11 @@ export default function BookingScreen({ route, navigation }) {
               </ScrollView>
             </View>
 
-            {/* ── TIME SLOT — 2-col grid with period labels ── */}
+            {/* â”€â”€ TIME SLOT â€” 2-col grid with period labels â”€â”€ */}
             <View style={S.timeSection}>
               <Text style={S.sectionLabel}>TIME SLOT</Text>
               {slotsLoad ? (
-                <View style={S.slotsLoading}><ActivityIndicator color={colors.primary}/><Text style={S.slotsLoadingTxt}>Checking availability…</Text></View>
+                <View style={S.slotsLoading}><ActivityIndicator color={colors.primary}/><Text style={S.slotsLoadingTxt}>Checking availabilityâ€¦</Text></View>
               ) : slots.length === 0 ? (
                 <View style={S.slotsEmpty}><Ionicons name="calendar-outline" size={28} color={colors.border}/><Text style={S.slotsEmptyTitle}>No slots available</Text><Text style={S.slotsEmptyHint}>Try a different date.</Text></View>
               ) : (
@@ -448,7 +459,7 @@ export default function BookingScreen({ route, navigation }) {
                     return(
                       <TouchableOpacity key={sl.label} style={[S.timeItem,sel&&S.timeItemOn,!sl.available&&S.timeItemOff]} onPress={()=>sl.available&&setSchTime(sl.label)} disabled={!sl.available} activeOpacity={0.8}>
                         <Text style={[S.timeItemTime,sel&&S.timeItemTimeOn,!sl.available&&S.timeItemTextOff]}>{fmtSlot(sl.label)}</Text>
-                        <Text style={[S.timeItemPeriod,sel&&S.timeItemPeriodOn,!sl.available&&S.timeItemTextOff]}>{sl.available?slotPeriod(sl.label):'Full'}</Text>
+                        <Text style={[S.timeItemPeriod,sel&&S.timeItemPeriodOn,!sl.available&&S.timeItemTextOff]}>{sl.available?'Available':'Full'}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -456,17 +467,17 @@ export default function BookingScreen({ route, navigation }) {
               )}
             </View>
 
-            {/* ── Rush service ── */}
+            {/* â”€â”€ Rush service â”€â”€ */}
             <View style={S.rushCard}>
               <View style={{flex:1,gap:4}}>
                 <Text style={S.rushTitle}>Rush service</Text>
                 <Text style={S.rushSub}>Same-day priority processing</Text>
-                <View style={S.rushBadge}><Text style={S.rushBadgeTxt}>+₱150 fee</Text></View>
+                <View style={S.rushBadge}><Text style={S.rushBadgeTxt}>+PHP 150 fee</Text></View>
               </View>
               <Switch value={rush} onValueChange={setRush} trackColor={{false:colors.border,true:colors.primary}} thumbColor="#fff"/>
             </View>
 
-            {/* ── Special instructions ── */}
+            {/* â”€â”€ Special instructions â”€â”€ */}
             <View>
               <Text style={[S.sectionLabel,{marginBottom:10}]}>SPECIAL INSTRUCTIONS</Text>
               <TextInput style={S.notesInput} multiline value={notes} onChangeText={setNotes} placeholder="e.g. handle with care, separate whites..." placeholderTextColor={colors.textTertiary}/>
@@ -481,20 +492,21 @@ export default function BookingScreen({ route, navigation }) {
             {[
               {label:'Branch',       val:branch?.name},
               needsAddr&&{label:'Address',      val:address?.address},
-              {label:'Service',      val:service?.name},
+              {label:'Laundry Services Details', val:service?.name},
+              {label:'Delivery Services', val:needsAddr ? mode.label : 'Not required'},
               {label:'Load',    val:`${kg}kg${hasBeddings?' (with beddings)':''}`},
               {label:'Detergent',    val:DET_OPTS.find(o=>o.id===det)?.label},
               {label:'Fabcon',       val:FAB_OPTS.find(o=>o.id===fab)?.label},
-              {label:'Schedule',     val:`${schDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${schTime}`},
-              rush&&{label:'Rush',   val:'Yes +₱150'},
-              needsAddr&&{label:'Delivery Fee', val:`₱${deliveryFee}`},
+              {label:'Schedule',     val:`${schDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})} Â· ${schTime}`},
+              rush&&{label:'Rush',   val:'Yes + PHP 150'},
+              needsAddr&&{label:'Delivery Fee', val:`PHP ${deliveryFee}`},
             ].filter(Boolean).map((row,i)=>(
               <View key={i} style={S.sumRow}>
                 <Text style={S.sumKey}>{row.label}</Text>
-                <Text style={S.sumVal}>{row.val||'—'}</Text>
+                <Text style={S.sumVal}>{row.val||'â€”'}</Text>
               </View>
             ))}
-            <View style={[S.sumRow,S.sumTotal]}><Text style={S.sumTotalKey}>Total</Text><Text style={S.sumTotalVal}>₱{total.toLocaleString()}</Text></View>
+            <View style={[S.sumRow,S.sumTotal]}><Text style={S.sumTotalKey}>Total</Text><Text style={S.sumTotalVal}>PHP {total.toLocaleString()}</Text></View>
             <Text style={S.sec}>Payment Method</Text>
             {['gcash','cod'].map(p=>(
               <TouchableOpacity key={p} style={[S.payCard,payMethod===p&&S.payCardOn]} onPress={()=>setPay(p)}>
@@ -543,14 +555,14 @@ const S = StyleSheet.create({
   brName:{fontSize:14,fontWeight:'700',color:colors.text},
   brNameOn:{color:colors.primary},
   brAddr:{fontSize:12,color:colors.textSecondary,marginTop:1},
-  // ── Section label (all caps) ─────────────────────────────────────────────────
+  // â”€â”€ Section label (all caps) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   sectionLabel:{fontSize:11,fontWeight:'700',color:colors.textTertiary,letterSpacing:1.2,textTransform:'uppercase',marginBottom:12},
-  // ── Beddings toggle ───────────────────────────────────────────────────
+  // â”€â”€ Beddings toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   beddingsCard:{flexDirection:'row',alignItems:'center',backgroundColor:colors.surface,borderRadius:16,padding:16,borderWidth:1,borderColor:colors.border,gap:12},
   beddingsIconWrap:{width:38,height:38,borderRadius:12,backgroundColor:colors.primaryLight,alignItems:'center',justifyContent:'center'},
   beddingsTitle:{fontSize:14,fontWeight:'700',color:colors.text},
   beddingsSub:{fontSize:12,color:colors.textSecondary,marginTop:2},
-  // ── Weight card ───────────────────────────────────────────────────────────
+  // â”€â”€ Weight card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   weightCard:{backgroundColor:colors.surface,borderRadius:16,padding:20,borderWidth:1,borderColor:colors.border},
   weightCardHeader:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:8},
   maxKgBadge:{paddingHorizontal:12,paddingVertical:5,borderRadius:100},
@@ -607,16 +619,12 @@ const S = StyleSheet.create({
   liveDivider:{height:1,backgroundColor:colors.border,marginVertical:4},
   liveTotalAmt:{fontSize:22,fontWeight:'900',color:colors.text},
   liveBreak:{fontSize:12,color:colors.textSecondary},
-  // Beddings toggle card
-  beddingsCard:{flexDirection:'row',alignItems:'center',backgroundColor:colors.surface,borderRadius:14,padding:14,borderWidth:1,borderColor:colors.border,marginBottom:16,gap:12},
-  beddingsTitle:{fontSize:14,fontWeight:'700',color:colors.text},
-  beddingsSub:{fontSize:12,color:colors.textSecondary,marginTop:2},
   pillRow:{flexDirection:'row',flexWrap:'wrap',gap:10,marginBottom:4},
   pill:{paddingHorizontal:16,paddingVertical:10,borderRadius:24,borderWidth:1.5,borderColor:colors.border,backgroundColor:colors.surface},
   pillOn:{borderColor:colors.primary,backgroundColor:colors.primary},
   pillTxt:{fontSize:13,fontWeight:'600',color:colors.text},
   pillTxtOn:{color:'#fff'},
-  // ── Date section ───────────────────────────────────────────────────────────
+  // â”€â”€ Date section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   dateSection:{backgroundColor:colors.surface,borderRadius:16,padding:16,marginBottom:0,borderWidth:1,borderColor:colors.border},
   dateSectionHead:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:14},
   dateSectionTitle:{fontSize:15,fontWeight:'800',color:colors.text},
@@ -630,7 +638,7 @@ const S = StyleSheet.create({
   dayChipNum:{fontSize:24,fontWeight:'900',color:colors.text},
   dayChipNumOn:{color:'#fff'},
   todayDot:{width:5,height:5,borderRadius:3,backgroundColor:colors.accent,position:'absolute',bottom:6},
-  // ── Time grid (2-col with period labels) ─────────────────────────────────
+  // â”€â”€ Time grid (2-col with period labels) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   timeSection:{backgroundColor:colors.surface,borderRadius:16,padding:16,borderWidth:1,borderColor:colors.border},
   timeGrid:{flexDirection:'row',flexWrap:'wrap',gap:10,marginTop:12},
   timeItem:{width:'47%',backgroundColor:colors.background,borderRadius:12,padding:14,borderWidth:1.5,borderColor:colors.border},
@@ -672,10 +680,12 @@ const S = StyleSheet.create({
   footerHint:{fontSize:11,color:colors.textSecondary,marginTop:1},
   footerTotal:{fontSize:22,fontWeight:'900',color:colors.primary},
   footerRow:{flexDirection:'row',gap:12},
-  // Pill buttons — matching Image 3 style
+  // Pill buttons â€” matching Image 3 style
   backBtn:{flex:1,paddingVertical:16,borderRadius:50,borderWidth:1.5,borderColor:colors.border,alignItems:'center',justifyContent:'center'},
   backTxt:{fontSize:16,fontWeight:'700',color:colors.text},
   contBtn:{flex:2,paddingVertical:16,borderRadius:50,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'},
   contBtnOff:{opacity:0.35},
   contTxt:{fontSize:16,fontWeight:'700',color:'#fff'},
 });
+
+

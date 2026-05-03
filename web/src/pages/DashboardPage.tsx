@@ -3,8 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ShoppingCart,
   Users,
-  TrendingUp,
-  Truck,
   AlertTriangle,
   ArrowUpRight,
 } from "lucide-react";
@@ -54,8 +52,6 @@ export default function DashboardPage() {
         setStats([
           { label: "Active Orders", value: String(activeOrders), change: "Live", icon: ShoppingCart, color: "bg-primary/10 text-primary" },
           { label: "Ready Orders", value: String(data.orders.ready), change: "Live", icon: Users, color: "bg-secondary/30 text-secondary-foreground" },
-          { label: "Machines In Use", value: String(data.machines.inUse), change: "Live", icon: TrendingUp, color: "bg-accent/20 text-accent" },
-          { label: "Maintenance", value: String(data.machines.maintenance), change: "Live", icon: Truck, color: "bg-destructive/10 text-destructive" },
         ]);
 
         setRecentOrders(
@@ -84,15 +80,12 @@ export default function DashboardPage() {
 
         setAlerts([
           { message: `${data.orders.pending} pending orders need processing.`, type: "warning" },
-          { message: `${data.machines.inUse} machines are currently running.`, type: "info" },
           { message: `${data.orders.ready} orders are ready for pickup/delivery.`, type: "success" },
         ]);
       } catch {
         setStats([
           { label: "Active Orders", value: "-", change: "Unavailable", icon: ShoppingCart, color: "bg-primary/10 text-primary" },
           { label: "Ready Orders", value: "-", change: "Unavailable", icon: Users, color: "bg-secondary/30 text-secondary-foreground" },
-          { label: "Machines In Use", value: "-", change: "Unavailable", icon: TrendingUp, color: "bg-accent/20 text-accent" },
-          { label: "Maintenance", value: "-", change: "Unavailable", icon: Truck, color: "bg-destructive/10 text-destructive" },
         ]);
         setRecentOrders([]);
         setRecentOrdersPage(1);

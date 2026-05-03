@@ -4,6 +4,7 @@ import com.washalert.washalertbackend.auth.AuthService;
 import com.washalert.washalertbackend.auth.dto.MeResponse;
 import com.washalert.washalertbackend.delivery.DeliveryOrder;
 import com.washalert.washalertbackend.delivery.DeliveryOrderRepository;
+import com.washalert.washalertbackend.delivery.DeliveryLeg;
 import com.washalert.washalertbackend.delivery.DeliveryService;
 import com.washalert.washalertbackend.delivery.DeliveryStatus;
 import com.washalert.washalertbackend.delivery.dto.DeliveryResponse;
@@ -84,6 +85,7 @@ class HybridFallbackIntegrationTests {
                 .jobOrder(order)
                 .driverName("Driver Hybrid")
                 .driverPhone("09123456789")
+                .leg(DeliveryLeg.PICKUP_FROM_CUSTOMER)
                 .status(DeliveryStatus.PENDING_PICKUP)
                 .build();
         deliveryOrderRepository.save(delivery);
