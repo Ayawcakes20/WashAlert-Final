@@ -32,7 +32,7 @@ const getSupportSessionId = async () => {
     const user = userRaw ? JSON.parse(userRaw) : null;
     const userId = user?.uid || user?.id || 'anonymous';
     const userSessionKey = `${SUPPORT_SESSION_KEY}_${userId}`;
-    
+
     const existing = await AsyncStorage.getItem(userSessionKey);
     if (existing) return existing;
     const next = createSupportSessionId();
@@ -513,8 +513,8 @@ const mapJobOrderToMobile = (jobOrder, previous = {}) => ({
   dateBooked: jobOrder.createdAt ?? previous.dateBooked ?? new Date().toISOString(),
   estimatedTime: previous.estimatedTime ?? '2-4 hours',
   scheduleDate: jobOrder.bookingDate || previous.scheduleDate,
-  scheduleTime: (jobOrder.slotStartTime && jobOrder.slotEndTime) 
-    ? toSlotRangeLabel(jobOrder.slotStartTime, jobOrder.slotEndTime) 
+  scheduleTime: (jobOrder.slotStartTime && jobOrder.slotEndTime)
+    ? toSlotRangeLabel(jobOrder.slotStartTime, jobOrder.slotEndTime)
     : (previous.scheduleTime || ''),
   staffName: jobOrder.createdByName || previous.staffName || '',
   customerName: jobOrder.customerName || previous.customerName || 'Customer',
@@ -966,8 +966,8 @@ export const createOrder = async (orderData) => {
     distanceKm: Number(orderData.distanceKm || 0),
     paymentMethod:
       normalizedPaymentMethod === 'cod' ||
-      normalizedPaymentMethod === 'cash' ||
-      normalizedPaymentMethod === 'cash_on_delivery'
+        normalizedPaymentMethod === 'cash' ||
+        normalizedPaymentMethod === 'cash_on_delivery'
         ? 'CASH'
         : 'GCASH',
     deliveryLatitude: orderData.deliveryLatitude,
