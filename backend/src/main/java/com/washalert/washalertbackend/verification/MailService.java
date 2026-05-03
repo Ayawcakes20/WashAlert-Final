@@ -87,22 +87,25 @@ public class MailService {
     }
 
     public void sendOtpEmail(String to, String code) {
-        validateMailBasics();
+        validateResendMailBasics();
         try {
             log.info("[MAIL][OTP] Dispatching OTP email to {}", maskEmail(to));
-            SimpleMailMessage msg = new SimpleMailMessage();
-            msg.setFrom(from);
-            msg.setTo(to);
-            msg.setSubject("WashAlert Email Verification Code");
-            msg.setText("""
+            String plainText = """
                     Your WashAlert verification code is:
 
                     %s
 
                     This code expires soon. If you did not request this, ignore this email.
-                    """.formatted(code));
-
-            mailSender.send(msg);
+                    """.formatted(code);
+            String html = """
+                    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">
+                      <p style="margin:0 0 12px 0;">Your WashAlert verification code is:</p>
+                      <p style="margin:0 0 16px 0;font-size:28px;font-weight:700;letter-spacing:4px;">%s</p>
+                      <p style="margin:0 0 8px 0;">This code expires soon.</p>
+                      <p style="margin:0;">If you did not request this, ignore this email.</p>
+                    </div>
+                    """.formatted(code);
+            sendViaResendApi(to, "WashAlert Email Verification Code", plainText, html);
             log.info("[MAIL][OTP] OTP email dispatch succeeded to {}", maskEmail(to));
         } catch (RuntimeException ex) {
             throw toMailDispatchException("OTP", to, ex);
@@ -115,12 +118,12 @@ public class MailService {
     }
 
     public void sendLoginOtpEmail(String to, String code) {
-        validateMailBasics();
+        validateResendMailBasics();
         sendLoginOtpEmailInternal(to, code);
     }
 
     public void queueLoginOtpEmail(String to, String code) {
-        validateMailBasics();
+        validateResendMailBasics();
         String masked = maskEmail(to);
         try {
             log.info("[MAIL][LOGIN_OTP] Queueing async login OTP email for {}", masked);
@@ -140,20 +143,23 @@ public class MailService {
     private void sendLoginOtpEmailInternal(String to, String code) {
         try {
             log.info("[MAIL][LOGIN_OTP] Dispatching login OTP email to {}", maskEmail(to));
-            SimpleMailMessage msg = new SimpleMailMessage();
-            msg.setFrom(from);
-            msg.setTo(to);
-            msg.setSubject("WashAlert Login Verification Code");
-            msg.setText("""
+            String plainText = """
                     Your WashAlert login code is:
 
                     %s
 
                     This code expires soon and can only be used once.
                     If you did not attempt to sign in, ignore this email.
-                    """.formatted(code));
-
-            mailSender.send(msg);
+                    """.formatted(code);
+            String html = """
+                    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">
+                      <p style="margin:0 0 12px 0;">Your WashAlert login code is:</p>
+                      <p style="margin:0 0 16px 0;font-size:28px;font-weight:700;letter-spacing:4px;">%s</p>
+                      <p style="margin:0 0 8px 0;">This code expires soon and can only be used once.</p>
+                      <p style="margin:0;">If you did not attempt to sign in, ignore this email.</p>
+                    </div>
+                    """.formatted(code);
+            sendViaResendApi(to, "WashAlert Login Verification Code", plainText, html);
             log.info("[MAIL][LOGIN_OTP] Login OTP email dispatch succeeded to {}", maskEmail(to));
         } catch (RuntimeException ex) {
             throw toMailDispatchException("LOGIN_OTP", to, ex);
