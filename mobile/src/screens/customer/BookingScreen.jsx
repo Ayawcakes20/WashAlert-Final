@@ -18,65 +18,63 @@ const SERVICE_MODES = [
   { id: 'PICKUP_ONLY',   label: 'Pickup Only',   hint: 'We pick up — you get at branch',icon: 'truck-outline',   backendServiceType: 'PICKUP_DELIVERY', needsAddress: true  },
 ];
 const DET_OPTS = [
-  { id: 'none',  label: 'None',           price: 0  },
-  { id: 'surf',  label: 'Surf (Basic)',    price: 25 },
-  { id: 'ariel', label: 'Ariel (Premium)', price: 30 },
+  { id: 'none',  label: 'None',                       price: 0  },
+  { id: 'surf',  label: 'Surf (Basic Det.)',            price: 25 },
+  { id: 'ariel', label: 'Ariel (Premium Det.)',         price: 30 },
 ];
 const FAB_OPTS = [
-  { id: 'none',  label: 'None',            price: 0  },
-  { id: 'charm', label: 'Charm (Basic)',    price: 15 },
-  { id: 'downy', label: 'Downy (Premium)', price: 25 },
+  { id: 'none',  label: 'None',                        price: 0  },
+  { id: 'charm', label: 'Charm Fabcon (Basic)',         price: 15 },
+  { id: 'downy', label: 'Downy (Premium)',              price: 25 },
 ];
-const VIS_STEPS = ['Branch','Service','Load','Supplies','Schedule','Confirm'];
-const VIS_MAP   = { 1:1, 2:1, 3:2, 4:3, 5:4, 6:5, 7:6 };
+const VIS_STEPS = ['Branch','Service','Supplies','Schedule','Confirm'];
+const VIS_MAP   = { 1:1, 2:1, 3:2, 4:3, 5:4, 6:5 };
 
-// ── Accurate flat-rate pricing engine ────────────────────────────────────────
-// PACKAGES (flat rate — never multiply by kg):
-//   Wash (7kg): ₱80 · Dry (7kg): ₱90 · Ecowash (5kg): ₱220 · Basic (7kg): ₱280
-// HANDWASH: ≤3kg → ₱150/kg ; >3kg → ₱90/kg
+// ── Accurate Pricing Engine ──────────────────────────────────────────────────
+// Wash (7kg)=₱80 · Dry (7kg)=₱90 · Ecowash Full (5kg)=₱220
+// Basic Full 7kg=₱240 · Basic Full 8kg=₱245
+// Premium Full 7kg=₱270 · Premium Full 8kg=₱275
+// Handwash ≤3kg → ₱150/kg ; >3kg → ₱90/kg
+// Madness extra 1kg on top of 8kg → +₱50
 const getServiceBasePrice = (svc, weightKg) => {
   const name = String(svc?.name || '').toLowerCase();
   if (name.includes('handwash')) {
     return weightKg <= 3 ? weightKg * 150 : weightKg * 90;
   }
-  if (name.includes('dry'))     return 90;   // Dry: ₱90 flat
-  if (name.includes('eco'))     return 220;  // Ecowash: ₱220 flat
-  if (name.includes('basic'))   return 280;  // Basic Full Service: ₱280 flat
-  if (name.includes('premium')) return weightKg >= 8 ? 275 : 270; // Premium: ₱270/₱275
-  return svc?.price || 0;                    // Fallback flat fee
+  if (name.includes('dry'))          return 90;
+  if (name.includes('ecowash'))      return 220;
+  if (name.includes('basic full')) {
+    // 7kg variant = 240, 8kg variant = 245
+    return name.includes('7kg') ? 240 : 245;
+  }
+  if (name.includes('premium full')) {
+    // 7kg variant = 270, 8kg variant = 275
+    return name.includes('7kg') ? 270 : 275;
+  }
+  // Generic wash
+  return svc?.price || 80;
+};
+
+// Madness surcharge: +₱50 for every kg over 8kg
+const getMadnessSurcharge = (weightKg) => {
+  if (weightKg > 8) return (weightKg - 8) * 50;
+  return 0;
 };
 
 const getServicePriceLabel = (svc) => {
   const name = String(svc?.name || '').toLowerCase();
-  if (name.includes('handwash')) return '₱150/kg (≤3kg)  ·  ₱90/kg (>3kg)';
-  if (name.includes('dry'))     return '₱90 / load';
-  if (name.includes('eco'))     return '₱220 / load';
-  if (name.includes('basic'))   return '₱280 / load';
-  if (name.includes('premium')) return '₱270 (7kg)  ·  ₱275 (8kg)';
+  if (name.includes('handwash'))     return '₱150/kg (≤3kg) · ₱90/kg (>3kg)';
+  if (name.includes('dry'))         return '₱90 / 7kg';
+  if (name.includes('ecowash'))     return '₱220 / 5kg';
+  if (name.includes('basic full'))  return name.includes('7kg') ? '₱240 / 7kg' : '₱245 / 8kg';
+  if (name.includes('premium full'))return name.includes('7kg') ? '₱270 / 7kg' : '₱275 / 8kg';
   return `₱${svc?.price ?? 0}`;
 };
 
 // Format slot label: "8:00 AM - 9:30 AM" → "8:00–9:30"
-const fmtSlot = (label) => {
-  const p = String(label||'').split(/\s*[-–]\s*/);
-  const strip = (s) => s.replace(/\s*(AM|PM)$/i,'').trim();
-  return p.length >= 2 ? `${strip(p[0])}–${strip(p[1])}` : label;
-};
+const fmtSlot = (label) => label;
 
-// Map slot start time to period name for display under the time range
-const slotPeriod = (label) => {
-  const m = String(label||'').match(/(\d+):(\d+)\s*(AM|PM)/i);
-  if (!m) return '';
-  let h = parseInt(m[1]);
-  if (m[3].toUpperCase()==='PM' && h!==12) h+=12;
-  if (m[3].toUpperCase()==='AM' && h===12) h=0;
-  if (h < 9)  return 'Morning';
-  if (h < 11) return 'Late morning';
-  if (h < 13) return 'Midday';
-  if (h < 15) return 'Afternoon';
-  if (h < 17) return 'Late afternoon';
-  return 'Evening';
-};
+// Remove slotPeriod - we no longer show Morning/Afternoon/Evening labels
 
 const getSvcIcon = s => {
   const n = String(s?.name||'').toLowerCase();
@@ -98,6 +96,13 @@ const mkDates = (n=7) => {
 
 export default function BookingScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
+  
+  const Row = ({ label, value }) => (
+    <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingVertical:4}}>
+      <Text style={{color:colors.textSecondary,fontSize:13}}>{label}</Text>
+      <Text style={{color:colors.textPrimary,fontSize:13,fontWeight:'600',textAlign:'right',flex:1,marginLeft:12}}>{value || '—'}</Text>
+    </View>
+  );
   const [step, setStep]           = useState(1);
   const [loading, setLoading]     = useState(true);
   const [submitting, setSub]      = useState(false);
@@ -109,10 +114,10 @@ export default function BookingScreen({ route, navigation }) {
   const [addrSheet, setAddrSheet] = useState(false);
   const [defAddr, setDefAddr]     = useState(null);
   const [service, setService]     = useState(null);
-  const [hasBeddings, setHasBeddings] = useState(false); // true = includes towels/beddings → max 7kg
-  const [kg, setKg]               = useState(5);
-  const [det, setDet]             = useState('none');
-  const [fab, setFab]             = useState('none');
+  const [det, setDet]             = useState('none');   // detergent option id
+  const [detQty, setDetQty]       = useState(1);        // number of packs
+  const [fab, setFab]             = useState('none');   // fabcon option id
+  const [fabQty, setFabQty]       = useState(1);        // number of packs
   const [schDate, setSchDate]     = useState(()=>{ const d=new Date(); d.setHours(0,0,0,0); return d; });
   const [schTime, setSchTime]     = useState(null);
   const [slots, setSlots]         = useState([]);
@@ -120,10 +125,11 @@ export default function BookingScreen({ route, navigation }) {
   const [rush, setRush]           = useState(false);
   const [notes, setNotes]         = useState('');
   const [payMethod, setPay]       = useState('gcash');
-  const dates                     = mkDates(7);
+  const [loadSize, setLoadSize]   = useState('SMALL'); // SMALL or LARGE
+  const dates                     = useMemo(() => mkDates(14), []);
   const mode                      = SERVICE_MODES.find(m=>m.id===svcMode)||SERVICE_MODES[0];
   const needsAddr                 = mode.needsAddress;
-  const maxKg                     = hasBeddings ? 7 : 8;
+
 
   const deliveryFee = useMemo(()=>{
     if(!needsAddr) return 0;
@@ -132,23 +138,27 @@ export default function BookingScreen({ route, navigation }) {
     return Math.min(100,Math.max(40,Math.round(40+d*12)));
   },[needsAddr,address,branch]);
 
+  const detOpt  = DET_OPTS.find(o=>o.id===det);
+  const fabOpt  = FAB_OPTS.find(o=>o.id===fab);
+  const detCost = det !== 'none' ? (detOpt?.price || 0) * detQty : 0;
+  const fabCost = fab !== 'none' ? (fabOpt?.price || 0) * fabQty : 0;
+
   const total = useMemo(()=>{
     if(!service) return 0;
-    const base      = getServiceBasePrice(service, kg);       // flat-rate or per-kg (handwash)
-    const surcharge = kg >= 9 ? 50 : 0;                      // 9kg overload surcharge
-    const d         = DET_OPTS.find(o=>o.id===det)?.price||0;
-    const f         = FAB_OPTS.find(o=>o.id===fab)?.price||0;
-    return base + surcharge + d + f + (rush ? 150 : 0) + deliveryFee;
-  },[service,kg,det,fab,rush,deliveryFee]);
+    const estKg  = loadSize === 'LARGE' ? 8 : 5; 
+    const base    = getServiceBasePrice(service, estKg);
+    const madness = getMadnessSurcharge(estKg);
+    return base + madness + detCost + fabCost + (rush ? 150 : 0) + deliveryFee;
+  },[service,loadSize,detCost,fabCost,rush,deliveryFee]);
 
   const hint = useMemo(()=>{
     if(!service) return '';
-    const p=[service.name,`${kg}kg`];
-    if(det!=='none') p.push(DET_OPTS.find(o=>o.id===det)?.label);
-    if(fab!=='none') p.push(FAB_OPTS.find(o=>o.id===fab)?.label);
+    const p=[service.name];
+    if(det!=='none') p.push(`${detOpt?.label} x${detQty}`);
+    if(fab!=='none') p.push(`${fabOpt?.label} x${fabQty}`);
     if(rush) p.push('Rush +₱150');
     return p.filter(Boolean).join(' · ');
-  },[service,kg,det,fab,rush]);
+  },[service,det,detQty,fab,fabQty,rush]);
 
   useEffect(()=>{ load(); },[]);
   useFocusEffect(useCallback(()=>{ getDefaultSavedAddress().then(setDefAddr).catch(()=>{}); },[]));
@@ -161,8 +171,34 @@ export default function BookingScreen({ route, navigation }) {
   },[branch,schDate]);
 
   const load = async()=>{
-    try{ setLoading(true); const [b,s]=await Promise.all([branches.getAll(),laundry.getServices()]); setBranches(b.branches||[]); setServices(s.services||[]);
-      const pid=route.params?.serviceId; if(pid){ const f=s.services?.find(x=>x.id===pid); if(f) setService(f); }
+    try{ 
+      setLoading(true); 
+      const [b,s]=await Promise.all([branches.getAll(),laundry.getServices()]); 
+      setBranches(b.branches||[]); 
+      
+      // Deduplicate services by name (prefer 8kg over 7kg if both exist)
+      const raw = s.services||[];
+      const unique = [];
+      const seen = new Set();
+      // Sort so that 8kg comes before 7kg to prioritize it in deduplication
+      const sorted = [...raw].sort((x,y)=>{
+        const nx=String(x.name).toLowerCase();
+        const ny=String(y.name).toLowerCase();
+        if(nx.includes('8kg')) return -1;
+        if(ny.includes('8kg')) return 1;
+        return 0;
+      });
+      for(const item of sorted){
+        const baseName = String(item.name).replace(/\s*\(?\d+kg\)?/gi, '').trim();
+        if(!seen.has(baseName)){
+          unique.push(item);
+          seen.add(baseName);
+        }
+      }
+      setServices(unique);
+
+      const pid=route.params?.serviceId; 
+      if(pid){ const f=raw.find(x=>x.id===pid); if(f) setService(f); }
     }catch{ Alert.alert('Error','Failed to load.'); }finally{ setLoading(false); }
   };
 
@@ -170,8 +206,7 @@ export default function BookingScreen({ route, navigation }) {
     if(step===1) return !!branch;
     if(step===2) return !!address?.address;
     if(step===3) return !!service;
-    if(step===4) return kg>=1&&kg<=9;
-    if(step===6) return !!schTime&&!!slots.find(s=>s.label===schTime&&s.available);
+    if(step===5) return !!schTime&&!!slots.find(s=>s.label===schTime&&s.available);
     return true;
   };
 
@@ -180,9 +215,8 @@ export default function BookingScreen({ route, navigation }) {
     else if(step===2){ if(!address?.address){ setAddrSheet(true); return; } setStep(3); }
     else if(step===3){ if(!service) return; setStep(4); }
     else if(step===4) setStep(5);
-    else if(step===5) setStep(6);
-    else if(step===6){ if(!ok()) return; setStep(7); }
-    else if(step===7) confirm_();
+    else if(step===5){ if(!ok()) return; setStep(6); }
+    else if(step===6) confirm_();
   };
   const back = ()=>{
     if(step===1){ navigation.goBack(); return; }
@@ -195,17 +229,52 @@ export default function BookingScreen({ route, navigation }) {
     setSub(true);
     try{
       const dk=needsAddr&&address?.latitude&&branch?.latitude?distKm(branch.latitude,branch.longitude,address.latitude,address.longitude):0;
-      const _svcPrice  = getServiceBasePrice(service, kg) + (kg>=9?50:0);
-      const _supPrice  = (DET_OPTS.find(o=>o.id===det)?.price||0) + (FAB_OPTS.find(o=>o.id===fab)?.price||0);
+      const _svcPrice  = getServiceBasePrice(service, loadSize === 'LARGE' ? 8 : 5);
+      const _supPrice  = ((DET_OPTS.find(o=>o.id===det)?.price||0) * (det==='none'?0:detQty)) + ((FAB_OPTS.find(o=>o.id===fab)?.price||0) * (fab==='none'?0:fabQty));
       const _rushPrice = rush ? 150 : 0;
       const _delPrice  = needsAddr ? deliveryFee : 0;
-      const r=await createOrder({ branchId:branch.id,serviceId:service.id,serviceType:service.name,serviceMode:svcMode,serviceModeLabel:mode.label,serviceTypeBackend:mode.backendServiceType,scheduleDate:schDate,scheduleTime:schTime,loadKg:kg,detergent:DET_OPTS.find(o=>o.id===det)?.label||'None',conditioner:FAB_OPTS.find(o=>o.id===fab)?.label||'None',delivery:needsAddr,isRush:rush,instructions:notes,paymentMethod:payMethod,total,serviceName:service.name,distanceKm:dk,deliveryLatitude:address?.latitude??null,deliveryLongitude:address?.longitude??null,deliveryAddress:address?.address??null,deliveryUnitFloor:address?.unitFloor??null,deliveryContactName:address?.contactName??null,deliveryContactPhone:address?.phone??null,branchLatitude:branch?.latitude||null,branchLongitude:branch?.longitude||null,servicePrice:_svcPrice,suppliesPrice:_supPrice,rushPrice:_rushPrice,deliveryPrice:_delPrice });
+      const r=await createOrder({ 
+        branchId:branch.id,
+        serviceId:service.id,
+        serviceType:service.name,
+        serviceMode:svcMode,
+        serviceModeLabel:mode.label,
+        serviceTypeBackend:mode.backendServiceType,
+        scheduleDate:schDate,
+        scheduleTime:schTime,
+        detergent:DET_OPTS.find(o=>o.id===det)?.label||'None',
+        detergentQuantity: det === 'none' ? 0 : detQty,
+        conditioner:FAB_OPTS.find(o=>o.id===fab)?.label||'None',
+        conditionerQuantity: fab === 'none' ? 0 : fabQty,
+        estimatedWeightKg: loadSize === 'LARGE' ? 8 : 5,
+        delivery: needsAddr,
+        isRush:rush,
+        instructions:notes,
+        paymentMethod:payMethod,
+        total: total,
+        serviceName:service.name,
+        loadSize: loadSize, 
+        distanceKm:dk,
+        deliveryLatitude:address?.latitude??null,
+        deliveryLongitude:address?.longitude??null,
+        deliveryAddress:address?.address??null,
+        deliveryUnitFloor:address?.unitFloor??null,
+        deliveryContactName:address?.contactName??null,
+        deliveryContactPhone:address?.phone??null,
+        branchLatitude:branch?.latitude||null,
+        branchLongitude:branch?.longitude||null,
+        servicePrice: _svcPrice,
+        suppliesPrice: _supPrice,
+        rushPrice: _rushPrice,
+        deliveryPrice: _delPrice 
+      });
       const tn=String(r?.trackingNumber||'').trim(); if(!tn) throw new Error('No tracking number.');
-      if(payMethod==='gcash'){
-        try{ const cp=await payments.initiateGcashCheckout(tn); const u=cp?.checkout_url||cp?.checkoutUrl||cp?.url||cp; const cu=u?String(u).trim():null; if(cu&&/^https?:\/\//i.test(cu)){ try{ await WebBrowser.openBrowserAsync(cu); }catch{ if(await Linking.canOpenURL(cu)) await Linking.openURL(cu); } } }
-        catch{ Alert.alert('Payment Error','Booking created but payment gateway failed. Check Orders to pay.',[{text:'OK',onPress:()=>navigation.navigate('Orders')}]); return; }
-      }
-      Alert.alert('Booking Confirmed',`Tracking #: ${tn}`,[{text:'View Order',onPress:()=>{ setStep(1); navigation.navigate('Orders'); }}]);
+      
+      const successMsg = payMethod === 'gcash' 
+        ? `Booking Successful!\n\nTracking #: ${tn}\n\nNote: Please wait for weighing at the branch. You will receive a notification to pay via GCash once the final price is set.`
+        : `Booking Successful!\n\nTracking #: ${tn}`;
+
+      Alert.alert('Confirmed', successMsg, [{text:'View Order',onPress:()=>{ setStep(1); navigation.navigate('Orders'); }}]);
     }catch{ Alert.alert('Error','Failed to place booking.'); }finally{ setSub(false); }
   };
 
@@ -241,8 +310,8 @@ export default function BookingScreen({ route, navigation }) {
           {submitting
             ?<ActivityIndicator color="#fff" size="small"/>
             :<View style={{flexDirection:'row',alignItems:'center',gap:8}}>
-                <Text style={S.contTxt}>{step===7?'Confirm & Pay':'Continue'}</Text>
-                {step!==7&&<Ionicons name="arrow-down" size={16} color="#fff"/>}
+                <Text style={S.contTxt}>{step===6?'Confirm Booking':'Continue'}</Text>
+                {step!==6&&<Ionicons name="arrow-forward" size={16} color="#fff"/>}
               </View>}
         </TouchableOpacity>
       </View>
@@ -309,6 +378,7 @@ export default function BookingScreen({ route, navigation }) {
           <View>
             <Text style={S.q}>Choose a service</Text>
             <Text style={S.hint}>Select the laundry package that suits your load. Prices shown are per-load flat rates (except Handwash).</Text>
+            
             <Text style={S.sec}>Laundry Package</Text>
             <View style={S.svcGrid}>
               {services_.map(svc=>(
@@ -319,101 +389,122 @@ export default function BookingScreen({ route, navigation }) {
                 </TouchableOpacity>
               ))}
             </View>
+
+            <Text style={S.sec}>Estimated Load Size</Text>
+            <View style={{flexDirection:'row',gap:12}}>
+              <TouchableOpacity 
+                style={[S.loadSizeCard, loadSize==='SMALL'&&S.loadSizeCardOn]} 
+                onPress={()=>setLoadSize('SMALL')}
+              >
+                <Text style={[S.loadSizeName, loadSize==='SMALL'&&S.loadSizeNameOn]}>Small Load</Text>
+                <Text style={[S.loadSizeHint, loadSize==='SMALL'&&S.loadSizeHintOn]}>Up to 7kg</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[S.loadSizeCard, loadSize==='LARGE'&&S.loadSizeCardOn]} 
+                onPress={()=>setLoadSize('LARGE')}
+              >
+                <Text style={[S.loadSizeName, loadSize==='LARGE'&&S.loadSizeNameOn]}>Large Load</Text>
+                <Text style={[S.loadSizeHint, loadSize==='LARGE'&&S.loadSizeHintOn]}>8kg to 10kg</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
         {step===4&&(
-          <View style={{gap:14}}>
-            {/* ── Beddings toggle ── */}
-            <View style={S.beddingsCard}>
-              <View style={S.beddingsIconWrap}>
-                <Ionicons name="briefcase-outline" size={18} color={colors.primary}/>
+          <View style={{gap:16}}>
+            <Text style={S.q}>Any extras?</Text>
+            <Text style={S.hint}>Add detergent or fabric conditioner — or bring your own.</Text>
+
+            {/* ── Premium Pricing Info Card ── */}
+            <View style={S.pricingInfoCard}>
+              <View style={S.pricingInfoContent}>
+                <View style={S.pricingInfoIcon}>
+                  <Ionicons name="information-circle" size={20} color={colors.primary}/>
+                </View>
+                <View style={{flex:1}}>
+                  <Text style={S.pricingInfoTitle}>Transparent Pricing</Text>
+                  <Text style={S.pricingInfoText}>
+                    Laundry is weighed upon arrival. You'll get a <Text style={{fontWeight:'700',color:colors.primary}}>final price for confirmation</Text> before we start washing.
+                  </Text>
+                </View>
               </View>
-              <View style={{flex:1}}>
-                <Text style={S.beddingsTitle}>Includes beddings or towels?</Text>
-                <Text style={S.beddingsSub}>
-                  {hasBeddings ? 'Yes — max 7 kg limit applies' : 'No — max 8 kg for clothes'}
-                </Text>
-              </View>
-              <Switch value={hasBeddings} onValueChange={v=>{setHasBeddings(v);if(v&&kg>7)setKg(7);}} trackColor={{false:colors.border,true:colors.primary}} thumbColor="#fff"/>
             </View>
 
-            {/* ── Weight card ── */}
-            <View style={S.weightCard}>
-              <View style={S.weightCardHeader}>
-                <Text style={S.sectionLabel}>WEIGHT</Text>
-                <View style={[S.maxKgBadge,{backgroundColor:kg>maxKg?colors.warningLight:colors.primaryLight}]}>
-                  <Text style={[S.maxKgBadgeTxt,{color:kg>maxKg?colors.warning:colors.primary}]}>Max {maxKg} kg</Text>
+            {/* ── DETERGENT ── */}
+            <Text style={S.sec}>Detergent</Text>
+            {DET_OPTS.map(o=>(
+              <TouchableOpacity key={o.id}
+                style={[{flexDirection:'row',alignItems:'center',justifyContent:'space-between',backgroundColor:colors.surface,borderRadius:14,padding:14,marginBottom:8,borderWidth:1.5,borderColor:det===o.id?colors.primary:colors.border},det===o.id&&{backgroundColor:colors.primaryLight}]}
+                onPress={()=>{setDet(o.id); if(o.id!=='none')setDetQty(q=>q||1);}}
+                activeOpacity={0.8}
+              >
+                <View style={{flex:1}}>
+                  <Text style={{fontSize:14,fontWeight:'700',color:det===o.id?colors.primary:colors.text}}>{o.label}</Text>
+                  {o.price>0&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per pack</Text>}
                 </View>
+                {det===o.id && o.id!=='none' && (
+                  <View style={{flexDirection:'row',alignItems:'center',gap:10}}>
+                    <TouchableOpacity onPress={()=>setDetQty(q=>Math.max(1,q-1))} style={{width:32,height:32,borderRadius:16,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}>
+                      <Text style={{color:'#fff',fontSize:18,fontWeight:'700',lineHeight:22}}>-</Text>
+                    </TouchableOpacity>
+                    <Text style={{fontSize:16,fontWeight:'800',color:colors.text,minWidth:24,textAlign:'center'}}>{detQty}</Text>
+                    <TouchableOpacity onPress={()=>setDetQty(q=>q+1)} style={{width:32,height:32,borderRadius:16,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}>
+                      <Text style={{color:'#fff',fontSize:18,fontWeight:'700',lineHeight:22}}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {det===o.id&&<Ionicons name="checkmark-circle" size={20} color={colors.primary} style={{marginLeft:8}}/>}
+              </TouchableOpacity>
+            ))}
+
+            {/* ── FABRIC CONDITIONER ── */}
+            <Text style={S.sec}>Fabric Conditioner</Text>
+            {FAB_OPTS.map(o=>(
+              <TouchableOpacity key={o.id}
+                style={[{flexDirection:'row',alignItems:'center',justifyContent:'space-between',backgroundColor:colors.surface,borderRadius:14,padding:14,marginBottom:8,borderWidth:1.5,borderColor:fab===o.id?colors.primary:colors.border},fab===o.id&&{backgroundColor:colors.primaryLight}]}
+                onPress={()=>{setFab(o.id); if(o.id!=='none')setFabQty(q=>q||1);}}
+                activeOpacity={0.8}
+              >
+                <View style={{flex:1}}>
+                  <Text style={{fontSize:14,fontWeight:'700',color:fab===o.id?colors.primary:colors.text}}>{o.label}</Text>
+                  {o.price>0&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per pack</Text>}
+                </View>
+                {fab===o.id && o.id!=='none' && (
+                  <View style={{flexDirection:'row',alignItems:'center',gap:10}}>
+                    <TouchableOpacity onPress={()=>setFabQty(q=>Math.max(1,q-1))} style={{width:32,height:32,borderRadius:16,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}>
+                      <Text style={{color:'#fff',fontSize:18,fontWeight:'700',lineHeight:22}}>-</Text>
+                    </TouchableOpacity>
+                    <Text style={{fontSize:16,fontWeight:'800',color:colors.text,minWidth:24,textAlign:'center'}}>{fabQty}</Text>
+                    <TouchableOpacity onPress={()=>setFabQty(q=>q+1)} style={{width:32,height:32,borderRadius:16,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}>
+                      <Text style={{color:'#fff',fontSize:18,fontWeight:'700',lineHeight:22}}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {fab===o.id&&<Ionicons name="checkmark-circle" size={20} color={colors.primary} style={{marginLeft:8}}/>}
+              </TouchableOpacity>
+            ))}
+            
+            <View style={S.rushCard}>
+              <View style={{flex:1,gap:4}}>
+                <Text style={S.rushTitle}>Rush service</Text>
+                <Text style={S.rushSub}>Same-day priority processing</Text>
+                <View style={S.rushBadge}><Text style={S.rushBadgeTxt}>+₱150 fee</Text></View>
               </View>
-              <View style={S.kgRow}>
-                <TouchableOpacity style={S.kgBtn} onPress={()=>setKg(k=>Math.max(1,k-1))}><Text style={S.kgBtnTxt}>−</Text></TouchableOpacity>
-                <View style={S.kgDisplay}>
-                  <Text style={S.kgNum}>{kg}</Text>
-                  <Text style={S.kgUnit}>kilograms</Text>
-                </View>
-                <TouchableOpacity style={S.kgBtn} onPress={()=>setKg(k=>Math.min(9,k+1))}><Text style={S.kgBtnTxt}>+</Text></TouchableOpacity>
-              </View>
-              {/* labeled track */}
-              <View style={{marginTop:4}}>
-                <View style={S.kgBar}>
-                  <View style={[S.kgFill,{width:`${Math.min(100,((kg-1)/(maxKg-1))*100)}%`,backgroundColor:kg>maxKg?colors.error:colors.text}]}/>
-                </View>
-                <View style={S.kgBarLabels}>
-                  <Text style={S.kgBarLbl}>1 kg</Text>
-                  <Text style={S.kgBarLbl}>{maxKg} kg</Text>
-                </View>
-              </View>
-              {kg>=9&&<View style={S.surcharge}><Ionicons name="warning-outline" size={13} color={colors.error}/><Text style={[S.surchargeTxt,{color:colors.error}]}>Absolute 9 kg cap — ₱50 surcharge applies</Text></View>}
-              {kg>maxKg&&kg<9&&<View style={S.surcharge}><Ionicons name="information-circle-outline" size={13} color={colors.warning}/><Text style={S.surchargeTxt}>Exceeds {hasBeddings?'beddings/towels':'clothes'} limit ({maxKg} kg)</Text></View>}
+              <Switch value={rush} onValueChange={setRush} trackColor={{false:colors.border,true:colors.primary}} thumbColor="#fff"/>
             </View>
 
-            {/* ── Price breakdown card ── */}
-            <View style={S.liveCard}>
-              <Text style={S.sectionLabel}>PRICE BREAKDOWN</Text>
-              <View style={{marginTop:12,gap:10}}>
-                <View style={S.liveRow}><Text style={S.liveKey}>{service?.name}</Text><Text style={S.liveVal}>₱{getServiceBasePrice(service,kg)}</Text></View>
-                {kg>=9&&<View style={S.liveRow}><Text style={S.liveKey}>9kg Surcharge</Text><Text style={S.liveVal}>₱50</Text></View>}
-                {det!=='none'&&<View style={S.liveRow}><Text style={S.liveKey}>{DET_OPTS.find(o=>o.id===det)?.label}</Text><Text style={S.liveVal}>₱{DET_OPTS.find(o=>o.id===det)?.price}</Text></View>}
-                {fab!=='none'&&<View style={S.liveRow}><Text style={S.liveKey}>{FAB_OPTS.find(o=>o.id===fab)?.label}</Text><Text style={S.liveVal}>₱{FAB_OPTS.find(o=>o.id===fab)?.price}</Text></View>}
-                {rush&&<View style={S.liveRow}><Text style={S.liveKey}>Rush service</Text><Text style={S.liveVal}>₱150</Text></View>}
-                {needsAddr&&<View style={S.liveRow}><Text style={S.liveKey}>Delivery fee</Text><Text style={S.liveVal}>₱{deliveryFee}</Text></View>}
-                <View style={S.liveDivider}/>
-                <View style={S.liveRow}>
-                  <Text style={[S.liveKey,{fontWeight:'700',color:colors.text,fontSize:15}]}>Total</Text>
-                  <Text style={S.liveTotalAmt}>₱{total}</Text>
-                </View>
-              </View>
+            <View>
+              <Text style={S.sec}>Special Instructions</Text>
+              <TextInput style={S.notesInput} multiline value={notes} onChangeText={setNotes} placeholder="e.g. handle with care, separate whites..." placeholderTextColor={colors.textTertiary}/>
             </View>
           </View>
         )}
 
         {step===5&&(
-          <View>
-            <Text style={S.q}>Any extras?</Text>
-            <Text style={S.hint}>Add detergent or fabric conditioner — or bring your own.</Text>
-            <Text style={S.sec}>Detergent</Text>
-            <View style={S.pillRow}>
-              {DET_OPTS.map(o=>(
-                <TouchableOpacity key={o.id} style={[S.pill,det===o.id&&S.pillOn]} onPress={()=>setDet(o.id)}>
-                  <Text style={[S.pillTxt,det===o.id&&S.pillTxtOn]}>{o.label}{o.price>0?` +₱${o.price}`:''}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <Text style={S.sec}>Fabric Conditioner</Text>
-            <View style={S.pillRow}>
-              {FAB_OPTS.map(o=>(
-                <TouchableOpacity key={o.id} style={[S.pill,fab===o.id&&S.pillOn]} onPress={()=>setFab(o.id)}>
-                  <Text style={[S.pillTxt,fab===o.id&&S.pillTxtOn]}>{o.label}{o.price>0?` +₱${o.price}`:''}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {step===6&&(
           <View style={{gap:14}}>
-
+            <Text style={S.q}>When should we do it?</Text>
+            <Text style={S.hint}>Choose your preferred date and time slot.</Text>
+            
             {/* ── DATE ── */}
             <View style={S.dateSection}>
               <View style={S.dateSectionHead}>
@@ -434,7 +525,7 @@ export default function BookingScreen({ route, navigation }) {
               </ScrollView>
             </View>
 
-            {/* ── TIME SLOT — 2-col grid with period labels ── */}
+            {/* ── TIME SLOT ── */}
             <View style={S.timeSection}>
               <Text style={S.sectionLabel}>TIME SLOT</Text>
               {slotsLoad ? (
@@ -448,58 +539,78 @@ export default function BookingScreen({ route, navigation }) {
                     return(
                       <TouchableOpacity key={sl.label} style={[S.timeItem,sel&&S.timeItemOn,!sl.available&&S.timeItemOff]} onPress={()=>sl.available&&setSchTime(sl.label)} disabled={!sl.available} activeOpacity={0.8}>
                         <Text style={[S.timeItemTime,sel&&S.timeItemTimeOn,!sl.available&&S.timeItemTextOff]}>{fmtSlot(sl.label)}</Text>
-                        <Text style={[S.timeItemPeriod,sel&&S.timeItemPeriodOn,!sl.available&&S.timeItemTextOff]}>{sl.available?slotPeriod(sl.label):'Full'}</Text>
+                        {!sl.available&&<Text style={[S.timeItemPeriod,S.timeItemTextOff]}>Full</Text>}
                       </TouchableOpacity>
                     );
                   })}
                 </View>
               )}
             </View>
-
-            {/* ── Rush service ── */}
-            <View style={S.rushCard}>
-              <View style={{flex:1,gap:4}}>
-                <Text style={S.rushTitle}>Rush service</Text>
-                <Text style={S.rushSub}>Same-day priority processing</Text>
-                <View style={S.rushBadge}><Text style={S.rushBadgeTxt}>+₱150 fee</Text></View>
-              </View>
-              <Switch value={rush} onValueChange={setRush} trackColor={{false:colors.border,true:colors.primary}} thumbColor="#fff"/>
-            </View>
-
-            {/* ── Special instructions ── */}
-            <View>
-              <Text style={[S.sectionLabel,{marginBottom:10}]}>SPECIAL INSTRUCTIONS</Text>
-              <TextInput style={S.notesInput} multiline value={notes} onChangeText={setNotes} placeholder="e.g. handle with care, separate whites..." placeholderTextColor={colors.textTertiary}/>
-            </View>
           </View>
         )}
 
-        {step===7&&(
-          <View>
+
+
+        {step===6&&(
+          <View style={{gap:16}}>
             <Text style={S.q}>Review & Confirm</Text>
-            <Text style={S.hint}>Check your order before payment.</Text>
-            {[
-              {label:'Branch',       val:branch?.name},
-              needsAddr&&{label:'Address',      val:address?.address},
-              {label:'Service',      val:service?.name},
-              {label:'Load',    val:`${kg}kg${hasBeddings?' (with beddings)':''}`},
-              {label:'Detergent',    val:DET_OPTS.find(o=>o.id===det)?.label},
-              {label:'Fabcon',       val:FAB_OPTS.find(o=>o.id===fab)?.label},
-              {label:'Schedule',     val:`${schDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${schTime}`},
-              rush&&{label:'Rush',   val:'Yes +₱150'},
-              needsAddr&&{label:'Delivery Fee', val:`₱${deliveryFee}`},
-            ].filter(Boolean).map((row,i)=>(
-              <View key={i} style={S.sumRow}>
-                <Text style={S.sumKey}>{row.label}</Text>
-                <Text style={S.sumVal}>{row.val||'—'}</Text>
+            <Text style={S.hint}>Check your booking before submitting. Final price will be confirmed at the branch.</Text>
+            
+            {/* ── Section 1: LAUNDRY SERVICES ── */}
+            <View style={S.summarySection}>
+              <View style={S.summaryHeader}>
+                <Ionicons name="shirt-outline" size={14} color={colors.primary}/>
+                <Text style={S.summaryTitle}>LAUNDRY SERVICES</Text>
               </View>
-            ))}
-            <View style={[S.sumRow,S.sumTotal]}><Text style={S.sumTotalKey}>Total</Text><Text style={S.sumTotalVal}>₱{total.toLocaleString()}</Text></View>
+              <Row label="Package" value={service?.name}/>
+              <Row label="Load Size" value={loadSize === 'SMALL' ? 'Small (~7kg)' : 'Large (8-10kg)'}/>
+            </View>
+
+            {/* ── Section 2: EXTRAS ── */}
+            <View style={S.summarySection}>
+              <View style={S.summaryHeader}>
+                <Ionicons name="sparkles-outline" size={14} color={colors.primary}/>
+                <Text style={S.summaryTitle}>EXTRAS</Text>
+              </View>
+              <Row label="Detergent" value={det==='none'?'None':`${detOpt?.label} x${detQty} (₱${detCost})`}/>
+              <Row label="Fabric Conditioner" value={fab==='none'?'None':`${fabOpt?.label} x${fabQty} (₱${fabCost})`}/>
+              {rush && <Row label="Rush Service" value="Yes (+₱150)"/>}
+            </View>
+
+            {/* ── Section 3: LOGISTICS ── */}
+            <View style={S.summarySection}>
+              <View style={S.summaryHeader}>
+                <Ionicons name="bus-outline" size={14} color={colors.primary}/>
+                <Text style={S.summaryTitle}>LOGISTICS</Text>
+              </View>
+              <Row label="Branch" value={branch?.name}/>
+              <Row label="Schedule" value={`${schDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${schTime}`}/>
+              {needsAddr && <Row label="Address" value={address?.address}/>}
+              {needsAddr && <Row label="Delivery Fee" value={`₱${deliveryFee}`}/>}
+            </View>
+
+            {/* Estimated total */}
+            <View style={[S.sumRow,S.sumTotal]}>
+              <View>
+                <Text style={S.sumTotalKey}>Estimated Total</Text>
+                <Text style={{fontSize:10, color:colors.textTertiary, fontWeight:'700', textTransform:'uppercase', marginTop:2}}>Subject to change after weighing</Text>
+              </View>
+              <Text style={[S.sumTotalVal,{color:colors.textSecondary, opacity:0.6}]}>₱{total.toLocaleString()}</Text>
+            </View>
+            
+            <View style={S.pricingInfoCard}>
+              <Ionicons name="information-circle-outline" size={14} color="#2563EB"/>
+              <Text style={[S.pricingInfoText,{flex:1}]}>Final amount confirmed after weighing at branch. You will receive a notification to approve before washing begins.</Text>
+            </View>
+
             <Text style={S.sec}>Payment Method</Text>
             {['gcash','cod'].map(p=>(
               <TouchableOpacity key={p} style={[S.payCard,payMethod===p&&S.payCardOn]} onPress={()=>setPay(p)}>
                 <MaterialCommunityIcons name={p==='gcash'?'cellphone-wireless':'cash'} size={22} color={payMethod===p?'#fff':colors.primary}/>
-                <Text style={[S.payName,payMethod===p&&S.payNameOn]}>{p==='gcash'?'GCash':'Cash on Delivery'}</Text>
+                <View style={{flex:1}}>
+                  <Text style={[S.payName,payMethod===p&&S.payNameOn]}>{p==='gcash'?'GCash (Via PayMongo)':'Cash on Delivery'}</Text>
+                  {p==='gcash' && <Text style={{fontSize:10, color:payMethod===p?'rgba(255,255,255,0.7)':colors.textTertiary}}>Pay after staff confirms weight</Text>}
+                </View>
                 {payMethod===p&&<Ionicons name="checkmark-circle" size={18} color={payMethod===p?'#fff':colors.primary}/>}
               </TouchableOpacity>
             ))}
@@ -519,6 +630,12 @@ const S = StyleSheet.create({
   hdr:{paddingHorizontal:20,paddingTop:12,paddingBottom:4,flexDirection:'row',alignItems:'center',justifyContent:'space-between'},
   hdrTitle:{fontSize:22,fontWeight:'900',color:colors.text,letterSpacing:-0.4},
   hdrSub:{fontSize:13,color:colors.textSecondary,marginTop:2},
+  // Pricing info card - premium glassmorphism style
+  pricingInfoCard:{backgroundColor:'rgba(37,99,235,0.06)',borderRadius:16,padding:16,borderWidth:1,borderColor:'rgba(37,99,235,0.15)',flexDirection:'row',alignItems:'flex-start',gap:12,marginBottom:4},
+  pricingInfoContent:{flexDirection:'row',gap:12},
+  pricingInfoIcon:{width:36,height:36,borderRadius:12,backgroundColor:'rgba(37,99,235,0.1)',alignItems:'center',justifyContent:'center'},
+  pricingInfoTitle:{fontSize:14,fontWeight:'800',color:'#1E3A8A',marginBottom:2},
+  pricingInfoText:{fontSize:13,color:'#1E3A8A',lineHeight:20},
   // Progress bar stepper
   stepperWrap:{flexDirection:'row',alignItems:'center',paddingHorizontal:20,paddingBottom:16,gap:12},
   progressTrack:{flex:1,height:5,backgroundColor:colors.border,borderRadius:3,overflow:'hidden'},
@@ -588,12 +705,18 @@ const S = StyleSheet.create({
   svcNameOn:{color:'#fff'},
   svcPrice:{fontSize:12,color:colors.textSecondary},
   svcPriceOn:{color:'rgba(255,255,255,0.8)'},
-  kgRow:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:24,marginVertical:20},
-  kgBtn:{width:56,height:56,borderRadius:16,backgroundColor:colors.background,alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:colors.border},
-  kgBtnTxt:{fontSize:26,fontWeight:'300',color:colors.text},
-  kgDisplay:{alignItems:'center',minWidth:80},
-  kgNum:{fontSize:72,fontWeight:'900',color:colors.text,letterSpacing:-3},
-  kgUnit:{fontSize:13,color:colors.textTertiary,fontWeight:'500',marginTop:-6},
+  loadSizeCard:{flex:1,backgroundColor:colors.surface,borderRadius:16,padding:16,borderWidth:1.5,borderColor:colors.border,gap:4},
+  loadSizeCardOn:{backgroundColor:colors.primary,borderColor:colors.primary},
+  loadSizeName:{fontSize:14,fontWeight:'700',color:colors.text},
+  loadSizeNameOn:{color:'#fff'},
+  loadSizeHint:{fontSize:12,color:colors.textSecondary},
+  loadSizeHintOn:{color:'rgba(255,255,255,0.8)'},
+  kgSelector:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:24,marginVertical:16,backgroundColor:colors.surface,padding:20,borderRadius:20,borderWidth:1,borderColor:colors.border},
+  kgBtn:{width:50,height:50,borderRadius:25,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center',shadowColor:colors.primary,shadowOffset:{width:0,height:4},shadowOpacity:0.3,shadowRadius:8,elevation:4},
+  kgDisplay:{alignItems:'center',minWidth:90},
+  kgVal:{fontSize:48,fontWeight:'900',color:colors.text,lineHeight:54},
+  kgUnit:{fontSize:14,color:colors.textSecondary,fontWeight:'800',marginTop:-4},
+  kgHint:{fontSize:12,color:colors.textTertiary,textAlign:'center',fontStyle:'italic'},
   surcharge:{flexDirection:'row',alignItems:'center',gap:6,backgroundColor:colors.warningLight,padding:10,borderRadius:10,marginBottom:12},
   surchargeTxt:{fontSize:12,color:colors.warning,fontWeight:'600'},
   kgBar:{height:6,backgroundColor:colors.border,borderRadius:3,marginVertical:16,overflow:'hidden'},
@@ -678,4 +801,7 @@ const S = StyleSheet.create({
   contBtn:{flex:2,paddingVertical:16,borderRadius:50,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'},
   contBtnOff:{opacity:0.35},
   contTxt:{fontSize:16,fontWeight:'700',color:'#fff'},
+  summarySection:{backgroundColor:colors.surface,borderRadius:16,padding:16,borderWidth:1,borderColor:colors.border,gap:2},
+  summaryHeader:{flexDirection:'row',alignItems:'center',gap:8,marginBottom:8,borderBottomWidth:1,borderBottomColor:colors.border,paddingBottom:8},
+  summaryTitle:{fontSize:12,fontWeight:'800',color:colors.primary,letterSpacing:0.5},
 });

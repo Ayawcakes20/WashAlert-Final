@@ -134,11 +134,11 @@ public class NotificationCenterService {
     }
 
     private AppNotificationResponse toRecentOrderNotification(JobOrderResponse order) {
-        LocalDateTime createdAt = order.updatedAt() != null ? order.updatedAt() : order.createdAt();
+        LocalDateTime createdAt = order.getUpdatedAt() != null ? order.getUpdatedAt() : order.getCreatedAt();
         return new AppNotificationResponse(
-                "order-" + order.id(),
-                "Order Update: " + order.trackingNumber(),
-                order.customerName() + " is now in " + order.status().name() + ".",
+                "order-" + order.getId(),
+                "Order Update: " + order.getTrackingNumber(),
+                order.getCustomerName() + " is now in " + (order.getStatus() != null ? order.getStatus().name() : "UNKNOWN") + ".",
                 "/orders",
                 "info",
                 createdAt == null ? LocalDateTime.now() : createdAt

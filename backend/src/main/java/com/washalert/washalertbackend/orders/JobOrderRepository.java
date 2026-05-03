@@ -3,6 +3,8 @@ package com.washalert.washalertbackend.orders;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Lock;
 
+import com.washalert.washalertbackend.orders.JobOrderStatus;
+import com.washalert.washalertbackend.user.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -26,6 +28,19 @@ public interface JobOrderRepository extends JpaRepository<JobOrder, Long> {
     List<JobOrder> findAllByOrderByCreatedAtDesc();
 
     long countByStatus(JobOrderStatus status);
+    List<JobOrder> findByStatus(JobOrderStatus status);
+    Page<JobOrder> findByAssignedDriverAndStatusIn(User driver, Collection<JobOrderStatus> statuses, Pageable pageable);
+
+    @Query("""
+        select jo from JobOrder jo
+        where (jo.assignedPickupDriver = :driver or jo.assignedDeliveryDriver = :driver or jo.assignedDriver = :driver)
+        and jo.status in :statuses
+    """)
+    Page<JobOrder> findDriverTasksPaged(
+            @Param("driver") User driver,
+            @Param("statuses") Collection<JobOrderStatus> statuses,
+            Pageable pageable
+    );
 
     // STAFF branch views
     List<JobOrder> findTop10ByBranchIgnoreCaseOrderByCreatedAtDesc(String branch);
@@ -46,7 +61,7 @@ public interface JobOrderRepository extends JpaRepository<JobOrder, Long> {
                     select jo
                     from JobOrder jo
                     where (:branch is null or lower(jo.branch) = lower(:branch))
-                      and (:status is null or jo.status = :status)
+                      and (:statusesEmpty = true or jo.status in :statuses)
                       and (:search is null or lower(jo.trackingNumber) like lower(concat('%', :search, '%'))
                            or lower(jo.customerName) like lower(concat('%', :search, '%')))
                       and (:paymentMethod is null or upper(coalesce(jo.paymentMethod, '')) like concat('%', upper(:paymentMethod), '%'))
@@ -70,7 +85,7 @@ public interface JobOrderRepository extends JpaRepository<JobOrder, Long> {
                     select count(jo)
                     from JobOrder jo
                     where (:branch is null or lower(jo.branch) = lower(:branch))
-                      and (:status is null or jo.status = :status)
+                      and (:statusesEmpty = true or jo.status in :statuses)
                       and (:search is null or lower(jo.trackingNumber) like lower(concat('%', :search, '%'))
                            or lower(jo.customerName) like lower(concat('%', :search, '%')))
                       and (:paymentMethod is null or upper(coalesce(jo.paymentMethod, '')) like concat('%', upper(:paymentMethod), '%'))
@@ -93,7 +108,8 @@ public interface JobOrderRepository extends JpaRepository<JobOrder, Long> {
     )
     Page<JobOrder> findPagedWithFilters(
             @Param("branch") String branch,
-            @Param("status") JobOrderStatus status,
+            @Param("statuses") Collection<JobOrderStatus> statuses,
+            @Param("statusesEmpty") boolean statusesEmpty,
             @Param("search") String search,
             @Param("paymentStatus") PaymentStatus paymentStatus,
             @Param("includeOrderPaid") boolean includeOrderPaid,

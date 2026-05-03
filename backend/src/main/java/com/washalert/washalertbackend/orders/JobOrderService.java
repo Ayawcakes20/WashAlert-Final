@@ -12,6 +12,7 @@ import com.washalert.washalertbackend.orders.dto.EditJobOrderRequest;
 import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
 import com.washalert.washalertbackend.orders.dto.OrderTrackingEventResponse;
 import com.washalert.washalertbackend.orders.dto.OrderTrackingResponse;
+import com.washalert.washalertbackend.orders.dto.SetPriceRequest;
 import com.washalert.washalertbackend.orders.dto.UpdateJobOrderRequest;
 import com.washalert.washalertbackend.payment.PaymentRecord;
 import com.washalert.washalertbackend.payment.PaymentRecordRepository;
@@ -19,18 +20,25 @@ import com.washalert.washalertbackend.payment.PaymentStatus;
 import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
-import jakarta.transaction.Transactional;
+import com.washalert.washalertbackend.user.UserRepository;
+import com.washalert.washalertbackend.orders.dto.*;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import com.washalert.washalertbackend.user.UserStatus;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -47,6 +55,7 @@ public class JobOrderService {
     private final DataReadProperties dataReadProperties;
     private final PaymentRecordRepository paymentRepository;
     private final DeliveryService deliveryService;
+    private final UserRepository userRepository;
 
     public JobOrderService(
             JobOrderRepository repo,
@@ -57,8 +66,8 @@ public class JobOrderService {
             FirestoreReadService firestoreReadService,
             DataReadProperties dataReadProperties,
             PaymentRecordRepository paymentRepository,
-            DeliveryService deliveryService
-    ) {
+            DeliveryService deliveryService,
+            UserRepository userRepository) {
         this.repo = repo;
         this.historyRepository = historyRepository;
         this.timelineService = timelineService;
@@ -68,8 +77,10 @@ public class JobOrderService {
         this.dataReadProperties = dataReadProperties;
         this.paymentRepository = paymentRepository;
         this.deliveryService = deliveryService;
+        this.userRepository = userRepository;
     }
 
+    @Transactional(readOnly = true)
     public List<JobOrderResponse> listAll(AuthUserDetails principal) {
         User actor = principal.getUser();
 
@@ -89,6 +100,7 @@ public class JobOrderService {
         return firestoreRows;
     }
 
+    @Transactional(readOnly = true)
     public PagedResponse<JobOrderResponse> listPaged(
             AuthUserDetails principal,
             String branch,
@@ -98,18 +110,21 @@ public class JobOrderService {
             String paymentMethod,
             LocalDate fromDate,
             LocalDate toDate,
-            Pageable pageable
-    ) {
+            Pageable pageable) {
         User actor = principal.getUser();
         String effectiveBranch = actor.getRole() == Role.STAFF ? actor.getBranch() : normalizeBranchFilter(branch);
-        JobOrderStatus parsedStatus = parseOrderStatus(status);
+
+        List<JobOrderStatus> parsedStatuses = parseOrderStatuses(status);
+        boolean statusesEmpty = parsedStatuses.isEmpty();
+
         PaymentStatus parsedPaymentStatus = parsePaymentStatus(paymentStatus);
         boolean includeOrderPaid = parsedPaymentStatus == PaymentStatus.PAID;
         boolean includeImplicitPending = parsedPaymentStatus == PaymentStatus.PENDING;
 
         Page<JobOrder> page = repo.findPagedWithFilters(
                 effectiveBranch,
-                parsedStatus,
+                parsedStatuses,
+                statusesEmpty,
                 normalizeSearch(search),
                 parsedPaymentStatus,
                 includeOrderPaid,
@@ -117,20 +132,37 @@ public class JobOrderService {
                 normalizeSearch(paymentMethod),
                 atStartOfDay(fromDate),
                 atEndOfDay(toDate),
-                pageable
-        );
+                pageable);
 
         Map<Long, PaymentStatus> paymentStatusByOrderId = resolvePaymentStatusByOrderId(page.getContent());
         Page<JobOrderResponse> mapped = page.map(order -> toResponse(order, paymentStatusByOrderId.get(order.getId())));
         return PagedResponse.from(mapped);
     }
 
+    private List<JobOrderStatus> parseOrderStatuses(String status) {
+        String normalized = normalizeSearch(status);
+        if (normalized == null || "all".equalsIgnoreCase(normalized))
+            return List.of();
+
+        return Arrays.stream(normalized.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(s -> {
+                    try {
+                        return JobOrderStatus.valueOf(s.toUpperCase());
+                    } catch (IllegalArgumentException ex) {
+                        throw new IllegalArgumentException("Invalid order status: " + s);
+                    }
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
     public PagedResponse<JobOrderResponse> listMyPaged(
             AuthUserDetails principal,
             String statusGroup,
             String search,
-            Pageable pageable
-    ) {
+            Pageable pageable) {
         User actor = principal.getUser();
         if (actor.getRole() != Role.CUSTOMER) {
             throw new IllegalArgumentException("Only customers can access personal order history.");
@@ -147,14 +179,14 @@ public class JobOrderService {
                 normalizeSearch(search),
                 scopedStatuses,
                 scopedStatuses.isEmpty(),
-                pageable
-        );
+                pageable);
 
         Map<Long, PaymentStatus> paymentStatusByOrderId = resolvePaymentStatusByOrderId(page.getContent());
         Page<JobOrderResponse> mapped = page.map(order -> toResponse(order, paymentStatusByOrderId.get(order.getId())));
         return PagedResponse.from(mapped);
     }
 
+    @Transactional(readOnly = true)
     public JobOrderResponse getById(Long id, AuthUserDetails principal) {
         User actor = principal.getUser();
 
@@ -167,7 +199,7 @@ public class JobOrderService {
         Optional<JobOrderResponse> firestoreOrder = firestoreReadService.findOrderById(id);
         if (firestoreOrder.isPresent()) {
             JobOrderResponse order = firestoreOrder.get();
-            enforceBranchScope(actor, order.branch());
+            enforceBranchScope(actor, order.getBranch());
             return order;
         }
 
@@ -180,19 +212,22 @@ public class JobOrderService {
         throw new OrderNotFoundException("Job order not found.");
     }
 
+    @Transactional(readOnly = true)
     public List<JobOrderResponse> recent(AuthUserDetails principal) {
         return listAll(principal).stream().limit(10).toList();
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public DashboardSummaryResponse summary(AuthUserDetails principal) {
         List<JobOrderResponse> all = listAll(principal);
-        long pending = all.stream().filter(o -> o.status() == JobOrderStatus.PENDING).count();
-        long washing = all.stream().filter(o -> o.status() == JobOrderStatus.WASHING).count();
-        long drying = all.stream().filter(o -> o.status() == JobOrderStatus.DRYING).count();
-        long ready = all.stream().filter(o -> o.status() == JobOrderStatus.READY).count();
+        long pending = all.stream().filter(o -> o.getStatus() == JobOrderStatus.PENDING).count();
+        long washing = all.stream().filter(o -> o.getStatus() == JobOrderStatus.WASHING).count();
+        long drying = all.stream().filter(o -> o.getStatus() == JobOrderStatus.DRYING).count();
+        long ready = all.stream().filter(o -> o.getStatus() == JobOrderStatus.READY).count();
         return new DashboardSummaryResponse(pending, washing, drying, ready, recent(principal));
     }
 
+    @Transactional(readOnly = true)
     public OrderTrackingResponse trackByTrackingNumber(String trackingNumber) {
         String cleanTracking = normalizeTrackingNumber(trackingNumber);
 
@@ -225,9 +260,20 @@ public class JobOrderService {
 
         enforceBranchScope(actor, branch);
 
+        if (req.serviceType() == ServiceType.PICKUP_DELIVERY
+                && (req.deliveryAddress() == null || req.deliveryAddress().isBlank())) {
+            throw new IllegalArgumentException("Delivery address is required for pickup and delivery orders.");
+        }
+
         JobOrder jo = JobOrder.builder()
                 .trackingNumber("TMP-" + UUID.randomUUID())
                 .customerName(req.customerName().trim())
+                .customerPhone(req.customerPhone())
+                .customerEmail(req.customerEmail())
+                .deliveryAddress(req.deliveryAddress())
+                .deliveryContactName(req.deliveryContactName())
+                .deliveryContactPhone(req.deliveryContactPhone())
+                .paymentMethod(req.paymentMethod())
                 .branch(branch)
                 .branchId(actor.getBranchId())
                 .serviceType(req.serviceType())
@@ -247,16 +293,14 @@ public class JobOrderService {
                 "Your order has been created.\nTracking Number: %s\nCurrent Status: %s"
                         .formatted(saved.getTrackingNumber(), saved.getStatus()),
                 "ORDER",
-                String.valueOf(saved.getId())
-        );
+                String.valueOf(saved.getId()));
         notificationService.enqueuePushToUserEmail(
                 saved.getCustomerEmail(),
                 "Order Created",
                 "Your order %s has been created."
                         .formatted(saved.getTrackingNumber()),
                 "ORDER_CREATED",
-                saved.getTrackingNumber() + ":created"
-        );
+                saved.getTrackingNumber() + ":created");
         JobOrderResponse response = toResponse(saved);
         firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
         return response;
@@ -271,6 +315,12 @@ public class JobOrderService {
         enforceBranchScope(actor, req.branch().trim());
 
         order.setCustomerName(req.customerName().trim());
+        order.setCustomerPhone(req.customerPhone());
+        order.setCustomerEmail(req.customerEmail());
+        order.setDeliveryAddress(req.deliveryAddress());
+        order.setDeliveryContactName(req.deliveryContactName());
+        order.setDeliveryContactPhone(req.deliveryContactPhone());
+        order.setPaymentMethod(req.paymentMethod());
         order.setServiceType(req.serviceType());
         order.setBranch(req.branch().trim());
         if (actor.getBranchId() != null) {
@@ -292,7 +342,8 @@ public class JobOrderService {
 
         if (jo.getStatus() != req.status()) {
             if (!isValidTransition(jo.getStatus(), req.status())) {
-                throw new IllegalStateException("Invalid job order status transition from " + jo.getStatus() + " to " + req.status() + ".");
+                throw new IllegalStateException(
+                        "Invalid job order status transition from " + jo.getStatus() + " to " + req.status() + ".");
             }
             jo.setStatus(req.status());
             timelineService.log(jo, jo.getStatus(), actor.getEmail(), "Status updated by staff/admin");
@@ -302,8 +353,7 @@ public class JobOrderService {
                     "Tracking Number: %s\nYour order status is now: %s"
                             .formatted(jo.getTrackingNumber(), jo.getStatus()),
                     "ORDER_STATUS",
-                    String.valueOf(jo.getId())
-            );
+                    String.valueOf(jo.getId()));
             String pushTitle = "Order Status Updated";
             String pushBody = "Order %s is now %s."
                     .formatted(jo.getTrackingNumber(), jo.getStatus().name().replace('_', ' '));
@@ -319,16 +369,14 @@ public class JobOrderService {
                     pushTitle,
                     pushBody,
                     pushType,
-                    jo.getTrackingNumber() + ":" + jo.getStatus().name()
-            );
+                    jo.getTrackingNumber() + ":" + jo.getStatus().name());
 
             if (jo.getStatus() == JobOrderStatus.READY) {
                 try {
                     deliveryService.initializePhaseB(jo);
                 } catch (DataIntegrityViolationException ex) {
                     throw new IllegalStateException(
-                            "Unable to move order to Ready for Pickup due to delivery initialization constraints."
-                    );
+                            "Unable to move order to Ready for Pickup due to delivery initialization constraints.");
                 }
             }
             deliveryService.syncWithOrderStatus(jo, actor.getEmail());
@@ -361,6 +409,110 @@ public class JobOrderService {
         firestoreSyncService.delete("orders", jo.getTrackingNumber());
     }
 
+    // ── PRICE CONFIRMATION FLOW ───────────────────────────────────────────────
+
+    /**
+     * Staff weighs the laundry and sets the actual price.
+     * Advances order to AWAITING_PRICE_CONFIRMATION.
+     * Fires an FCM push to the customer so the Price Confirmation modal appears.
+     * Sets a 1-hour auto-proceed deadline.
+     */
+    @Transactional
+    public JobOrderResponse setActualWeight(Long id, SetPriceRequest req, AuthUserDetails principal) {
+        User actor = principal.getUser();
+        JobOrder jo = findByIdOrThrow(id);
+        enforceBranchScope(actor, jo.getBranch());
+
+        // Allow from PENDING or ORDER_RECEIVED
+        // Allow setting weight if PENDING, ORDER_RECEIVED, or already
+        // AWAITING_PRICE_CONFIRMATION (to allow corrections)
+        if (jo.getStatus() != JobOrderStatus.PENDING &&
+                jo.getStatus() != JobOrderStatus.ORDER_RECEIVED &&
+                jo.getStatus() != JobOrderStatus.AWAITING_PRICE_CONFIRMATION) {
+            throw new IllegalStateException(
+                    "Can only set weight for orders in PENDING, RECEIVED, or AWAITING_CONFIRMATION status. Current status: "
+                            + jo.getStatus());
+        }
+
+        jo.setActualWeightKg(req.actualWeightKg());
+        jo.setFinalPrice(req.finalPrice());
+        if (req.deliveryFee() != null) {
+            jo.setDeliveryPrice(req.deliveryFee());
+        }
+        jo.setTotalPrice(
+                req.finalPrice().add(req.deliveryFee() != null ? req.deliveryFee() : java.math.BigDecimal.ZERO));
+        jo.setStatus(JobOrderStatus.AWAITING_PRICE_CONFIRMATION);
+        jo.setPriceConfirmationDeadline(LocalDateTime.now().plusMinutes(40));
+
+        timelineService.log(jo, jo.getStatus(), actor.getEmail(),
+                "Staff set actual weight: " + req.actualWeightKg() + "kg, final price: ₱" + req.finalPrice());
+
+        String formattedWeight = req.actualWeightKg().stripTrailingZeros().toPlainString();
+        String formattedTotal = jo.getTotalPrice().stripTrailingZeros().toPlainString();
+
+        notificationService.enqueuePushToUserEmail(
+                jo.getCustomerEmail(),
+                "WashAlert — Receipt Ready",
+                "Order %s: %skg | Total: ₱%s. Tap to view your receipt and confirm washing."
+                        .formatted(jo.getTrackingNumber(), formattedWeight, formattedTotal),
+                "PRICE_CONFIRMATION_REQUIRED",
+                jo.getId() + ":" + jo.getTrackingNumber());
+        notificationService.enqueueEmail(
+                jo.getCustomerEmail(),
+                "WashAlert — Price Confirmation Required",
+                "Your laundry order " + jo.getTrackingNumber() + " has been weighed.\n"
+                        + "Actual weight: " + formattedWeight + " kg\n"
+                        + "Total amount: ₱" + formattedTotal + "\n\n"
+                        + "Please open the WashAlert app to confirm. "
+                        + "If no response is received within 40 minutes, washing will begin automatically.",
+                "PRICE_CONFIRMATION",
+                String.valueOf(jo.getId()));
+
+        JobOrder saved = repo.save(jo);
+        JobOrderResponse response = toResponse(saved);
+        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        return response;
+    }
+
+    /**
+     * Customer explicitly confirms the price.
+     * Advances order to WASHING.
+     */
+    @Transactional
+    public JobOrderResponse confirmPrice(Long id, AuthUserDetails principal) {
+        User actor = principal.getUser();
+        JobOrder jo = findByIdOrThrow(id);
+
+        // Customers can only confirm their own orders
+        if (jo.getCustomerEmail() == null || !jo.getCustomerEmail().equalsIgnoreCase(actor.getEmail())) {
+            throw new IllegalArgumentException("You can only confirm your own orders.");
+        }
+
+        if (jo.getStatus() != JobOrderStatus.AWAITING_PRICE_CONFIRMATION) {
+            throw new IllegalStateException(
+                    "Order is not awaiting price confirmation. Current status: " + jo.getStatus());
+        }
+
+        // Advance to PRICE_CONFIRMED.
+        jo.setStatus(JobOrderStatus.PRICE_CONFIRMED);
+        jo.setPriceConfirmedByCustomer(true);
+        jo.setPriceConfirmedAt(LocalDateTime.now());
+        timelineService.log(jo, jo.getStatus(), actor.getEmail(), "Price confirmed by customer. Ready for washing.");
+
+        notificationService.enqueuePushToRoles(
+                List.of(Role.STAFF),
+                jo.getBranch(),
+                "Price Confirmed",
+                "Customer confirmed price for Order #" + jo.getTrackingNumber() + ". You may begin washing.",
+                "ORDER_STATUS_STAFF",
+                jo.getTrackingNumber() + ":WASHING_CONFIRMED");
+
+        JobOrder saved = repo.save(jo);
+        JobOrderResponse response = toResponse(saved);
+        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        return response;
+    }
+
     private JobOrder findByIdOrThrow(Long id) {
         return repo.findById(id)
                 .orElseThrow(() -> new OrderNotFoundException("Job order not found."));
@@ -385,10 +537,11 @@ public class JobOrderService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     private List<JobOrderResponse> listFromFirestore(User actor) {
         List<JobOrderResponse> scoped = firestoreReadService.listOrders().stream()
-                .filter(order -> actor.getRole() == Role.ADMIN || safeEquals(actor.getBranch(), order.branch()))
-                .sorted((a, b) -> compareDateDesc(a.createdAt(), b.createdAt()))
+                .filter(order -> actor.getRole() == Role.ADMIN || safeEquals(actor.getBranch(), order.getBranch()))
+                .sorted((a, b) -> compareDateDesc(a.getCreatedAt(), b.getCreatedAt()))
                 .toList();
 
         if (scoped.isEmpty()) {
@@ -398,41 +551,39 @@ public class JobOrderService {
         Map<Long, PaymentStatus> paymentStatusByOrderId = paymentRepository
                 .findByJobOrder_IdIn(
                         scoped.stream()
-                                .map(JobOrderResponse::id)
+                                .map(JobOrderResponse::getId)
                                 .filter(id -> id != null)
-                                .toList()
-                )
+                                .toList())
                 .stream()
                 .filter(record -> record.getJobOrder() != null && record.getJobOrder().getId() != null)
                 .collect(Collectors.toMap(
                         record -> record.getJobOrder().getId(),
                         PaymentRecord::getStatus,
-                        (left, right) -> right
-                ));
+                        (left, right) -> right));
 
         return scoped.stream()
-                .map(order -> withPaymentStatus(order, paymentStatusByOrderId.get(order.id())))
+                .map(order -> withPaymentStatus(order, paymentStatusByOrderId.get(order.getId())))
                 .toList();
     }
 
     private Map<Long, PaymentStatus> resolvePaymentStatusByOrderId(Collection<JobOrder> orders) {
-        if (orders == null || orders.isEmpty()) return Map.of();
+        if (orders == null || orders.isEmpty())
+            return Map.of();
         return paymentRepository
                 .findByJobOrder_IdIn(
                         orders.stream()
                                 .map(JobOrder::getId)
                                 .filter(id -> id != null)
-                                .toList()
-                )
+                                .toList())
                 .stream()
                 .filter(record -> record.getJobOrder() != null && record.getJobOrder().getId() != null)
                 .collect(Collectors.toMap(
                         record -> record.getJobOrder().getId(),
                         PaymentRecord::getStatus,
-                        (left, right) -> right
-                ));
+                        (left, right) -> right));
     }
 
+    @Transactional(readOnly = true)
     private OrderTrackingResponse trackByTrackingNumberMysql(String cleanTracking) {
         JobOrder order = repo.findByTrackingNumber(cleanTracking)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found."));
@@ -444,21 +595,21 @@ public class JobOrderService {
                         h.getStatus(),
                         h.getChangedAt(),
                         h.getChangedBy(),
-                        h.getNotes()
-                ))
+                        h.getNotes()))
                 .toList();
         if (timeline.isEmpty()) {
             timeline = List.of(new OrderTrackingEventResponse(
                     order.getStatus(),
                     order.getUpdatedAt(),
                     "system",
-                    "Current order status"
-            ));
+                    "Current order status"));
         }
 
         return new OrderTrackingResponse(
                 order.getTrackingNumber(),
                 order.getCustomerName(),
+                order.getDeliveryContactName(),
+                order.getDeliveryContactPhone(),
                 order.getBranch(),
                 order.getServiceType(),
                 order.getStatus(),
@@ -466,31 +617,32 @@ public class JobOrderService {
                 order.getSlotStartTime(),
                 order.getSlotEndTime(),
                 order.getUpdatedAt(),
-                timeline
-        );
+                order.getCreatedBy() != null ? order.getCreatedBy().getFullName() : "System",
+                timeline);
     }
 
     private OrderTrackingResponse toTrackingResponse(JobOrderResponse order) {
-        LocalDateTime changedAt = order.updatedAt() != null
-                ? order.updatedAt()
-                : (order.createdAt() != null ? order.createdAt() : LocalDateTime.now());
+        LocalDateTime changedAt = order.getUpdatedAt() != null
+                ? order.getUpdatedAt()
+                : (order.getCreatedAt() != null ? order.getCreatedAt() : LocalDateTime.now());
 
         List<OrderTrackingEventResponse> timeline = List.of(
-                new OrderTrackingEventResponse(order.status(), changedAt, "system", "Current order status")
-        );
+                new OrderTrackingEventResponse(order.getStatus(), changedAt, "system", "Current order status"));
 
         return new OrderTrackingResponse(
-                order.trackingNumber(),
-                order.customerName(),
-                order.branch(),
-                order.serviceType(),
-                order.status(),
-                order.bookingDate(),
-                order.slotStartTime(),
-                order.slotEndTime(),
+                order.getTrackingNumber(),
+                order.getCustomerName(),
+                order.getDeliveryContactName(),
+                order.getDeliveryContactPhone(),
+                order.getBranch(),
+                order.getServiceType(),
+                order.getStatus(),
+                order.getBookingDate(),
+                order.getSlotStartTime(),
+                order.getSlotEndTime(),
                 changedAt,
-                timeline
-        );
+                order.getCreatedByName(),
+                timeline);
     }
 
     private void enforceBranchScope(User actor, String branch) {
@@ -508,80 +660,63 @@ public class JobOrderService {
 
     private JobOrderResponse toResponse(JobOrder jo, PaymentStatus paymentStatus) {
         PaymentStatus effectivePaymentStatus = resolvePaymentStatus(jo.isPaid(), paymentStatus);
-        return new JobOrderResponse(
-                jo.getId(),
-                jo.getTrackingNumber(),
-                jo.getCustomerName(),
-                jo.getBranch(),
-                jo.getStatus(),
-                jo.getCreatedAt(),
-                jo.getUpdatedAt(),
-                jo.getServiceType(),
-                jo.getBookingDate(),
-                jo.getSlotStartTime(),
-                jo.getSlotEndTime(),
-                jo.getDetergentPreference(),
-                jo.getFabricConditionerPreference(),
-                jo.getLoadSize(),
-                jo.getEstimatedWeightKg(),
-                jo.getSpecialInstructions(),
-                jo.getCustomerPhone(),
-                jo.getCustomerEmail(),
-                jo.getDeliveryAddress(),
-                jo.getServicePrice(),
-                jo.getSuppliesPrice(),
-                jo.getDeliveryPrice(),
-                jo.getTotalPrice(),
-                jo.isPaid(),
-                jo.getPaymentMethod(),
-                effectivePaymentStatus,
-                jo.getDeliveryLatitude(),
-                jo.getDeliveryLongitude(),
-                jo.getDeliveryUnitFloor(),
-                jo.getDeliveryContactName(),
-                jo.getDeliveryContactPhone(),
-                jo.getBranchLatitude(),
-                jo.getBranchLongitude()
-        );
+        return JobOrderResponse.from(jo, effectivePaymentStatus);
     }
 
     private JobOrderResponse withPaymentStatus(JobOrderResponse response, PaymentStatus paymentStatus) {
-        PaymentStatus effectivePaymentStatus = resolvePaymentStatus(response.isPaid(), paymentStatus);
-        return new JobOrderResponse(
-                response.id(),
-                response.trackingNumber(),
-                response.customerName(),
-                response.branch(),
-                response.status(),
-                response.createdAt(),
-                response.updatedAt(),
-                response.serviceType(),
-                response.bookingDate(),
-                response.slotStartTime(),
-                response.slotEndTime(),
-                response.detergentPreference(),
-                response.fabricConditionerPreference(),
-                response.loadSize(),
-                response.estimatedWeightKg(),
-                response.specialInstructions(),
-                response.customerPhone(),
-                response.customerEmail(),
-                response.deliveryAddress(),
-                response.servicePrice(),
-                response.suppliesPrice(),
-                response.deliveryPrice(),
-                response.totalPrice(),
-                response.isPaid(),
-                response.paymentMethod(),
-                effectivePaymentStatus,
-                response.deliveryLatitude(),
-                response.deliveryLongitude(),
-                response.deliveryUnitFloor(),
-                response.deliveryContactName(),
-                response.deliveryContactPhone(),
-                response.branchLatitude(),
-                response.branchLongitude()
-        );
+        // Now using builder for a much safer 'copy-with'
+        return JobOrderResponse.builder()
+                .id(response.getId())
+                .trackingNumber(response.getTrackingNumber())
+                .customerName(response.getCustomerName())
+                .branch(response.getBranch())
+                .status(response.getStatus())
+                .createdAt(response.getCreatedAt())
+                .updatedAt(response.getUpdatedAt())
+                .serviceType(response.getServiceType())
+                .bookingDate(response.getBookingDate())
+                .slotStartTime(response.getSlotStartTime())
+                .slotEndTime(response.getSlotEndTime())
+                .detergentPreference(response.getDetergentPreference())
+                .fabricConditionerPreference(response.getFabricConditionerPreference())
+                .serviceName(response.getServiceName())
+                .loadSize(response.getLoadSize())
+                .estimatedWeightKg(response.getEstimatedWeightKg())
+                .specialInstructions(response.getSpecialInstructions())
+                .customerPhone(response.getCustomerPhone())
+                .customerEmail(response.getCustomerEmail())
+                .deliveryAddress(response.getDeliveryAddress())
+                .servicePrice(response.getServicePrice())
+                .suppliesPrice(response.getSuppliesPrice())
+                .deliveryPrice(response.getDeliveryPrice())
+                .rushPrice(response.getRushPrice())
+                .totalPrice(response.getTotalPrice())
+                .isPaid(response.isPaid())
+                .paymentMethod(response.getPaymentMethod())
+                .paymentStatus(resolvePaymentStatus(response.isPaid(), paymentStatus))
+                .deliveryLatitude(response.getDeliveryLatitude())
+                .deliveryLongitude(response.getDeliveryLongitude())
+                .deliveryUnitFloor(response.getDeliveryUnitFloor())
+                .deliveryContactName(response.getDeliveryContactName())
+                .deliveryContactPhone(response.getDeliveryContactPhone())
+                .branchLatitude(response.getBranchLatitude())
+                .branchLongitude(response.getBranchLongitude())
+                .actualWeightKg(response.getActualWeightKg())
+                .finalPrice(response.getFinalPrice())
+                .priceConfirmationDeadline(response.getPriceConfirmationDeadline())
+                .priceConfirmedAt(response.getPriceConfirmedAt())
+                .priceConfirmedByCustomer(response.isPriceConfirmedByCustomer())
+                .assignedDriverId(response.getAssignedDriverId())
+                .assignedDriverName(response.getAssignedDriverName())
+                .assignedAt(response.getAssignedAt())
+                .pickupConfirmedAt(response.getPickupConfirmedAt())
+                .deliveredAt(response.getDeliveredAt())
+                .codCollected(response.isCodCollected())
+                .codCollectedAt(response.getCodCollectedAt())
+                .deliveryFailedReason(response.getDeliveryFailedReason())
+                .driverLat(response.getDriverLat())
+                .driverLng(response.getDriverLng())
+                .build();
     }
 
     private PaymentStatus resolvePaymentStatus(boolean orderPaid, PaymentStatus paymentStatus) {
@@ -606,19 +741,22 @@ public class JobOrderService {
     }
 
     private String normalizeBranchFilter(String branch) {
-        if (branch == null || branch.isBlank() || "ALL".equalsIgnoreCase(branch.trim())) return null;
+        if (branch == null || branch.isBlank() || "ALL".equalsIgnoreCase(branch.trim()))
+            return null;
         return branch.trim();
     }
 
     private String normalizeSearch(String value) {
-        if (value == null) return null;
+        if (value == null)
+            return null;
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
     }
 
     private JobOrderStatus parseOrderStatus(String status) {
         String normalized = normalizeSearch(status);
-        if (normalized == null) return null;
+        if (normalized == null)
+            return null;
         try {
             return JobOrderStatus.valueOf(normalized.toUpperCase());
         } catch (IllegalArgumentException ex) {
@@ -628,7 +766,8 @@ public class JobOrderService {
 
     private PaymentStatus parsePaymentStatus(String paymentStatus) {
         String normalized = normalizeSearch(paymentStatus);
-        if (normalized == null) return null;
+        if (normalized == null)
+            return null;
         try {
             return PaymentStatus.valueOf(normalized.toUpperCase());
         } catch (IllegalArgumentException ex) {
@@ -637,26 +776,28 @@ public class JobOrderService {
     }
 
     private LocalDateTime atStartOfDay(LocalDate date) {
-        if (date == null) return null;
+        if (date == null)
+            return null;
         return date.atStartOfDay();
     }
 
     private LocalDateTime atEndOfDay(LocalDate date) {
-        if (date == null) return null;
+        if (date == null)
+            return null;
         return date.atTime(LocalTime.MAX);
     }
 
     private List<JobOrderStatus> resolveCustomerStatusGroup(String statusGroup) {
         String normalized = normalizeSearch(statusGroup);
-        if (normalized == null || "all".equalsIgnoreCase(normalized)) return List.of();
+        if (normalized == null || "all".equalsIgnoreCase(normalized))
+            return List.of();
         return switch (normalized.toLowerCase()) {
             case "active" -> List.of(
                     JobOrderStatus.PENDING,
                     JobOrderStatus.WASHING,
                     JobOrderStatus.DRYING,
                     JobOrderStatus.READY,
-                    JobOrderStatus.PICKED_UP
-            );
+                    JobOrderStatus.ORDER_RECEIVED);
             case "completed" -> List.of(JobOrderStatus.DELIVERED);
             case "cancelled", "canceled" -> List.of(JobOrderStatus.CANCELLED);
             default -> throw new IllegalArgumentException("Invalid status group filter.");
@@ -668,22 +809,302 @@ public class JobOrderService {
     }
 
     private int compareDateDesc(LocalDateTime a, LocalDateTime b) {
-        if (a == null && b == null) return 0;
-        if (a == null) return 1;
-        if (b == null) return -1;
+        if (a == null && b == null)
+            return 0;
+        if (a == null)
+            return 1;
+        if (b == null)
+            return -1;
         return b.compareTo(a);
+    }
+
+    @Transactional(readOnly = true)
+    public PagedResponse<JobOrderResponse> listDriverTasks(AuthUserDetails principal, Pageable pageable) {
+        User driver = principal.getUser();
+        Page<JobOrder> page = repo.findDriverTasksPaged(
+                driver,
+                List.of(
+                        JobOrderStatus.ASSIGNED_FOR_PICKUP,
+                        JobOrderStatus.EN_ROUTE_TO_CUSTOMER,
+                        JobOrderStatus.LAUNDRY_COLLECTED,
+                        JobOrderStatus.EN_ROUTE_TO_BRANCH,
+                        JobOrderStatus.ASSIGNED_FOR_DELIVERY,
+                        JobOrderStatus.OUT_FOR_DELIVERY,
+                        JobOrderStatus.COLLECTION_FAILED),
+                pageable);
+        Map<Long, PaymentStatus> paymentStatusByOrderId = resolvePaymentStatusByOrderId(page.getContent());
+        Page<JobOrderResponse> mapped = page.map(order -> toResponse(order, paymentStatusByOrderId.get(order.getId())));
+        return PagedResponse.from(mapped);
+    }
+
+    @Transactional
+    public JobOrderResponse assignPickupRider(Long id, Long driverId, AuthUserDetails principal) {
+        JobOrder order = findByIdOrThrow(id);
+        if (order.getStatus() != JobOrderStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order must be PENDING to assign pickup rider.");
+        }
+        if (order.getServiceType() != ServiceType.PICKUP_DELIVERY) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Only PICKUP_DELIVERY orders require pickup assignment.");
+        }
+        User driver = userRepository.findById(driverId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Driver not found."));
+
+        order.setAssignedPickupDriver(driver);
+        order.setStatus(JobOrderStatus.ASSIGNED_FOR_PICKUP);
+        order.setAssignedAt(LocalDateTime.now());
+        JobOrder saved = repo.save(order);
+
+        String displayCust = (saved.getCustomerName() != null &&
+                (saved.getCustomerName().toLowerCase().contains("jeya") ||
+                        (saved.getCreatedBy() != null && saved.getCustomerName().toLowerCase()
+                                .contains(saved.getCreatedBy().getFullName().toLowerCase().split(" ")[0]))))
+                                        ? "Customer"
+                                        : (saved.getCustomerName() != null ? saved.getCustomerName() : "Customer");
+
+        notificationService.enqueuePushToUser(driver, "New pickup task",
+                String.format("New pickup task — %s · %s · %s", saved.getTrackingNumber(), displayCust,
+                        saved.getDeliveryAddress()),
+                "ORDER", saved.getId().toString());
+
+        notificationService.enqueuePushToUserEmail(saved.getCustomerEmail(), "Rider assigned",
+                "Rider assigned — on the way to collect your laundry",
+                "ORDER", saved.getId().toString());
+
+        JobOrderResponse response = toResponse(saved);
+        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        return response;
+    }
+
+    @Transactional
+    public JobOrderResponse startPickupLeg(Long id, AuthUserDetails principal) {
+        JobOrder order = findByIdOrThrow(id);
+        if (order.getStatus() != JobOrderStatus.ASSIGNED_FOR_PICKUP) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid status for starting pickup leg.");
+        }
+        User driver = principal.getUser();
+        if (order.getAssignedPickupDriver() == null
+                || !order.getAssignedPickupDriver().getId().equals(driver.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not the assigned pickup rider.");
+        }
+
+        order.setStatus(JobOrderStatus.EN_ROUTE_TO_CUSTOMER);
+        JobOrder saved = repo.save(order);
+
+        notificationService.enqueuePushToRoles(List.of(Role.STAFF, Role.ADMIN), saved.getBranch(),
+                "Driver started pickup",
+                String.format("%s heading to customer for %s", driver.getFullName(), saved.getTrackingNumber()),
+                "ORDER", saved.getId().toString());
+
+        JobOrderResponse response = toResponse(saved);
+        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        return response;
+    }
+
+    @Transactional
+    public JobOrderResponse confirmLaundryCollected(Long id, AuthUserDetails principal) {
+        JobOrder order = findByIdOrThrow(id);
+        if (order.getStatus() != JobOrderStatus.EN_ROUTE_TO_CUSTOMER) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid status for laundry collection.");
+        }
+        User driver = principal.getUser();
+        if (order.getAssignedPickupDriver() == null
+                || !order.getAssignedPickupDriver().getId().equals(driver.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not the assigned pickup rider.");
+        }
+
+        order.setStatus(JobOrderStatus.LAUNDRY_COLLECTED);
+        order.setLaundryCollectedAt(LocalDateTime.now());
+        JobOrder saved = repo.save(order);
+
+        notificationService.enqueuePushToUserEmail(saved.getCustomerEmail(), "Laundry collected",
+                "Laundry collected — heading to branch",
+                "ORDER", saved.getId().toString());
+
+        notificationService.enqueuePushToRoles(List.of(Role.STAFF, Role.ADMIN), saved.getBranch(),
+                "Laundry collected",
+                String.format("%s laundry collected, driver en route to branch", saved.getTrackingNumber()),
+                "ORDER", saved.getId().toString());
+
+        JobOrderResponse response = toResponse(saved);
+        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        return response;
+    }
+
+    @Transactional
+    public JobOrderResponse confirmArrivedAtBranch(Long id, AuthUserDetails principal) {
+        JobOrder order = findByIdOrThrow(id);
+        if (order.getStatus() != JobOrderStatus.LAUNDRY_COLLECTED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid status for branch arrival.");
+        }
+        User driver = principal.getUser();
+        if (order.getAssignedPickupDriver() == null
+                || !order.getAssignedPickupDriver().getId().equals(driver.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not the assigned pickup rider.");
+        }
+
+        order.setStatus(JobOrderStatus.ORDER_RECEIVED);
+        order.setArrivedAtBranchAt(LocalDateTime.now());
+        JobOrder saved = repo.save(order);
+
+        notificationService.enqueuePushToRoles(List.of(Role.STAFF, Role.ADMIN), saved.getBranch(),
+                "Laundry arrived at branch",
+                String.format("%s laundry arrived at branch. Weigh and set price to proceed.",
+                        saved.getTrackingNumber()),
+                "ORDER", saved.getId().toString());
+
+        notificationService.enqueuePushToUserEmail(saved.getCustomerEmail(), "Arrived at branch",
+                String.format("Your laundry is now at %s. Staff will send you the final price shortly.",
+                        saved.getBranch()),
+                "ORDER", saved.getId().toString());
+
+        JobOrderResponse response = toResponse(saved);
+        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        return response;
+    }
+
+    @Transactional
+    public JobOrderResponse assignDeliveryRider(Long id, Long driverId, AuthUserDetails principal) {
+        JobOrder order = findByIdOrThrow(id);
+        if (order.getStatus() != JobOrderStatus.READY) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order must be READY to assign delivery rider.");
+        }
+        User driver = userRepository.findById(driverId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Driver not found."));
+
+        order.setAssignedDeliveryDriver(driver);
+        order.setStatus(JobOrderStatus.ASSIGNED_FOR_DELIVERY);
+        order.setAssignedAt(LocalDateTime.now());
+        JobOrder saved = repo.save(order);
+
+        notificationService.enqueuePushToUser(driver, "New delivery task",
+                String.format("New delivery task — %s · ₱%s COD · %s",
+                        saved.getTrackingNumber(),
+                        saved.getTotalPrice() != null ? saved.getTotalPrice() : "0.00",
+                        saved.getDeliveryAddress()),
+                "ORDER", saved.getId().toString());
+
+        notificationService.enqueuePushToUserEmail(saved.getCustomerEmail(), "Clean laundry on the way",
+                String.format("Clean laundry on the way — %s is heading to you", driver.getFullName()),
+                "ORDER", saved.getId().toString());
+
+        JobOrderResponse response = toResponse(saved);
+        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        return response;
+    }
+
+    @Transactional
+    public JobOrderResponse startDeliveryLeg(Long id, AuthUserDetails principal) {
+        JobOrder order = findByIdOrThrow(id);
+        User driver = principal.getUser();
+        if (order.getAssignedDeliveryDriver() == null
+                || !order.getAssignedDeliveryDriver().getId().equals(driver.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not the assigned delivery rider.");
+        }
+
+        order.setStatus(JobOrderStatus.OUT_FOR_DELIVERY);
+        JobOrder saved = repo.save(order);
+
+        JobOrderResponse response = toResponse(saved);
+        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        return response;
+    }
+
+    @Transactional
+    public JobOrderResponse confirmDelivery(Long id, boolean codCollected, AuthUserDetails principal) {
+        JobOrder order = findByIdOrThrow(id);
+        User driver = principal.getUser();
+        if (order.getAssignedDeliveryDriver() == null
+                || !order.getAssignedDeliveryDriver().getId().equals(driver.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not the assigned delivery rider.");
+        }
+
+        order.setStatus(JobOrderStatus.DELIVERED);
+        order.setDeliveredAt(LocalDateTime.now());
+        if (codCollected) {
+            order.setPaid(true);
+            order.setCodCollected(true);
+            order.setCodCollectedAt(LocalDateTime.now());
+        }
+        JobOrder saved = repo.save(order);
+
+        notificationService.enqueuePushToUserEmail(saved.getCustomerEmail(), "Laundry delivered",
+                "Delivered — thank you!",
+                "ORDER", saved.getId().toString());
+
+        notificationService.enqueuePushToRoles(List.of(Role.STAFF, Role.ADMIN), saved.getBranch(),
+                "Order delivered",
+                String.format("%s delivered. COD: %s", saved.getTrackingNumber(), codCollected ? "Yes" : "No"),
+                "ORDER", saved.getId().toString());
+
+        JobOrderResponse response = toResponse(saved);
+        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        return response;
+    }
+
+    @Transactional(readOnly = true)
+    public JobOrderResponse getDriverTaskById(Long id, AuthUserDetails principal) {
+        User driver = principal.getUser();
+        JobOrder order = repo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found."));
+
+        boolean isAssigned = (order.getAssignedDriver() != null
+                && order.getAssignedDriver().getId().equals(driver.getId()))
+                || (order.getAssignedPickupDriver() != null
+                        && order.getAssignedPickupDriver().getId().equals(driver.getId()))
+                || (order.getAssignedDeliveryDriver() != null
+                        && order.getAssignedDeliveryDriver().getId().equals(driver.getId()));
+
+        if (!isAssigned) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not assigned to this order.");
+        }
+        return toResponse(order);
+    }
+
+    public JobOrderResponse updateDriverLocation(Long id, Double lat, Double lng, AuthUserDetails principal) {
+        JobOrder order = repo.findById(id).orElseThrow();
+        User driver = principal.getUser();
+
+        boolean isAssigned = (order.getAssignedDriver() != null
+                && order.getAssignedDriver().getId().equals(driver.getId()))
+                || (order.getAssignedPickupDriver() != null
+                        && order.getAssignedPickupDriver().getId().equals(driver.getId()))
+                || (order.getAssignedDeliveryDriver() != null
+                        && order.getAssignedDeliveryDriver().getId().equals(driver.getId()));
+
+        if (!isAssigned) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        }
+        order.setDriverLat(lat);
+        order.setDriverLng(lng);
+        JobOrder saved = repo.save(order);
+        JobOrderResponse response = toResponse(saved);
+        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        return response;
     }
 
     private boolean isValidTransition(JobOrderStatus from, JobOrderStatus to) {
         return switch (from) {
-            case PENDING -> to == JobOrderStatus.WASHING;
-            case WASHING -> to == JobOrderStatus.DRYING;
-            case DRYING -> to == JobOrderStatus.READY;
-            case READY -> to == JobOrderStatus.PICKED_UP;
-            case PICKED_UP -> to == JobOrderStatus.DELIVERED;
+            case PENDING -> to == JobOrderStatus.ASSIGNED_FOR_PICKUP || to == JobOrderStatus.ORDER_RECEIVED
+                    || to == JobOrderStatus.CANCELLED;
+            case ASSIGNED_FOR_PICKUP -> to == JobOrderStatus.EN_ROUTE_TO_CUSTOMER || to == JobOrderStatus.CANCELLED;
+            case EN_ROUTE_TO_CUSTOMER -> to == JobOrderStatus.LAUNDRY_COLLECTED
+                    || to == JobOrderStatus.COLLECTION_FAILED || to == JobOrderStatus.CANCELLED;
+            case LAUNDRY_COLLECTED -> to == JobOrderStatus.EN_ROUTE_TO_BRANCH || to == JobOrderStatus.CANCELLED;
+            case EN_ROUTE_TO_BRANCH -> to == JobOrderStatus.ORDER_RECEIVED || to == JobOrderStatus.CANCELLED;
+            case ORDER_RECEIVED -> to == JobOrderStatus.AWAITING_PRICE_CONFIRMATION || to == JobOrderStatus.CANCELLED;
+            case AWAITING_PRICE_CONFIRMATION -> to == JobOrderStatus.PRICE_CONFIRMED || to == JobOrderStatus.CANCELLED;
+            case PRICE_CONFIRMED -> to == JobOrderStatus.WASHING || to == JobOrderStatus.CANCELLED;
+            case WASHING -> to == JobOrderStatus.DRYING || to == JobOrderStatus.FAILED;
+            case DRYING -> to == JobOrderStatus.READY || to == JobOrderStatus.FAILED;
+            case READY -> to == JobOrderStatus.ASSIGNED_FOR_DELIVERY || to == JobOrderStatus.OUT_FOR_DELIVERY
+                    || to == JobOrderStatus.DELIVERED || to == JobOrderStatus.FAILED;
+            case ASSIGNED_FOR_DELIVERY -> to == JobOrderStatus.OUT_FOR_DELIVERY || to == JobOrderStatus.CANCELLED;
+            case OUT_FOR_DELIVERY -> to == JobOrderStatus.DELIVERED || to == JobOrderStatus.FAILED;
             case DELIVERED -> false;
+            case FAILED -> false;
             case CANCELLED -> false;
-            default -> false;
+            case COLLECTION_FAILED -> to == JobOrderStatus.ASSIGNED_FOR_PICKUP || to == JobOrderStatus.CANCELLED;
         };
     }
 }

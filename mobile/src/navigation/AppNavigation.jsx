@@ -336,7 +336,7 @@ const DriverTabs = () => (
 const DriverStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="DriverTabs"     component={DriverTabs} />
-    <Stack.Screen name="DeliveryDetail" component={DeliveryDetailScreen} options={stackHeader('Delivery Details')} />
+    <Stack.Screen name="DeliveryDetail" component={DeliveryDetailScreen} options={{ headerShown: false }} />
     <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={stackHeader('Change Password')} />
     <Stack.Screen name="Chat"           component={ChatScreen}           options={stackHeader('Support')} />
     <Stack.Screen name="TermsAndConditions" component={TermsAndConditionsScreen} options={stackHeader('Terms & Conditions')} />

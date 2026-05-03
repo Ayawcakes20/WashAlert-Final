@@ -34,7 +34,7 @@ public class FirebaseIdentityService {
         }
 
         try {
-            return firebaseAuth().verifyIdToken(idToken, true);
+            return firebaseAuth().verifyIdToken(idToken, false);
         } catch (FirebaseAuthException ex) {
             throw new IllegalArgumentException("Invalid Firebase ID token.");
         }

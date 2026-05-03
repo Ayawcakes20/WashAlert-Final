@@ -90,9 +90,9 @@ public class PaymentService {
     @Transactional(readOnly = true)
     public PaymentResponse trackByTrackingNumber(String trackingNumber) {
         String tracking = normalizeTracking(trackingNumber);
-        PaymentRecord payment = paymentRepository.findByTrackingNumberWithJobOrder(tracking)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payment record not found."));
-        return toResponse(payment);
+        return paymentRepository.findByTrackingNumberWithJobOrder(tracking)
+                .map(this::toResponse)
+                .orElse(null);
     }
 
     @Transactional(readOnly = true)
@@ -191,12 +191,15 @@ public class PaymentService {
             throw new IllegalStateException("Unable to generate GCash checkout URL.");
         }
         log.info("CHECKOUT URL GENERATED: {}", checkoutUrl);
+        /* 
+        // Logic removed to follow the new 'Staff-Gated' workflow. 
+        // Payment doesn't automatically start washing; staff must still verify weight/price.
         if (order.getStatus() == JobOrderStatus.PENDING) {
             order.setStatus(JobOrderStatus.WASHING);
             orderRepository.save(order);
             timelineService.log(order, order.getStatus(), "system", "GCash checkout initiated");
-            log.info("[PAYMENT][GCASH] Order status advanced to {} tracking={}", order.getStatus(), tracking);
         }
+        */
         return checkoutUrl;
     }
 

@@ -143,11 +143,6 @@ const ProfileScreen = ({ navigation }) => {
             <Text style={styles.statValue}>₱4.5k</Text>
             <Text style={styles.statLabel}>Total Spent</Text>
           </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>5</Text>
-            <Text style={styles.statLabel}>Active Vouchers</Text>
-          </View>
         </View>
 
         {/* Menu Groups */}

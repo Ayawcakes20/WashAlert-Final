@@ -134,7 +134,7 @@ public class BookingService {
         var est = pricingService.estimate(
                 cleanBranch,
                 req.serviceName(),
-                req.estimatedWeightKg(),
+                BigDecimal.ONE, // Base price only (no weight multiplier at booking)
                 req.isRush(),
                 req.detergentPreference(),
                 req.fabricConditionerPreference(),
@@ -161,15 +161,19 @@ public class BookingService {
                 .slotStartTime(slotStart)
                 .slotEndTime(slotEnd)
                 .detergentPreference(req.detergentPreference().trim())
+                .detergentQuantity(req.detergentQuantity())
                 .fabricConditionerPreference(req.fabricConditionerPreference().trim())
+                .conditionerQuantity(req.conditionerQuantity())
                 .loadSize(req.loadSize())
                 .estimatedWeightKg(req.estimatedWeightKg())
                 .specialInstructions(trimToNull(req.specialInstructions()))
-                .servicePrice(est.servicePrice())
-                .suppliesPrice(est.suppliesPrice())
-                .deliveryPrice(est.deliveryPrice())
-                .totalPrice(est.totalPrice())
+                .servicePrice(req.servicePrice() != null ? req.servicePrice() : est.servicePrice())
+                .suppliesPrice(req.suppliesPrice() != null ? req.suppliesPrice() : est.suppliesPrice())
+                .rushPrice(req.rushPrice() != null ? req.rushPrice() : (req.isRush() ? new BigDecimal("150.00") : BigDecimal.ZERO))
+                .deliveryPrice(req.deliveryPrice() != null ? req.deliveryPrice() : est.deliveryPrice())
+                .totalPrice(req.total() != null ? req.total() : est.totalPrice())
                 .paymentMethod(req.paymentMethod())
+                .serviceName(req.serviceName())
                 .status(JobOrderStatus.PENDING)
                 .createdAt(LocalDateTime.now())
                 .build();
@@ -351,40 +355,6 @@ public class BookingService {
     }
 
     private JobOrderResponse toResponse(JobOrder jo) {
-        return new JobOrderResponse(
-                jo.getId(),
-                jo.getTrackingNumber(),
-                jo.getCustomerName(),
-                jo.getBranch(),
-                jo.getStatus(),
-                jo.getCreatedAt(),
-                jo.getUpdatedAt(),
-                jo.getServiceType(),
-                jo.getBookingDate(),
-                jo.getSlotStartTime(),
-                jo.getSlotEndTime(),
-                jo.getDetergentPreference(),
-                jo.getFabricConditionerPreference(),
-                jo.getLoadSize(),
-                jo.getEstimatedWeightKg(),
-                jo.getSpecialInstructions(),
-                jo.getCustomerPhone(),
-                jo.getCustomerEmail(),
-                jo.getDeliveryAddress(),
-                jo.getServicePrice(),
-                jo.getSuppliesPrice(),
-                jo.getDeliveryPrice(),
-                jo.getTotalPrice(),
-                jo.isPaid(),
-                jo.getPaymentMethod(),
-                jo.isPaid() ? PaymentStatus.PAID : null,
-                jo.getDeliveryLatitude(),
-                jo.getDeliveryLongitude(),
-                jo.getDeliveryUnitFloor(),
-                jo.getDeliveryContactName(),
-                jo.getDeliveryContactPhone(),
-                jo.getBranchLatitude(),
-                jo.getBranchLongitude()
-        );
+        return JobOrderResponse.from(jo, jo.isPaid() ? PaymentStatus.PAID : null);
     }
 }

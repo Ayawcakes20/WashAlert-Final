@@ -26,6 +26,7 @@ public class DashboardService {
         this.machines = machines;
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public DashboardSummaryResponse summary(AuthUserDetails principal) {
         User actor = principal.getUser();
 
@@ -81,41 +82,7 @@ public class DashboardService {
 
     private static class JobOrderMapper {
         JobOrderResponse toResponse(com.washalert.washalertbackend.orders.JobOrder jo) {
-            return new JobOrderResponse(
-                    jo.getId(),
-                    jo.getTrackingNumber(),
-                    jo.getCustomerName(),
-                    jo.getBranch(),
-                    jo.getStatus(),
-                    jo.getCreatedAt(),
-                    jo.getUpdatedAt(),
-                    jo.getServiceType(),
-                    jo.getBookingDate(),
-                    jo.getSlotStartTime(),
-                    jo.getSlotEndTime(),
-                    jo.getDetergentPreference(),
-                    jo.getFabricConditionerPreference(),
-                    jo.getLoadSize(),
-                    jo.getEstimatedWeightKg(),
-                    jo.getSpecialInstructions(),
-                    jo.getCustomerPhone(),
-                    jo.getCustomerEmail(),
-                    jo.getDeliveryAddress(),
-                    jo.getServicePrice(),
-                    jo.getSuppliesPrice(),
-                    jo.getDeliveryPrice(),
-                    jo.getTotalPrice(),
-                    jo.isPaid(),
-                    jo.getPaymentMethod(),
-                    jo.isPaid() ? PaymentStatus.PAID : null,
-                    jo.getDeliveryLatitude(),
-                    jo.getDeliveryLongitude(),
-                    jo.getDeliveryUnitFloor(),
-                    jo.getDeliveryContactName(),
-                    jo.getDeliveryContactPhone(),
-                    jo.getBranchLatitude(),
-                    jo.getBranchLongitude()
-            );
+            return JobOrderResponse.from(jo, jo.isPaid() ? PaymentStatus.PAID : null);
         }
     }
 }

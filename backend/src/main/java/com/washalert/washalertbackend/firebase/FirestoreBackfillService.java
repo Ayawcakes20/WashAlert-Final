@@ -130,6 +130,7 @@ public class FirestoreBackfillService {
         payload.put("detergentPreference", o.getDetergentPreference());
         payload.put("fabricConditionerPreference", o.getFabricConditionerPreference());
         payload.put("loadSize", o.getLoadSize());
+        payload.put("serviceName", o.getServiceName());
         payload.put("estimatedWeightKg", o.getEstimatedWeightKg());
         payload.put("specialInstructions", o.getSpecialInstructions());
         payload.put("customerPhone", o.getCustomerPhone());

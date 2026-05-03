@@ -3,26 +3,32 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ShoppingCart,
   Users,
-  TrendingUp,
-  Truck,
   AlertTriangle,
   ArrowUpRight,
 } from "lucide-react";
 import { dashboardApi, type JobOrderResponse } from "@/lib/api";
 
 const statusColor: Record<string, string> = {
-  Pending: "bg-accent/20 text-accent-foreground",
-  Washing: "bg-primary/10 text-primary",
-  Drying: "bg-secondary/30 text-secondary-foreground",
-  Ready: "bg-mint/20 text-mint-foreground",
-  "For Delivery": "bg-destructive/10 text-destructive",
+  "Pending Confirmation": "bg-amber-100 text-amber-700",
+  "Washing": "bg-blue-100 text-blue-700",
+  "Drying": "bg-violet-100 text-violet-700",
+  "Ready": "bg-emerald-100 text-emerald-700",
+  "Delivering": "bg-slate-900 text-white",
+  "Awaiting Confirmation": "bg-indigo-100 text-indigo-700",
+  "Price Approved": "bg-teal-100 text-teal-700",
 };
 
 const statusLabel: Record<string, string> = {
-  PENDING: "Pending",
+  PENDING: "Pending Confirmation",
+  ORDER_RECEIVED: "Order Received",
+  AWAITING_PRICE_CONFIRMATION: "Awaiting Confirmation",
+  PRICE_CONFIRMED: "Price Approved",
   WASHING: "Washing",
   DRYING: "Drying",
   READY: "Ready",
+  OUT_FOR_DELIVERY: "Delivering",
+  DELIVERED: "Completed",
+  CANCELLED: "Cancelled",
 };
 
 const item = {
@@ -54,8 +60,6 @@ export default function DashboardPage() {
         setStats([
           { label: "Active Orders", value: String(activeOrders), change: "Live", icon: ShoppingCart, color: "bg-primary/10 text-primary" },
           { label: "Ready Orders", value: String(data.orders.ready), change: "Live", icon: Users, color: "bg-secondary/30 text-secondary-foreground" },
-          { label: "Machines In Use", value: String(data.machines.inUse), change: "Live", icon: TrendingUp, color: "bg-accent/20 text-accent" },
-          { label: "Maintenance", value: String(data.machines.maintenance), change: "Live", icon: Truck, color: "bg-destructive/10 text-destructive" },
         ]);
 
         setRecentOrders(
@@ -84,15 +88,12 @@ export default function DashboardPage() {
 
         setAlerts([
           { message: `${data.orders.pending} pending orders need processing.`, type: "warning" },
-          { message: `${data.machines.inUse} machines are currently running.`, type: "info" },
           { message: `${data.orders.ready} orders are ready for pickup/delivery.`, type: "success" },
         ]);
       } catch {
         setStats([
           { label: "Active Orders", value: "-", change: "Unavailable", icon: ShoppingCart, color: "bg-primary/10 text-primary" },
           { label: "Ready Orders", value: "-", change: "Unavailable", icon: Users, color: "bg-secondary/30 text-secondary-foreground" },
-          { label: "Machines In Use", value: "-", change: "Unavailable", icon: TrendingUp, color: "bg-accent/20 text-accent" },
-          { label: "Maintenance", value: "-", change: "Unavailable", icon: Truck, color: "bg-destructive/10 text-destructive" },
         ]);
         setRecentOrders([]);
         setRecentOrdersPage(1);
@@ -118,7 +119,7 @@ export default function DashboardPage() {
 
       {loading ? <p className="text-sm text-muted-foreground">Loading dashboard data...</p> : null}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {stats.map((s) => (
           <motion.div key={s.label} variants={item} className="glass-card rounded-2xl p-5 hover:shadow-[var(--shadow-elevated)] transition-shadow">
             <div className="flex items-center justify-between mb-3">

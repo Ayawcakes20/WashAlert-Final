@@ -47,9 +47,13 @@ public record CreateBookingRequest(
         @Size(max = 80, message = "Detergent preference is too long.")
         String detergentPreference,
 
+        Integer detergentQuantity,
+
         @NotBlank(message = "Fabric conditioner preference is required.")
         @Size(max = 80, message = "Fabric conditioner preference is too long.")
         String fabricConditionerPreference,
+
+        Integer conditionerQuantity,
 
         @NotNull(message = "Load size is required.")
         LoadSize loadSize,
@@ -89,6 +93,16 @@ public record CreateBookingRequest(
 
         Double branchLatitude,
 
-        Double branchLongitude
+        Double branchLongitude,
+
+        BigDecimal servicePrice,
+
+        BigDecimal suppliesPrice,
+
+        BigDecimal rushPrice,
+
+        BigDecimal deliveryPrice,
+
+        BigDecimal total
 ) {
 }

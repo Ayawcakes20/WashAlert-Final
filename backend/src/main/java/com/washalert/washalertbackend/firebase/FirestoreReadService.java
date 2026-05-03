@@ -88,14 +88,14 @@ public class FirestoreReadService {
         if (trackingNumber == null) return Optional.empty();
         String normalized = trackingNumber.trim().toUpperCase();
         return listOrders().stream()
-                .filter(o -> o.trackingNumber() != null && o.trackingNumber().equalsIgnoreCase(normalized))
+                .filter(o -> o.getTrackingNumber() != null && o.getTrackingNumber().equalsIgnoreCase(normalized))
                 .findFirst();
     }
 
     public Optional<JobOrderResponse> findOrderById(Long id) {
         if (id == null) return Optional.empty();
         return listOrders().stream()
-                .filter(o -> o.id() != null && o.id().equals(id))
+                .filter(o -> o.getId() != null && o.getId().equals(id))
                 .findFirst();
     }
 
@@ -203,44 +203,54 @@ public class FirestoreReadService {
     private JobOrderResponse toJobOrderResponse(Map<String, Object> data) {
         String trackingNumber = asString(data.get("trackingNumber"));
         String customerName = asString(data.get("customerName"));
-        JobOrderStatus status = asEnum(data.get("status"), JobOrderStatus.class);
+        String statusRaw = asString(data.get("status"));
+        JobOrderStatus status = JobOrderStatus.fromJson(statusRaw);
         if (trackingNumber == null || customerName == null || status == null) return null;
 
-        return new JobOrderResponse(
-                asLong(data.get("id")),
-                trackingNumber,
-                customerName,
-                asString(data.get("branch")),
-                status,
-                asLocalDateTime(data.get("createdAt")),
-                asLocalDateTime(data.get("updatedAt")),
-                asEnum(data.get("serviceType"), ServiceType.class),
-                asLocalDate(data.get("bookingDate")),
-                asLocalTime(data.get("slotStartTime")),
-                asLocalTime(data.get("slotEndTime")),
-                asString(data.get("detergentPreference")),
-                asString(data.get("fabricConditionerPreference")),
-                asEnum(data.get("loadSize"), LoadSize.class),
-                asBigDecimal(data.get("estimatedWeightKg")),
-                asString(data.get("specialInstructions")),
-                asString(data.get("customerPhone")),
-                asString(data.get("customerEmail")),
-                asString(data.get("deliveryAddress")),
-                asBigDecimal(data.get("servicePrice")),
-                asBigDecimal(data.get("suppliesPrice")),
-                asBigDecimal(data.get("deliveryPrice")),
-                asBigDecimal(data.get("totalPrice")),
-                asBoolean(data.get("isPaid")),
-                asString(data.get("paymentMethod")),
-                asEnum(data.get("paymentStatus"), PaymentStatus.class),
-                asDouble(data.get("deliveryLatitude")),
-                asDouble(data.get("deliveryLongitude")),
-                asString(data.get("deliveryUnitFloor")),
-                asString(data.get("deliveryContactName")),
-                asString(data.get("deliveryContactPhone")),
-                asDouble(data.get("branchLatitude")),
-                asDouble(data.get("branchLongitude"))
-        );
+        return JobOrderResponse.builder()
+                .id(asLong(data.get("id")))
+                .trackingNumber(trackingNumber)
+                .customerName(customerName)
+                .branch(asString(data.get("branch")))
+                .status(status)
+                .createdAt(asLocalDateTime(data.get("createdAt")))
+                .updatedAt(asLocalDateTime(data.get("updatedAt")))
+                .serviceType(asEnum(data.get("serviceType"), ServiceType.class))
+                .bookingDate(asLocalDate(data.get("bookingDate")))
+                .slotStartTime(asLocalTime(data.get("slotStartTime")))
+                .slotEndTime(asLocalTime(data.get("slotEndTime")))
+                .detergentPreference(asString(data.get("detergentPreference")))
+                .fabricConditionerPreference(asString(data.get("fabricConditionerPreference")))
+                .serviceName(asString(data.get("serviceName")))
+                .loadSize(asEnum(data.get("loadSize"), LoadSize.class))
+                .estimatedWeightKg(asBigDecimal(data.get("estimatedWeightKg")))
+                .specialInstructions(asString(data.get("specialInstructions")))
+                .customerPhone(asString(data.get("customerPhone")))
+                .customerEmail(asString(data.get("customerEmail")))
+                .deliveryAddress(asString(data.get("deliveryAddress")))
+                .servicePrice(asBigDecimal(data.get("servicePrice")))
+                .suppliesPrice(asBigDecimal(data.get("suppliesPrice")))
+                .deliveryPrice(asBigDecimal(data.get("deliveryPrice")))
+                .rushPrice(asBigDecimal(data.get("rushPrice")))
+                .totalPrice(asBigDecimal(data.get("totalPrice")))
+                .isPaid(asBoolean(data.get("isPaid")) != null && asBoolean(data.get("isPaid")))
+                .paymentMethod(asString(data.get("paymentMethod")))
+                .paymentStatus(asEnum(data.get("paymentStatus"), PaymentStatus.class))
+                .deliveryLatitude(asDouble(data.get("deliveryLatitude")))
+                .deliveryLongitude(asDouble(data.get("deliveryLongitude")))
+                .deliveryUnitFloor(asString(data.get("deliveryUnitFloor")))
+                .deliveryContactName(asString(data.get("deliveryContactName")))
+                .deliveryContactPhone(asString(data.get("deliveryContactPhone")))
+                .branchLatitude(asDouble(data.get("branchLatitude")))
+                .branchLongitude(asDouble(data.get("branchLongitude")))
+                .actualWeightKg(asBigDecimal(data.get("actualWeightKg")))
+                .finalPrice(asBigDecimal(data.get("finalPrice")))
+                .priceConfirmationDeadline(asLocalDateTime(data.get("priceConfirmationDeadline")))
+                .priceConfirmedAt(asLocalDateTime(data.get("priceConfirmedAt")))
+                .priceConfirmedByCustomer(asBoolean(data.get("priceConfirmedByCustomer")) != null && asBoolean(data.get("priceConfirmedByCustomer")))
+                .createdByName(asString(data.get("createdByName")))
+                .assignedByName(asString(data.get("assignedByName")))
+                .build();
     }
 
     private DeliveryResponse toDeliveryResponse(Map<String, Object> data) {
@@ -284,12 +294,14 @@ public class FirestoreReadService {
                 asDouble(data.get("deliveryLatitude")),
                 asDouble(data.get("deliveryLongitude")),
                 asString(data.get("deliveryUnitFloor")),
-                asString(data.get("deliveryContactName")),
-                asString(data.get("deliveryContactPhone")),
+                // Contact resolution: fall back to customerName if no specific contact was set
+                resolveContact(asString(data.get("deliveryContactName")), asString(data.get("customerName"))),
+                resolveContact(asString(data.get("deliveryContactPhone")), asString(data.get("customerPhone"))),
                 asLong(data.get("bagCount")) != null ? asLong(data.get("bagCount")).intValue() : null,
                 asString(data.get("confirmationCode")),
                 asString(data.get("branchHandoverPhotoUrl")),
-                asString(data.get("finalDeliveryPhotoUrl"))
+                asString(data.get("finalDeliveryPhotoUrl")),
+                asString(data.get("createdByName"))
         );
     }
 
@@ -402,5 +414,10 @@ public class FirestoreReadService {
         } catch (Exception ex) {
             return null;
         }
+    }
+
+    /** Returns {@code specific} if non-blank, otherwise falls back to {@code fallback}. */
+    private String resolveContact(String specific, String fallback) {
+        return (specific != null && !specific.isBlank()) ? specific.trim() : fallback;
     }
 }

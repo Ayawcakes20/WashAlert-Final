@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   View, Text, ScrollView, FlatList,
@@ -6,23 +6,25 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../../services/firebase';
 import { colors } from '../../theme/colors';
-import { StatusBadge, Button, LoadingSkeleton } from '../../components';
+import { LoadingSkeleton } from '../../components';
 import { useAuth } from '../../context/AuthContext';
 import { bookings as bookingsApi } from '../../services/api';
 import S from './HomeScreenStyles';
 
-// ─── Static Service Data (6 unique images, no repeats) ───────────────────────
+// ─── Static Service Data ──────────────────────────────────────────────────────
 const SERVICES = [
   { id: 'w7',  img: require('../../../assets/images/svc_wash_v3.png'),   tag: 'Standard', tagColor: '#2E86C1', tagBg: '#D6EAF8', price: '₱80 / 7kg',  name: 'Wash'         },
   { id: 'd7',  img: require('../../../assets/images/svc_dry_v3.png'),    tag: 'Standard', tagColor: '#E11D48', tagBg: '#FFF1F2', price: '₱90 / 7kg',  name: 'Dry'          },
-  { id: 'eco', img: require('../../../assets/images/svc_wash.png'),        tag: 'Eco',      tagColor: '#059669', tagBg: '#D1FAE5', price: '₱220 / 5kg', name: 'Ecowash Full' },
-  { id: 'b7',  img: require('../../../assets/images/svc_fullservice.png'), tag: 'Basic',    tagColor: '#7C3AED', tagBg: '#F5F3FF', price: '₱240 / 7kg', name: 'Basic Full'   },
-  { id: 'p7',  img: require('../../../assets/images/svc_dry.png'),         tag: 'Premium',  tagColor: '#EA580C', tagBg: '#FFF7ED', price: '₱270 / 7kg', name: 'Premium Full' },
-  { id: 'hw',  img: require('../../../assets/images/svc_handwash.png'),    tag: 'Hand',     tagColor: '#1C2F3E', tagBg: '#E8EFF4', price: '₱150/kg',    name: 'Handwash'     },
+  { id: 'eco', img: require('../../../assets/images/svc_wash.png'),       tag: 'Eco',      tagColor: '#059669', tagBg: '#D1FAE5', price: '₱220 / 5kg', name: 'Ecowash Full' },
+  { id: 'b7',  img: require('../../../assets/images/svc_fullservice.png'),tag: '',         tagColor: 'transparent', tagBg: 'transparent', price: '₱245 / 8kg', name: 'Basic Full Service'   },
+  { id: 'p7',  img: require('../../../assets/images/svc_dry.png'),        tag: '',         tagColor: 'transparent', tagBg: 'transparent', price: '₱275 / 8kg', name: 'Premium Full Service' },
+  { id: 'hw',  img: require('../../../assets/images/svc_handwash.png'),   tag: 'Hand',     tagColor: '#1C2F3E', tagBg: '#E8EFF4', price: '₱150/kg',    name: 'Handwash'     },
 ];
 
-// ─── Branch Data ─────────────────────────────────────────────────────────────
+// ─── Branch Data ──────────────────────────────────────────────────────────────
 const LAUNDRYHUBS = [
   { id: 'lh1', name: 'Makati Branch', address: '7605 Dela Rosa, Corner Wilson St. (inside R&R Carwash), Makati City, Metro Manila' },
 ];
@@ -38,37 +40,165 @@ const SPEEDYWASH = [
   { id: 'sw9', name: 'UP Diliman / San Vicente', address: 'San Vicente, Diliman, Quezon City' },
 ];
 
-// ─── Order Helpers ────────────────────────────────────────────────────────────
+// ─── Order Status Config ──────────────────────────────────────────────────────
 const STATUS_STEPS = ['pending', 'received', 'washing', 'drying', 'ready'];
-const STATUS_LABELS = {
-  pending: 'Pending Confirmation', received: 'Order Received',
-  washing: 'Washing in Progress',  drying:   'Drying in Progress',
-  ready:   'Ready for Pickup / Delivery', delivering: 'Out for Delivery',
-};
-const STATUS_COLOR = {
-  pending: colors.warning,  received: colors.info,
-  washing: colors.accent,   drying:   colors.accent,
-  ready:   colors.success,  delivering: colors.primary,
-  delivered: colors.success, completed: colors.success, cancelled: colors.error,
+const STATUS_STEP_LABELS = ['Pending', 'Received', 'Washing', 'Drying', 'Ready'];
+
+const STATUS_DISPLAY = {
+  pending:        'Pending Confirmation',
+  received:       'Order Received',
+  awaiting_price: 'Awaiting Price',
+  washing:        'Washing in Progress',
+  drying:         'Drying in Progress',
+  ready:          'Ready for Pickup',
+  delivering:     'Out for Delivery',
+  delivered:      'Delivered',
+  cancelled:      'Cancelled',
 };
 
-// ─── Component ────────────────────────────────────────────────────────────────
+const STATUS_COLOR = {
+  pending:    '#F59E0B',
+  received:   '#3B82F6',
+  washing:    '#8B5CF6',
+  drying:     '#8B5CF6',
+  ready:      '#10B981',
+  delivering: colors.primary,
+  delivered:  '#10B981',
+  cancelled:  '#EF4444',
+};
+
+const ACTIVE_STATUSES = ['pending', 'received', 'awaiting_price', 'washing', 'drying', 'ready', 'delivering'];
+
+// Normalize backend status strings
+const normalize = (s) => {
+  const raw = String(s || '').trim().toLowerCase().replace(/ /g, '_');
+  const map = {
+    received: 'received', pending: 'pending',
+    awaiting_price: 'awaiting_price', awaiting_price_confirmation: 'awaiting_price',
+    price_approved: 'washing',
+    washing: 'washing', drying: 'drying', ready: 'ready',
+    pending_pickup: 'ready', en_route_to_pickup: 'delivering',
+    picked_up: 'delivering', in_transit: 'delivering', delivering: 'delivering',
+    delivered: 'delivered', cancelled: 'cancelled', failed: 'cancelled',
+  };
+  return map[raw] || raw;
+};
+
+// ─── Active Order Card Component ──────────────────────────────────────────────
+function ActiveOrderCard({ order, navigation }) {
+  const [status, setStatus] = useState(normalize(order.status));
+
+  // Real-time Firestore listener
+  React.useEffect(() => {
+    const tn = order.trackingNumber || String(order.id);
+    const unsub = onSnapshot(
+      doc(db, 'orders', tn),
+      snap => {
+        if (snap.exists()) {
+          const raw = (snap.data().status || '').toLowerCase();
+          const mapped = normalize(raw);
+          if (mapped) setStatus(mapped);
+        }
+      },
+      err => console.warn('[HomeScreen] Firestore:', err.message)
+    );
+    return () => unsub();
+  }, [order.trackingNumber, order.id]);
+
+  const stepIdx   = STATUS_STEPS.indexOf(status);
+  const displayStatus = STATUS_DISPLAY[status] || status.replace(/_/g, ' ');
+  const dotColor  = STATUS_COLOR[status] || colors.primary;
+  const isActive  = ACTIVE_STATUSES.includes(status);
+
+  return (
+    <View style={activeCardStyles.card}>
+      {/* Top row: ACTIVE badge + Track Live */}
+      <View style={activeCardStyles.topRow}>
+        <View style={activeCardStyles.activeBadge}>
+          <View style={[activeCardStyles.activeDot, { backgroundColor: dotColor }]} />
+          <Text style={[activeCardStyles.activeBadgeText, { color: dotColor }]}>
+            {isActive ? 'ACTIVE' : status.toUpperCase()}
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={activeCardStyles.trackLiveBtn}
+          onPress={() => navigation.navigate('Tracking', { orderId: order.id })}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="navigate" size={14} color="#fff" />
+          <Text style={activeCardStyles.trackLiveTxt}>Track Live</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Status label + Order number */}
+      <Text style={activeCardStyles.statusLabel}>{displayStatus}</Text>
+      <Text style={activeCardStyles.orderNum}>
+        Order #{order.trackingNumber || order.id}
+      </Text>
+
+      {/* 5-step progress bar */}
+      <View style={activeCardStyles.stepsRow}>
+        {STATUS_STEPS.map((step, i) => {
+          const done   = i < stepIdx;
+          const active = i === stepIdx;
+          return (
+            <View key={step} style={activeCardStyles.stepItem}>
+              <View style={activeCardStyles.stepDotWrap}>
+                {i > 0 && (
+                  <View style={[
+                    activeCardStyles.stepLine,
+                    done || active ? activeCardStyles.stepLineDone : activeCardStyles.stepLineOff,
+                  ]} />
+                )}
+                <View style={[
+                  activeCardStyles.stepDot,
+                  done   && activeCardStyles.stepDotDone,
+                  active && { ...activeCardStyles.stepDotDone, backgroundColor: '#1C2F3E', width: 16, height: 16, borderRadius: 8 },
+                ]} />
+              </View>
+              <Text style={[
+                activeCardStyles.stepLabel,
+                active && activeCardStyles.stepLabelActive,
+              ]}>
+                {STATUS_STEP_LABELS[i]}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+
+      {/* View Details button */}
+      <TouchableOpacity
+        style={activeCardStyles.detailsBtn}
+        onPress={() => navigation.navigate('Orders', { screen: 'OrderDetail', params: { orderId: order.id } })}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="document-text-outline" size={16} color={colors.text} />
+        <Text style={activeCardStyles.detailsBtnTxt}>View Details</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }) {
   const { user } = useAuth();
   const [loading, setLoading]     = useState(true);
-  const [activeOrder, setActive]  = useState(null);
+  const [activeOrders, setActive] = useState([]);
   const [branchTab, setBranchTab] = useState('speedywash');
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useFocusEffect(
-    React.useCallback(() => {
+    useCallback(() => {
       loadData();
-      Animated.loop(
+      const pulse = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.35, duration: 850, useNativeDriver: true }),
           Animated.timing(pulseAnim, { toValue: 1,    duration: 850, useNativeDriver: true }),
         ])
-      ).start();
+      );
+      pulse.start();
+      return () => pulse.stop();
     }, [])
   );
 
@@ -77,9 +207,8 @@ export default function HomeScreen({ navigation }) {
       setLoading(true);
       const res = await bookingsApi.getMyBookings('all');
       const all = res.bookings || [];
-      setActive(
-        all.find(o => ['pending','received','washing','drying','ready','delivering'].includes(o.status)) || null
-      );
+      const active = all.filter(o => ACTIVE_STATUSES.includes(normalize(o.status)));
+      setActive(active);
     } catch (e) {
       console.error(e);
     } finally {
@@ -87,18 +216,19 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  const firstName = user?.fullName?.split(' ')[0] || 'there';
+  const firstName    = user?.fullName?.split(' ')[0] || 'there';
   const activeBranches = branchTab === 'laundryhubs' ? LAUNDRYHUBS : SPEEDYWASH;
 
-  // ── Renders ───────────────────────────────────────────────────────────────
   const renderServiceCard = ({ item }) => (
     <TouchableOpacity style={S.svcCard} activeOpacity={0.82} onPress={() => navigation.navigate('Book')}>
       <Image source={item.img} style={S.svcImg} resizeMode="cover" />
       <View style={S.svcBottom}>
         <View style={S.svcTagRow}>
-          <View style={[S.svcTag, { backgroundColor: item.tagBg }]}>
-            <Text style={[S.svcTagTxt, { color: item.tagColor }]}>{item.tag}</Text>
-          </View>
+          {item.tag ? (
+            <View style={[S.svcTag, { backgroundColor: item.tagBg }]}>
+              <Text style={[S.svcTagTxt, { color: item.tagColor }]}>{item.tag}</Text>
+            </View>
+          ) : null}
           <View style={S.svcArrowBtn}>
             <Ionicons name="arrow-up-outline" size={13} color={colors.accent}
               style={{ transform: [{ rotate: '45deg' }] }} />
@@ -122,11 +252,9 @@ export default function HomeScreen({ navigation }) {
     </View>
   );
 
-  // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <SafeAreaView style={S.container} edges={['top']}>
-        {/* Header skeleton */}
         <View style={S.header}>
           <View style={S.headerLeft}>
             <Image source={require('../../../assets/images/icon.png')} style={S.headerLogo} resizeMode="contain" />
@@ -145,39 +273,29 @@ export default function HomeScreen({ navigation }) {
     );
   }
 
-  // ── Main Layout ────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={S.container} edges={['top']}>
 
-      {/* ══ HEADER — ONLY: Logo · WashAlert · IkoTask(Chat) · Bell ══════════ */}
+      {/* HEADER */}
       <View style={S.header}>
         <View style={S.headerLeft}>
-          <Image
-            source={require('../../../assets/images/icon.png')}
-            style={S.headerLogo}
-            resizeMode="contain"
-          />
+          <Image source={require('../../../assets/images/icon.png')} style={S.headerLogo} resizeMode="contain" />
           <Text style={S.headerTitle}>WashAlert</Text>
         </View>
         <View style={S.headerRight}>
-          {/* IkoTask icon → Chat */}
           <TouchableOpacity style={S.iconBtn} onPress={() => navigation.navigate('Chat')}>
             <Ionicons name="chatbubble-ellipses-outline" size={18} color="#fff" />
           </TouchableOpacity>
-          {/* Notification bell */}
           <TouchableOpacity style={S.iconBtn} onPress={() => navigation.navigate('Notifications')}>
             <Ionicons name="notifications-outline" size={18} color="#fff" />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* ══ SCROLL BODY — everything below header scrolls ═══════════════════ */}
       <ScrollView showsVerticalScrollIndicator={false} style={S.scroll}>
 
-        {/* ── Hero white card (on dark navy bg) ─────────────────────────── */}
+        {/* ── Hero Card (Services) ─────────────────────────────────────── */}
         <View style={S.heroCard}>
-
-          {/* "Hi [Name], Here's / Our Laundry Services." */}
           <View style={S.greetPad}>
             <Text style={S.greetLine1}>
               {'Hi '}
@@ -187,7 +305,6 @@ export default function HomeScreen({ navigation }) {
             <Text style={S.greetTitle}>Our Laundry Services.</Text>
           </View>
 
-          {/* Service price cards — horizontal scroll */}
           <FlatList
             data={SERVICES}
             renderItem={renderServiceCard}
@@ -196,101 +313,32 @@ export default function HomeScreen({ navigation }) {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={S.svcList}
             ListFooterComponent={
-              <TouchableOpacity
-                style={S.svcSeeAll}
-                activeOpacity={0.8}
-                onPress={() => navigation.navigate('Book')}
-              >
+              <TouchableOpacity style={S.svcSeeAll} activeOpacity={0.8} onPress={() => navigation.navigate('Book')}>
                 <Ionicons name="arrow-forward" size={22} color={colors.primary} />
               </TouchableOpacity>
             }
           />
         </View>
 
-        {/* ── Body sheet (light bg, rounded top) ────────────────────────── */}
+        {/* ── Body Sheet ───────────────────────────────────────────────── */}
         <View style={S.bodySheet}>
 
-          {/* Active Orders ─────────────────────────────────────────────── */}
-          <View style={S.sectionRow}>
-            <Text style={S.sectionTitle}>Active Orders</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Orders')}>
-              <Text style={S.seeAllTxt}>See all</Text>
-            </TouchableOpacity>
-          </View>
-
-          {activeOrder ? (
-            <View style={S.activeCard}>
-              <View style={S.activeStrip} />
-              <View style={S.activeBody}>
-                <View style={S.activeTopRow}>
-                  <View style={S.activeBadge}>
-                    <Animated.View style={[S.activeDot, { transform: [{ scale: pulseAnim }] }]} />
-                    <Text style={S.activeBadgeTxt}>ACTIVE</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={S.trackBtn}
-                    onPress={() => navigation.navigate('Tracking', { orderId: activeOrder.id })}
-                  >
-                    <Ionicons name="navigate" size={12} color="#fff" />
-                    <Text style={S.trackBtnTxt}>Track Live</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <Text style={S.activeHeadline}>
-                  {STATUS_LABELS[activeOrder.status] || 'Order in Progress'}
-                </Text>
-                <Text style={S.activeSubline}>Order #{activeOrder.id}</Text>
-
-                <View style={S.progressRow}>
-                  {STATUS_STEPS.map((s, i) => {
-                    const idx = STATUS_STEPS.indexOf(activeOrder.status);
-                    const done = i < idx, cur = i === idx;
-                    return (
-                      <React.Fragment key={s}>
-                        <View style={[S.stepDot, (done || cur) && S.stepDotActive, cur && S.stepDotCurrent]}>
-                          {done && <Ionicons name="checkmark" size={8} color="#fff" />}
-                        </View>
-                        {i < STATUS_STEPS.length - 1 && (
-                          <View style={[S.stepLine, done && S.stepLineActive]} />
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </View>
-                <View style={S.progressLabels}>
-                  {STATUS_STEPS.map((s, i) => (
-                    <Text key={s}
-                      style={[S.progressLbl, STATUS_STEPS.indexOf(activeOrder.status) >= i && S.progressLblActive]}
-                      numberOfLines={1}
-                    >
-                      {s.charAt(0).toUpperCase() + s.slice(1)}
-                    </Text>
-                  ))}
-                </View>
-
-                <TouchableOpacity
-                  style={S.detailPill}
-                  onPress={() => navigation.navigate('OrderDetail', { orderId: activeOrder.id })}
-                >
-                  <Ionicons name="document-text-outline" size={14} color={colors.primary} />
-                  <Text style={S.detailPillTxt}>View Details</Text>
+          {/* ── Active Orders Section ──────────────────────────────────── */}
+          {activeOrders.length > 0 && (
+            <View style={{ marginBottom: 24 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <Text style={{ fontSize: 18, fontWeight: '800', color: colors.text, letterSpacing: -0.3 }}>Active Orders</Text>
+                <TouchableOpacity onPress={() => navigation.navigate('Orders')}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.primary }}>See all</Text>
                 </TouchableOpacity>
               </View>
-            </View>
-          ) : (
-            <View style={[S.activeCard, { marginBottom: 24 }]}>
-              <View style={S.activeBody}>
-                <View style={S.emptyBox}>
-                  <MaterialCommunityIcons name="washing-machine" size={36} color={colors.border} />
-                  <Text style={S.emptyTxt}>No active orders</Text>
-                  <Text style={S.emptyDesc}>Book a laundry service to get started</Text>
-                  <Button title="Book Now" onPress={() => navigation.navigate('Book')} size="sm" style={{ marginTop: 10 }} />
-                </View>
-              </View>
+              {activeOrders.map(order => (
+                <ActiveOrderCard key={order.id} order={order} navigation={navigation} />
+              ))}
             </View>
           )}
 
-          {/* Our Branches ──────────────────────────────────────────────── */}
+          {/* ── Our Branches ───────────────────────────────────────────── */}
           <View style={S.branchesWrap}>
             <View style={S.sectionRow}>
               <Text style={S.sectionTitle}>Our Branches</Text>
@@ -349,9 +397,139 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
 
         </View>
-        {/* end bodySheet */}
-
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+// ─── Active Order Card Styles ─────────────────────────────────────────────────
+import { StyleSheet } from 'react-native';
+const activeCardStyles = StyleSheet.create({
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  activeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 100,
+    gap: 6,
+  },
+  activeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  activeBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  trackLiveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1C2F3E',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 100,
+    gap: 6,
+  },
+  trackLiveTxt: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  statusLabel: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#1C2F3E',
+    letterSpacing: -0.5,
+    marginBottom: 4,
+  },
+  orderNum: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+    marginBottom: 18,
+  },
+  stepsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+  stepItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  stepDotWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    width: '100%',
+    marginBottom: 6,
+  },
+  stepLine: {
+    position: 'absolute',
+    height: 2,
+    left: 0,
+    right: '50%',
+    top: 6,
+  },
+  stepLineDone: { backgroundColor: '#1C2F3E' },
+  stepLineOff:  { backgroundColor: '#D1D5DB' },
+  stepDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#D1D5DB',
+    zIndex: 1,
+  },
+  stepDotDone: {
+    backgroundColor: '#1C2F3E',
+  },
+  stepLabel: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  stepLabelActive: {
+    color: '#1C2F3E',
+    fontWeight: '700',
+  },
+  detailsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: '#1C2F3E',
+    borderRadius: 100,
+    paddingVertical: 13,
+  },
+  detailsBtnTxt: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1C2F3E',
+  },
+});

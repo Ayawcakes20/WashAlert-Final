@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity,
+  View, Text, StyleSheet, TouchableOpacity, Image,
   ActivityIndicator, Linking, Animated, Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -27,31 +27,39 @@ const MAP_STYLE = [
 
 // ── 4 clean milestones (industry standard like Grab / Lalamove) ───────────────
 const MILESTONES = [
-  { label: 'Collected',  icon: 'bag-handle-outline',       mat: null },
-  { label: 'Washing',    icon: 'water-outline',            mat: null },
-  { label: 'Ready',      icon: 'checkmark-circle-outline', mat: null },
-  { label: 'Delivered',  icon: 'home-outline',             mat: null },
+  { label: 'Pickup',     icon: 'truck-fast-outline',       mat: true },
+  { label: 'Processing', icon: 'washing-machine',          mat: true },
+  { label: 'Ready',      icon: 'package-variant-closed',   mat: true },
+  { label: 'Delivery',   icon: 'bike-fast',                mat: true },
+  { label: 'Done',       icon: 'check-circle-outline',     mat: true },
 ];
 
-// Map order.status → milestone index (0-3)
 const statusToMilestone = (status) => {
   if (!status) return 0;
-  const s = String(status).toLowerCase();
-  if (['pending', 'received'].includes(s))              return 0;
-  if (['washing', 'drying'].includes(s))                return 1;
-  if (s === 'ready')                                    return 2;
-  if (['delivering', 'delivered'].includes(s))          return 3;
+  const s = String(status).toUpperCase();
+  
+  if (['ASSIGNED_FOR_PICKUP', 'EN_ROUTE_TO_CUSTOMER', 'LAUNDRY_COLLECTED', 'EN_ROUTE_TO_BRANCH'].includes(s)) return 0;
+  if (['ORDER_RECEIVED', 'AWAITING_PRICE_CONFIRMATION', 'PRICE_CONFIRMED', 'WASHING', 'DRYING'].includes(s)) return 1;
+  if (['READY'].includes(s)) return 2;
+  if (['ASSIGNED_FOR_DELIVERY', 'OUT_FOR_DELIVERY'].includes(s)) return 3;
+  if (s === 'DELIVERED') return 5; // All steps done
+  
   return 0;
 };
 
 const STATUS_HEADLINE = {
-  pending:    'Order received!',
-  received:   'Rider is heading to you',
-  washing:    'Laundry is being washed',
-  drying:     'Laundry is being dried',
-  ready:      'Ready for delivery!',
-  delivering: 'Your order is on its way!',
-  delivered:  'Successfully delivered!',
+  PENDING:                'Order received!',
+  ASSIGNED_FOR_PICKUP:    'Rider assigned for pickup',
+  EN_ROUTE_TO_CUSTOMER:   'Rider is heading to your location',
+  LAUNDRY_COLLECTED:      'Laundry collected by rider',
+  EN_ROUTE_TO_BRANCH:     'Heading to our laundry branch',
+  ORDER_RECEIVED:         'Laundry received at branch',
+  WASHING:                'Laundry is being washed',
+  DRYING:                 'Laundry is being dried',
+  READY:                  'Ready for delivery!',
+  ASSIGNED_FOR_DELIVERY:  'Rider assigned for delivery',
+  OUT_FOR_DELIVERY:       'Your order is on its way!',
+  DELIVERED:              'Successfully delivered!',
 };
 
 export default function TrackingScreen({ route, navigation }) {
@@ -84,14 +92,20 @@ export default function TrackingScreen({ route, navigation }) {
 
   useEffect(() => {
     if (!order?.trackingNumber) return;
-    const unsub = onSnapshot(doc(db, 'deliveries', order.trackingNumber), snap => {
-      if (!snap.exists()) return;
+    console.log('[Tracking] Listening for:', order.trackingNumber);
+    // Listen to delivery_tracking collection by tracking number (unique & consistent)
+    const unsub = onSnapshot(doc(db, 'delivery_tracking', String(order.trackingNumber)), snap => {
+      if (!snap.exists()) {
+        console.log('[Tracking] No live data yet for:', order.trackingNumber);
+        return;
+      }
       const d = snap.data();
+      console.log('[Tracking] Received data:', d.lat, d.lng);
       setDelivData(d);
-      if (d.currentLatitude && d.currentLongitude) {
-        const c = { latitude: d.currentLatitude, longitude: d.currentLongitude };
+      if (d.lat && d.lng) {
+        const c = { latitude: d.lat, longitude: d.lng };
         setDriverLoc(c);
-        driverCoord.timing({ ...c, duration: 10000, useNativeDriver: false }).start();
+        driverCoord.timing({ ...c, duration: 5000, useNativeDriver: false }).start();
       }
     });
     return () => unsub();
@@ -124,72 +138,97 @@ export default function TrackingScreen({ route, navigation }) {
   );
 
   const milestoneIdx  = statusToMilestone(order.status);
-  const isDelivering  = order.status === 'delivering' && !!driverLoc;
-  const driverPhone   = order?.delivery?.driverPhone || '';
+  // Phase check: are we in a status where tracking is relevant?
+  const isTrackingPhase = (
+    order.status === 'delivering' ||
+    [
+      'ASSIGNED_FOR_PICKUP', 'EN_ROUTE_TO_CUSTOMER', 'LAUNDRY_COLLECTED', 'EN_ROUTE_TO_BRANCH',
+      'ASSIGNED_FOR_DELIVERY', 'OUT_FOR_DELIVERY'
+    ].includes(order.status.toUpperCase())
+  );
+
+  // We show the map if we are in the phase, even if driverLoc is temporarily missing
+  // But we need driverLoc to show the Car and Route
+  const isTrackingRider = isTrackingPhase;
+  
+  const driverPhone   = delivData?.driverPhone || order?.delivery?.phone || order?.assignedDriverPhone || '';
+  const driverName    = delivData?.driverName || order?.delivery?.driver || order?.assignedDriverName || 'Assigned Driver';
+  const driverPhoto   = delivData?.driverPhotoUrl || order?.delivery?.driverPhotoUrl || order?.assignedDriverPhotoUrl || null;
+
   const callDriver    = () => driverPhone && Linking.openURL(`tel:${driverPhone.replace(/[^0-9+]/g, '')}`);
   const smsDriver     = () => driverPhone && Linking.openURL(`sms:${driverPhone.replace(/[^0-9+]/g, '')}`);
-  const headline      = STATUS_HEADLINE[order.status] || 'Tracking your order…';
-  const etaLabel      = isDelivering && etaData.duration ? etaData.duration : (order.estimatedTime || '2–4 hrs');
+  const headline = 
+    order.status === 'delivering' 
+      ? (['LAUNDRY_COLLECTED', 'EN_ROUTE_TO_BRANCH'].includes(order.deliveryWorkflowStatus || '') ? 'Heading to our branch' : 'Heading to your location')
+      : (STATUS_HEADLINE[order.status.toUpperCase()] || 'Tracking your order…');
 
-  const destLoc = {
-    latitude:  order.deliveryLatitude  || order.branchLatitude  || 14.5995,
-    longitude: order.deliveryLongitude || order.branchLongitude || 120.9842,
-  };
+  const isDelivering  = !!driverLoc && isTrackingPhase;
+  const etaLabel      = isDelivering && etaData.duration ? etaData.duration : (order.estimatedTime || 'Pending');
+
+  // Determine destination based on phase
+  const isLegToBranch = ['LAUNDRY_COLLECTED', 'EN_ROUTE_TO_BRANCH'].includes(order.deliveryWorkflowStatus || order.status.toUpperCase());
+  const destLoc = isLegToBranch 
+    ? { latitude: order.branchLatitude || 14.5995, longitude: order.branchLongitude || 120.9842 }
+    : { latitude: order.deliveryLatitude || 14.5995, longitude: order.deliveryLongitude || 120.9842 };
 
   return (
     <View style={S.root}>
 
       {/* ── MAP AREA — flex:1 fills all space above the sheet ── */}
       <View style={S.mapWrap}>
-        {isDelivering ? (
+        {isTrackingRider ? (
           <MapView
             ref={r => setMapRef(r)}
             provider={PROVIDER_GOOGLE}
             style={StyleSheet.absoluteFillObject}
             customMapStyle={MAP_STYLE}
-            initialRegion={{ ...driverLoc, latitudeDelta: 0.025, longitudeDelta: 0.025 }}
+            initialRegion={{ ...(driverLoc || destLoc), latitudeDelta: 0.025, longitudeDelta: 0.025 }}
           >
-            <MapViewDirections
-              origin={driverLoc}
-              destination={destLoc}
-              apikey={GOOGLE_MAPS_API_KEY}
-              strokeWidth={4}
-              strokeColor={colors.primary}
-              onReady={r => {
-                setEtaData({
-                  distance: `${r.distance.toFixed(1)} km`,
-                  duration: `${Math.ceil(r.duration)} min`,
-                });
-                mapRef?.fitToCoordinates(r.coordinates, {
-                  edgePadding: { top: 80, right: 50, bottom: SHEET_H + 40, left: 50 },
-                });
-              }}
-            />
-            <Marker coordinate={destLoc} title="Destination">
-              <View style={S.pinDest}>
-                <Ionicons name="home" size={14} color="#FFF" />
+            {driverLoc && (
+              <MapViewDirections
+                origin={driverLoc}
+                destination={destLoc}
+                apikey={GOOGLE_MAPS_API_KEY}
+                strokeWidth={4}
+                strokeColor={colors.primary}
+                mode="DRIVING"
+                onReady={r => {
+                  setEtaData({
+                    distance: `${r.distance.toFixed(1)} km`,
+                    duration: `${Math.ceil(r.duration)} min`,
+                  });
+                  mapRef?.fitToCoordinates(r.coordinates, {
+                    edgePadding: { top: 120, right: 50, bottom: SHEET_H + 40, left: 50 },
+                  });
+                }}
+              />
+            )}
+            <Marker coordinate={destLoc}>
+              <View style={[S.pinDest, { backgroundColor: isLegToBranch ? colors.accent : colors.text }]}>
+                <Ionicons name={isLegToBranch ? "business" : "home"} size={14} color="#FFF" />
               </View>
             </Marker>
-            <Marker.Animated coordinate={driverCoord} flat anchor={{ x: 0.5, y: 0.5 }}>
-              <View style={[S.pinDriver, {
-                transform: [{ rotate: `${delivData?.heading || 0}deg` }],
-              }]}>
-                <MaterialCommunityIcons name="motorbike" size={18} color="#FFF" />
-              </View>
-            </Marker.Animated>
+            {driverLoc && (
+              <Marker.Animated coordinate={driverCoord} flat anchor={{ x: 0.5, y: 0.5 }}>
+                <View style={[S.pinDriver, {
+                  transform: [{ rotate: `${delivData?.heading || 0}deg` }],
+                }]}>
+                  <MaterialCommunityIcons name="car-back" size={22} color="#FFF" />
+                </View>
+              </Marker.Animated>
+            )}
           </MapView>
         ) : (
           /* ── PREMIUM STATIC STATE ── */
           <View style={S.staticBg}>
-            {/* Subtle grid pattern via nested views */}
             <View style={S.staticInner}>
               <View style={S.staticIconRing}>
                 <View style={S.staticIconRingInner}>
                   <MaterialCommunityIcons
                     name={
-                      order.status === 'washing' || order.status === 'drying'
+                      order.status.toUpperCase() === 'WASHING' || order.status.toUpperCase() === 'DRYING'
                         ? 'washing-machine'
-                        : order.status === 'ready'
+                        : order.status.toUpperCase() === 'READY'
                         ? 'package-variant-closed-check'
                         : 'truck-delivery-outline'
                     }
@@ -199,11 +238,24 @@ export default function TrackingScreen({ route, navigation }) {
                 </View>
               </View>
               <Text style={S.staticLabel}>
-                {order.status === 'washing' ? 'Washing in progress…'
-                  : order.status === 'drying' ? 'Drying in progress…'
-                  : order.status === 'ready'  ? 'Ready for delivery!'
+                {order.status.toUpperCase() === 'WASHING' ? 'Washing in progress…'
+                  : order.status.toUpperCase() === 'DRYING' ? 'Drying in progress…'
+                  : order.status.toUpperCase() === 'READY'  ? 'Ready for delivery!'
                   : 'Order confirmed'}
               </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Premium Navigation Instructions for Customer */}
+        {isTrackingRider && etaData.duration && (
+          <View style={[S.navOverlay, { top: insets.top + 70 }]}>
+            <View style={S.navIconBox}>
+              <MaterialCommunityIcons name="navigation-variant" size={20} color="#FFF" />
+            </View>
+            <View style={S.navTextBox}>
+              <Text style={S.navSubText}>{isLegToBranch ? 'Heading to Branch' : 'Heading to your Location'}</Text>
+              <Text style={S.navMainText}>{etaData.duration} • {etaData.distance}</Text>
             </View>
           </View>
         )}
@@ -292,7 +344,11 @@ export default function TrackingScreen({ route, navigation }) {
         {order.delivery ? (
           <View style={S.driverCard}>
             <View style={S.driverAvatarWrap}>
-              <Ionicons name="person" size={24} color={colors.primary} />
+              {driverPhoto ? (
+                <Image source={{ uri: driverPhoto }} style={S.driverPhoto} />
+              ) : (
+                <Ionicons name="person" size={24} color={colors.primary} />
+              )}
               {isDelivering && (
                 <Animated.View style={[S.liveRing, { opacity: pulseAnim }]} />
               )}
@@ -300,7 +356,7 @@ export default function TrackingScreen({ route, navigation }) {
 
             <View style={S.driverMeta}>
               <Text style={S.driverName} numberOfLines={1}>
-                {order.delivery.driver || 'Assigned Driver'}
+                {driverName}
               </Text>
               <View style={S.driverSubRow}>
                 {isDelivering && (
@@ -389,6 +445,24 @@ const S = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 6,
   },
   fabTagText: { fontSize: 12, fontWeight: '700', color: colors.text },
+  
+  /* Premium Nav Overlay */
+  navOverlay: {
+    position: 'absolute', left: 14, right: 14,
+    backgroundColor: '#FFF', borderRadius: 16,
+    flexDirection: 'row', alignItems: 'center',
+    padding: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 8,
+    borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)',
+  },
+  navIconBox: {
+    width: 40, height: 40, borderRadius: 10,
+    backgroundColor: colors.primary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  navTextBox: { marginLeft: 12, flex: 1 },
+  navSubText: { fontSize: 9, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.8 },
+  navMainText: { fontSize: 14, fontWeight: '900', color: colors.text, marginTop: 1 },
 
   /* Map markers */
   pinDest: { backgroundColor: colors.text, padding: 9, borderRadius: 50, borderWidth: 2.5, borderColor: '#FFF' },
@@ -464,7 +538,9 @@ const S = StyleSheet.create({
     backgroundColor: '#E8EFF4',
     alignItems: 'center', justifyContent: 'center',
     marginRight: 10, position: 'relative',
+    overflow: 'hidden',
   },
+  driverPhoto: { width: 42, height: 42, borderRadius: 21 },
   liveRing: {
     position: 'absolute', width: 50, height: 50, borderRadius: 25,
     borderWidth: 2, borderColor: '#22C55E', top: -4, left: -4,

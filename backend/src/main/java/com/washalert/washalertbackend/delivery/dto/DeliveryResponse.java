@@ -49,6 +49,7 @@ public record DeliveryResponse(
         Integer bagCount,
         String confirmationCode,
         String branchHandoverPhotoUrl,
-        String finalDeliveryPhotoUrl
+        String finalDeliveryPhotoUrl,
+        String createdByName
 ) {
 }

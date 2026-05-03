@@ -245,7 +245,7 @@ const DriverDeliveriesScreen = ({ navigation }) => {
 
                     <View style={styles.addressRow}>
                       <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
-                      <Text style={styles.addressText}>{order.deliveryAddress || 'No address provided'}</Text>
+                      <Text style={styles.detailText}>{order.deliveryAddress || (order.serviceType === 'PICKUP_DELIVERY' ? 'Address not provided' : 'In-Store Walk-in')}</Text>
                     </View>
 
                     <View style={styles.cardFooter}>
@@ -277,8 +277,10 @@ const DriverDeliveriesScreen = ({ navigation }) => {
                       </View>
 
                       <View style={styles.addressRow}>
-                        <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
-                        <Text style={styles.addressText}>{delivery.deliveryAddress}</Text>
+                        <Ionicons name="location" size={14} color={colors.primary} />
+                        <Text style={[styles.addressText, { color: colors.primary, fontWeight: '800', fontSize: 13 }]}>
+                          {delivery.deliveryAddress || (delivery.serviceType?.toUpperCase() === 'PICKUP_DELIVERY' ? 'Address not provided' : 'In-Store Walk-in')}
+                        </Text>
                       </View>
 
                       <View style={styles.cardFooter}>

@@ -45,7 +45,7 @@ public class JobOrderStatusHistory {
     private JobOrder jobOrder;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(nullable = false, length = 50)
     private JobOrderStatus status;
 
     @Column(name = "changed_by", length = 120)

@@ -177,59 +177,45 @@ const BRANCH_CATALOG = [
 const SERVICE_CATALOG = [
   {
     id: 'wash',
-    name: 'Wash (7kg)',
+    name: 'Wash Only',
     price: 80,
     icon: 'water-outline',
-    description: 'Basic washing service up to 7kg',
+    description: 'Basic washing service (up to 8kg)',
   },
   {
     id: 'dry',
-    name: 'Dry (7kg)',
+    name: 'Dry Only',
     price: 90,
     icon: 'sunny-outline',
-    description: 'Basic drying service up to 7kg',
+    description: 'Basic drying service (up to 8kg)',
   },
   {
     id: 'ecowash-full',
-    name: 'Ecowash Full Service (5kg)',
+    name: 'Ecowash Full Service',
     price: 220,
     icon: 'leaf-outline',
     description: 'Eco-friendly full service (wash-dry-fold)',
   },
   {
-    id: 'basic-full-7',
-    name: 'Basic Full Service (7kg)',
+    id: 'basic-full',
+    name: 'Basic Full Service',
     price: 240,
     icon: 'shirt-outline',
-    description: 'Standard full service (7kg)',
+    description: 'Standard full service (wash-dry-fold)',
   },
   {
-    id: 'basic-full-8',
-    name: 'Basic Full Service (8kg)',
-    price: 245,
-    icon: 'shirt-outline',
-    description: 'Standard full service (8kg)',
-  },
-  {
-    id: 'premium-full-7',
-    name: 'Premium Full Service (7kg)',
+    id: 'premium-full',
+    name: 'Premium Full Service',
     price: 270,
     icon: 'sparkles-outline',
-    description: 'Premium full service with care (7kg)',
-  },
-  {
-    id: 'premium-full-8',
-    name: 'Premium Full Service (8kg)',
-    price: 275,
-    icon: 'sparkles-outline',
-    description: 'Premium full service with care (8kg)',
+    description: 'Premium care full service (wash-dry-fold)',
   },
   {
     id: 'handwash',
     name: 'Handwash',
     price: 150,
     icon: 'hand-wash',
-    description: 'Careful handwashing service (1-3kg: â‚±150/kg, 3kg+: â‚±90/kg)',
+    description: 'Gentle handwashing service',
   },
 ];
 
@@ -395,15 +381,25 @@ const setLocalOrders = async (orders) => {
 const toMobileOrderStatus = (status) => {
   const map = {
     PENDING: 'pending',
+    ORDER_RECEIVED: 'received',
+    AWAITING_PRICE_CONFIRMATION: 'awaiting_price',
+    PRICE_CONFIRMED: 'price_approved',
     WASHING: 'washing',
     DRYING: 'drying',
     READY: 'ready',
+    OUT_FOR_DELIVERY: 'delivering',
     PENDING_PICKUP: 'delivering',
     EN_ROUTE_TO_PICKUP: 'delivering',
     PICKED_UP: 'delivering',
     IN_TRANSIT: 'delivering',
     DELIVERED: 'delivered',
     FAILED: 'cancelled',
+    CANCELLED: 'cancelled',
+    // ── Driver delivery phase statuses (must be preserved as-is for STATE_CONFIG matching) ──
+    ASSIGNED_FOR_DELIVERY: 'ASSIGNED_FOR_DELIVERY',
+    EN_ROUTE_TO_BRANCH: 'EN_ROUTE_TO_BRANCH',
+    PICKED_UP_FROM_BRANCH: 'PICKED_UP_FROM_BRANCH',
+    COLLECTION_FAILED: 'COLLECTION_FAILED',
   };
   return map[String(status || '').toUpperCase()] || String(status || '').toLowerCase();
 };
@@ -453,23 +449,32 @@ const parseServiceModeFromInstructions = (notes = '') => {
 };
 
 const mapJobOrderToMobile = (jobOrder, previous = {}) => ({
-  id: String(jobOrder.id ?? jobOrder.trackingNumber ?? previous.id),
+  // Use numeric DB id for API calls (confirmPrice etc), fallback to tracking number
+  id: jobOrder.id != null ? Number(jobOrder.id) : (previous.id ?? jobOrder.trackingNumber),
+  dbId: jobOrder.id != null ? Number(jobOrder.id) : previous.dbId,
   trackingNumber: jobOrder.trackingNumber ?? previous.trackingNumber,
   branchId: previous.branchId ?? null,
   branchName: jobOrder.branch ?? previous.branchName ?? 'Unknown Branch',
+  branchAddress: findBranchFromCatalog(jobOrder.branch || previous.branchName)?.address || '',
   serviceType:
     jobOrder.serviceType === 'PICKUP_DELIVERY'
       ? 'Pickup & Delivery'
       : jobOrder.serviceType === 'DROP_OFF'
-      ? 'Drop Off'
-      : previous.serviceType ?? 'Wash & Dry',
+        ? 'Drop Off'
+        : previous.serviceType ?? 'Wash & Dry',
+  serviceName: jobOrder.serviceName ?? previous.serviceName ?? null,
   serviceMode:
     previous.serviceMode ||
     parseServiceModeFromInstructions(jobOrder.specialInstructions) ||
     (jobOrder.serviceType === 'DROP_OFF' ? 'DROP_OFF_ONLY' : 'FULL_SERVICE'),
   loadKg: Number(jobOrder.estimatedWeightKg ?? previous.loadKg ?? 0),
+  // Critical: preserve weight and price set by staff
+  actualWeightKg: jobOrder.actualWeightKg != null ? Number(jobOrder.actualWeightKg) : (previous.actualWeightKg ?? null),
+  finalPrice: jobOrder.finalPrice != null ? Number(jobOrder.finalPrice) : (previous.finalPrice ?? null),
   detergent: jobOrder.detergentPreference ?? previous.detergent ?? 'None',
+  detergentQty: Number(jobOrder.detergentQuantity ?? previous.detergentQty ?? 0),
   conditioner: jobOrder.fabricConditionerPreference ?? previous.conditioner ?? 'None',
+  conditionerQty: Number(jobOrder.conditionerQuantity ?? previous.conditionerQty ?? 0),
   status: toMobileOrderStatus(jobOrder.status ?? previous.status),
   amount: Number(jobOrder.totalPrice ?? previous.amount ?? 0),
   servicePrice: Number(jobOrder.servicePrice || previous.servicePrice || 0),
@@ -482,24 +487,31 @@ const mapJobOrderToMobile = (jobOrder, previous = {}) => ({
   date: parseDateLabel(jobOrder.createdAt ?? previous.dateBooked),
   dateBooked: jobOrder.createdAt ?? previous.dateBooked ?? new Date().toISOString(),
   estimatedTime: previous.estimatedTime ?? '2-4 hours',
-  scheduleDate: previous.scheduleDate,
-  scheduleTime: previous.scheduleTime,
-  instructions: jobOrder.specialInstructions ?? previous.instructions ?? '',
+  scheduleDate: jobOrder.bookingDate || previous.scheduleDate,
+  scheduleTime: (jobOrder.slotStartTime && jobOrder.slotEndTime) 
+    ? toSlotRangeLabel(jobOrder.slotStartTime, jobOrder.slotEndTime) 
+    : (previous.scheduleTime || ''),
+  staffName: jobOrder.createdByName || previous.staffName || '',
+  customerName: jobOrder.customerName || previous.customerName || 'Customer',
+  contactName: jobOrder.deliveryContactName || jobOrder.customerName || previous.contactName || 'Customer',
+  customerPhone: jobOrder.customerPhone || previous.customerPhone || '',
+  contactPhone: jobOrder.deliveryContactPhone || jobOrder.customerPhone || previous.contactPhone || '',
+  deliveryAddress: jobOrder.deliveryAddress || previous.deliveryAddress || '',
   delivery:
     jobOrder.deliveryAddress || previous.delivery
       ? {
-          address: jobOrder.deliveryAddress || previous.delivery?.address || '',
-          unitFloor: jobOrder.deliveryUnitFloor || previous.delivery?.unitFloor || null,
-          contactName: jobOrder.deliveryContactName || previous.delivery?.contactName || null,
-          phone: jobOrder.deliveryContactPhone || previous.delivery?.phone || null,
-          driver: previous.delivery?.driver || 'Assigned Driver',
-          driverPhone: previous.delivery?.driverPhone || '',
-          driverPhotoUrl: previous.delivery?.driverPhotoUrl || null,
-          driverVehicle: previous.delivery?.driverVehicle || null,
-          eta: previous.delivery?.eta || null,
-          pickupProofUrl: previous.delivery?.pickupProofUrl || null,
-          dropoffProofUrl: previous.delivery?.dropoffProofUrl || null,
-        }
+        address: jobOrder.deliveryAddress || previous.delivery?.address || '',
+        unitFloor: jobOrder.deliveryUnitFloor || previous.delivery?.unitFloor || null,
+        contactName: jobOrder.deliveryContactName || jobOrder.customerName || previous.delivery?.contactName || null,
+        phone: jobOrder.deliveryContactPhone || jobOrder.customerPhone || previous.delivery?.phone || null,
+        driver: jobOrder.assignedDriverName || previous.delivery?.driver || 'Assigned Driver',
+        driverPhone: jobOrder.assignedDriverPhone || previous.delivery?.driverPhone || '',
+        driverPhotoUrl: jobOrder.assignedDriverPhotoUrl || previous.delivery?.driverPhotoUrl || null,
+        driverVehicle: previous.delivery?.driverVehicle || null,
+        eta: previous.delivery?.eta || null,
+        pickupProofUrl: previous.delivery?.pickupProofUrl || null,
+        dropoffProofUrl: previous.delivery?.dropoffProofUrl || null,
+      }
       : null,
   timeline:
     previous.timeline ||
@@ -553,6 +565,8 @@ const refreshOrderStatus = async (order) => {
         detergentPreference: order.detergent,
         fabricConditionerPreference: order.conditioner,
         specialInstructions: order.instructions,
+        deliveryContactName: tracked.deliveryContactName,
+        deliveryContactPhone: tracked.deliveryContactPhone,
       },
       order
     );
@@ -583,6 +597,8 @@ const refreshOrderStatus = async (order) => {
         updated.deliveryWorkflowStatus = delivery.workflowStatus || null;
         updated.delivery = {
           address: delivery.deliveryAddress || updated.delivery?.address || '',
+          contactName: delivery.deliveryContactName || delivery.customerName || updated.delivery?.contactName || null,
+          phone: delivery.deliveryContactPhone || delivery.customerPhone || updated.delivery?.phone || null,
           driver: delivery.driverName || 'Assigned Driver',
           driverPhone: delivery.driverPhone || '',
           driverPhotoUrl: delivery.driverPhotoUrl || null,
@@ -633,14 +649,16 @@ const refreshOrderStatus = async (order) => {
       const payment = await apiRequest(
         `/api/payments/track/${encodeURIComponent(order.trackingNumber)}`
       );
-      console.log('[Orders] Payment status tracking=', order.trackingNumber, 'status=', payment?.status);
-      updated.paymentMethod = payment?.method || updated.paymentMethod;
-      updated.paymentStatus = toMobilePaymentStatus(
-        { paymentStatus: payment?.status, isPaid: payment?.status === 'PAID' || payment?.status === 'VERIFIED' },
-        updated.paymentStatus || 'Pending'
-      );
-      if (updated.paymentStatus === 'Paid') {
-        updated.amountPaid = Number(payment?.amount ?? updated.amountPaid ?? updated.amount ?? 0);
+      if (payment) {
+        console.log('[Orders] Payment status tracking=', order.trackingNumber, 'status=', payment.status);
+        updated.paymentMethod = payment.method || updated.paymentMethod;
+        updated.paymentStatus = toMobilePaymentStatus(
+          { paymentStatus: payment.status, isPaid: payment.status === 'PAID' || payment.status === 'VERIFIED' },
+          updated.paymentStatus || 'Pending'
+        );
+        if (updated.paymentStatus === 'Paid') {
+          updated.amountPaid = Number(payment.amount ?? updated.amountPaid ?? updated.amount ?? 0);
+        }
       }
     } catch {
       // Payment record may not exist yet.
@@ -746,49 +764,51 @@ const mapDelivery = (delivery) => {
   const branchLongitude = toNullableNumber(delivery.branchLongitude) ?? toNullableNumber(catalogBranch?.longitude);
   const branchAddress = delivery.branchAddress || catalogBranch?.address || '';
   return ({
-  id: isNonEmpty(delivery?.id) ? String(delivery.id) : null,
-  orderId: toNullableNumber(delivery?.orderId),
-  orderNumber: isNonEmpty(delivery?.trackingNumber) ? String(delivery.trackingNumber).trim() : null,
-  trackingNumber: isNonEmpty(delivery?.trackingNumber) ? String(delivery.trackingNumber).trim() : null,
-  customerName: delivery.customerName || 'Customer',
-  customerPhone: delivery.customerPhone || '',
-  deliveryAddress: delivery.deliveryAddress || '',
-  deliveryUnitFloor: delivery.deliveryUnitFloor || null,
-  deliveryContactName: delivery.deliveryContactName || null,
-  deliveryContactPhone: delivery.deliveryContactPhone || null,
-  branchId: toNullableNumber(delivery.branchId),
-  branchName: delivery.branch || '',
-  branchAddress,
-  leg: delivery.leg || 'DELIVERY_TO_CUSTOMER',
-  status: toMobileDeliveryStatus(delivery.status, delivery.workflowStatus),
-  workflowStatus: delivery.workflowStatus || null,
-  workflowLabel: toWorkflowLabel(delivery.workflowStatus),
-  driverName: delivery.driverName || '',
-  assignedDriverId: toNullableNumber(delivery.assignedDriverId),
-  driverPhone: delivery.driverPhone || '',
-  driverPhotoUrl: delivery.driverPhotoUrl || null,
-  driverVehicle: delivery.driverVehicle || null,
-  paymentMethod: delivery.paymentMethod || '',
-  paymentStatus: delivery.paymentStatus || (delivery.isPaid ? 'PAID' : 'UNPAID'),
-  isPaid: Boolean(delivery.isPaid),
-  amountToCollect: Number(delivery.amountToCollect ?? delivery.totalPrice ?? 0),
-  loadKg: toNullableNumber(delivery.loadKg),
-  loadCount: toNullableNumber(delivery.loadCount),
-  estimatedDelivery: delivery.estimatedArrivalAt || null,
-  pickupProofUrl: delivery.pickupProofUrl || null,
-  dropoffProofUrl: delivery.dropoffProofUrl || null,
-  notes: delivery.notes || '',
-  updatedAt: delivery.updatedAt || null,
-  currentLatitude: toNullableNumber(delivery.currentLatitude),
-  currentLongitude: toNullableNumber(delivery.currentLongitude),
-  branchLatitude,
-  branchLongitude,
-  deliveryLatitude: toNullableNumber(delivery.deliveryLatitude),
-  deliveryLongitude: toNullableNumber(delivery.deliveryLongitude),
-  bagCount: toNullableNumber(delivery.bagCount),
-  confirmationCode: delivery.confirmationCode || null,
-  branchHandoverPhotoUrl: delivery.branchHandoverPhotoUrl || null,
-  finalDeliveryPhotoUrl: delivery.finalDeliveryPhotoUrl || null,
+    id: isNonEmpty(delivery?.id) ? String(delivery.id) : null,
+    orderId: toNullableNumber(delivery?.orderId),
+    orderNumber: isNonEmpty(delivery?.trackingNumber) ? String(delivery.trackingNumber).trim() : null,
+    trackingNumber: isNonEmpty(delivery?.trackingNumber) ? String(delivery.trackingNumber).trim() : null,
+    customerName: delivery.customerName || 'Customer',
+    contactName: delivery.deliveryContactName || delivery.customerName || 'Customer',
+    customerPhone: delivery.customerPhone || '',
+    contactPhone: delivery.deliveryContactPhone || delivery.customerPhone || '',
+    deliveryAddress: delivery.deliveryAddress || '',
+    deliveryUnitFloor: delivery.deliveryUnitFloor || null,
+    deliveryContactName: delivery.deliveryContactName || null,
+    deliveryContactPhone: delivery.deliveryContactPhone || null,
+    branchId: toNullableNumber(delivery.branchId),
+    branchName: delivery.branch || '',
+    branchAddress,
+    leg: delivery.leg || 'DELIVERY_TO_CUSTOMER',
+    status: toMobileDeliveryStatus(delivery.status, delivery.workflowStatus),
+    workflowStatus: delivery.workflowStatus || null,
+    workflowLabel: toWorkflowLabel(delivery.workflowStatus),
+    driverName: delivery.driverName || '',
+    assignedDriverId: toNullableNumber(delivery.assignedDriverId),
+    driverPhone: delivery.driverPhone || '',
+    driverPhotoUrl: delivery.driverPhotoUrl || null,
+    driverVehicle: delivery.driverVehicle || null,
+    paymentMethod: delivery.paymentMethod || '',
+    paymentStatus: delivery.paymentStatus || (delivery.isPaid ? 'PAID' : 'UNPAID'),
+    isPaid: Boolean(delivery.isPaid),
+    amountToCollect: Number(delivery.amountToCollect ?? delivery.totalPrice ?? 0),
+    loadKg: toNullableNumber(delivery.loadKg),
+    loadCount: toNullableNumber(delivery.loadCount),
+    estimatedDelivery: delivery.estimatedArrivalAt || null,
+    pickupProofUrl: delivery.pickupProofUrl || null,
+    dropoffProofUrl: delivery.dropoffProofUrl || null,
+    notes: delivery.notes || '',
+    updatedAt: delivery.updatedAt || null,
+    currentLatitude: toNullableNumber(delivery.currentLatitude),
+    currentLongitude: toNullableNumber(delivery.currentLongitude),
+    branchLatitude,
+    branchLongitude,
+    deliveryLatitude: toNullableNumber(delivery.deliveryLatitude),
+    deliveryLongitude: toNullableNumber(delivery.deliveryLongitude),
+    bagCount: toNullableNumber(delivery.bagCount),
+    confirmationCode: delivery.confirmationCode || null,
+    branchHandoverPhotoUrl: delivery.branchHandoverPhotoUrl || null,
+    finalDeliveryPhotoUrl: delivery.finalDeliveryPhotoUrl || null,
   });
 };
 
@@ -895,8 +915,8 @@ export const createOrder = async (orderData) => {
     preferredSlotStartTime: toSlotStartTime(orderData.scheduleTime),
     detergentPreference: orderData.detergent || 'None',
     fabricConditionerPreference: orderData.conditioner || 'None',
-    loadSize: getLoadSize(Number(orderData.loadKg || 0)),
-    estimatedWeightKg: Number(orderData.loadKg || 1),
+    loadSize: orderData.loadSize || getLoadSize(Number(orderData.loadKg || 0)),
+    estimatedWeightKg: Number(orderData.loadKg || (orderData.loadSize === 'LARGE' ? 8 : 5)),
     containsBulkyItems: Boolean(orderData.containsBulkyItems),
     specialInstructions: mergedInstructions,
     deliveryAddress: orderData.delivery ? orderData.deliveryAddress || 'To be provided' : null,
@@ -954,6 +974,55 @@ export const laundry = {
 
 export const bookings = {
   cancel: async (id) => await apiRequest(`/api/bookings/${id}/cancel`, { method: 'PATCH' }),
+  getById: async (id) => {
+    try {
+      // Always try the authenticated customer endpoint first — it returns actualWeightKg, finalPrice, etc.
+      // This is the ONLY endpoint with all price data the receipt needs.
+      if (!isNaN(id) && id != null) {
+        const jobOrder = await apiRequest(`/api/orders/my/paged?size=100`);
+        const match = (jobOrder?.content || []).find((o) => String(o.id) === String(id));
+        if (match) {
+          const mapped = mapJobOrderToMobile(match, {});
+          // Save to local cache
+          const orders = await getLocalOrders();
+          const merged = orders.map((o) => (String(o.id) === String(mapped.id) ? mapped : o));
+          if (!orders.find((o) => String(o.id) === String(mapped.id))) merged.push(mapped);
+          await setLocalOrders(merged);
+          return mapped;
+        }
+      }
+
+      // Fallback: local cache
+      const orders = await getLocalOrders();
+      const found = orders.find((o) => String(o.id) === String(id) || String(o.trackingNumber) === String(id));
+      if (found) {
+        const refreshed = await refreshOrderStatus(found);
+        const merged = orders.map((o) => (String(o.id) === String(refreshed.id) ? refreshed : o));
+        await setLocalOrders(merged);
+        return refreshed;
+      }
+
+      // Last resort: public track endpoint
+      const tracked = await apiRequest(`/api/orders/track/${encodeURIComponent(id)}`);
+      return mapJobOrderToMobile({
+        id: tracked.id || tracked.trackingNumber,
+        trackingNumber: tracked.trackingNumber,
+        branch: tracked.branch,
+        status: tracked.currentStatus,
+        serviceType: tracked.serviceType,
+      });
+    } catch {
+      // If all fails, return from local cache
+      const orders = await getLocalOrders();
+      return orders.find((o) => String(o.id) === String(id) || String(o.trackingNumber) === String(id)) || null;
+    }
+  },
+  // Use numeric dbId to avoid 403 Forbidden — backend expects Long, not tracking string
+  confirmPrice: async (order) => {
+    const numericId = order?.dbId ?? order?.id;
+    if (!numericId || isNaN(numericId)) throw new Error('Cannot confirm: invalid order ID.');
+    return apiRequest(`/api/orders/${numericId}/confirm-price`, { method: 'PUT' });
+  },
   getAvailableSlots: async (branch, dateLike) => {
     const date = formatDateForApi(dateLike);
     const path = `/api/bookings/slots?branch=${encodeURIComponent(branch)}&date=${encodeURIComponent(date)}`;
@@ -1033,30 +1102,6 @@ export const bookings = {
     }
   },
 
-  getById: async (id) => {
-    const orders = await getLocalOrders();
-    const found = orders.find((o) => String(o.id) === String(id) || o.trackingNumber === id);
-    if (!found) {
-      try {
-        const tracked = await apiRequest(`/api/orders/track/${encodeURIComponent(id)}`);
-        return mapJobOrderToMobile({
-          id: tracked.trackingNumber,
-          trackingNumber: tracked.trackingNumber,
-          branch: tracked.branch,
-          status: tracked.currentStatus,
-          serviceType: tracked.serviceType,
-        });
-      } catch {
-        return null;
-      }
-    }
-
-    const refreshed = await refreshOrderStatus(found);
-    const merged = orders.map((o) => (String(o.id) === String(refreshed.id) ? refreshed : o));
-    await setLocalOrders(merged);
-    return refreshed;
-  },
-
   getTimeline: async (trackingNumber) => {
     if (!trackingNumber) return { timeline: [] };
     const tracked = await apiRequest(`/api/orders/track/${encodeURIComponent(trackingNumber)}`);
@@ -1068,6 +1113,8 @@ export const bookings = {
       })),
     };
   },
+
+  // confirmPrice is defined above in the bookings object (uses numeric dbId)
 };
 
 export const branches = {
@@ -1374,7 +1421,7 @@ export const payments = {
     console.log('[Payments] Raw checkout response=', payload);
     const checkoutUrl = payload?.checkout_url || payload?.checkoutUrl || payload?.url || null;
     console.log('[Payments] Checkout URL=', checkoutUrl || '(missing)');
-    return checkoutUrl;
+    return { checkoutUrl };
   },
   collectCodPayment: async (id) => {
     return deliveries.collectCodPayment(id);
@@ -1391,6 +1438,42 @@ export const support = {
         trackingNumber,
         sessionId,
       },
+    });
+  },
+};
+
+export const driverOrders = {
+  getTasks: async (page = 0, size = 20) => {
+    const response = await apiRequest(`/api/orders/driver/tasks?page=${page}&size=${size}`);
+    return {
+      content: (response.content || []).map(order => mapJobOrderToMobile(order)),
+      totalElements: response.totalElements,
+      totalPages: response.totalPages,
+    };
+  },
+  startPickupLeg: async (id) => await apiRequest(`/api/orders/${id}/driver/start-pickup-leg`, { method: 'PUT' }),
+  confirmLaundryCollected: async (id) => await apiRequest(`/api/orders/${id}/driver/confirm-laundry-collected`, { method: 'PUT' }),
+  confirmArrivedAtBranch: async (id) => await apiRequest(`/api/orders/${id}/driver/confirm-arrived-at-branch`, { method: 'PUT' }),
+  startDeliveryLeg: async (id) => await apiRequest(`/api/orders/${id}/driver/start-delivery-leg`, { method: 'PUT' }),
+  confirmDelivery: async (id, { codCollected }) => await apiRequest(`/api/orders/${id}/driver/confirm-delivery`, {
+    method: 'PUT',
+    body: { codCollected }
+  }),
+  getById: async (id) => {
+    try {
+      const order = await apiRequest(`/api/orders/driver/task/${id}`);
+      return {
+        ...mapJobOrderToMobile(order),
+        status: String(order.status || '').toUpperCase(),
+      };
+    } catch (error) {
+      throw new Error('Unable to load task. It may have already been completed or was not assigned to you.');
+    }
+  },
+  updateLocation: async (id, { latitude, longitude }) => {
+    return await apiRequest(`/api/orders/${id}/driver/location`, {
+      method: 'PUT',
+      body: { latitude, longitude }
     });
   },
 };
@@ -1423,6 +1506,7 @@ export default {
   bookings,
   branches,
   deliveries,
+  driverOrders,
   notifications,
   payments,
   support,
