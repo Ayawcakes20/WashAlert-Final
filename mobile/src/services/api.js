@@ -234,11 +234,7 @@ const SERVICE_CATALOG = [
     name: 'Handwash',
     price: 150,
     icon: 'hand-wash',
-<<<<<<< HEAD
-    description: 'Gentle handwashing service',
-=======
     description: 'Careful handwashing service (1-3kg: PHP 150/kg, 3kg+: PHP 90/kg)',
->>>>>>> 604896f654adb44857daa009c72606d729dcce0e
   },
 ];
 
@@ -960,13 +956,8 @@ export const createOrder = async (orderData) => {
     preferredSlotStartTime: toSlotStartTime(orderData.scheduleTime),
     detergentPreference: orderData.detergent || 'None',
     fabricConditionerPreference: orderData.conditioner || 'None',
-<<<<<<< HEAD
     loadSize: orderData.loadSize || getLoadSize(Number(orderData.loadKg || 0)),
     estimatedWeightKg: Number(orderData.loadKg || (orderData.loadSize === 'LARGE' ? 8 : 5)),
-=======
-    loadSize: getLoadSize(Number(orderData.loadKg || 0)),
-    estimatedWeightKg: Number(orderData.loadKg || 5),
->>>>>>> 604896f654adb44857daa009c72606d729dcce0e
     containsBulkyItems: Boolean(orderData.containsBulkyItems),
     specialInstructions: mergedInstructions,
     deliveryAddress: orderData.delivery ? orderData.deliveryAddress || 'To be provided' : null,
