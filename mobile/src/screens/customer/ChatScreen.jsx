@@ -80,7 +80,10 @@ const ChatScreen = ({ navigation }) => {
       if (!isSilent) {
         setTimeout(() => {
           scrollRef.current?.scrollToEnd({ animated: false });
-        }, 100);
+        }, 300);
+        setTimeout(() => {
+          scrollRef.current?.scrollToEnd({ animated: false });
+        }, 600);
       }
     }
   };
@@ -199,6 +202,9 @@ const ChatScreen = ({ navigation }) => {
           ref={scrollRef}
           style={styles.chatArea}
           contentContainerStyle={styles.chatContent}
+          onContentSizeChange={() => {
+            scrollRef.current?.scrollToEnd({ animated: false });
+          }}
         >
           {isLoading ? (
             <View style={styles.loadingContainer}>
