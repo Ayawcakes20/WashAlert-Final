@@ -27,7 +27,9 @@ const RegisterScreen = ({ navigation }) => {
   const validateField = (key, value) => {
     const e = { ...errors };
     if (key === 'fullName') {
-      if (!value || value.length < 2) e.fullName = 'Full name required (min 2 chars)';
+      const trimmed = (value || '').trim();
+      const words = trimmed.split(/\s+/);
+      if (!trimmed || words.length < 2) e.fullName = 'Please enter both first and last name';
       else delete e.fullName;
     }
     if (key === 'email') {
@@ -57,7 +59,8 @@ const RegisterScreen = ({ navigation }) => {
 
   const validate = () => {
     const e = {};
-    if (!form.fullName || form.fullName.length < 2) e.fullName = 'Full name required (min 2 chars)';
+    const trimmedName = (form.fullName || '').trim();
+    if (!trimmedName || trimmedName.split(/\s+/).length < 2) e.fullName = 'Please enter both first and last name';
     if (!form.email || !/\S+@\S+\.\S+/.test(form.email)) e.email = 'Valid email required';
     if (!form.phone || !/^09\d{9}$/.test(form.phone)) e.phone = 'Valid PH number (09XXXXXXXXX)';
     if (!form.password || form.password.length < 8) e.password = 'Min 8 characters';
