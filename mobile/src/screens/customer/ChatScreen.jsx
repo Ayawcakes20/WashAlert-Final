@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Image, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Image, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
@@ -198,32 +198,46 @@ const ChatScreen = ({ navigation }) => {
           </View>
         </View>
 
-        <ScrollView
-          ref={scrollRef}
-          style={styles.chatArea}
-          contentContainerStyle={styles.chatContent}
-          onContentSizeChange={() => {
-            scrollRef.current?.scrollToEnd({ animated: false });
-          }}
-        >
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <Text style={styles.loadingText}>Loading chat history...</Text>
-            </View>
-          ) : (
-            <>
-              {messages.map((msg) => (
-                <View key={msg.id} style={[styles.msgRow, msg.sender === 'user' ? styles.msgRowUser : styles.msgRowBot]}>
+        {isLoading ? (
+          <View style={[styles.chatArea, styles.loadingContainer]}>
+            <Text style={styles.loadingText}>Loading chat history...</Text>
+          </View>
+        ) : (
+          <FlatList
+            ref={scrollRef}
+            style={styles.chatArea}
+            contentContainerStyle={styles.chatContent}
+            data={isTyping ? [...messages, { id: '__typing__', sender: 'typing' }] : messages}
+            keyExtractor={(item) => String(item.id)}
+            onContentSizeChange={() => {
+              scrollRef.current?.scrollToEnd({ animated: false });
+            }}
+            onLayout={() => {
+              scrollRef.current?.scrollToEnd({ animated: false });
+            }}
+            renderItem={({ item: msg }) => {
+              if (msg.sender === 'typing') {
+                return (
+                  <View style={[styles.msgRow, styles.msgRowBot]}>
+                    <View style={[styles.avatarBox, { backgroundColor: colors.mintSoft }]}>
+                      <Ionicons name="chatbubbles" size={12} color={colors.accent} />
+                    </View>
+                    <View style={[styles.msgBubble, styles.bubbleBot]}>
+                      <Text style={styles.msgTextBot}>Typing...</Text>
+                    </View>
+                  </View>
+                );
+              }
+              return (
+                <View style={[styles.msgRow, msg.sender === 'user' ? styles.msgRowUser : styles.msgRowBot]}>
                   {(msg.sender === 'bot' || msg.sender === 'staff') && (
                     <View style={[styles.avatarBox, { backgroundColor: msg.sender === 'staff' ? colors.goldSoft : colors.mintSoft }]}>
                       <Ionicons name={msg.sender === 'staff' ? "headset" : "chatbubbles"} size={12} color={colors.accent} />
                     </View>
                   )}
-
                   <View style={[styles.msgBubble, msg.sender === 'user' ? styles.bubbleUser : styles.bubbleBot, msg.sender === 'staff' && { borderColor: colors.gold, borderWidth: 1 }]}>
                     <Text style={[styles.msgText, msg.sender === 'user' ? styles.msgTextUser : styles.msgTextBot]} selectable={true}>{msg.text}</Text>
                   </View>
-
                   {msg.sender === 'user' && (
                     user?.profileImageUrl ? (
                       <Image source={{ uri: user.profileImageUrl }} style={styles.avatarImage} />
@@ -234,20 +248,10 @@ const ChatScreen = ({ navigation }) => {
                     )
                   )}
                 </View>
-              ))}
-              {isTyping && (
-                <View style={[styles.msgRow, styles.msgRowBot]}>
-                  <View style={[styles.avatarBox, { backgroundColor: colors.mintSoft }]}>
-                    <Ionicons name="chatbubbles" size={12} color={colors.accent} />
-                  </View>
-                  <View style={[styles.msgBubble, styles.bubbleBot]}>
-                    <Text style={styles.msgTextBot}>Typing...</Text>
-                  </View>
-                </View>
-              )}
-            </>
-          )}
-        </ScrollView>
+              );
+            }}
+          />
+        )}
 
         <View style={styles.quickRepliesWrap}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
