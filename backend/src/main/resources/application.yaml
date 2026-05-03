@@ -51,7 +51,7 @@ spring:
 washalert:
 
   gemini:
-    api-key: AIzaSyBTitmgVpXe5Kx2rRYB9Lomy-uPCkAKOIs
+    api-key: ${GEMINI_API_KEY:${GOOGLE_API_KEY:}}
     model: gemini-2.5-flash
     base-url: https://generativelanguage.googleapis.com/v1beta
 
