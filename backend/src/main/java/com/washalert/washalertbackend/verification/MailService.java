@@ -324,12 +324,6 @@ public class MailService {
     private String classifyMailFailure(Exception ex) {
         String message = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
 
-        if (message.contains("resend api")
-                || message.contains("resend")
-                || message.contains("api.resend.com")) {
-            return "Email dispatch failed at Resend API. Check RESEND_API_KEY and provider logs.";
-        }
-
         if (ex instanceof MailAuthenticationException
                 || message.contains("535")
                 || (message.contains("auth") && message.contains("fail"))) {
