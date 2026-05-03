@@ -60,4 +60,22 @@ public class ChatSupportController {
     ) {
         return ResponseEntity.ok(chatSupportService.resolveTicket(ticketNumber, principal));
     }
+
+    /**
+     * Admin/Staff: reply to an open support ticket.
+     */
+    @PostMapping("/tickets/{ticketNumber}/reply")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public ResponseEntity<Void> replyToTicket(
+            @PathVariable String ticketNumber,
+            @RequestBody java.util.Map<String, String> body,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        String message = body.get("message");
+        if (message == null || message.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        chatSupportService.replyToTicket(ticketNumber, message, principal);
+        return ResponseEntity.ok().build();
+    }
 }

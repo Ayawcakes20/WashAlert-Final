@@ -8,6 +8,7 @@ public record ChatHistoryMessageResponse(
         String message,
         String category,
         String escalationTicket,
+        String senderName,
         LocalDateTime createdAt
 ) {
 }

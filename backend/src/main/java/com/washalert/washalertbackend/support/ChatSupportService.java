@@ -48,8 +48,7 @@ public class ChatSupportService {
             ChatSupportMessageRepository messageRepository,
             SupportTicketRepository supportTicketRepository,
             GeminiChatClient geminiChatClient,
-            NotificationService notificationService
-    ) {
+            NotificationService notificationService) {
         this.jobOrderService = jobOrderService;
         this.deliveryService = deliveryService;
         this.paymentService = paymentService;
@@ -64,15 +63,41 @@ public class ChatSupportService {
         String sessionId = normalizeSessionId(req.sessionId());
         String userMessage = req.message().trim();
 
-        saveMessage(sessionId, ChatResponderType.USER, userMessage, "user", null);
+        var openTickets = supportTicketRepository.findTop50BySessionIdOrderByCreatedAtDesc(sessionId).stream()
+                .filter(t -> t.getStatus() == SupportTicketStatus.OPEN)
+                .toList();
+
+        if (!openTickets.isEmpty()) {
+            SupportTicket openTicket = openTickets.get(0);
+            saveMessage(sessionId, ChatResponderType.USER, userMessage, "user", openTicket.getTicketNumber(),
+                    req.senderName());
+
+            notificationService.enqueuePushToRoles(
+                    List.of(Role.ADMIN, Role.STAFF),
+                    openTicket.getBranch(),
+                    "New Customer Message",
+                    "Ticket " + openTicket.getTicketNumber() + ": "
+                            + (userMessage.length() > 100 ? userMessage.substring(0, 100) + "..." : userMessage),
+                    "SUPPORT_MESSAGE",
+                    openTicket.getTicketNumber());
+
+            return new ChatSupportResponse(
+                    "escalated_chat",
+                    null, // Handled implicitly by mobile UI via polling
+                    true,
+                    openTicket.getTicketNumber(),
+                    null);
+        }
+
+        saveMessage(sessionId, ChatResponderType.USER, userMessage, "user", null, req.senderName());
         ChatSupportResponse response = buildReply(req, userMessage, sessionId);
         saveMessage(
                 sessionId,
-                response.escalated() ? ChatResponderType.HUMAN : ChatResponderType.AI,
+                ChatResponderType.AI,
                 response.reply(),
                 response.category(),
-                response.escalationTicket()
-        );
+                response.escalationTicket(),
+                null);
 
         return response;
     }
@@ -87,18 +112,19 @@ public class ChatSupportService {
                         m.getMessage(),
                         m.getCategory(),
                         m.getEscalationTicket(),
-                        m.getCreatedAt()
-                ))
+                        m.getSenderName(),
+                        m.getCreatedAt()))
                 .toList();
 
         var tickets = supportTicketRepository.findTop50BySessionIdOrderByCreatedAtDesc(normalizedSessionId).stream()
                 .map(t -> new SupportTicketResponse(
                         t.getTicketNumber(),
+                        t.getSessionId(),
                         t.getIssue(),
                         t.getStatus().name(),
+                        t.getBranch(),
                         t.getCreatedAt(),
-                        t.getUpdatedAt()
-                ))
+                        t.getUpdatedAt()))
                 .toList();
 
         return new ChatHistoryResponse(messages, tickets);
@@ -107,18 +133,18 @@ public class ChatSupportService {
     public List<SupportTicketResponse> allTickets(AuthUserDetails principal) {
         String staffBranch = principal.getUser().getRole() == Role.STAFF ? principal.getUser().getBranch() : null;
 
-        List<SupportTicket> tickets = (staffBranch == null || staffBranch.isBlank())
-                ? supportTicketRepository.findTop100ByOrderByCreatedAtDesc()
-                : supportTicketRepository.findTop100ByBranchIgnoreCaseOrderByCreatedAtDesc(staffBranch);
+        List<SupportTicket> all = supportTicketRepository.findTop100ByOrderByCreatedAtDesc();
 
-        return tickets.stream()
+        return all.stream()
+                .filter(t -> staffBranch == null || staffBranch.isBlank() || isSoftMatch(staffBranch, t.getBranch()))
                 .map(t -> new SupportTicketResponse(
                         t.getTicketNumber(),
+                        t.getSessionId(),
                         t.getIssue(),
                         t.getStatus().name(),
+                        t.getBranch(),
                         t.getCreatedAt(),
-                        t.getUpdatedAt()
-                ))
+                        t.getUpdatedAt()))
                 .toList();
     }
 
@@ -128,19 +154,58 @@ public class ChatSupportService {
                 .orElseThrow(() -> new IllegalArgumentException("Ticket not found: " + ticketNumber));
 
         if (principal.getUser().getRole() == Role.STAFF
+                && ticket.getBranch() != null && !ticket.getBranch().isBlank()
                 && !sameBranch(principal.getUser().getBranch(), ticket.getBranch())) {
-            throw new IllegalArgumentException("You can only resolve tickets for your assigned branch.");
+            throw new IllegalArgumentException(
+                    "You can only resolve tickets for your assigned branch or unassigned tickets.");
         }
 
         ticket.setStatus(SupportTicketStatus.RESOLVED);
         SupportTicket saved = supportTicketRepository.save(ticket);
+
+        // Send a closing message so the customer sees it on mobile
+        saveMessage(
+                saved.getSessionId(),
+                ChatResponderType.HUMAN,
+                "This live chat session has been closed by our support team. If you need further help, feel free to send a new message — you'll be connected back to IkotAsk AI. Thank you!",
+                "resolved",
+                ticketNumber,
+                null);
+
         return new SupportTicketResponse(
                 saved.getTicketNumber(),
+                saved.getSessionId(),
                 saved.getIssue(),
                 saved.getStatus().name(),
+                saved.getBranch(),
                 saved.getCreatedAt(),
-                saved.getUpdatedAt()
-        );
+                saved.getUpdatedAt());
+    }
+
+    @Transactional
+    public void replyToTicket(String ticketNumber, String message, AuthUserDetails principal) {
+        SupportTicket ticket = supportTicketRepository.findByTicketNumber(ticketNumber)
+                .orElseThrow(() -> new IllegalArgumentException("Ticket not found: " + ticketNumber));
+
+        if (principal.getUser().getRole() == Role.STAFF
+                && ticket.getBranch() != null && !ticket.getBranch().isBlank()
+                && !sameBranch(principal.getUser().getBranch(), ticket.getBranch())) {
+            throw new IllegalArgumentException(
+                    "You can only reply to tickets for your assigned branch or unassigned tickets.");
+        }
+
+        if (ticket.getStatus() != SupportTicketStatus.OPEN) {
+            throw new IllegalArgumentException(
+                    "Cannot reply to a resolved ticket. Please wait for the customer to open a new ticket.");
+        }
+
+        String rolePrefix = principal.getUser().getRole().name().equals("ADMIN") ? "Admin" : "Staff";
+        String formattedSenderName = rolePrefix + " - " + principal.getUser().getFullName();
+
+        saveMessage(ticket.getSessionId(), ChatResponderType.HUMAN, message, "human", ticketNumber,
+                formattedSenderName);
+
+        // Optionally notify the customer here if FCM tokens are linked to session IDs.
     }
 
     private ChatSupportResponse buildReply(ChatSupportRequest req, String message, String sessionId) {
@@ -154,8 +219,7 @@ public class ChatSupportService {
                         "Please provide your tracking number (example: WA-10021) so I can check your order.",
                         false,
                         null,
-                        null
-                );
+                        null);
             }
 
             Map<String, Object> data = new LinkedHashMap<>();
@@ -165,11 +229,11 @@ public class ChatSupportService {
             } catch (IllegalArgumentException ex) {
                 return new ChatSupportResponse(
                         "tracking",
-                        "I could not find an order with tracking number " + tracking + ". Please double-check and try again.",
+                        "I could not find an order with tracking number " + tracking
+                                + ". Please double-check and try again.",
                         false,
                         null,
-                        null
-                );
+                        null);
             }
             data.put("order", order);
 
@@ -190,8 +254,7 @@ public class ChatSupportService {
                     "Here is your latest order status and related updates.",
                     false,
                     null,
-                    data
-            );
+                    data);
         }
 
         if (lower.contains("complaint")
@@ -199,14 +262,18 @@ public class ChatSupportService {
                 || lower.contains("problem")
                 || lower.contains("talk to staff")
                 || lower.contains("human")) {
-            String ticket = createTicket(sessionId, message, resolveTrackingNumber(req.trackingNumber(), message));
+            String explicitBranch = req.selectedBranch() != null && !req.selectedBranch().isBlank()
+                    ? req.selectedBranch().trim()
+                    : null;
+            String ticket = createTicket(sessionId, message, resolveTrackingNumber(req.trackingNumber(), message),
+                    explicitBranch);
             return new ChatSupportResponse(
                     "complaint",
-                    "Your concern has been logged and escalated to staff. Please keep this ticket number.",
+                    "Your concern has been logged and escalated to staff. Your ticket number is: " + ticket
+                            + ". A staff member will respond shortly.",
                     true,
                     ticket,
-                    null
-            );
+                    null);
         }
 
         if (lower.contains("payment") || lower.contains("gcash") || lower.contains("maya")) {
@@ -215,8 +282,7 @@ public class ChatSupportService {
                     "You can pay via GCash or Maya, then submit proof using the payment upload flow. Staff will verify it shortly.",
                     false,
                     null,
-                    null
-            );
+                    null);
         }
 
         if (lower.contains("pickup") || lower.contains("delivery")) {
@@ -225,14 +291,14 @@ public class ChatSupportService {
                     "For pickup and delivery orders, we provide live delivery status and ETA once a driver is assigned.",
                     false,
                     null,
-                    null
-            );
+                    null);
         }
 
-        return buildAiAssistedFaqReply(message, sessionId);
+        return buildAiAssistedFaqReply(req, sessionId);
     }
 
-    private ChatSupportResponse buildAiAssistedFaqReply(String message, String sessionId) {
+    private ChatSupportResponse buildAiAssistedFaqReply(ChatSupportRequest req, String sessionId) {
+        String message = req.message();
         if (!geminiChatClient.isConfigured()) {
             return new ChatSupportResponse(
                     "ai_configuration",
@@ -240,13 +306,11 @@ public class ChatSupportService {
                             + "I can still help with tracking (WA-xxxxx), payments, delivery updates, and ticket escalation.",
                     false,
                     null,
-                    null
-            );
+                    null);
         }
 
         List<ChatSupportMessage> context = new ArrayList<>(
-                messageRepository.findTop20BySessionIdOrderByCreatedAtDesc(sessionId)
-        );
+                messageRepository.findTop20BySessionIdOrderByCreatedAtDesc(sessionId));
         context.sort(Comparator.comparing(ChatSupportMessage::getCreatedAt));
         if (!context.isEmpty()) {
             ChatSupportMessage latest = context.get(context.size() - 1);
@@ -266,19 +330,21 @@ public class ChatSupportService {
                     ex.getMessage() + " You can type 'talk to staff' any time to open a support ticket.",
                     false,
                     null,
-                    null
-            );
+                    null);
         }
 
         if (aiDecision.escalate()) {
-            String ticket = createTicket(sessionId, message, null);
+            String explicitBranch = req.selectedBranch() != null && !req.selectedBranch().isBlank()
+                    ? req.selectedBranch().trim()
+                    : null;
+            String ticket = createTicket(sessionId, message, resolveTrackingNumber(req.trackingNumber(), message),
+                    explicitBranch);
             return new ChatSupportResponse(
                     aiDecision.category(),
                     aiDecision.reply(),
                     true,
                     ticket,
-                    null
-            );
+                    null);
         }
 
         return new ChatSupportResponse(
@@ -286,8 +352,7 @@ public class ChatSupportService {
                 aiDecision.reply(),
                 false,
                 null,
-                null
-        );
+                null);
     }
 
     private void saveMessage(
@@ -295,9 +360,10 @@ public class ChatSupportService {
             ChatResponderType senderType,
             String message,
             String category,
-            String escalationTicket
-    ) {
-        if (message == null || message.isBlank()) return;
+            String escalationTicket,
+            String senderName) {
+        if (message == null || message.isBlank())
+            return;
 
         ChatSupportMessage entry = ChatSupportMessage.builder()
                 .sessionId(sessionId)
@@ -305,19 +371,25 @@ public class ChatSupportService {
                 .message(message.trim())
                 .category(category)
                 .escalationTicket(escalationTicket)
+                .senderName(senderName)
                 .build();
 
         messageRepository.save(entry);
     }
 
-    private String createTicket(String sessionId, String issue, String trackingNumber) {
+    private String createTicket(String sessionId, String issue, String trackingNumber, String explicitBranch) {
         String ticketNumber = "SUP-" + LocalDateTime.now().format(TICKET_TIME)
                 + "-" + ThreadLocalRandom.current().nextInt(100, 1000);
+
+        String branch = resolveBranchFromTracking(trackingNumber);
+        if (branch == null && explicitBranch != null && !explicitBranch.isBlank()) {
+            branch = explicitBranch.trim();
+        }
 
         SupportTicket ticket = SupportTicket.builder()
                 .ticketNumber(ticketNumber)
                 .sessionId(sessionId)
-                .branch(resolveBranchFromTracking(trackingNumber))
+                .branch(branch)
                 .issue(issue)
                 .status(SupportTicketStatus.OPEN)
                 .build();
@@ -330,8 +402,7 @@ public class ChatSupportService {
                 "Ticket %s needs manual response. Issue: %s"
                         .formatted(ticketNumber, truncate(issue, 100)),
                 "SUPPORT_ESCALATION",
-                ticketNumber
-        );
+                ticketNumber);
 
         return ticketNumber;
     }
@@ -368,11 +439,19 @@ public class ChatSupportService {
     }
 
     private boolean sameBranch(String a, String b) {
-        return a != null && b != null && a.trim().equalsIgnoreCase(b.trim());
+        return isSoftMatch(a, b);
+    }
+
+    private boolean isSoftMatch(String a, String b) {
+        if (a == null || b == null) return false;
+        String normA = a.toLowerCase().replace(" branch", "").trim();
+        String normB = b.toLowerCase().replace(" branch", "").trim();
+        return normA.equals(normB) || normA.contains(normB) || normB.contains(normA);
     }
 
     private String truncate(String value, int max) {
-        if (value == null) return "";
+        if (value == null)
+            return "";
         return value.length() <= max ? value : value.substring(0, max);
     }
 }

@@ -9,7 +9,7 @@ const looksLikeHtml = (value) => /<!doctype html|<html[\s>]/i.test(String(value 
 const looksLikeNgrokWarningPage = (value) =>
   /ngrok/i.test(String(value || '')) &&
   /(visit site|tunnel|ERR_NGROK|ngrok-free\.dev)/i.test(String(value || ''));
-const NGROK_SKIP_BROWSER_WARNING_HEADER = { 'ngrok-skip-browser-warning': 'true' };
+const NGROK_SKIP_BROWSER_WARNING_HEADER = { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' };
 const normalizePath = (path) => {
   const normalized = String(path || '').trim();
   return normalized.startsWith('/') ? normalized : `/${normalized}`;
@@ -46,7 +46,7 @@ const getSupportSessionId = async () => {
 // Static booking catalog used by mobile until backend exposes catalog endpoints.
 // IMPORTANT: branch 'name' must exactly match the branch names in the machines table
 // and the branch names assigned to staff accounts in the web dashboard.
-const BRANCH_CATALOG = [
+export const BRANCH_CATALOG = [
   {
     id: 1,
     name: 'Makati Branch',
@@ -1387,7 +1387,7 @@ export const payments = {
 };
 
 export const support = {
-  chat: async (message, trackingNumber = null) => {
+  chat: async (message, trackingNumber = null, selectedBranch = null, senderName = null) => {
     const sessionId = await getSupportSessionId();
     return await apiRequest('/api/support/chat', {
       method: 'POST',
@@ -1395,6 +1395,8 @@ export const support = {
         message,
         trackingNumber,
         sessionId,
+        selectedBranch,
+        senderName,
       },
     });
   },

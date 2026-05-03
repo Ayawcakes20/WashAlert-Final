@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   LayoutDashboard,
   Users,
@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import logoLaundryHubs from "@/assets/logo-laundryhubs.webp";
-import { authApi } from "@/lib/api";
+import { authApi, supportApi } from "@/lib/api";
 import { clearFirebaseWebSession, clearSessionUser, getSessionUser } from "@/lib/session";
 import { toast } from "@/components/ui/sonner";
 import {
@@ -51,6 +51,23 @@ export function AppSidebar() {
   const [logoutSubmitting, setLogoutSubmitting] = useState(false);
   const currentUser = getSessionUser();
   const isAdmin = currentUser?.role === "ADMIN";
+  const [openTicketsCount, setOpenTicketsCount] = useState(0);
+
+  useEffect(() => {
+    const fetchTickets = async () => {
+      try {
+        const data = await supportApi.allTickets();
+        const count = data.filter((t: any) => t.status === "OPEN").length;
+        setOpenTicketsCount(count);
+      } catch (err) {
+        // ignore errors for background polling
+      }
+    };
+
+    fetchTickets();
+    const interval = setInterval(fetchTickets, 15000);
+    return () => clearInterval(interval);
+  }, []);
 
   const navModules = useMemo(
     () =>
@@ -60,10 +77,10 @@ export function AppSidebar() {
         { title: "Order Management", url: "/orders", icon: ClipboardList, visible: !isAdmin },
         { title: "Predictive Inventory", url: "/inventory", icon: Package, visible: true },
         { title: "AI Analytics & Reports", url: "/analytics", icon: BarChart3, visible: isAdmin },
-        { title: "IkotAsk", url: "/chat-support", icon: MessageCircle, visible: true },
+        { title: "IkotAsk", url: "/support-tickets", icon: MessageCircle, visible: true, badge: openTicketsCount > 0 ? openTicketsCount : null },
         { title: "Announcements", url: "/announcements", icon: Megaphone, visible: true },
       ].filter((item) => item.visible),
-    [isAdmin],
+    [isAdmin, openTicketsCount],
   );
 
   const otherItems = [
@@ -120,7 +137,12 @@ export function AppSidebar() {
                     <SidebarMenuButton asChild isActive={isActive(item.url)} className="h-10 rounded-lg transition-all duration-200 hover:bg-sidebar-accent/85 hover:text-sidebar-primary shadow-[inset_0_0_0_1px_hsl(var(--sidebar-border)/0.2)]">
                       <NavLink to={item.url} end activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold shadow-[0_0_0_1px_hsl(var(--sidebar-primary)/0.45)]">
                         <item.icon className="h-4 w-4" />
-                        {!collapsed && <span>{item.title}</span>}
+                        {!collapsed && <span className="flex-1">{item.title}</span>}
+                        {!collapsed && item.badge && (
+                          <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center shadow-sm flex items-center justify-center">
+                            {item.badge}
+                          </span>
+                        )}
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

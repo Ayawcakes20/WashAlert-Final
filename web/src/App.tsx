@@ -28,6 +28,7 @@ import DashboardAboutPage from "./pages/AboutPage";
 import UnauthorizedPage from "./pages/UnauthorizedPage";
 import NotFound from "./pages/NotFound";
 import ProfilePage from "./pages/ProfilePage";
+import SupportTicketsPage from "./pages/SupportTicketsPage";
 import { getSessionUser } from "./lib/session";
 
 const queryClient = new QueryClient();
@@ -101,6 +102,7 @@ const App = () => (
             <Route path="/inventory" element={<PredictiveInventoryPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/chat-support" element={<AIChatSupportPage />} />
+            <Route path="/support-tickets" element={<SupportTicketsPage />} />
             <Route path="/announcements" element={<AnnouncementsPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/about" element={<DashboardAboutPage />} />

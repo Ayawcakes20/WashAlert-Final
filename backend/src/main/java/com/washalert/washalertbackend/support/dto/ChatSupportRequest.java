@@ -6,9 +6,11 @@ public record ChatSupportRequest(
         @NotBlank(message = "Message is required.")
         String message,
         String trackingNumber,
-        String sessionId
+        String sessionId,
+        String selectedBranch,
+        String senderName
 ) {
     public ChatSupportRequest(String message, String trackingNumber) {
-        this(message, trackingNumber, null);
+        this(message, trackingNumber, null, null, null);
     }
 }

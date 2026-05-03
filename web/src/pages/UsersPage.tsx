@@ -67,10 +67,10 @@ const mapUser = (u: UserAdminRecord): UserRecord => ({
     u.status === "PENDING"
       ? "Pending"
       : u.status === "SUSPENDED"
-      ? "Suspended"
-      : u.status === "DEACTIVATED"
-      ? "Deactivated"
-      : "Active",
+        ? "Suspended"
+        : u.status === "DEACTIVATED"
+          ? "Deactivated"
+          : "Active",
   joined: u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "-",
   raw: u,
 });
@@ -124,12 +124,12 @@ export default function UsersPage() {
     value === "ALL"
       ? undefined
       : value === "Pending"
-      ? "PENDING"
-      : value === "Suspended"
-      ? "SUSPENDED"
-      : value === "Deactivated"
-      ? "DEACTIVATED"
-      : "ACTIVE";
+        ? "PENDING"
+        : value === "Suspended"
+          ? "SUSPENDED"
+          : value === "Deactivated"
+            ? "DEACTIVATED"
+            : "ACTIVE";
 
   const loadUsers = async (requestedPage = 0) => {
     try {
@@ -431,15 +431,14 @@ export default function UsersPage() {
                     <td className="p-4 text-center">
                       <div className="inline-flex flex-col items-center gap-1">
                         <span
-                          className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-semibold ${
-                            u.status === "Active"
+                          className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-semibold ${u.status === "Active"
                               ? "bg-mint/20 text-mint-foreground"
                               : u.status === "Pending"
-                              ? "bg-accent/20 text-accent-foreground"
-                              : u.status === "Suspended"
-                              ? "bg-destructive/20 text-destructive"
-                              : "bg-muted text-muted-foreground"
-                          }`}
+                                ? "bg-accent/20 text-accent-foreground"
+                                : u.status === "Suspended"
+                                  ? "bg-destructive/20 text-destructive"
+                                  : "bg-muted text-muted-foreground"
+                            }`}
                         >
                           {u.status}
                         </span>
@@ -574,9 +573,8 @@ export default function UsersPage() {
                   setCreateForm((prev) => ({ ...prev, role: value }));
                   setCreateErrors((prev) => ({ ...prev, role: "" }));
                 }}
-                className={`w-full h-10 rounded-md border bg-background px-3 text-sm ${
-                  createErrors.role ? "border-destructive" : "border-input"
-                }`}
+                className={`w-full h-10 rounded-md border bg-background px-3 text-sm ${createErrors.role ? "border-destructive" : "border-input"
+                  }`}
               >
                 <option value="STAFF">Staff</option>
                 <option value="DRIVER">Driver</option>
@@ -584,31 +582,30 @@ export default function UsersPage() {
               {createErrors.role ? <p className="text-xs text-destructive">{createErrors.role}</p> : null}
             </div>
             <div className="space-y-2">
-                <Label htmlFor="create-branch">Branch</Label>
-                <select
-                  id="create-branch"
-                  value={createForm.branch}
-                  onChange={(e) => {
-                    setCreateForm((prev) => ({ ...prev, branch: e.target.value }));
-                    setCreateErrors((prev) => ({ ...prev, branch: "" }));
-                  }}
-                  disabled={!AVAILABLE_BRANCHES.length}
-                  className={`w-full h-10 rounded-md border bg-background px-3 text-sm ${
-                    createErrors.branch ? "border-destructive" : "border-input"
+              <Label htmlFor="create-branch">Branch</Label>
+              <select
+                id="create-branch"
+                value={createForm.branch}
+                onChange={(e) => {
+                  setCreateForm((prev) => ({ ...prev, branch: e.target.value }));
+                  setCreateErrors((prev) => ({ ...prev, branch: "" }));
+                }}
+                disabled={!AVAILABLE_BRANCHES.length}
+                className={`w-full h-10 rounded-md border bg-background px-3 text-sm ${createErrors.branch ? "border-destructive" : "border-input"
                   }`}
-                >
-                  <option value="">
-                    {AVAILABLE_BRANCHES.length ? "Select branch" : "No branches available"}
+              >
+                <option value="">
+                  {AVAILABLE_BRANCHES.length ? "Select branch" : "No branches available"}
+                </option>
+                {AVAILABLE_BRANCHES.map((branch) => (
+                  <option key={branch} value={branch}>
+                    {branch}
                   </option>
-                  {AVAILABLE_BRANCHES.map((branch) => (
-                    <option key={branch} value={branch}>
-                      {branch}
-                    </option>
-                  ))}
-                </select>
-                {!AVAILABLE_BRANCHES.length ? <p className="text-xs text-muted-foreground">No branches available</p> : null}
-                {createErrors.branch ? <p className="text-xs text-destructive">{createErrors.branch}</p> : null}
-              </div>
+                ))}
+              </select>
+              {!AVAILABLE_BRANCHES.length ? <p className="text-xs text-muted-foreground">No branches available</p> : null}
+              {createErrors.branch ? <p className="text-xs text-destructive">{createErrors.branch}</p> : null}
+            </div>
             {createForm.role === "DRIVER" && (
               <div className="space-y-2">
                 <Label htmlFor="create-password">Initial Password</Label>
