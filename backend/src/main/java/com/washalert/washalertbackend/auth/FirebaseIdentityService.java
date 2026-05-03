@@ -202,20 +202,7 @@ public class FirebaseIdentityService {
     }
 
     private static String normalizeFrontendBaseUrl(String frontendBaseUrl) {
-        String base = trimTrailingSlash(frontendBaseUrl);
-        if (base.startsWith("http://localhost:5173")) {
-            return base.replace("http://localhost:5173", "http://localhost:8080");
-        }
-        if (base.startsWith("https://localhost:5173")) {
-            return base.replace("https://localhost:5173", "https://localhost:8080");
-        }
-        if (base.startsWith("http://127.0.0.1:5173")) {
-            return base.replace("http://127.0.0.1:5173", "http://127.0.0.1:8080");
-        }
-        if (base.startsWith("https://127.0.0.1:5173")) {
-            return base.replace("https://127.0.0.1:5173", "https://127.0.0.1:8080");
-        }
-        return base;
+        return trimTrailingSlash(frontendBaseUrl);
     }
 
     private FirebaseAuth firebaseAuth() {

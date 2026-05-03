@@ -52,6 +52,9 @@ public class ChatSupportMessage {
     @Column(name = "escalation_ticket", length = 40)
     private String escalationTicket;
 
+    @Column(name = "sender_name", length = 100)
+    private String senderName;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 

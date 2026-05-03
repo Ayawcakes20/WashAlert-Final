@@ -133,7 +133,8 @@ public class AuthService {
                 .or(() -> users.findByEmail(email))
                 .orElseThrow(() -> new IllegalArgumentException("Account profile not found."));
 
-        if (user.getFirebaseUid() == null || user.getFirebaseUid().isBlank()) {
+        if (user.getFirebaseUid() == null || user.getFirebaseUid().isBlank() || !user.getFirebaseUid().equals(token.getUid())) {
+            log.info("Updating Firebase UID for {} from {} to {}", email, user.getFirebaseUid(), token.getUid());
             user.setFirebaseUid(token.getUid());
         }
         user.setEmail(email);
