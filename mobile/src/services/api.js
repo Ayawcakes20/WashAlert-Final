@@ -248,7 +248,7 @@ const SERVICE_CATALOG = [
     name: 'Handwash',
     price: 150,
     icon: 'hand-wash',
-    description: 'Careful handwashing service (1-3kg: â‚±150/kg, 3kg+: â‚±90/kg)',
+    description: 'Careful handwashing service (1-3kg: PHP 150/kg, 3kg+: PHP 90/kg)',
   },
 ];
 
@@ -338,10 +338,17 @@ const parseResponse = async (res) => {
   }
   if (!res.ok) {
     const message =
-      (payload && typeof payload === 'object' && (payload.message || payload.error)) ||
+      (payload &&
+        typeof payload === 'object' &&
+        (payload.message || payload.error || payload.detail || payload.title)) ||
+      (text ? toResponsePreview(text) : '') ||
       `Request failed (${res.status})`;
     const err = new Error(message);
     err.status = res.status;
+    err.body = payload;
+    err.rawText = text;
+    err.contentType = contentType;
+    err.url = res.url;
     throw err;
   }
 
@@ -914,7 +921,8 @@ export const fetchOrders = async (status = 'all') => {
 export const createOrder = async (orderData) => {
   const userRaw = await AsyncStorage.getItem(USER_STORAGE_KEY);
   const user = userRaw ? JSON.parse(userRaw) : null;
-  const branch = BRANCH_CATALOG.find((item) => item.id === orderData.branchId);
+  const branchIdValue = Number(orderData.branchId || 0);
+  const branch = BRANCH_CATALOG.find((item) => Number(item.id) === branchIdValue);
 
   const serviceTypeBackend =
     orderData.serviceTypeBackend || (orderData.delivery ? 'PICKUP_DELIVERY' : 'DROP_OFF');
@@ -925,12 +933,13 @@ export const createOrder = async (orderData) => {
     ? `${bookingModeNote}\n${normalizedInstruction}`
     : bookingModeNote;
 
+  const normalizedPaymentMethod = String(orderData.paymentMethod || 'gcash').trim().toLowerCase();
   const payload = {
     customerName: user?.fullName || 'Mobile Customer',
     branch: branch?.name || 'Makati Branch',
     branchId: Number(orderData.branchId || branch?.id || 0) || null,
-    customerPhone: user?.phone || '09170000000',
-    customerEmail: user?.email || '',
+    customerPhone: user?.phone || user?.mobileNumber || '09170000000',
+    customerEmail: (user?.email || '').trim() || null,
     serviceType: serviceTypeBackend,
     preferredDate: toIsoDate(orderData.scheduleDate),
     preferredSlotStartTime: toSlotStartTime(orderData.scheduleTime),
@@ -944,7 +953,7 @@ export const createOrder = async (orderData) => {
     serviceName: orderData.serviceName || 'Wash & Dry',
     isRush: !!orderData.isRush,
     distanceKm: Number(orderData.distanceKm || 0),
-    paymentMethod: orderData.paymentMethod || 'GCash',
+    paymentMethod: normalizedPaymentMethod === 'cod' || normalizedPaymentMethod === 'cash' ? 'COD' : 'GCASH',
     deliveryLatitude: orderData.deliveryLatitude,
     deliveryLongitude: orderData.deliveryLongitude,
     deliveryUnitFloor: orderData.deliveryUnitFloor,
@@ -954,7 +963,18 @@ export const createOrder = async (orderData) => {
     branchLongitude: orderData.branchLongitude,
   };
 
-  const created = await apiRequest('/api/bookings', { method: 'POST', body: payload });
+  let created;
+  try {
+    created = await apiRequest('/api/bookings', { method: 'POST', body: payload });
+  } catch (error) {
+    console.error('[Bookings][Create] Request failed', {
+      status: error?.status ?? null,
+      message: error?.message || 'Unknown booking error',
+      responseBody: error?.body || null,
+      responsePreview: error?.rawText ? toResponsePreview(error.rawText) : null,
+    });
+    throw error;
+  }
   const mobileOrder = mapJobOrderToMobile(created, {
     branchId: orderData.branchId,
     serviceType: orderData.serviceType,
@@ -1286,7 +1306,7 @@ export const deliveries = {
     return mapDelivery(payload);
   },
 
-  // â”€â”€ State Machine Actions â”€â”€
+  //  State Machine Actions 
 
   arriveAtCustomer: async (id) => {
     const payload = await apiRequest(`/api/deliveries/${id}/arrive-customer`, { method: 'POST' });
@@ -1473,3 +1493,4 @@ export default {
   support,
   profileApi,
 };
+
