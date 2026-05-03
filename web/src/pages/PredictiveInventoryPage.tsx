@@ -169,6 +169,14 @@ export default function PredictiveInventoryPage() {
     return inventory.filter((i) => i.branch === selectedTab);
   }, [inventory, selectedTab, isAdmin]);
 
+  const openCreate = () => {
+    setCreateForm({
+      branch: isAdmin ? "" : (user?.branch || ""),
+      itemName: "", category: "", unit: "", currentStock: "0", reorderLevel: "0",
+    });
+    setCreateOpen(true);
+  };
+
   const openEdit = (row: InventoryItem) => {
     setSelectedItem(row);
     setEditForm({ branch: row.branch, itemName: row.product, category: row.category, unit: row.unit, reorderLevel: String(row.reorderLevel) });
@@ -278,10 +286,7 @@ export default function PredictiveInventoryPage() {
           <Button variant="outline" className="h-10 px-4 rounded-xl" onClick={() => { setLoading(true); loadInventory().finally(() => setLoading(false)); }}>
             <RefreshCw className="h-4 w-4" />
           </Button>
-          <Button className="h-10 px-5 rounded-xl gradient-navy" onClick={() => {
-            setCreateForm((p) => ({ ...p, branch: isAdmin ? "" : (user?.branch || "") }));
-            setCreateOpen(true);
-          }}>
+          <Button className="h-10 px-5 rounded-xl gradient-navy" onClick={openCreate}>
             <Plus className="h-4 w-4" /> Create Item
           </Button>
         </div>
@@ -486,17 +491,17 @@ export default function PredictiveInventoryPage() {
               <Label htmlFor="create-branch">Branch</Label>
               {isAdmin ? (
                 <Select value={createForm.branch} onValueChange={(val) => setCreateForm((p) => ({ ...p, branch: val }))}>
-                  <SelectTrigger id="create-branch" className="w-full text-blue-600 font-semibold">
+                  <SelectTrigger id="create-branch" className="w-full border-blue-500 focus:ring-blue-500 text-blue-700">
                     <SelectValue placeholder="Select a branch" />
                   </SelectTrigger>
                   <SelectContent>
                     {availableBranches.map((b) => (
-                      <SelectItem key={b.id} value={b.area}>{b.area}</SelectItem>
+                      <SelectItem key={b.id} value={b.area} className="focus:bg-blue-50 focus:text-blue-700">{b.area}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               ) : (
-                <Input id="create-branch" value={createForm.branch} disabled className="bg-muted text-muted-foreground" />
+                <Input id="create-branch" value={createForm.branch} readOnly className="bg-muted text-muted-foreground border-blue-200" />
               )}
             </div>
             <div className="space-y-2"><Label htmlFor="create-item">Item Name</Label><Input id="create-item" value={createForm.itemName} onChange={(e) => setCreateForm((p) => ({ ...p, itemName: e.target.value }))} /></div>
@@ -531,17 +536,17 @@ export default function PredictiveInventoryPage() {
               <Label htmlFor="edit-branch">Branch</Label>
               {isAdmin ? (
                 <Select value={editForm.branch} onValueChange={(val) => setEditForm((p) => ({ ...p, branch: val }))}>
-                  <SelectTrigger id="edit-branch" className="w-full text-blue-600 font-semibold">
+                  <SelectTrigger id="edit-branch" className="w-full border-blue-500 focus:ring-blue-500 text-blue-700">
                     <SelectValue placeholder="Select a branch" />
                   </SelectTrigger>
                   <SelectContent>
                     {availableBranches.map((b) => (
-                      <SelectItem key={b.id} value={b.area}>{b.area}</SelectItem>
+                      <SelectItem key={b.id} value={b.area} className="focus:bg-blue-50 focus:text-blue-700">{b.area}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               ) : (
-                <Input id="edit-branch" value={editForm.branch} disabled className="bg-muted text-muted-foreground" />
+                <Input id="edit-branch" value={editForm.branch} readOnly className="bg-muted text-muted-foreground border-blue-200" />
               )}
             </div>
             <div className="space-y-2"><Label htmlFor="edit-item">Item Name</Label><Input id="edit-item" value={editForm.itemName} onChange={(e) => setEditForm((p) => ({ ...p, itemName: e.target.value }))} /></div>
