@@ -278,7 +278,10 @@ export default function PredictiveInventoryPage() {
           <Button variant="outline" className="h-10 px-4 rounded-xl" onClick={() => { setLoading(true); loadInventory().finally(() => setLoading(false)); }}>
             <RefreshCw className="h-4 w-4" />
           </Button>
-          <Button className="h-10 px-5 rounded-xl gradient-navy" onClick={() => setCreateOpen(true)}>
+          <Button className="h-10 px-5 rounded-xl gradient-navy" onClick={() => {
+            setCreateForm((p) => ({ ...p, branch: isAdmin ? "" : (user?.branch || "") }));
+            setCreateOpen(true);
+          }}>
             <Plus className="h-4 w-4" /> Create Item
           </Button>
         </div>
@@ -481,16 +484,20 @@ export default function PredictiveInventoryPage() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="create-branch">Branch</Label>
-              <Select value={createForm.branch} onValueChange={(val) => setCreateForm((p) => ({ ...p, branch: val }))}>
-                <SelectTrigger id="create-branch" className="w-full">
-                  <SelectValue placeholder="Select a branch" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableBranches.map((b) => (
-                    <SelectItem key={b.id} value={b.area}>{b.area}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {isAdmin ? (
+                <Select value={createForm.branch} onValueChange={(val) => setCreateForm((p) => ({ ...p, branch: val }))}>
+                  <SelectTrigger id="create-branch" className="w-full text-blue-600 font-semibold">
+                    <SelectValue placeholder="Select a branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableBranches.map((b) => (
+                      <SelectItem key={b.id} value={b.area}>{b.area}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input id="create-branch" value={createForm.branch} disabled className="bg-muted text-muted-foreground" />
+              )}
             </div>
             <div className="space-y-2"><Label htmlFor="create-item">Item Name</Label><Input id="create-item" value={createForm.itemName} onChange={(e) => setCreateForm((p) => ({ ...p, itemName: e.target.value }))} /></div>
             <div className="grid grid-cols-2 gap-3">
@@ -522,16 +529,20 @@ export default function PredictiveInventoryPage() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="edit-branch">Branch</Label>
-              <Select value={editForm.branch} onValueChange={(val) => setEditForm((p) => ({ ...p, branch: val }))}>
-                <SelectTrigger id="edit-branch" className="w-full">
-                  <SelectValue placeholder="Select a branch" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableBranches.map((b) => (
-                    <SelectItem key={b.id} value={b.area}>{b.area}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {isAdmin ? (
+                <Select value={editForm.branch} onValueChange={(val) => setEditForm((p) => ({ ...p, branch: val }))}>
+                  <SelectTrigger id="edit-branch" className="w-full text-blue-600 font-semibold">
+                    <SelectValue placeholder="Select a branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableBranches.map((b) => (
+                      <SelectItem key={b.id} value={b.area}>{b.area}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input id="edit-branch" value={editForm.branch} disabled className="bg-muted text-muted-foreground" />
+              )}
             </div>
             <div className="space-y-2"><Label htmlFor="edit-item">Item Name</Label><Input id="edit-item" value={editForm.itemName} onChange={(e) => setEditForm((p) => ({ ...p, itemName: e.target.value }))} /></div>
             <div className="grid grid-cols-2 gap-3">
