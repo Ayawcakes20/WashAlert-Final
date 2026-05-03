@@ -127,7 +127,7 @@ const NotificationsScreen = () => {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         <View style={styles.headerRow}>
-          <Text style={styles.headerTitle}>Notifications & Announcements</Text>
+          <View />
           <TouchableOpacity style={styles.markReadBtn} onPress={markAllRead} disabled={!items.length}>
             <Ionicons
               name="checkmark"
@@ -215,7 +215,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
-  headerTitle: { fontSize: 26, fontWeight: '800', color: colors.text },
   markReadBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primaryLight, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
   markReadText: { fontSize: 12, fontWeight: '700', color: colors.primary },
   markReadTextDisabled: { color: colors.textSecondary },

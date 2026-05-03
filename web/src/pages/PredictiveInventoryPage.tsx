@@ -21,6 +21,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { getSessionUser } from "@/lib/session";
+import { branches as availableBranches } from "@/data/branches";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface InventoryItem {
   id: number;
@@ -167,6 +169,14 @@ export default function PredictiveInventoryPage() {
     return inventory.filter((i) => i.branch === selectedTab);
   }, [inventory, selectedTab, isAdmin]);
 
+  const openCreate = () => {
+    setCreateForm({
+      branch: isAdmin ? "" : (user?.branch || ""),
+      itemName: "", category: "", unit: "", currentStock: "0", reorderLevel: "0",
+    });
+    setCreateOpen(true);
+  };
+
   const openEdit = (row: InventoryItem) => {
     setSelectedItem(row);
     setEditForm({ branch: row.branch, itemName: row.product, category: row.category, unit: row.unit, reorderLevel: String(row.reorderLevel) });
@@ -276,7 +286,7 @@ export default function PredictiveInventoryPage() {
           <Button variant="outline" className="h-10 px-4 rounded-xl" onClick={() => { setLoading(true); loadInventory().finally(() => setLoading(false)); }}>
             <RefreshCw className="h-4 w-4" />
           </Button>
-          <Button className="h-10 px-5 rounded-xl gradient-navy" onClick={() => setCreateOpen(true)}>
+          <Button className="h-10 px-5 rounded-xl gradient-navy" onClick={openCreate}>
             <Plus className="h-4 w-4" /> Create Item
           </Button>
         </div>
@@ -477,7 +487,23 @@ export default function PredictiveInventoryPage() {
             <DialogDescription>Add a new inventory item to track.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2"><Label htmlFor="create-branch">Branch</Label><Input id="create-branch" value={createForm.branch} onChange={(e) => setCreateForm((p) => ({ ...p, branch: e.target.value }))} /></div>
+            <div className="space-y-2">
+              <Label htmlFor="create-branch">Branch</Label>
+              {isAdmin ? (
+                <Select value={createForm.branch} onValueChange={(val) => setCreateForm((p) => ({ ...p, branch: val }))}>
+                  <SelectTrigger id="create-branch" className="w-full text-foreground focus:ring-blue-500 focus:border-blue-500">
+                    <SelectValue placeholder="Select a branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableBranches.map((b) => (
+                      <SelectItem key={b.id} value={b.area} className="focus:bg-blue-50 focus:text-blue-700">{b.area}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input id="create-branch" value={createForm.branch} readOnly className="bg-muted text-muted-foreground" />
+              )}
+            </div>
             <div className="space-y-2"><Label htmlFor="create-item">Item Name</Label><Input id="create-item" value={createForm.itemName} onChange={(e) => setCreateForm((p) => ({ ...p, itemName: e.target.value }))} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2"><Label htmlFor="create-category">Category</Label><Input id="create-category" value={createForm.category} onChange={(e) => setCreateForm((p) => ({ ...p, category: e.target.value }))} /></div>
@@ -506,7 +532,23 @@ export default function PredictiveInventoryPage() {
             <DialogDescription>Update item details and reorder threshold.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2"><Label htmlFor="edit-branch">Branch</Label><Input id="edit-branch" value={editForm.branch} onChange={(e) => setEditForm((p) => ({ ...p, branch: e.target.value }))} /></div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-branch">Branch</Label>
+              {isAdmin ? (
+                <Select value={editForm.branch} onValueChange={(val) => setEditForm((p) => ({ ...p, branch: val }))}>
+                  <SelectTrigger id="edit-branch" className="w-full text-foreground focus:ring-blue-500 focus:border-blue-500">
+                    <SelectValue placeholder="Select a branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableBranches.map((b) => (
+                      <SelectItem key={b.id} value={b.area} className="focus:bg-blue-50 focus:text-blue-700">{b.area}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input id="edit-branch" value={editForm.branch} readOnly className="bg-muted text-muted-foreground" />
+              )}
+            </div>
             <div className="space-y-2"><Label htmlFor="edit-item">Item Name</Label><Input id="edit-item" value={editForm.itemName} onChange={(e) => setEditForm((p) => ({ ...p, itemName: e.target.value }))} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2"><Label htmlFor="edit-category">Category</Label><Input id="edit-category" value={editForm.category} onChange={(e) => setEditForm((p) => ({ ...p, category: e.target.value }))} /></div>

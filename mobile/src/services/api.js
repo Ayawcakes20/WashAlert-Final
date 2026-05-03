@@ -9,7 +9,7 @@ const looksLikeHtml = (value) => /<!doctype html|<html[\s>]/i.test(String(value 
 const looksLikeNgrokWarningPage = (value) =>
   /ngrok/i.test(String(value || '')) &&
   /(visit site|tunnel|ERR_NGROK|ngrok-free\.dev)/i.test(String(value || ''));
-const NGROK_SKIP_BROWSER_WARNING_HEADER = { 'ngrok-skip-browser-warning': 'true' };
+const NGROK_SKIP_BROWSER_WARNING_HEADER = { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' };
 const normalizePath = (path) => {
   const normalized = String(path || '').trim();
   return normalized.startsWith('/') ? normalized : `/${normalized}`;
@@ -46,7 +46,7 @@ const getSupportSessionId = async () => {
 // Static booking catalog used by mobile until backend exposes catalog endpoints.
 // IMPORTANT: branch 'name' must exactly match the branch names in the machines table
 // and the branch names assigned to staff accounts in the web dashboard.
-const BRANCH_CATALOG = [
+export const BRANCH_CATALOG = [
   {
     id: 1,
     name: 'Makati Branch',
@@ -216,11 +216,29 @@ const SERVICE_CATALOG = [
     description: 'Premium care full service (wash-dry-fold)',
   },
   {
+    id: 'double-basic-full-9',
+    name: 'Double Basic Full Service (9kg)',
+    price: 295,
+    icon: 'layers-outline',
+    description: 'Double basic full service load (up to 9kg)',
+  },
+  {
+    id: 'double-full-9',
+    name: 'Double Full Service (9kg)',
+    price: 325,
+    icon: 'layers-outline',
+    description: 'Double full service load (up to 9kg)',
+  },
+  {
     id: 'handwash',
     name: 'Handwash',
     price: 150,
     icon: 'hand-wash',
+<<<<<<< HEAD
     description: 'Gentle handwashing service',
+=======
+    description: 'Careful handwashing service (1-3kg: PHP 150/kg, 3kg+: PHP 90/kg)',
+>>>>>>> 604896f654adb44857daa009c72606d729dcce0e
   },
 ];
 
@@ -310,10 +328,17 @@ const parseResponse = async (res) => {
   }
   if (!res.ok) {
     const message =
-      (payload && typeof payload === 'object' && (payload.message || payload.error)) ||
+      (payload &&
+        typeof payload === 'object' &&
+        (payload.message || payload.error || payload.detail || payload.title)) ||
+      (text ? toResponsePreview(text) : '') ||
       `Request failed (${res.status})`;
     const err = new Error(message);
     err.status = res.status;
+    err.body = payload;
+    err.rawText = text;
+    err.contentType = contentType;
+    err.url = res.url;
     throw err;
   }
 
@@ -392,19 +417,18 @@ const toMobileOrderStatus = (status) => {
     WASHING: 'washing',
     DRYING: 'drying',
     READY: 'ready',
+    ASSIGNED_FOR_PICKUP: 'delivering',
+    EN_ROUTE_TO_CUSTOMER: 'delivering',
+    LAUNDRY_COLLECTED: 'delivering',
+    EN_ROUTE_TO_BRANCH: 'delivering',
+    ASSIGNED_FOR_DELIVERY: 'delivering',
     OUT_FOR_DELIVERY: 'delivering',
-    PENDING_PICKUP: 'delivering',
-    EN_ROUTE_TO_PICKUP: 'delivering',
-    PICKED_UP: 'delivering',
-    IN_TRANSIT: 'delivering',
     DELIVERED: 'delivered',
     FAILED: 'cancelled',
     CANCELLED: 'cancelled',
+    COLLECTION_FAILED: 'cancelled',
     // ── Driver delivery phase statuses (must be preserved as-is for STATE_CONFIG matching) ──
-    ASSIGNED_FOR_DELIVERY: 'ASSIGNED_FOR_DELIVERY',
-    EN_ROUTE_TO_BRANCH: 'EN_ROUTE_TO_BRANCH',
     PICKED_UP_FROM_BRANCH: 'PICKED_UP_FROM_BRANCH',
-    COLLECTION_FAILED: 'COLLECTION_FAILED',
   };
   return map[String(status || '').toUpperCase()] || String(status || '').toLowerCase();
 };
@@ -749,7 +773,21 @@ const toMobileOrderStatusFromWorkflow = (workflowStatus, fallbackStatus) => {
   const workflow = String(workflowStatus || '').toUpperCase();
   if (workflow === 'COMPLETED') return 'delivered';
   if (workflow === 'CANCELLED') return 'cancelled';
-  if (workflow) return 'delivering';
+  if (workflow === 'READY') return 'ready';
+  if (
+    [
+      'PENDING',
+      'DRIVER_ACCEPTED',
+      'PICKING_UP',
+      'PICKED_UP',
+      'AT_SHOP',
+    ].includes(workflow)
+  ) {
+    if (['washing', 'drying', 'ready', 'delivering', 'delivered'].includes(String(fallbackStatus || ''))) {
+      return fallbackStatus;
+    }
+    return 'pending';
+  }
   return fallbackStatus;
 };
 
@@ -898,7 +936,8 @@ export const fetchOrders = async (status = 'all') => {
 export const createOrder = async (orderData) => {
   const userRaw = await AsyncStorage.getItem(USER_STORAGE_KEY);
   const user = userRaw ? JSON.parse(userRaw) : null;
-  const branch = BRANCH_CATALOG.find((item) => item.id === orderData.branchId);
+  const branchIdValue = Number(orderData.branchId || 0);
+  const branch = BRANCH_CATALOG.find((item) => Number(item.id) === branchIdValue);
 
   const serviceTypeBackend =
     orderData.serviceTypeBackend || (orderData.delivery ? 'PICKUP_DELIVERY' : 'DROP_OFF');
@@ -909,26 +948,37 @@ export const createOrder = async (orderData) => {
     ? `${bookingModeNote}\n${normalizedInstruction}`
     : bookingModeNote;
 
+  const normalizedPaymentMethod = String(orderData.paymentMethod || 'gcash').trim().toLowerCase();
   const payload = {
     customerName: user?.fullName || 'Mobile Customer',
     branch: branch?.name || 'Makati Branch',
     branchId: Number(orderData.branchId || branch?.id || 0) || null,
-    customerPhone: user?.phone || '09170000000',
-    customerEmail: user?.email || '',
+    customerPhone: user?.phone || user?.mobileNumber || '09170000000',
+    customerEmail: (user?.email || '').trim() || null,
     serviceType: serviceTypeBackend,
     preferredDate: toIsoDate(orderData.scheduleDate),
     preferredSlotStartTime: toSlotStartTime(orderData.scheduleTime),
     detergentPreference: orderData.detergent || 'None',
     fabricConditionerPreference: orderData.conditioner || 'None',
+<<<<<<< HEAD
     loadSize: orderData.loadSize || getLoadSize(Number(orderData.loadKg || 0)),
     estimatedWeightKg: Number(orderData.loadKg || (orderData.loadSize === 'LARGE' ? 8 : 5)),
+=======
+    loadSize: getLoadSize(Number(orderData.loadKg || 0)),
+    estimatedWeightKg: Number(orderData.loadKg || 5),
+>>>>>>> 604896f654adb44857daa009c72606d729dcce0e
     containsBulkyItems: Boolean(orderData.containsBulkyItems),
     specialInstructions: mergedInstructions,
     deliveryAddress: orderData.delivery ? orderData.deliveryAddress || 'To be provided' : null,
     serviceName: orderData.serviceName || 'Wash & Dry',
     isRush: !!orderData.isRush,
     distanceKm: Number(orderData.distanceKm || 0),
-    paymentMethod: orderData.paymentMethod || 'GCash',
+    paymentMethod:
+      normalizedPaymentMethod === 'cod' ||
+      normalizedPaymentMethod === 'cash' ||
+      normalizedPaymentMethod === 'cash_on_delivery'
+        ? 'CASH'
+        : 'GCASH',
     deliveryLatitude: orderData.deliveryLatitude,
     deliveryLongitude: orderData.deliveryLongitude,
     deliveryUnitFloor: orderData.deliveryUnitFloor,
@@ -938,7 +988,18 @@ export const createOrder = async (orderData) => {
     branchLongitude: orderData.branchLongitude,
   };
 
-  const created = await apiRequest('/api/bookings', { method: 'POST', body: payload });
+  let created;
+  try {
+    created = await apiRequest('/api/bookings', { method: 'POST', body: payload });
+  } catch (error) {
+    console.error('[Bookings][Create] Request failed', {
+      status: error?.status ?? null,
+      message: error?.message || 'Unknown booking error',
+      responseBody: error?.body || null,
+      responsePreview: error?.rawText ? toResponsePreview(error.rawText) : null,
+    });
+    throw error;
+  }
   const mobileOrder = mapJobOrderToMobile(created, {
     branchId: orderData.branchId,
     serviceType: orderData.serviceType,
@@ -1297,7 +1358,7 @@ export const deliveries = {
     return mapDelivery(payload);
   },
 
-  // â”€â”€ State Machine Actions â”€â”€
+  //  State Machine Actions 
 
   arriveAtCustomer: async (id) => {
     const payload = await apiRequest(`/api/deliveries/${id}/arrive-customer`, { method: 'POST' });
@@ -1434,7 +1495,7 @@ export const payments = {
 };
 
 export const support = {
-  chat: async (message, trackingNumber = null) => {
+  chat: async (message, trackingNumber = null, selectedBranch = null, senderName = null) => {
     const sessionId = await getSupportSessionId();
     return await apiRequest('/api/support/chat', {
       method: 'POST',
@@ -1442,6 +1503,8 @@ export const support = {
         message,
         trackingNumber,
         sessionId,
+        selectedBranch,
+        senderName,
       },
     });
   },
@@ -1521,3 +1584,4 @@ export default {
   support,
   profileApi,
 };
+

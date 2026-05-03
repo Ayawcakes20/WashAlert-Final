@@ -54,6 +54,12 @@ public class PricingService {
         if (name.contains("ecowash")) {
             return new BigDecimal("220.00"); // 5kg
         }
+        if (name.contains("double basic full")) {
+            return new BigDecimal("295.00");
+        }
+        if (name.contains("double full")) {
+            return new BigDecimal("325.00");
+        }
         if (name.contains("basic full")) {
             if (weight.compareTo(new BigDecimal("8.0")) > 0) {
                 // Madness limit: 245 + 50 per extra kg? The requirement said "Madness Limit additional 1kg on top of 8kg - 50pesos"

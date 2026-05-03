@@ -68,6 +68,8 @@ class AuthServiceTests {
                 100L,
                 "principal@example.com",
                 "Firestore Principal",
+                null,
+                null,
                 "STAFF",
                 "Light Residences",
                 true,

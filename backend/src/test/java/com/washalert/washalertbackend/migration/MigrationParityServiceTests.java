@@ -5,6 +5,7 @@ import com.washalert.washalertbackend.common.DataReadProperties;
 import com.washalert.washalertbackend.delivery.DeliveryLeg;
 import com.washalert.washalertbackend.delivery.DeliveryOrderRepository;
 import com.washalert.washalertbackend.delivery.DeliveryStatus;
+import com.washalert.washalertbackend.delivery.DeliveryWorkflowStatus;
 import com.washalert.washalertbackend.delivery.dto.DeliveryResponse;
 import com.washalert.washalertbackend.firebase.FirestoreReadService;
 import com.washalert.washalertbackend.inventory.InventoryItemRepository;
@@ -51,7 +52,7 @@ class MigrationParityServiceTests {
 
         when(firestoreReadService.listUsers()).thenReturn(List.of(
                 new FirestoreReadService.FirestoreUserRecord(
-                        1L, "a@test.com", "A", "STAFF", "Main", true, false, "LOCAL", null, null, "x")
+                        1L, "a@test.com", "A", null, null, "STAFF", "Main", true, false, "LOCAL", null, null, "x")
         ));
         when(firestoreReadService.listMachines()).thenReturn(List.of(
                 new MachineResponse(1L, "M-1", "Main", MachineType.WASHER, MachineStatus.AVAILABLE, LocalDateTime.now())
@@ -60,15 +61,20 @@ class MigrationParityServiceTests {
                 new InventoryItemResponse(1L, "Main", "Detergent", "Supplies", "kg", BigDecimal.ONE, BigDecimal.ONE, true, LocalDateTime.now())
         ));
         when(firestoreReadService.listOrders()).thenReturn(List.of(
-                new JobOrderResponse(1L, "WA-10001", "Customer", "Main", JobOrderStatus.PENDING, LocalDateTime.now(), LocalDateTime.now(),
+                new JobOrderResponse(
+                        1L, "WA-10001", "Customer", "Main", JobOrderStatus.PENDING, LocalDateTime.now(), LocalDateTime.now(),
                         ServiceType.DROP_OFF, null, null, null, null, null, null, null, null, null, null, null,
                         BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, BigDecimal.ZERO, false, "GCash", null,
                         null, null, null, null, null, null, null, null, null, null, null)
         ));
         when(firestoreReadService.listDeliveries()).thenReturn(List.of(
-                new DeliveryResponse(1L, "WA-10001", "Main", "Customer", "Address", "Driver", "09123",
-                        DeliveryLeg.DELIVERY_TO_CUSTOMER, DeliveryStatus.PENDING_PICKUP,
-                        null, null, null, null, LocalDateTime.now(), null, null, null, null)
+                new DeliveryResponse(
+                        1L, 1L, "WA-10001", 1L, "Main", "Main Branch Address", "Customer", "09123", "Address",
+                        "Driver", 10L, "09999", null, null, "COD", "PENDING", false, BigDecimal.ZERO, BigDecimal.ONE, 1,
+                        DeliveryWorkflowStatus.PENDING, DeliveryLeg.DELIVERY_TO_CUSTOMER, DeliveryStatus.PENDING_PICKUP,
+                        null, null, null, null, null, null, LocalDateTime.now(),
+                        null, null, null, null, null, null, null, 1, null, null, null
+                )
         ));
 
         MigrationParityService service = new MigrationParityService(

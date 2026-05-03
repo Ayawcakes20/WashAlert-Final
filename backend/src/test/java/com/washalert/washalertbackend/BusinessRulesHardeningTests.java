@@ -2,6 +2,7 @@ package com.washalert.washalertbackend;
 
 import com.washalert.washalertbackend.delivery.DeliveryOrder;
 import com.washalert.washalertbackend.delivery.DeliveryOrderRepository;
+import com.washalert.washalertbackend.delivery.DeliveryLeg;
 import com.washalert.washalertbackend.delivery.DeliveryService;
 import com.washalert.washalertbackend.delivery.DeliveryStatus;
 import com.washalert.washalertbackend.delivery.dto.UpdateDeliveryStatusRequest;
@@ -38,7 +39,9 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+        "washalert.firebase.enabled=false"
+})
 @ActiveProfiles("test")
 class BusinessRulesHardeningTests {
 
@@ -94,6 +97,7 @@ class BusinessRulesHardeningTests {
                 .jobOrder(order)
                 .driverName("Juan Driver")
                 .driverPhone("09170000001")
+                .leg(DeliveryLeg.PICKUP_FROM_CUSTOMER)
                 .status(DeliveryStatus.PENDING_PICKUP)
                 .build();
         delivery = deliveryOrderRepository.save(delivery);

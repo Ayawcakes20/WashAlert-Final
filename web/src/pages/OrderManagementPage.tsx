@@ -883,7 +883,7 @@ export default function OrderManagementPage() {
               Overview: This table tracks each order lifecycle with status controls and delivery metadata in one place.
             </p>
             <p className="text-xs text-brand-muted">
-              Updating status: Use the `Next` action through processing stages (Pending → Washing → Drying → Ready). Final delivery completion is handled by the driver flow.
+              Updating status: Use the `Next` action through processing stages (Pending → Washing → Drying → Ready). Driver assignment is captured from the driver app acceptance flow and shown in this table.
             </p>
             <p className="text-xs text-brand-muted">
               Payment status: Order progress status and payment status are separate. Online and e-wallet payments update automatically to PAID after provider webhook confirmation. Cash remains manual confirmation only.
@@ -2290,3 +2290,4 @@ export default function OrderManagementPage() {
     </motion.div>
   );
 }
+

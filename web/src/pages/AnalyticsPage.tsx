@@ -8,7 +8,6 @@ import { analyticsApi } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 import { Download, Sparkles, Loader2, TrendingUp } from "lucide-react";
-import { motion as m } from "framer-motion";
 
 const COLORS = [
   "hsl(218, 58%, 20%)",
@@ -65,6 +64,7 @@ const suggestedQuestions = [
   "What is the most used payment method?",
   "Which branch has the most orders?",
 ];
+const EXPORT_INTENT_REGEX = /\b(export|excel|csv|pdf|report|download|document)\b/i;
 
 const initialDates = () => {
   const today = new Date();
@@ -87,6 +87,7 @@ export default function AnalyticsPage() {
   const [nlqQuestion, setNlqQuestion] = useState("");
   const [nlqAnswer, setNlqAnswer] = useState("");
   const [nlqLoading, setNlqLoading] = useState(false);
+  const [showExportChooser, setShowExportChooser] = useState(false);
 
   const loadSummary = async (nextFilters = filters) => {
     setLoading(true);
@@ -167,10 +168,35 @@ export default function AnalyticsPage() {
       .filter((d) => d.count > 0);
   }, [summary]);
 
+  const buildReportMeta = () => {
+    if (!summary) return null;
+    const generatedAt = new Date();
+    return {
+      generatedAtText: generatedAt.toLocaleString(),
+      fromDate: summary.fromDate,
+      toDate: summary.toDate,
+      totalRevenue: Number(summary.totalRevenue || 0),
+      totalOrders: Number(summary.totalOrders || 0),
+      pending: Number(summary.pending || 0),
+      washing: Number(summary.washing || 0),
+      drying: Number(summary.drying || 0),
+      ready: Number(summary.ready || 0),
+      peakHourText: summary.peakHour != null ? `${summary.peakHour}:00 - ${summary.peakHour + 1}:00` : "N/A",
+      branchBreakdown: summary.branchBreakdown || [],
+      paymentBreakdown: summary.paymentMethodBreakdown || {},
+    };
+  };
+
   // NLQ: generate context-aware answers from real data
   const handleNlqGenerate = () => {
     if (!nlqQuestion.trim()) return;
     if (!summary) { setNlqAnswer("No analytics data loaded. Please apply a date range first."); return; }
+    if (EXPORT_INTENT_REGEX.test(nlqQuestion)) {
+      setShowExportChooser(true);
+      setNlqAnswer("Choose report format to export analytics data.");
+      return;
+    }
+    setShowExportChooser(false);
     setNlqLoading(true);
     setNlqAnswer("");
 
@@ -195,7 +221,7 @@ export default function AnalyticsPage() {
           : `${topRevenueBranch.branch} earned the most revenue at PHP ${Number(topRevenueBranch.revenue).toLocaleString()} during the selected period, with ${topRevenueBranch.totalOrders} orders.`;
       } else if (q.includes("peak") || q.includes("hour") || q.includes("busiest")) {
         answer = summary.peakHour != null
-          ? `The peak booking hour is ${summary.peakHour}:00 – ${summary.peakHour + 1}:00. This is when most customers place their orders.`
+          ? `The peak booking hour is ${summary.peakHour}:00 - ${summary.peakHour + 1}:00. This is when most customers place their orders.`
           : "No peak hour data is available yet for this period.";
       } else if (q.includes("in progress") || q.includes("washing") || q.includes("drying")) {
         answer = `Currently there are ${summary.washing} orders being washed and ${summary.drying} being dried. ${summary.pending} are still pending and ${summary.ready} are ready for pickup.`;
@@ -216,31 +242,135 @@ export default function AnalyticsPage() {
   };
 
   const exportCsv = () => {
-    if (!summary) { toast.error("No analytics data to export."); return; }
+    const report = buildReportMeta();
+    if (!report) { toast.error("No analytics data to export."); return; }
     const lines = [
-      ["From", summary.fromDate], ["To", summary.toDate],
-      ["Total Orders", String(summary.totalOrders)], ["Pending", String(summary.pending)],
-      ["Washing", String(summary.washing)], ["Drying", String(summary.drying)],
-      ["Ready", String(summary.ready)], ["Total Revenue", String(summary.totalRevenue)],
-      ["Peak Hour", summary.peakHour != null ? `${summary.peakHour}:00` : "N/A"], [],
+      ["Generated At", report.generatedAtText],
+      ["From", report.fromDate], ["To", report.toDate],
+      ["Total Revenue", String(report.totalRevenue)], ["Total Orders", String(report.totalOrders)],
+      ["Pending", String(report.pending)], ["Washing", String(report.washing)],
+      ["Drying", String(report.drying)], ["Ready", String(report.ready)],
+      ["Peak Booking Hours", report.peakHourText], [],
       ["Branch", "Orders", "Revenue"],
-      ...summary.branchBreakdown.map((b) => [b.branch, String(b.totalOrders), String(b.revenue)]),
+      ...report.branchBreakdown.map((b) => [b.branch, String(b.totalOrders), String(b.revenue)]),
     ];
-    if (summary.paymentMethodBreakdown) {
+    if (report.paymentBreakdown) {
       lines.push([], ["Payment Method", "Count"]);
-      Object.entries(summary.paymentMethodBreakdown).forEach(([k, v]) => lines.push([k, String(v)]));
+      Object.entries(report.paymentBreakdown).forEach(([k, v]) => lines.push([k, String(v)]));
     }
     const csv = lines.map((l) => l.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `washalert-analytics-${summary.fromDate}-to-${summary.toDate}.csv`;
+    link.download = `washalert-analytics-${report.fromDate}-to-${report.toDate}.csv`;
     document.body.appendChild(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
     toast.success("Analytics report exported.");
+  };
+
+  const exportDocument = () => {
+    const report = buildReportMeta();
+    if (!report) { toast.error("No analytics data to export."); return; }
+    const branchLines = report.branchBreakdown.length
+      ? report.branchBreakdown.map((b) => `- ${b.branch}: ${b.totalOrders} orders, PHP ${Number(b.revenue || 0).toLocaleString()}`).join("\n")
+      : "- No branch performance data";
+    const paymentLines = Object.keys(report.paymentBreakdown).length
+      ? Object.entries(report.paymentBreakdown).map(([method, count]) => `- ${method}: ${count}`).join("\n")
+      : "- No payment method data";
+    const text = [
+      "WashAlert Analytics Report",
+      `Generated: ${report.generatedAtText}`,
+      `Date Range: ${report.fromDate} to ${report.toDate}`,
+      "",
+      `Revenue Summary: PHP ${report.totalRevenue.toLocaleString()}`,
+      `Order Count: ${report.totalOrders}`,
+      `Peak Booking Hours: ${report.peakHourText}`,
+      "",
+      "Branch Performance:",
+      branchLines,
+      "",
+      "Payment Methods:",
+      paymentLines,
+      "",
+      "Status Breakdown:",
+      `- Pending: ${report.pending}`,
+      `- Washing: ${report.washing}`,
+      `- Drying: ${report.drying}`,
+      `- Ready: ${report.ready}`,
+    ].join("\n");
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `washalert-analytics-${report.fromDate}-to-${report.toDate}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    toast.success("Document export generated.");
+  };
+
+  const exportPdf = () => {
+    const report = buildReportMeta();
+    if (!report) { toast.error("No analytics data to export."); return; }
+    const popup = window.open("", "_blank", "width=900,height=700");
+    if (!popup) {
+      toast.error("Unable to open print preview. Please allow popups.");
+      return;
+    }
+    const branchRows = report.branchBreakdown.length
+      ? report.branchBreakdown.map((b) =>
+        `<tr><td style="padding:8px;border:1px solid #d1d5db;">${b.branch}</td><td style="padding:8px;border:1px solid #d1d5db;">${b.totalOrders}</td><td style="padding:8px;border:1px solid #d1d5db;">PHP ${Number(b.revenue || 0).toLocaleString()}</td></tr>`
+      ).join("")
+      : `<tr><td colspan="3" style="padding:8px;border:1px solid #d1d5db;">No branch performance data</td></tr>`;
+    const paymentRows = Object.keys(report.paymentBreakdown).length
+      ? Object.entries(report.paymentBreakdown).map(([k, v]) =>
+        `<tr><td style="padding:8px;border:1px solid #d1d5db;">${k}</td><td style="padding:8px;border:1px solid #d1d5db;">${v}</td></tr>`
+      ).join("")
+      : `<tr><td colspan="2" style="padding:8px;border:1px solid #d1d5db;">No payment method data</td></tr>`;
+
+    popup.document.write(`
+      <html>
+        <head><title>WashAlert Analytics Report</title></head>
+        <body style="font-family: Arial, sans-serif; padding: 24px; color: #111827;">
+          <h1>WashAlert Analytics Report</h1>
+          <p><strong>Generated:</strong> ${report.generatedAtText}</p>
+          <p><strong>Date Range:</strong> ${report.fromDate} to ${report.toDate}</p>
+          <h2>Summary</h2>
+          <p><strong>Revenue:</strong> PHP ${report.totalRevenue.toLocaleString()}</p>
+          <p><strong>Order Count:</strong> ${report.totalOrders}</p>
+          <p><strong>Peak Booking Hours:</strong> ${report.peakHourText}</p>
+          <h2>Branch Performance</h2>
+          <table style="border-collapse: collapse; width: 100%; margin-bottom: 16px;">
+            <thead>
+              <tr>
+                <th style="padding:8px;border:1px solid #d1d5db;text-align:left;">Branch</th>
+                <th style="padding:8px;border:1px solid #d1d5db;text-align:left;">Orders</th>
+                <th style="padding:8px;border:1px solid #d1d5db;text-align:left;">Revenue</th>
+              </tr>
+            </thead>
+            <tbody>${branchRows}</tbody>
+          </table>
+          <h2>Payment Methods</h2>
+          <table style="border-collapse: collapse; width: 100%; margin-bottom: 16px;">
+            <thead>
+              <tr>
+                <th style="padding:8px;border:1px solid #d1d5db;text-align:left;">Method</th>
+                <th style="padding:8px;border:1px solid #d1d5db;text-align:left;">Count</th>
+              </tr>
+            </thead>
+            <tbody>${paymentRows}</tbody>
+          </table>
+        </body>
+      </html>
+    `);
+    popup.document.close();
+    popup.focus();
+    popup.print();
+    toast.success("Print view opened for PDF export.");
   };
 
   return (
@@ -315,7 +445,7 @@ export default function AnalyticsPage() {
         {[
           { label: "Total Revenue (Range)", value: `PHP ${Number(summary?.totalRevenue || 0).toLocaleString()}`, sub: "Verified & paid orders only" },
           { label: "Total Orders (Range)", value: `${summary?.totalOrders || 0}`, sub: "Across selected branches" },
-          { label: "Peak Order Hour", value: summary?.peakHour != null ? `${summary.peakHour}:00 – ${summary.peakHour + 1}:00` : "N/A", sub: "Highest booking activity window" },
+          { label: "Peak Order Hour", value: summary?.peakHour != null ? `${summary.peakHour}:00 - ${summary.peakHour + 1}:00` : "N/A", sub: "Highest booking activity window" },
         ].map((s) => (
           <motion.div key={s.label} variants={item} className="glass-card rounded-2xl p-6">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{s.label}</p>
@@ -485,6 +615,22 @@ export default function AnalyticsPage() {
             </div>
           </div>
         )}
+        {showExportChooser && summary ? (
+          <div className="mt-4 rounded-xl border border-border bg-muted/20 p-4">
+            <p className="text-sm font-medium text-foreground">Choose report format</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button type="button" size="sm" onClick={exportCsv}>
+                Export CSV (Excel-compatible)
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={exportPdf}>
+                Export PDF
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={exportDocument}>
+                Export Document
+              </Button>
+            </div>
+          </div>
+        ) : null}
         {!summary && !loading && (
           <p className="text-xs text-muted-foreground">Apply a date range to enable data-driven Q&A.</p>
         )}

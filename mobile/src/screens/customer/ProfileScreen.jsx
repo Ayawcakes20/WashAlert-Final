@@ -131,7 +131,6 @@ const ProfileScreen = ({ navigation }) => {
             <Text style={styles.editProfileText}>Edit Profile</Text>
           </TouchableOpacity>
         </View>
-
         {/* Stats Grid */}
         <View style={styles.statsGrid}>
           <View style={styles.statItem}>
@@ -144,7 +143,6 @@ const ProfileScreen = ({ navigation }) => {
             <Text style={styles.statLabel}>Total Spent</Text>
           </View>
         </View>
-
         {/* Menu Groups */}
         {MENU_GROUPS.map((group, gIdx) => (
           <View key={group.title} style={styles.menuGroup}>
@@ -356,3 +354,4 @@ const styles = StyleSheet.create({
 });
 
 export default ProfileScreen;
+

@@ -2,6 +2,7 @@ package com.washalert.washalertbackend.auth;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 
@@ -56,6 +57,7 @@ class AuthRouteMappingTests {
         Method firebaseSessionMethod = AuthController.class.getDeclaredMethod(
                 "firebaseSession",
                 com.washalert.washalertbackend.auth.dto.FirebaseSessionRequest.class,
+                Authentication.class,
                 HttpServletRequest.class
         );
         PostMapping postMapping = firebaseSessionMethod.getAnnotation(PostMapping.class);

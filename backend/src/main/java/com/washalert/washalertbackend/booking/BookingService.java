@@ -24,6 +24,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -33,7 +34,7 @@ public class BookingService {
     private static final BigDecimal MACHINE_ABSOLUTE_MAX_LOAD_KG = new BigDecimal("9.0");
     private static final BigDecimal PURE_CLOTHES_MAX_LOAD_KG = new BigDecimal("8.0");
     private static final BigDecimal BULKY_ITEMS_MAX_LOAD_KG = new BigDecimal("7.0");
-    private static final BigDecimal MIN_LOAD_KG = new BigDecimal("1.0");
+    private static final BigDecimal MIN_LOAD_KG = new BigDecimal("5.0");
     private static final Pattern SERVICE_KG_LIMIT_PATTERN = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*kg", Pattern.CASE_INSENSITIVE);
 
     private final JobOrderRepository jobOrderRepository;
@@ -105,6 +106,7 @@ public class BookingService {
     @Transactional
     public JobOrderResponse createBooking(CreateBookingRequest req) {
         String cleanBranch = normalizeBranch(req.branch());
+        String paymentMethod = normalizePaymentMethod(req.paymentMethod());
         validateDate(req.preferredDate());
         validateLoadSize(req.serviceName(), req.estimatedWeightKg(), req.containsBulkyItems());
 
@@ -254,6 +256,26 @@ public class BookingService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    private String normalizePaymentMethod(String rawPaymentMethod) {
+        if (rawPaymentMethod == null || rawPaymentMethod.isBlank()) {
+            throw new IllegalArgumentException("Payment method is required.");
+        }
+
+        String normalized = rawPaymentMethod
+                .trim()
+                .toUpperCase(Locale.ROOT)
+                .replace('-', '_')
+                .replace(' ', '_');
+
+        if (normalized.contains("COD")) return "CASH";
+        if (normalized.equals("CASH_ON_DELIVERY")) return "CASH";
+        if (normalized.equals("CASH")) return "CASH";
+        if (normalized.equals("GCASH")) return "GCASH";
+        if (normalized.equals("MAYA")) return "MAYA";
+
+        throw new IllegalArgumentException("Invalid payment method. Allowed values: GCASH, CASH, MAYA.");
+    }
+
     private String formatTrackingNumber(Long id) {
         if (id == null) {
             throw new IllegalStateException("Booking ID was not generated.");
@@ -267,7 +289,7 @@ public class BookingService {
         }
 
         if (weightKg.compareTo(MIN_LOAD_KG) < 0) {
-            throw new IllegalArgumentException("Minimum load is 1 kg.");
+            throw new IllegalArgumentException("Minimum load is 5 kg.");
         }
 
         if (weightKg.compareTo(MACHINE_ABSOLUTE_MAX_LOAD_KG) > 0) {

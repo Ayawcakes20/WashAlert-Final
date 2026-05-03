@@ -35,6 +35,7 @@ const STATUS_BADGE = {
   delivered:      { bg: '#F0FDF4', text: '#10B981', label: 'Delivered' },
   cancelled:      { bg: '#FEF2F2', text: '#EF4444', label: 'Cancelled' },
 };
+};
 
 const normalize = (s) => {
   const raw = String(s||'').trim().toLowerCase().replace(/ /g,'_');
@@ -166,6 +167,20 @@ export default function OrderDetailScreen({ route, navigation }) {
     finally { setLoading(false); }
   };
 
+  const isPaymentCompleted = (value) => ['paid', 'verified', 'completed'].includes(String(value || '').toLowerCase());
+
+  useEffect(() => {
+    if (!order?.id || isPaymentCompleted(order?.paymentStatus)) return;
+    const timer = setInterval(() => {
+      bookingsApi.getById(order.id)
+        .then((nextOrder) => {
+          if (nextOrder) setOrder(nextOrder);
+        })
+        .catch(() => {});
+    }, 12000);
+    return () => clearInterval(timer);
+  }, [order?.id, order?.paymentStatus]);
+
   if (loading) return (
     <View style={styles.center}><ActivityIndicator size="large" color={colors.primary}/></View>
   );
@@ -208,10 +223,6 @@ export default function OrderDetailScreen({ route, navigation }) {
   const prevStep = idx > 0 ? STEPS[idx-1] : null;
   const currStep = STEPS[idx>=0?idx:0];
   const nextStep = idx < STEPS.length-1 ? STEPS[idx+1] : null;
-
-  const timeline = (order.timeline && order.timeline.length
-    ? order.timeline
-    : STEPS.map((s,i) => ({step:s.label, time: i===0?order.date:'', done:i<=idx})));
 
   const payNow = async () => {
     try {

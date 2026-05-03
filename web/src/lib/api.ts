@@ -635,6 +635,7 @@ export const supportApi = {
       Array<{
         ticketNumber: string;
         issue: string;
+        sessionId: string;
         status: string;
         createdAt: string;
         updatedAt: string;
@@ -643,6 +644,7 @@ export const supportApi = {
   resolveTicket: (ticketNumber: string) =>
     apiRequest<{
       ticketNumber: string;
+      sessionId: string;
       issue: string;
       status: string;
       createdAt: string;
@@ -650,4 +652,20 @@ export const supportApi = {
     }>(`/api/support/tickets/${encodeURIComponent(ticketNumber)}/resolve`, {
       method: "PATCH",
     }),
+  replyToTicket: (ticketNumber: string, message: string) =>
+    apiRequest<void>(`/api/support/tickets/${encodeURIComponent(ticketNumber)}/reply`, {
+      method: "POST",
+      body: { message },
+    }),
+  history: (sessionId: string) =>
+    apiRequest<{
+      messages: Array<{
+        id: number;
+        senderType: string;
+        message: string;
+        category: string;
+        escalationTicket: string | null;
+        createdAt: string;
+      }>;
+    }>(`/api/support/history?sessionId=${encodeURIComponent(sessionId)}`),
 };

@@ -1,5 +1,7 @@
 package com.washalert.washalertbackend.bootstrap;
 
+import com.google.firebase.auth.UserRecord;
+import com.washalert.washalertbackend.auth.FirebaseIdentityService;
 import com.washalert.washalertbackend.firebase.FirestoreSyncService;
 import com.washalert.washalertbackend.firebase.FirestoreUserPayloadFactory;
 import com.washalert.washalertbackend.user.AuthProvider;
@@ -15,6 +17,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 @Configuration
 public class AdminBootstrap {
@@ -40,64 +43,91 @@ public class AdminBootstrap {
     CommandLineRunner createAdminIfNotExists(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
-            FirestoreSyncService firestoreSyncService
+            FirestoreSyncService firestoreSyncService,
+            FirebaseIdentityService firebaseIdentityService
     ) {
         return args -> {
-            if (!adminBootstrapEnabled) {
-                log.info("[ADMIN_BOOTSTRAP] Disabled. Skipping admin bootstrap.");
-                return;
-            }
+            seedAdmin(userRepository, passwordEncoder, firestoreSyncService, firebaseIdentityService,
+                    "paulomiguelgarcia0420@gmail.com", "System Administrator", "Admin_123", "Makati Branch");
 
-            String email = trimToNull(adminBootstrapEmail);
-            String password = trimToNull(adminBootstrapPassword);
-
-            if (email == null || password == null) {
-                log.warn("[ADMIN_BOOTSTRAP] Missing ADMIN_BOOTSTRAP_EMAIL or ADMIN_BOOTSTRAP_PASSWORD. Skipping admin bootstrap.");
-                return;
-            }
-
-            if (userRepository.findByEmail(email).isPresent()) {
-                log.info("[ADMIN_BOOTSTRAP] Bootstrap admin already exists for {}. No changes applied.", maskEmail(email));
-                return;
-            }
-
-            User admin = User.builder()
-                    .email(email)
-                    .fullName(trimToNull(adminBootstrapFullName) == null ? "System Administrator" : adminBootstrapFullName.trim())
-                    .passwordHash(passwordEncoder.encode(password))
-                    .role(Role.ADMIN)
-                    .enabled(true)
-                    .verifiedAt(LocalDateTime.now())
-                    .createdAt(LocalDateTime.now())
-                    .mustChangePassword(false)
-                    .provider(AuthProvider.LOCAL)
-                    .branch(trimToNull(adminBootstrapBranch))
-                    .build();
-
-            User saved = userRepository.save(admin);
-            firestoreSyncService.upsert("users", String.valueOf(saved.getId()), FirestoreUserPayloadFactory.fromUser(saved));
-
-            log.info("[ADMIN_BOOTSTRAP] Created bootstrap admin account for {}", maskEmail(email));
+            seedAdmin(userRepository, passwordEncoder, firestoreSyncService, firebaseIdentityService,
+                    "drifttt.44@gmail.com", "System Administrator", "Admin_123", "UP Branch");
         };
     }
 
-    private String trimToNull(String value) {
-        if (value == null) {
-            return null;
+    private void seedAdmin(
+            UserRepository userRepository,
+            PasswordEncoder passwordEncoder,
+            FirestoreSyncService firestoreSyncService,
+            FirebaseIdentityService firebaseIdentityService,
+            String email, String fullName, String password, String branch
+    ) {
+        Optional<User> existing = userRepository.findByEmail(email);
+
+        if (existing.isPresent()) {
+            User user = existing.get();
+            System.out.println("[Bootstrap] Admin found in MySQL: " + email + " | firebaseUid=" + user.getFirebaseUid());
+
+            // Always attempt Firebase user creation to ensure the account exists.
+            // If Firebase already has the email → catches IllegalArgumentException (no-op).
+            // If Firebase doesn't have it (stale/missing UID) → creates it and updates MySQL.
+            String newUid = createFirebaseUser(firebaseIdentityService, email, fullName, password);
+            if (newUid != null) {
+                // Firebase account was just created (it was missing) — update MySQL record
+                user.setFirebaseUid(newUid);
+                User saved = userRepository.save(user);
+                firestoreSyncService.upsert("users", String.valueOf(saved.getId()), FirestoreUserPayloadFactory.fromUser(saved));
+                System.out.println("[Bootstrap] Firebase UID updated for: " + email + " uid=" + newUid);
+            } else {
+                System.out.println("[Bootstrap] Firebase account already exists for: " + email + " — no update needed.");
+            }
+            return;
         }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
+
+        // New user — create in both Firebase Auth and MySQL
+        String firebaseUid = createFirebaseUser(firebaseIdentityService, email, fullName, password);
+        User admin = User.builder()
+                .email(email)
+                .fullName(fullName)
+                .passwordHash(passwordEncoder.encode(password))
+                .firebaseUid(firebaseUid)
+                .role(Role.ADMIN)
+                .enabled(true)
+                .verifiedAt(LocalDateTime.now())
+                .createdAt(LocalDateTime.now())
+                .mustChangePassword(false)
+                .provider(AuthProvider.LOCAL)
+                .branch(branch)
+                .build();
+
+        User saved = userRepository.save(admin);
+        firestoreSyncService.upsert("users", String.valueOf(saved.getId()), FirestoreUserPayloadFactory.fromUser(saved));
+        System.out.println("[Bootstrap] Default ADMIN account created: " + email);
     }
 
-    private String maskEmail(String email) {
-        if (email == null || email.isBlank() || !email.contains("@")) {
-            return "<unknown-email>";
+    /**
+     * Creates a Firebase Auth user and returns their UID.
+     * If Firebase is disabled or the email already exists in Firebase, returns null safely.
+     */
+    private String createFirebaseUser(FirebaseIdentityService firebaseIdentityService,
+                                      String email, String fullName, String password) {
+        if (!firebaseIdentityService.isEnabled()) {
+            System.out.println("[Bootstrap] Firebase is disabled, skipping Firebase user creation for: " + email);
+            return null;
         }
-        int at = email.indexOf('@');
-        String local = email.substring(0, at);
-        if (local.length() <= 2) {
-            return "*@" + email.substring(at + 1);
+        try {
+            UserRecord record = firebaseIdentityService.createUser(email, fullName, password);
+            System.out.println("[Bootstrap] Firebase Auth user created for: " + email + " uid=" + record.getUid());
+            return record.getUid();
+        } catch (IllegalArgumentException ex) {
+            // Email already exists in Firebase
+            System.out.println("[Bootstrap] Firebase user already exists for: " + email + " — skipping Firebase creation.");
+            return null;
+        } catch (Exception ex) {
+            // Any other Firebase error (permissions, network, etc.) — log the real reason
+            System.err.println("[Bootstrap] ERROR: Failed to create Firebase user for: " + email);
+            System.err.println("[Bootstrap] ERROR cause: " + ex.getClass().getSimpleName() + " — " + ex.getMessage());
+            return null;
         }
-        return local.substring(0, 2) + "***@" + email.substring(at + 1);
     }
 }
