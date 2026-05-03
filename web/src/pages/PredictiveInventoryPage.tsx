@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { getSessionUser } from "@/lib/session";
 import { branches as availableBranches } from "@/data/branches";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface InventoryItem {
   id: number;
@@ -480,17 +481,16 @@ export default function PredictiveInventoryPage() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="create-branch">Branch</Label>
-              <select 
-                id="create-branch" 
-                value={createForm.branch} 
-                onChange={(e) => setCreateForm((p) => ({ ...p, branch: e.target.value }))}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="">Select a branch</option>
-                {availableBranches.map(b => (
-                  <option key={b.id} value={b.area}>{b.area}</option>
-                ))}
-              </select>
+              <Select value={createForm.branch} onValueChange={(val) => setCreateForm((p) => ({ ...p, branch: val }))}>
+                <SelectTrigger id="create-branch" className="w-full">
+                  <SelectValue placeholder="Select a branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableBranches.map((b) => (
+                    <SelectItem key={b.id} value={b.area}>{b.area}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2"><Label htmlFor="create-item">Item Name</Label><Input id="create-item" value={createForm.itemName} onChange={(e) => setCreateForm((p) => ({ ...p, itemName: e.target.value }))} /></div>
             <div className="grid grid-cols-2 gap-3">
@@ -522,17 +522,16 @@ export default function PredictiveInventoryPage() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="edit-branch">Branch</Label>
-              <select 
-                id="edit-branch" 
-                value={editForm.branch} 
-                onChange={(e) => setEditForm((p) => ({ ...p, branch: e.target.value }))}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="">Select a branch</option>
-                {availableBranches.map(b => (
-                  <option key={b.id} value={b.area}>{b.area}</option>
-                ))}
-              </select>
+              <Select value={editForm.branch} onValueChange={(val) => setEditForm((p) => ({ ...p, branch: val }))}>
+                <SelectTrigger id="edit-branch" className="w-full">
+                  <SelectValue placeholder="Select a branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableBranches.map((b) => (
+                    <SelectItem key={b.id} value={b.area}>{b.area}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2"><Label htmlFor="edit-item">Item Name</Label><Input id="edit-item" value={editForm.itemName} onChange={(e) => setEditForm((p) => ({ ...p, itemName: e.target.value }))} /></div>
             <div className="grid grid-cols-2 gap-3">
