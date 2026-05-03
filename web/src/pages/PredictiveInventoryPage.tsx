@@ -491,7 +491,7 @@ export default function PredictiveInventoryPage() {
               <Label htmlFor="create-branch">Branch</Label>
               {isAdmin ? (
                 <Select value={createForm.branch} onValueChange={(val) => setCreateForm((p) => ({ ...p, branch: val }))}>
-                  <SelectTrigger id="create-branch" className="w-full border-blue-500 focus:ring-blue-500 text-blue-700">
+                  <SelectTrigger id="create-branch" className="w-full text-foreground focus:ring-blue-500 focus:border-blue-500">
                     <SelectValue placeholder="Select a branch" />
                   </SelectTrigger>
                   <SelectContent>
@@ -501,7 +501,7 @@ export default function PredictiveInventoryPage() {
                   </SelectContent>
                 </Select>
               ) : (
-                <Input id="create-branch" value={createForm.branch} readOnly className="bg-muted text-muted-foreground border-blue-200" />
+                <Input id="create-branch" value={createForm.branch} readOnly className="bg-muted text-muted-foreground" />
               )}
             </div>
             <div className="space-y-2"><Label htmlFor="create-item">Item Name</Label><Input id="create-item" value={createForm.itemName} onChange={(e) => setCreateForm((p) => ({ ...p, itemName: e.target.value }))} /></div>
@@ -536,7 +536,7 @@ export default function PredictiveInventoryPage() {
               <Label htmlFor="edit-branch">Branch</Label>
               {isAdmin ? (
                 <Select value={editForm.branch} onValueChange={(val) => setEditForm((p) => ({ ...p, branch: val }))}>
-                  <SelectTrigger id="edit-branch" className="w-full border-blue-500 focus:ring-blue-500 text-blue-700">
+                  <SelectTrigger id="edit-branch" className="w-full text-foreground focus:ring-blue-500 focus:border-blue-500">
                     <SelectValue placeholder="Select a branch" />
                   </SelectTrigger>
                   <SelectContent>
@@ -546,7 +546,7 @@ export default function PredictiveInventoryPage() {
                   </SelectContent>
                 </Select>
               ) : (
-                <Input id="edit-branch" value={editForm.branch} readOnly className="bg-muted text-muted-foreground border-blue-200" />
+                <Input id="edit-branch" value={editForm.branch} readOnly className="bg-muted text-muted-foreground" />
               )}
             </div>
             <div className="space-y-2"><Label htmlFor="edit-item">Item Name</Label><Input id="edit-item" value={editForm.itemName} onChange={(e) => setEditForm((p) => ({ ...p, itemName: e.target.value }))} /></div>
