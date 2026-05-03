@@ -21,6 +21,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { getSessionUser } from "@/lib/session";
+import { branches as availableBranches } from "@/data/branches";
 
 interface InventoryItem {
   id: number;
@@ -477,7 +478,20 @@ export default function PredictiveInventoryPage() {
             <DialogDescription>Add a new inventory item to track.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2"><Label htmlFor="create-branch">Branch</Label><Input id="create-branch" value={createForm.branch} onChange={(e) => setCreateForm((p) => ({ ...p, branch: e.target.value }))} /></div>
+            <div className="space-y-2">
+              <Label htmlFor="create-branch">Branch</Label>
+              <select 
+                id="create-branch" 
+                value={createForm.branch} 
+                onChange={(e) => setCreateForm((p) => ({ ...p, branch: e.target.value }))}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="">Select a branch</option>
+                {availableBranches.map(b => (
+                  <option key={b.id} value={b.area}>{b.area}</option>
+                ))}
+              </select>
+            </div>
             <div className="space-y-2"><Label htmlFor="create-item">Item Name</Label><Input id="create-item" value={createForm.itemName} onChange={(e) => setCreateForm((p) => ({ ...p, itemName: e.target.value }))} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2"><Label htmlFor="create-category">Category</Label><Input id="create-category" value={createForm.category} onChange={(e) => setCreateForm((p) => ({ ...p, category: e.target.value }))} /></div>
@@ -506,7 +520,20 @@ export default function PredictiveInventoryPage() {
             <DialogDescription>Update item details and reorder threshold.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2"><Label htmlFor="edit-branch">Branch</Label><Input id="edit-branch" value={editForm.branch} onChange={(e) => setEditForm((p) => ({ ...p, branch: e.target.value }))} /></div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-branch">Branch</Label>
+              <select 
+                id="edit-branch" 
+                value={editForm.branch} 
+                onChange={(e) => setEditForm((p) => ({ ...p, branch: e.target.value }))}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="">Select a branch</option>
+                {availableBranches.map(b => (
+                  <option key={b.id} value={b.area}>{b.area}</option>
+                ))}
+              </select>
+            </div>
             <div className="space-y-2"><Label htmlFor="edit-item">Item Name</Label><Input id="edit-item" value={editForm.itemName} onChange={(e) => setEditForm((p) => ({ ...p, itemName: e.target.value }))} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2"><Label htmlFor="edit-category">Category</Label><Input id="edit-category" value={editForm.category} onChange={(e) => setEditForm((p) => ({ ...p, category: e.target.value }))} /></div>
