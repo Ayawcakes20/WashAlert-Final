@@ -45,7 +45,7 @@ public class AnalyticsService {
         LocalDate from = (fromDate == null) ? LocalDate.now().minusDays(6) : fromDate;
         LocalDate to = (toDate == null) ? LocalDate.now() : toDate;
         if (to.isBefore(from)) {
-            throw new IllegalArgumentException("toDate cannot be earlier than fromDate.");
+            to = from;
         }
 
         LocalDateTime start = from.atStartOfDay();

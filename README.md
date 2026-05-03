@@ -13,3 +13,4 @@ For Capstone Project
 Notes:
 - The backend datasource is environment-variable based; no DB credentials are hardcoded in `application.yaml`.
 - Do not commit `.env` files, Railway credentials, or Firebase service account key files.
+- Before deploy, follow [`DEPLOYMENT_CHECKLIST.md`](DEPLOYMENT_CHECKLIST.md) for required backend/web/mobile environment variables.

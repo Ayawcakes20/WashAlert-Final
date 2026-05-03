@@ -6,14 +6,7 @@ import path from "path";
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
-    port: 8080,
-    proxy: {
-      "/api": {
-        target: "http://192.168.1.4:8081",
-        changeOrigin: true,
-        secure: false,
-      },
-    },
+    port: 5173,
     hmr: {
       overlay: false,
     },

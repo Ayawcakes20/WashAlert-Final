@@ -755,13 +755,8 @@ public class JobOrderService {
 
     private JobOrderStatus parseOrderStatus(String status) {
         String normalized = normalizeSearch(status);
-        if (normalized == null)
-            return null;
-        try {
-            return JobOrderStatus.valueOf(normalized.toUpperCase());
-        } catch (IllegalArgumentException ex) {
-            throw new IllegalArgumentException("Invalid order status filter.");
-        }
+        if (normalized == null) return null;
+        return JobOrderStatus.fromValueOrFallback(normalized, null);
     }
 
     private PaymentStatus parsePaymentStatus(String paymentStatus) {
@@ -771,7 +766,7 @@ public class JobOrderService {
         try {
             return PaymentStatus.valueOf(normalized.toUpperCase());
         } catch (IllegalArgumentException ex) {
-            throw new IllegalArgumentException("Invalid payment status filter.");
+            return null;
         }
     }
 

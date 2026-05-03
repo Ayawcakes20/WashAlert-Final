@@ -31,10 +31,27 @@ public class NotificationCenterController {
     @GetMapping("/paged")
     @PreAuthorize("hasAnyRole('ADMIN','STAFF','DRIVER','CUSTOMER')")
     public PagedResponse<AppNotificationResponse> listPaged(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String page,
+            @RequestParam(required = false) String size,
             @AuthenticationPrincipal AuthUserDetails principal
     ) {
-        return notificationCenterService.listPaged(principal, page, size);
+        return notificationCenterService.listPaged(
+                principal,
+                parseIntOrDefault(page, 0, 0, Integer.MAX_VALUE),
+                parseIntOrDefault(size, 10, 1, 100)
+        );
+    }
+
+    private int parseIntOrDefault(String value, int fallback, int min, int max) {
+        int parsed = fallback;
+        if (value != null && !value.trim().isEmpty()) {
+            try {
+                parsed = Integer.parseInt(value.trim());
+            } catch (NumberFormatException ignored) {
+                parsed = fallback;
+            }
+        }
+        if (parsed < min) return min;
+        return Math.min(parsed, max);
     }
 }

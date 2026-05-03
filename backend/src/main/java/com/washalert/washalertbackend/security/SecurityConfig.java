@@ -79,13 +79,12 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
+                        .requestMatchers("/test").permitAll()
+                        .requestMatchers("/api/auth/firebase-login-otp/**").permitAll()
 
                         .requestMatchers(HttpMethod.POST,
                                 "/api/auth/register",
                                 "/api/auth/login",
-                                "/api/auth/firebase-login-otp/request",
-                                "/api/auth/firebase-login-otp/resend",
-                                "/api/auth/firebase-login-otp/verify",
                                 "/api/auth/firebase/complete-first-login-password",
                                 "/api/auth/mobile/register-profile",
                                 "/api/auth/complete-invitation",
@@ -111,14 +110,12 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/admin/users/drivers").hasAnyRole("ADMIN", "STAFF")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/machines/**").hasAnyRole("ADMIN", "STAFF")
-                        // Customer-accessible order endpoints (must come BEFORE the ADMIN/STAFF catch-all)
                         .requestMatchers(HttpMethod.GET,  "/api/orders/my/paged").hasRole("CUSTOMER")
                         .requestMatchers(HttpMethod.POST, "/api/orders/*/confirm-price").hasRole("CUSTOMER")
                         .requestMatchers("/api/orders/**").hasAnyRole("ADMIN", "STAFF", "CUSTOMER", "DRIVER")
                         .requestMatchers("/api/deliveries/**").hasAnyRole("ADMIN", "STAFF", "DRIVER")
-
-                        .requestMatchers("/api/**").authenticated()
-                        .anyRequest().permitAll());
+                        .anyRequest().authenticated()
+                );
 
         return http.build();
     }
