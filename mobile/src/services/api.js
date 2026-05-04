@@ -1452,7 +1452,15 @@ export const payments = {
     });
     
     console.log('[Payments] Raw checkout response=', payload);
-    const checkoutUrl = payload?.checkout_url || payload?.checkoutUrl || payload?.url || null;
+    
+    // Handle both snake_case and camelCase from backend
+    const checkoutUrl = payload?.checkout_url || payload?.checkoutUrl || payload?.url;
+    
+    if (!checkoutUrl) {
+      console.error('[Payments] No checkout URL in response:', payload);
+      throw new Error('PayMongo did not return a valid checkout link. Response: ' + JSON.stringify(payload));
+    }
+    
     return { checkoutUrl, trackingNumber };
   },
   collectCodPayment: async (id) => {

@@ -37,6 +37,9 @@ public class PaymentController {
     @PostMapping("/checkout/gcash/{trackingNumber}")
     public GcashCheckoutResponse initiateGcashCheckout(@PathVariable String trackingNumber) {
         String url = paymentService.initiateGcashCheckout(trackingNumber);
+        if (url == null || url.isEmpty()) {
+            throw new IllegalStateException("PayMongo checkout URL is null or empty for tracking: " + trackingNumber);
+        }
         return new GcashCheckoutResponse(url);
     }
 
