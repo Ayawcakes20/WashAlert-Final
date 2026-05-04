@@ -31,7 +31,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
                     where u.role in :allowedRoles
                       and (:role is null or u.role = :role)
                       and (:status is null or u.status = :status)
-                      and (:branch is null or lower(coalesce(u.branch, '')) = lower(:branch))
+                      and (:branch is null or lower(replace(u.branch, ' BRANCH', '')) = lower(replace(:branch, ' BRANCH', '')))
                       and (:search is null or lower(u.fullName) like lower(concat('%', :search, '%'))
                            or lower(u.email) like lower(concat('%', :search, '%')))
                     """,
@@ -41,7 +41,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
                     where u.role in :allowedRoles
                       and (:role is null or u.role = :role)
                       and (:status is null or u.status = :status)
-                      and (:branch is null or lower(coalesce(u.branch, '')) = lower(:branch))
+                      and (:branch is null or lower(replace(u.branch, ' BRANCH', '')) = lower(replace(:branch, ' BRANCH', '')))
                       and (:search is null or lower(u.fullName) like lower(concat('%', :search, '%'))
                            or lower(u.email) like lower(concat('%', :search, '%')))
                     """

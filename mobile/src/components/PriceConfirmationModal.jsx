@@ -103,16 +103,12 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
             throw new Error('Could not generate payment link.');
           }
         } catch (paymentErr) {
-          console.error('[PAYMENT] ✗ GCash checkout FAILED');
-          console.error('[PAYMENT] Error message:', paymentErr.message);
-          console.error('[PAYMENT] Error response:', paymentErr.response);
-          console.error('[PAYMENT] Error status:', paymentErr.status);
-          console.error('[PAYMENT] Full error:', JSON.stringify(paymentErr, null, 2));
-          const errMsg = paymentErr?.message || '';
-          const userMessage = errMsg && !errMsg.includes('Request failed')
-            ? errMsg
-            : 'We couldn\'t open the GCash portal automatically. Please use the "Pay Now" button in your Order Details screen.';
-          Alert.alert('Payment Setup', 'Order confirmed! However, ' + userMessage);
+          console.error('[PAYMENT] ✗ GCash checkout FAILED', paymentErr);
+          let errMsg = 'We couldn\'t open the GCash portal automatically. Please use the "Pay Now" button in your Order Details screen.';
+          if (paymentErr.message && !paymentErr.message.includes('Request failed')) {
+            errMsg = paymentErr.message;
+          }
+          Alert.alert('Payment Setup', 'Order confirmed! However, ' + errMsg);
         }
       }
 

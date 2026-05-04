@@ -98,6 +98,7 @@ public class SecurityConfig {
                                 "/api/payments/proof",
                                 "/api/payments/webhook",
                                 "/api/payments/checkout/**",
+                                "/api/payments/paymongo/webhook",
                                 "/api/support/chat")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/bookings/slots").permitAll()

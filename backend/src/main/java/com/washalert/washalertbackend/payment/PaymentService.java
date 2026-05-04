@@ -197,7 +197,17 @@ public class PaymentService {
         payment.setStatus(PaymentStatus.PENDING);
         paymentRepository.save(payment);
 
-        String checkoutUrl = paymongoService.createCheckoutSession(order);
+        String checkoutUrl;
+        try {
+            checkoutUrl = paymongoService.createCheckoutSession(order);
+        } catch (IllegalStateException ex) {
+            log.error("[PAYMENT][GCASH] PayMongo configuration or validation error tracking={}: {}", tracking, ex.getMessage());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage());
+        } catch (Exception ex) {
+            log.error("[PAYMENT][GCASH] Unexpected PayMongo error tracking={}: {}", tracking, ex.getMessage());
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Unable to generate GCash checkout URL. Please try again later.");
+        }
+
         if (checkoutUrl == null || checkoutUrl.isBlank()) {
             log.error("[PAYMENT][GCASH] PayMongo returned empty checkout URL tracking={}", tracking);
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Unable to generate GCash checkout URL.");

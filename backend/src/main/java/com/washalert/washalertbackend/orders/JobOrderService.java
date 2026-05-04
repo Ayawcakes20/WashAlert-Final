@@ -113,6 +113,7 @@ public class JobOrderService {
             Pageable pageable) {
         User actor = principal.getUser();
         String effectiveBranch = actor.getRole() == Role.STAFF ? actor.getBranch() : normalizeBranchFilter(branch);
+        String normalizedBranch = normalizeBranchName(effectiveBranch);
 
         List<JobOrderStatus> parsedStatuses = parseOrderStatuses(status);
         boolean statusesEmpty = parsedStatuses.isEmpty();
@@ -122,7 +123,7 @@ public class JobOrderService {
         boolean includeImplicitPending = parsedPaymentStatus == PaymentStatus.PENDING;
 
         Page<JobOrder> page = repo.findPagedWithFilters(
-                effectiveBranch,
+                normalizedBranch,
                 parsedStatuses,
                 statusesEmpty,
                 normalizeSearch(search),
@@ -397,7 +398,7 @@ public class JobOrderService {
         jo.setPaid(true);
         jo.setUpdatedAt(LocalDateTime.now());
         JobOrder saved = repo.save(jo);
-        JobOrderResponse response = toResponse(saved, PaymentStatus.PAID);
+        JobOrderResponse response = toResponse(jo, PaymentStatus.PAID);
         firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
         return response;
     }
@@ -486,6 +487,10 @@ public class JobOrderService {
         // Customers can only confirm their own orders
         if (jo.getCustomerEmail() == null || !jo.getCustomerEmail().equalsIgnoreCase(actor.getEmail())) {
             throw new IllegalArgumentException("You can only confirm your own orders.");
+        }
+
+        if (jo.getStatus() == JobOrderStatus.PRICE_CONFIRMED) {
+            return toResponse(jo);
         }
 
         if (jo.getStatus() != JobOrderStatus.AWAITING_PRICE_CONFIRMATION) {
@@ -741,9 +746,19 @@ public class JobOrderService {
     }
 
     private String normalizeBranchFilter(String branch) {
-        if (branch == null || branch.isBlank() || "ALL".equalsIgnoreCase(branch.trim()))
+        if (branch == null || branch.isBlank() || "all".equalsIgnoreCase(branch.trim())) {
             return null;
+        }
         return branch.trim();
+    }
+
+    private String normalizeBranchName(String branch) {
+        if (branch == null) return null;
+        String normalized = branch.trim().toUpperCase();
+        if (normalized.endsWith(" BRANCH")) {
+            normalized = normalized.substring(0, normalized.length() - 7).trim();
+        }
+        return normalized;
     }
 
     private String normalizeSearch(String value) {
@@ -800,7 +815,8 @@ public class JobOrderService {
     }
 
     private boolean safeEquals(String a, String b) {
-        return a != null && b != null && a.trim().equalsIgnoreCase(b.trim());
+        if (a == null || b == null) return false;
+        return normalizeBranchName(a).equals(normalizeBranchName(b));
     }
 
     private int compareDateDesc(LocalDateTime a, LocalDateTime b) {

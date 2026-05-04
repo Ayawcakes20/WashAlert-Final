@@ -111,6 +111,10 @@ public class PaymongoService {
             }
         } catch (IllegalStateException ex) {
             throw ex;
+        } catch (org.springframework.web.client.HttpStatusCodeException ex) {
+            log.error("[PAYMONGO] API Error tracking={} status={} body={}", 
+                    order.getTrackingNumber(), ex.getStatusCode(), ex.getResponseBodyAsString());
+            throw new IllegalStateException("PayMongo API error: " + ex.getStatusText());
         } catch (Exception ex) {
             log.error(
                     "[PAYMONGO] Checkout session creation failed tracking={} reason={} fullResponse={}",
