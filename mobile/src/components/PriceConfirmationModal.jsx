@@ -73,14 +73,11 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
       console.log('[PAYMENT] Step 1: Confirming price...');
       let confirmedOrder;
       try {
-        confirmedOrder = await bookings.confirmPrice(orderData);
-        console.log('[PAYMENT] ✓ Price confirmed successfully:', confirmedOrder);
+        // Use fullOrderData as it's guaranteed to have the numeric DB ID
+        confirmedOrder = await bookings.confirmPrice(fullOrderData || orderData);
+        console.log('[PAYMENT] ✓ Price confirmed successfully');
       } catch (confirmErr) {
-        console.error('[PAYMENT] ✗ confirmPrice FAILED');
-        console.error('[PAYMENT] Error message:', confirmErr.message);
-        console.error('[PAYMENT] Error response:', confirmErr.response);
-        console.error('[PAYMENT] Error status:', confirmErr.status);
-        console.error('[PAYMENT] Full error:', JSON.stringify(confirmErr, null, 2));
+        console.error('[PAYMENT] ✗ confirmPrice FAILED:', confirmErr.message);
         throw new Error(`Price confirmation failed: ${confirmErr.message}`);
       }
       
@@ -88,31 +85,41 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
       if (isGcash) {
         try {
           console.log('[PAYMENT] Step 2: Initiating GCash checkout...');
-          const checkoutTarget = confirmedOrder?.trackingNumber || orderData?.trackingNumber || orderData;
-          console.log('[PAYMENT] Checkout target:', checkoutTarget);
+          // Ensure we have a valid identifier for the checkout
+          const checkoutTarget = confirmedOrder?.trackingNumber || fullOrderData?.trackingNumber || orderData;
           
           const response = await payments.initiateGcashCheckout(checkoutTarget);
-          console.log('[PAYMENT] ✓ GCash response:', response);
-          
           const checkoutUrl = response?.checkoutUrl;
+
           if (checkoutUrl) {
-            console.log('[PAYMENT] Opening checkout URL via WebBrowser:', checkoutUrl);
-            await WebBrowser.openBrowserAsync(checkoutUrl, {
-              showTitle: true,
-              toolbarColor: '#2563EB',
-              controlsColor: '#ffffff',
-            });
+            console.log('[PAYMENT] Opening PayMongo URL:', checkoutUrl);
+            try {
+              // Try professional WebBrowser first
+              const result = await WebBrowser.openBrowserAsync(checkoutUrl, {
+                showTitle: true,
+                toolbarColor: '#2563EB',
+                controlsColor: '#ffffff',
+                enableBarCollapsing: true,
+              });
+              console.log('[PAYMENT] WebBrowser closed:', result.type);
+            } catch (browserErr) {
+              // Fallback to standard system browser if WebBrowser fails
+              console.warn('[PAYMENT] WebBrowser failed, falling back to Linking:', browserErr.message);
+              if (await Linking.canOpenURL(checkoutUrl)) {
+                await Linking.openURL(checkoutUrl);
+              } else {
+                throw new Error('No browser available to open payment link.');
+              }
+            }
           } else {
-            console.error('[PAYMENT] No checkout URL in response:', response);
-            throw new Error('Could not generate payment link.');
+            throw new Error('PayMongo did not return a valid checkout link.');
           }
         } catch (paymentErr) {
-          console.error('[PAYMENT] ✗ GCash checkout FAILED', paymentErr);
-          let errMsg = 'We couldn\'t open the GCash portal automatically. Please use the "Pay Now" button in your Order Details screen.';
-          if (paymentErr.message && !paymentErr.message.includes('Request failed')) {
-            errMsg = paymentErr.message;
-          }
-          Alert.alert('Payment Setup', 'Order confirmed! However, ' + errMsg);
+          console.error('[PAYMENT] ✗ GCash checkout flow FAILED:', paymentErr.message);
+          Alert.alert(
+            'Payment Setup',
+            'Order confirmed, but we couldn\'t open GCash automatically. You can still pay later via the "Pay Now" button in your Order Details screen.'
+          );
         }
       }
 
