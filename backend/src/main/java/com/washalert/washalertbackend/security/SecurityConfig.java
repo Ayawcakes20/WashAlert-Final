@@ -114,7 +114,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/machines/**").hasAnyRole("ADMIN", "STAFF")
                         .requestMatchers(HttpMethod.GET,  "/api/orders/my/paged").hasRole("CUSTOMER")
-                        .requestMatchers(HttpMethod.POST, "/api/orders/*/confirm-price").hasRole("CUSTOMER")
+                        .requestMatchers(HttpMethod.PUT, "/api/orders/*/confirm-price").hasRole("CUSTOMER")
                         .requestMatchers("/api/orders/**").hasAnyRole("ADMIN", "STAFF", "CUSTOMER", "DRIVER")
                         .requestMatchers("/api/deliveries/**").hasAnyRole("ADMIN", "STAFF", "DRIVER")
                         .anyRequest().authenticated()
