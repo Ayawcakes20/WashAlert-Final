@@ -186,8 +186,18 @@ public class PaymentService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found."));
 
         // Pre-create or update payment record as PENDING
-        PaymentRecord payment = paymentRepository.findByJobOrder_TrackingNumber(tracking)
-                .orElseGet(() -> PaymentRecord.builder().jobOrder(order).build());
+        List<PaymentRecord> existingPayments = paymentRepository.findByJobOrder_TrackingNumberOrderBySubmittedAtDesc(tracking);
+        PaymentRecord payment;
+        
+        if (!existingPayments.isEmpty()) {
+            payment = existingPayments.get(0);
+            if (existingPayments.size() > 1) {
+                log.warn("[PAYMENT][GCASH] Found {} existing payment records for tracking={}, using the latest.", 
+                        existingPayments.size(), tracking);
+            }
+        } else {
+            payment = PaymentRecord.builder().jobOrder(order).build();
+        }
         
         if (payment.getStatus() == PaymentStatus.PAID || payment.getStatus() == PaymentStatus.VERIFIED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Order is already paid.");
@@ -205,7 +215,8 @@ public class PaymentService {
         }
         
         if (resolvedAmount == null || resolvedAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order price is not set yet.");
+            log.error("[PAYMENT][GCASH] Order amount is zero or null for tracking={}", tracking);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order price is not set yet. Please wait for staff to confirm.");
         }
 
         payment.setAmount(resolvedAmount);

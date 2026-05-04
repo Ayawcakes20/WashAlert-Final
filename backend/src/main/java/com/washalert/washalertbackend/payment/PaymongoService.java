@@ -99,19 +99,17 @@ public class PaymongoService {
             log.info("[PAYMONGO] Creating session tracking={} body={}", order.getTrackingNumber(), payload);
             response = restTemplate.postForObject(url, request, Map.class);
             
-            if (response != null && response.containsKey("data")) {
-                Map<String, Object> data = (Map<String, Object>) response.get("data");
-                if (data != null && data.containsKey("attributes")) {
-                    Map<String, Object> respAttrs = (Map<String, Object>) data.get("attributes");
-                    if (respAttrs != null && respAttrs.containsKey("checkout_url")) {
-                        String checkoutUrl = (String) respAttrs.get("checkout_url");
+            if (response != null && response.get("data") instanceof Map<?, ?> dataMap) {
+                if (dataMap.get("attributes") instanceof Map<?, ?> respAttrs) {
+                    Object checkoutUrlObj = respAttrs.get("checkout_url");
+                    if (checkoutUrlObj instanceof String checkoutUrl) {
                         log.info("[PAYMONGO] Success: tracking={} checkoutUrl={}", order.getTrackingNumber(), checkoutUrl);
                         return checkoutUrl;
                     }
                 }
             }
-            log.error("[PAYMONGO] Response missing checkout_url: {}", response);
-            throw new IllegalStateException("PayMongo response was missing checkout URL.");
+            log.error("[PAYMONGO] Response structure invalid or missing checkout_url: {}", response);
+            throw new IllegalStateException("PayMongo response was missing or had an invalid checkout URL structure.");
         } catch (IllegalStateException ex) {
             throw ex;
         } catch (org.springframework.web.client.HttpStatusCodeException ex) {

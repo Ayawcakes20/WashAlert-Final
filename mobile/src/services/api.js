@@ -304,9 +304,14 @@ const parseResponse = async (res) => {
     }
   }
   if (!res.ok) {
-    const message =
-      (payload && typeof payload === 'object' && (payload.message || payload.error)) ||
-      `Request failed (${res.status})`;
+    let message = `Request failed (${res.status})`;
+    
+    if (payload && typeof payload === 'object') {
+      message = payload.message || payload.error || payload.reason || message;
+    } else if (text && !looksLikeHtml(text)) {
+      message = text;
+    }
+    
     const err = new Error(message);
     err.status = res.status;
     throw err;
