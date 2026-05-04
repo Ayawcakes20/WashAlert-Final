@@ -5,6 +5,7 @@ import com.washalert.washalertbackend.firebase.FirestoreUserPayloadFactory;
 import com.washalert.washalertbackend.user.UserStatus;
 import com.washalert.washalertbackend.user.User;
 import com.washalert.washalertbackend.user.UserRepository;
+import com.washalert.washalertbackend.user.InviteDispatchException;
 import com.washalert.washalertbackend.verification.MailService;
 import jakarta.transaction.Transactional;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -49,7 +50,7 @@ public class StaffInvitationService {
         this.firestoreSyncService = firestoreSyncService;
     }
 
-    @Transactional
+    @Transactional(dontRollbackOn = InviteDispatchException.class)
     public void createAndSendInvitation(User user) {
         if (user == null || user.getId() == null) {
             throw new IllegalArgumentException("Unable to send invitation.");
@@ -77,7 +78,13 @@ public class StaffInvitationService {
                 : "/" + props.getSetPasswordPath();
         String link = base + path + "?token=" + rawToken;
 
-        mailService.sendStaffInvitationEmail(user.getEmail(), user.getFullName(), link);
+        try {
+            mailService.sendStaffInvitationEmail(user.getEmail(), user.getFullName(), link);
+        } catch (Exception ex) {
+            throw new InviteDispatchException(
+                    "Invite email could not be sent right now. Please use Resend Invite."
+            );
+        }
     }
 
     @Transactional

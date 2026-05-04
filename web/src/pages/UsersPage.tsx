@@ -199,6 +199,8 @@ export default function UsersPage() {
   };
 
   const submitCreate = async () => {
+    if (createSubmitting) return;
+
     const nextErrors: Partial<Record<"fullName" | "email" | "role" | "branch", string>> = {};
     if (!createForm.fullName.trim()) {
       nextErrors.fullName = "Full name is required.";
@@ -237,7 +239,11 @@ export default function UsersPage() {
       setCreateErrors({});
       await loadUsers(Math.max(0, usersPage - 1));
     } catch (err: any) {
-      toast.error(err?.message || "Unable to create user.");
+      const message = err?.message || "Unable to create user.";
+      toast.error(message);
+      if (message.toLowerCase().includes("user was created")) {
+        await loadUsers(Math.max(0, usersPage - 1));
+      }
     } finally {
       setCreateSubmitting(false);
     }

@@ -2,6 +2,7 @@ package com.washalert.washalertbackend.common;
 
 import jakarta.servlet.http.HttpServletRequest;
 import com.washalert.washalertbackend.orders.OrderNotFoundException;
+import com.washalert.washalertbackend.user.InviteDispatchException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -33,6 +34,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<ApiError> illegalState(IllegalStateException ex, HttpServletRequest req) {
         return build(HttpStatus.CONFLICT, ex.getMessage(), req);
+    }
+
+    @ExceptionHandler(InviteDispatchException.class)
+    public ResponseEntity<ApiError> inviteDispatch(InviteDispatchException ex, HttpServletRequest req) {
+        return build(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), req);
     }
 
     @ExceptionHandler(OrderNotFoundException.class)
@@ -117,6 +123,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> dataIntegrity(DataIntegrityViolationException ex, HttpServletRequest req) {
 
         String msg = "Invalid request.";
+        HttpStatus status = HttpStatus.BAD_REQUEST;
 
         Throwable root = ex.getMostSpecificCause();
         String rootMsg = root != null ? root.getMessage() : null;
@@ -127,7 +134,10 @@ public class GlobalExceptionHandler {
                 || lower.contains("idx_users_email")
                 || lower.contains("users.email")
                 || lower.contains("for key")) {
-            msg = "Email already exists.";
+            msg = "User already exists.";
+            if (req.getRequestURI() != null && req.getRequestURI().startsWith("/api/admin/users/")) {
+                status = HttpStatus.CONFLICT;
+            }
         } else if (lower.contains("job_orders")
                 && lower.contains("payment_method")) {
             msg = "Invalid payment method. Allowed values: GCASH, CASH, MAYA.";
@@ -139,7 +149,7 @@ public class GlobalExceptionHandler {
             msg = "Request violates database constraints.";
         }
 
-        return build(HttpStatus.BAD_REQUEST, msg, req);
+        return build(status, msg, req);
     }
 
     // Some setups throw this directly (depends on driver / JPA / dialect)

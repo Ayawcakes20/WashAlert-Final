@@ -105,11 +105,19 @@ public class UserAdminService {
         return PagedResponse.from(mapped);
     }
 
-    @Transactional
+    @Transactional(dontRollbackOn = InviteDispatchException.class)
     public UserAdminResponse createStaff(CreateStaffRequest req) {
         String email = normalizeEmail(req.email());
         if (email.isBlank()) throw new IllegalArgumentException("Email is required.");
-        if (userRepository.findByEmail(email).isPresent()) throw new IllegalArgumentException("Email is already in use.");
+        User existing = userRepository.findByEmail(email).orElse(null);
+        if (existing != null) {
+            if ((existing.getRole() == Role.STAFF || existing.getRole() == Role.DRIVER)
+                    && existing.getStatus() == UserStatus.PENDING) {
+                resendInvite(existing.getId());
+                return toResponse(userRepository.findById(existing.getId()).orElse(existing));
+            }
+            throw new IllegalStateException("User already exists.");
+        }
         if (!firebaseIdentityService.isEnabled()) throw new IllegalStateException("Firebase Auth is not configured.");
 
         Role role = normalizeInternalRole(req.role());
@@ -149,7 +157,13 @@ public class UserAdminService {
         User saved = userRepository.save(internalUser);
         staffAuditService.logCreateStaff(actor, saved);
         firestoreSyncService.upsert("users", String.valueOf(saved.getId()), FirestoreUserPayloadFactory.fromUser(saved));
-        staffInvitationService.createAndSendInvitation(saved);
+        try {
+            staffInvitationService.createAndSendInvitation(saved);
+        } catch (InviteDispatchException ex) {
+            throw new InviteDispatchException(
+                    "User was created, but invite email could not be sent. Use Resend Invite from the user list."
+            );
+        }
 
         return toResponse(saved);
     }
