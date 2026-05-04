@@ -16,6 +16,7 @@ import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
 import jakarta.transaction.Transactional;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -27,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 
 @Service
+@Slf4j
 public class InventoryService {
     private static final BigDecimal FORECAST_DETERGENT_PER_KG = new BigDecimal("0.03");
     private static final BigDecimal FORECAST_CONDITIONER_PER_KG = new BigDecimal("0.02");

@@ -196,6 +196,8 @@ public class FirestoreReadService {
                 currentStock,
                 reorderLevel,
                 currentStock.compareTo(reorderLevel) <= 0,
+                asLong(data.get("projectedDaysRemaining")) != null ? asLong(data.get("projectedDaysRemaining")).intValue() : null,
+                asBoolean(data.get("lowStockWarning")) != null && asBoolean(data.get("lowStockWarning")),
                 asLocalDateTime(data.get("updatedAt"))
         );
     }
