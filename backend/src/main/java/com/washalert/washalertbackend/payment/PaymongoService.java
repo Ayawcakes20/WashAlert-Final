@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -58,31 +59,29 @@ public class PaymongoService {
         log.info("[PAYMONGO] Creating checkout session for tracking={} amountCentavos={}", 
                 order.getTrackingNumber(), amountCentavos);
 
-        Map<String, Object> lineItem = Map.of(
-                "currency", "PHP",
-                "amount", amountCentavos,
-                "description", "Laundry Service: " + String.valueOf(order.getServiceType()),
-                "name", "WashAlert Order " + order.getTrackingNumber(),
-                "quantity", 1
-        );
+        Map<String, Object> lineItem = new HashMap<>();
+        lineItem.put("currency", "PHP");
+        lineItem.put("amount", amountCentavos);
+        lineItem.put("description", "Laundry Service: " + String.valueOf(order.getServiceType()));
+        lineItem.put("name", "WashAlert Order " + order.getTrackingNumber());
+        lineItem.put("quantity", 1);
 
-        Map<String, Object> attributes = Map.of(
-                "send_email_receipt", true,
-                "show_description", true,
-                "show_line_items", true,
-                "line_items", List.of(lineItem),
-                "payment_method_types", List.of("gcash"),
-                "description", "Laundry Order Payment for " + order.getTrackingNumber(),
-                "reference_number", order.getTrackingNumber(),
-                "success_url", "washalertmobile://payment-success?tracking=" + order.getTrackingNumber(),
-                "cancel_url", "washalertmobile://payment-cancel?tracking=" + order.getTrackingNumber()
-        );
+        Map<String, Object> attributes = new HashMap<>();
+        attributes.put("send_email_receipt", true);
+        attributes.put("show_description", true);
+        attributes.put("show_line_items", true);
+        attributes.put("line_items", List.of(lineItem));
+        attributes.put("payment_method_types", List.of("gcash", "paymaya", "grab_pay"));
+        attributes.put("description", "Laundry Order Payment for " + order.getTrackingNumber());
+        attributes.put("reference_number", order.getTrackingNumber());
+        attributes.put("success_url", "washalertmobile://payment-success?tracking=" + order.getTrackingNumber());
+        attributes.put("cancel_url", "washalertmobile://payment-cancel?tracking=" + order.getTrackingNumber());
 
-        Map<String, Object> payload = Map.of(
-                "data", Map.of(
-                        "attributes", attributes
-                )
-        );
+        Map<String, Object> attributesData = new HashMap<>();
+        attributesData.put("attributes", attributes);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("data", attributesData);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);

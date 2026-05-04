@@ -1,5 +1,6 @@
 package com.washalert.washalertbackend.payment;
 
+import java.math.BigDecimal;
 import com.washalert.washalertbackend.firebase.FirestoreSyncService;
 import com.washalert.washalertbackend.orders.JobOrder;
 import com.washalert.washalertbackend.orders.JobOrderRepository;
@@ -193,7 +194,21 @@ public class PaymentService {
         }
 
         payment.setMethod(PaymentMethod.GCASH);
-        payment.setAmount(order.getTotalPrice());
+        
+        // Resolve amount with fallback chain (totalPrice -> finalPrice -> servicePrice)
+        BigDecimal resolvedAmount = order.getTotalPrice();
+        if (resolvedAmount == null || resolvedAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            resolvedAmount = order.getFinalPrice();
+        }
+        if (resolvedAmount == null || resolvedAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            resolvedAmount = order.getServicePrice();
+        }
+        
+        if (resolvedAmount == null || resolvedAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order price is not set yet.");
+        }
+
+        payment.setAmount(resolvedAmount);
         payment.setStatus(PaymentStatus.PENDING);
         paymentRepository.save(payment);
 
