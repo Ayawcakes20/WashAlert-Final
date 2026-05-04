@@ -47,7 +47,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
       // 2. If GCash, trigger PayMongo Checkout
       if (isGcash) {
         try {
-          const { checkoutUrl } = await payments.initiateGcashCheckout(orderData.trackingNumber || orderData.id);
+          const { checkoutUrl } = await payments.initiateGcashCheckout(orderData);
           if (checkoutUrl) {
             await Linking.openURL(checkoutUrl);
           } else {

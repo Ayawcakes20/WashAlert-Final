@@ -13,7 +13,7 @@ import { bookings as bookingsApi } from '../../services/api';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyAzAGBAijqpEZki3ZZBYe-9rxtzjF55RSY';
 const { width: SCREEN_W } = Dimensions.get('window');
-const SHEET_H = 310; // fixed px â€” never clips content
+const SHEET_H = 310; // fixed px — never clips content
 
 const MAP_STYLE = [
   { elementType: 'geometry', stylers: [{ color: '#e8edf2' }] },
@@ -25,7 +25,7 @@ const MAP_STYLE = [
   { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#edf0f3' }] },
 ];
 
-// â”€â”€ 4 clean milestones (industry standard like Grab / Lalamove) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── 4 clean milestones (industry standard like Grab / Lalamove) ───────────────
 const MILESTONES = [
   { label: 'Pickup',     icon: 'truck-fast-outline',       mat: true },
   { label: 'Processing', icon: 'washing-machine',          mat: true },
@@ -43,6 +43,7 @@ const statusToMilestone = (status) => {
   if (['READY'].includes(s)) return 2;
   if (['ASSIGNED_FOR_DELIVERY', 'OUT_FOR_DELIVERY'].includes(s)) return 3;
   if (s === 'DELIVERED') return 5; // All steps done
+  
   return 0;
 };
 
@@ -122,7 +123,7 @@ export default function TrackingScreen({ route, navigation }) {
   if (loading) return (
     <View style={S.center}>
       <ActivityIndicator size="large" color={colors.primary} />
-      <Text style={S.loadingText}>Loading your orderâ€¦</Text>
+      <Text style={S.loadingText}>Loading your order…</Text>
     </View>
   );
 
@@ -143,7 +144,7 @@ export default function TrackingScreen({ route, navigation }) {
     [
       'ASSIGNED_FOR_PICKUP', 'EN_ROUTE_TO_CUSTOMER', 'LAUNDRY_COLLECTED', 'EN_ROUTE_TO_BRANCH',
       'ASSIGNED_FOR_DELIVERY', 'OUT_FOR_DELIVERY'
-    ].includes(order.status.toUpperCase())
+    ].includes(String(order.status || '').toUpperCase())
   );
 
   // We show the map if we are in the phase, even if driverLoc is temporarily missing
@@ -154,20 +155,18 @@ export default function TrackingScreen({ route, navigation }) {
   const driverName    = delivData?.driverName || order?.delivery?.driver || order?.assignedDriverName || 'Assigned Driver';
   const driverPhoto   = delivData?.driverPhotoUrl || order?.delivery?.driverPhotoUrl || order?.assignedDriverPhotoUrl || null;
 
-  const canContactDriver = !!driverPhone && driverPhone.length > 5;
-
   const callDriver    = () => driverPhone && Linking.openURL(`tel:${driverPhone.replace(/[^0-9+]/g, '')}`);
   const smsDriver     = () => driverPhone && Linking.openURL(`sms:${driverPhone.replace(/[^0-9+]/g, '')}`);
   const headline = 
     order.status === 'delivering' 
       ? (['LAUNDRY_COLLECTED', 'EN_ROUTE_TO_BRANCH'].includes(order.deliveryWorkflowStatus || '') ? 'Heading to our branch' : 'Heading to your location')
-      : (STATUS_HEADLINE[order.status.toUpperCase()] || 'Tracking your order…');
+      : (STATUS_HEADLINE[String(order.status || '').toUpperCase()] || 'Tracking your order…');
 
   const isDelivering  = !!driverLoc && isTrackingPhase;
   const etaLabel      = isDelivering && etaData.duration ? etaData.duration : (order.estimatedTime || 'Pending');
 
   // Determine destination based on phase
-  const isLegToBranch = ['LAUNDRY_COLLECTED', 'EN_ROUTE_TO_BRANCH'].includes(order.deliveryWorkflowStatus || order.status.toUpperCase());
+  const isLegToBranch = ['LAUNDRY_COLLECTED', 'EN_ROUTE_TO_BRANCH'].includes(order.deliveryWorkflowStatus || String(order.status || '').toUpperCase());
   const destLoc = isLegToBranch 
     ? { latitude: order.branchLatitude || 14.5995, longitude: order.branchLongitude || 120.9842 }
     : { latitude: order.deliveryLatitude || 14.5995, longitude: order.deliveryLongitude || 120.9842 };
@@ -175,7 +174,7 @@ export default function TrackingScreen({ route, navigation }) {
   return (
     <View style={S.root}>
 
-      {/* â”€â”€ MAP AREA â€” flex:1 fills all space above the sheet â”€â”€ */}
+      {/* ── MAP AREA — flex:1 fills all space above the sheet ── */}
       <View style={S.mapWrap}>
         {isTrackingRider ? (
           <MapView
@@ -220,7 +219,7 @@ export default function TrackingScreen({ route, navigation }) {
             )}
           </MapView>
         ) : (
-          /* â”€â”€ PREMIUM STATIC STATE â”€â”€ */
+          /* ── PREMIUM STATIC STATE ── */
           <View style={S.staticBg}>
             <View style={S.staticInner}>
               <View style={S.staticIconRing}>
@@ -239,9 +238,9 @@ export default function TrackingScreen({ route, navigation }) {
                 </View>
               </View>
               <Text style={S.staticLabel}>
-                {order.status.toUpperCase() === 'WASHING' ? 'Washing in progress…'
-                  : order.status.toUpperCase() === 'DRYING' ? 'Drying in progress…'
-                  : order.status.toUpperCase() === 'READY'  ? 'Ready for delivery!'
+                {String(order.status || '').toUpperCase() === 'WASHING' ? 'Washing in progress…'
+                  : String(order.status || '').toUpperCase() === 'DRYING' ? 'Drying in progress…'
+                  : String(order.status || '').toUpperCase() === 'READY'  ? 'Ready for delivery!'
                   : 'Order confirmed'}
               </Text>
             </View>
@@ -278,7 +277,7 @@ export default function TrackingScreen({ route, navigation }) {
         </View>
       </View>
 
-      {/* â”€â”€ BOTTOM SHEET â€” fixed height, sits below map â”€â”€ */}
+      {/* ── BOTTOM SHEET — fixed height, sits below map ── */}
       <View style={[S.sheet, { paddingBottom: insets.bottom + 8 }]}>
         <View style={S.sheetHandle} />
 
@@ -291,7 +290,7 @@ export default function TrackingScreen({ route, navigation }) {
           </View>
         </View>
 
-        {/* â”€â”€ 4-STEP MILESTONE TRACKER â”€â”€ */}
+        {/* ── 4-STEP MILESTONE TRACKER ── */}
         <View style={S.milestoneRow}>
           {MILESTONES.map((m, i) => {
             const done    = i < milestoneIdx;
@@ -341,7 +340,7 @@ export default function TrackingScreen({ route, navigation }) {
           })}
         </View>
 
-        {/* â”€â”€ DRIVER CARD â”€â”€ */}
+        {/* ── DRIVER CARD ── */}
         {order.delivery ? (
           <View style={S.driverCard}>
             <View style={S.driverAvatarWrap}>
@@ -359,9 +358,6 @@ export default function TrackingScreen({ route, navigation }) {
               <Text style={S.driverName} numberOfLines={1}>
                 {driverName}
               </Text>
-              <Text style={S.driverPhoneText} numberOfLines={1}>
-                {canContactDriver ? driverPhone : 'No contact number available'}
-              </Text>
               <View style={S.driverSubRow}>
                 {isDelivering && (
                   <View style={S.livePill}>
@@ -374,10 +370,10 @@ export default function TrackingScreen({ route, navigation }) {
             </View>
 
             <View style={S.driverBtns}>
-              <TouchableOpacity style={[S.roundBtn, !canContactDriver && S.roundBtnDisabled]} onPress={callDriver} activeOpacity={0.75} disabled={!canContactDriver}>
+              <TouchableOpacity style={S.roundBtn} onPress={callDriver} activeOpacity={0.75}>
                 <Ionicons name="call" size={18} color={colors.text} />
               </TouchableOpacity>
-              <TouchableOpacity style={[S.roundBtn, !canContactDriver && S.roundBtnDisabled]} onPress={smsDriver} activeOpacity={0.75} disabled={!canContactDriver}>
+              <TouchableOpacity style={S.roundBtn} onPress={smsDriver} activeOpacity={0.75}>
                 <Ionicons name="chatbubble-ellipses" size={17} color={colors.text} />
               </TouchableOpacity>
             </View>
@@ -403,7 +399,7 @@ export default function TrackingScreen({ route, navigation }) {
   );
 }
 
-/* â”€â”€ Styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Styles ─────────────────────────────────────────────────────────────────── */
 const S = StyleSheet.create({
   root:   { flex: 1, backgroundColor: '#EDF2F7' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, backgroundColor: '#F4F7FA' },
@@ -412,7 +408,7 @@ const S = StyleSheet.create({
   goBackBtn:   { marginTop: 14, paddingHorizontal: 28, paddingVertical: 12, backgroundColor: colors.primaryLight, borderRadius: 14 },
   goBackText:  { fontSize: 14, fontWeight: '700', color: colors.primary },
 
-  /* Map â€” flex:1 so it grows to fill all space ABOVE the sheet */
+  /* Map — flex:1 so it grows to fill all space ABOVE the sheet */
   mapWrap:  { flex: 1, overflow: 'hidden' },
 
   /* Static state */
@@ -472,7 +468,7 @@ const S = StyleSheet.create({
   pinDest: { backgroundColor: colors.text, padding: 9, borderRadius: 50, borderWidth: 2.5, borderColor: '#FFF' },
   pinDriver: { backgroundColor: '#2E86C1', padding: 9, borderRadius: 50, borderWidth: 2.5, borderColor: '#FFF' },
 
-  /* Bottom Sheet â€” fixed height, sits below map naturally in flex column */
+  /* Bottom Sheet — fixed height, sits below map naturally in flex column */
   sheet: {
     height: SHEET_H,
     backgroundColor: '#FFF',
@@ -485,7 +481,7 @@ const S = StyleSheet.create({
     backgroundColor: '#DDE3EB', borderRadius: 4, marginBottom: 14,
   },
 
-  /* Sheet head â€” row: headline left, ETA badge right */
+  /* Sheet head — row: headline left, ETA badge right */
   sheetHead:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   sheetHeadline: { fontSize: 16, fontWeight: '800', color: colors.text, flex: 1, marginRight: 10 },
   sheetSub:      { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
@@ -496,7 +492,7 @@ const S = StyleSheet.create({
   },
   etaBadgeText: { fontSize: 12, fontWeight: '800', color: colors.primary },
 
-  /* Milestone tracker â€” compact to fit fixed sheet height */
+  /* Milestone tracker — compact to fit fixed sheet height */
   milestoneRow: {
     flexDirection: 'row', alignItems: 'center',
     marginBottom: 12, paddingHorizontal: 2,
@@ -530,7 +526,7 @@ const S = StyleSheet.create({
   connLine:  { width: '100%', height: 2.5, backgroundColor: '#E8EDF3', borderRadius: 2 },
   connLineDone: { backgroundColor: colors.primary },
 
-  /* Driver card â€” compact */
+  /* Driver card — compact */
   driverCard: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#F8FAFC',
@@ -551,7 +547,6 @@ const S = StyleSheet.create({
   },
   driverMeta: { flex: 1, gap: 2 },
   driverName: { fontSize: 14, fontWeight: '800', color: colors.text },
-  driverPhoneText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
   driverSubRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   driverRole: { fontSize: 11, color: colors.textSecondary, fontWeight: '500' },
   livePill: {
@@ -566,7 +561,6 @@ const S = StyleSheet.create({
     backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center',
     borderWidth: 1.5, borderColor: '#E8EDF3',
   },
-  roundBtnDisabled: { opacity: 0.45 },
   noDriverCard: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: '#F8FAFC', borderRadius: 14,
@@ -579,4 +573,3 @@ const S = StyleSheet.create({
   },
   detailsLinkText: { fontSize: 13, fontWeight: '700', color: '#2E86C1' },
 });
-
