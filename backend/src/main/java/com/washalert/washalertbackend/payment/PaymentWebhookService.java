@@ -1,11 +1,13 @@
 package com.washalert.washalertbackend.payment;
 
+import com.washalert.washalertbackend.firebase.FirestoreSyncService;
 import com.washalert.washalertbackend.payment.dto.PaymentWebhookRequest;
 import com.washalert.washalertbackend.notification.NotificationService;
 import com.washalert.washalertbackend.orders.JobOrder;
 import com.washalert.washalertbackend.orders.JobOrderStatus;
 import com.washalert.washalertbackend.orders.JobOrderRepository;
 import com.washalert.washalertbackend.orders.JobOrderTimelineService;
+import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
@@ -26,6 +28,7 @@ public class PaymentWebhookService {
     private final PaymentWebhookProperties properties;
     private final NotificationService notificationService;
     private final JobOrderTimelineService timelineService;
+    private final FirestoreSyncService firestoreSyncService;
 
     public PaymentWebhookService(
             PaymentWebhookEventRepository eventRepository,
@@ -33,7 +36,8 @@ public class PaymentWebhookService {
             JobOrderRepository jobOrderRepository,
             PaymentWebhookProperties properties,
             NotificationService notificationService,
-            JobOrderTimelineService timelineService
+            JobOrderTimelineService timelineService,
+            FirestoreSyncService firestoreSyncService
     ) {
         this.eventRepository = eventRepository;
         this.paymentRepository = paymentRepository;
@@ -41,6 +45,7 @@ public class PaymentWebhookService {
         this.properties = properties;
         this.notificationService = notificationService;
         this.timelineService = timelineService;
+        this.firestoreSyncService = firestoreSyncService;
     }
 
     @Transactional
@@ -107,11 +112,12 @@ public class PaymentWebhookService {
                 JobOrder order = payment.getJobOrder();
                 if (order != null) {
                     order.setPaid(true);
-                    if (order.getStatus() == JobOrderStatus.PENDING) {
+                    if (order.getStatus() == JobOrderStatus.PENDING || order.getStatus() == JobOrderStatus.PRICE_CONFIRMED) {
                         order.setStatus(JobOrderStatus.WASHING);
                         timelineService.log(order, order.getStatus(), "system", "Payment confirmed via webhook");
                     }
                     jobOrderRepository.save(order);
+                    firestoreSyncService.upsert("orders", order.getTrackingNumber(), JobOrderResponse.from(order, PaymentStatus.PAID));
                 }
             } else if (isFailureStatus(externalStatus)) {
                 if (payment.getStatus() == PaymentStatus.PAID || payment.getStatus() == PaymentStatus.VERIFIED) {

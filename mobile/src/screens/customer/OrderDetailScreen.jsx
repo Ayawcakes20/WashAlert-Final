@@ -150,15 +150,21 @@ export default function OrderDetailScreen({ route, navigation }) {
     if (!order?.id) return;
     const tn = order.trackingNumber || order.id;
     if (!tn || String(tn).toLowerCase() === 'undefined') return;
-    const unsub = onSnapshot(doc(db,'orders',String(tn)), snap => {
-      if (snap.exists()) {
-        const raw = (snap.data().status||'').toLowerCase();
-        const mapped = normalize(raw);
-        if (mapped && mapped !== order?.status)
-          setOrder(prev => prev ? {...prev, status:mapped} : prev);
-      }
-    }, err => console.warn(err.message));
-    return () => unsub();
+    if (!db) return;
+    try {
+      const unsub = onSnapshot(doc(db, 'orders', String(tn)), snap => {
+        if (snap.exists()) {
+          const raw = (snap.data().status || '').toLowerCase();
+          const mapped = normalize(raw);
+          if (mapped && mapped !== order?.status)
+            setOrder(prev => prev ? { ...prev, status: mapped } : prev);
+        }
+      }, err => console.warn('[OrderDetail] Firestore listener failed:', err?.message || err));
+      return () => unsub();
+    } catch (error) {
+      console.warn('[OrderDetail] Firestore subscription skipped:', error?.message || error);
+      return undefined;
+    }
   }, [order?.id, order?.trackingNumber]);
 
   const load = async () => {
@@ -216,12 +222,14 @@ export default function OrderDetailScreen({ route, navigation }) {
 
   const payNow = async () => {
     try {
-      const rawUrl = await payments.initiateGcashCheckout(order.trackingNumber||order.id);
-      const url = String(rawUrl||'').trim();
+      const { checkoutUrl } = await payments.initiateGcashCheckout(order);
+      const url = String(checkoutUrl || '').trim();
       if (!url || !/^https?:\/\//i.test(url)) throw new Error('No checkout URL');
       try { await WebBrowser.openBrowserAsync(url); }
       catch { if (await Linking.canOpenURL(url)) await Linking.openURL(url); }
-    } catch(e) { Alert.alert('Error','Could not initiate payment.'); }
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'Could not initiate payment.');
+    }
   };
 
   const cancelOrder = () => {
@@ -290,7 +298,7 @@ export default function OrderDetailScreen({ route, navigation }) {
               </View>
               <View style={{flex:1}}>
                 <Text style={[styles.confirmTitle, { color: '#1E293B' }]}>Order Received</Text>
-                <Text style={[styles.confirmSub, { color: '#64748B' }]}>Our staff is currently weighing your laundry. You'll get a notification once the receipt is ready.</Text>
+                <Text style={[styles.confirmSub, { color: '#64748B' }]}>Our staff is currently weighing your laundry. You&apos;ll get a notification once the receipt is ready.</Text>
               </View>
             </View>
           </View>

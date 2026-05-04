@@ -42,12 +42,13 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
       const isGcash = String(orderData.paymentMethod || '').toUpperCase() === 'GCASH';
       
       // 1. Confirm the price first (Backend sets status to PRICE_CONFIRMED)
-      await bookings.confirmPrice(orderData);
+      const confirmedOrder = await bookings.confirmPrice(orderData);
       
       // 2. If GCash, trigger PayMongo Checkout
       if (isGcash) {
         try {
-          const { checkoutUrl } = await payments.initiateGcashCheckout(orderData);
+          const checkoutTarget = confirmedOrder?.trackingNumber || orderData?.trackingNumber || orderData;
+          const { checkoutUrl } = await payments.initiateGcashCheckout(checkoutTarget);
           if (checkoutUrl) {
             await Linking.openURL(checkoutUrl);
           } else {

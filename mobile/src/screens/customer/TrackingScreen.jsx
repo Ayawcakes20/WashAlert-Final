@@ -64,12 +64,13 @@ const STATUS_HEADLINE = {
 
 export default function TrackingScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
-  const { orderId } = route.params;
+  const orderId = route?.params?.orderId;
 
   const [order,     setOrder]     = useState(null);
   const [loading,   setLoading]   = useState(true);
   const [driverLoc, setDriverLoc] = useState(null);
   const [delivData, setDelivData] = useState(null);
+  const [trackingWarning, setTrackingWarning] = useState('');
   const [etaData,   setEtaData]   = useState({ distance: null, duration: null });
   const [mapRef,    setMapRef]    = useState(null);
 
@@ -91,32 +92,61 @@ export default function TrackingScreen({ route, navigation }) {
   useEffect(() => { loadOrder(); }, [orderId]);
 
   useEffect(() => {
-    if (!order?.trackingNumber) return;
-    console.log('[Tracking] Listening for:', order.trackingNumber);
-    // Listen to delivery_tracking collection by tracking number (unique & consistent)
-    const unsub = onSnapshot(doc(db, 'delivery_tracking', String(order.trackingNumber)), snap => {
-      if (!snap.exists()) {
-        console.log('[Tracking] No live data yet for:', order.trackingNumber);
-        return;
-      }
-      const d = snap.data();
-      console.log('[Tracking] Received data:', d.lat, d.lng);
-      setDelivData(d);
-      if (d.lat && d.lng) {
-        const c = { latitude: d.lat, longitude: d.lng };
-        setDriverLoc(c);
-        driverCoord.timing({ ...c, duration: 5000, useNativeDriver: false }).start();
-      }
-    });
-    return () => unsub();
+    const trackingNumber = String(order?.trackingNumber || '').trim();
+    if (!trackingNumber) return;
+    if (!db) {
+      setTrackingWarning('Tracking unavailable right now. Please try again later.');
+      return;
+    }
+    console.log('[Tracking] Listening for:', trackingNumber);
+    try {
+      const trackingRef = doc(db, 'delivery_tracking', trackingNumber);
+      const unsub = onSnapshot(
+        trackingRef,
+        (snap) => {
+          if (!snap.exists()) {
+            setTrackingWarning('Tracking unavailable for this order right now.');
+            return;
+          }
+          const d = snap.data() || {};
+          setDelivData(d);
+          const lat = Number(d.lat);
+          const lng = Number(d.lng);
+          if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            const c = { latitude: lat, longitude: lng };
+            setDriverLoc(c);
+            setTrackingWarning('');
+            driverCoord.timing({ ...c, duration: 5000, useNativeDriver: false }).start();
+          }
+        },
+        (error) => {
+          console.warn('[Tracking] Firestore listener failed:', error?.message || error);
+          setTrackingWarning('Tracking unavailable right now. Please check again later.');
+        }
+      );
+      return () => unsub();
+    } catch (error) {
+      console.warn('[Tracking] Unable to subscribe to Firestore:', error?.message || error);
+      setTrackingWarning('Tracking unavailable right now. Please check again later.');
+      return undefined;
+    }
   }, [order?.trackingNumber]);
 
   const loadOrder = async () => {
+    if (!orderId) {
+      setOrder(null);
+      setTrackingWarning('Tracking unavailable: missing order reference.');
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const d = await bookingsApi.getById(orderId);
       setOrder(d);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      setTrackingWarning('Tracking unavailable right now. Please try again later.');
+    }
     finally { setLoading(false); }
   };
 
@@ -137,6 +167,7 @@ export default function TrackingScreen({ route, navigation }) {
     </View>
   );
 
+  const statusUpper = String(order?.status || '').toUpperCase();
   const milestoneIdx  = statusToMilestone(order.status);
   // Phase check: are we in a status where tracking is relevant?
   const isTrackingPhase = (
@@ -144,7 +175,7 @@ export default function TrackingScreen({ route, navigation }) {
     [
       'ASSIGNED_FOR_PICKUP', 'EN_ROUTE_TO_CUSTOMER', 'LAUNDRY_COLLECTED', 'EN_ROUTE_TO_BRANCH',
       'ASSIGNED_FOR_DELIVERY', 'OUT_FOR_DELIVERY'
-    ].includes(String(order.status || '').toUpperCase())
+    ].includes(statusUpper)
   );
 
   // We show the map if we are in the phase, even if driverLoc is temporarily missing
@@ -160,13 +191,13 @@ export default function TrackingScreen({ route, navigation }) {
   const headline = 
     order.status === 'delivering' 
       ? (['LAUNDRY_COLLECTED', 'EN_ROUTE_TO_BRANCH'].includes(order.deliveryWorkflowStatus || '') ? 'Heading to our branch' : 'Heading to your location')
-      : (STATUS_HEADLINE[String(order.status || '').toUpperCase()] || 'Tracking your order…');
+      : (STATUS_HEADLINE[statusUpper] || 'Tracking your order…');
 
   const isDelivering  = !!driverLoc && isTrackingPhase;
   const etaLabel      = isDelivering && etaData.duration ? etaData.duration : (order.estimatedTime || 'Pending');
 
   // Determine destination based on phase
-  const isLegToBranch = ['LAUNDRY_COLLECTED', 'EN_ROUTE_TO_BRANCH'].includes(order.deliveryWorkflowStatus || String(order.status || '').toUpperCase());
+  const isLegToBranch = ['LAUNDRY_COLLECTED', 'EN_ROUTE_TO_BRANCH'].includes(order.deliveryWorkflowStatus || statusUpper);
   const destLoc = isLegToBranch 
     ? { latitude: order.branchLatitude || 14.5995, longitude: order.branchLongitude || 120.9842 }
     : { latitude: order.deliveryLatitude || 14.5995, longitude: order.deliveryLongitude || 120.9842 };
@@ -226,9 +257,9 @@ export default function TrackingScreen({ route, navigation }) {
                 <View style={S.staticIconRingInner}>
                   <MaterialCommunityIcons
                     name={
-                      order.status.toUpperCase() === 'WASHING' || order.status.toUpperCase() === 'DRYING'
+                      statusUpper === 'WASHING' || statusUpper === 'DRYING'
                         ? 'washing-machine'
-                        : order.status.toUpperCase() === 'READY'
+                        : statusUpper === 'READY'
                         ? 'package-variant-closed-check'
                         : 'truck-delivery-outline'
                     }
@@ -238,14 +269,23 @@ export default function TrackingScreen({ route, navigation }) {
                 </View>
               </View>
               <Text style={S.staticLabel}>
-                {String(order.status || '').toUpperCase() === 'WASHING' ? 'Washing in progress…'
-                  : String(order.status || '').toUpperCase() === 'DRYING' ? 'Drying in progress…'
-                  : String(order.status || '').toUpperCase() === 'READY'  ? 'Ready for delivery!'
+                {statusUpper === 'WASHING' ? 'Washing in progress…'
+                  : statusUpper === 'DRYING' ? 'Drying in progress…'
+                  : statusUpper === 'READY'  ? 'Ready for delivery!'
                   : 'Order confirmed'}
               </Text>
             </View>
           </View>
         )}
+
+        {trackingWarning ? (
+          <View style={[S.navOverlay, { top: insets.top + 16, backgroundColor: '#FEF3C7', borderColor: '#FCD34D' }]}>
+            <View style={S.navTextBox}>
+              <Text style={[S.navSubText, { color: '#92400E' }]}>Tracking unavailable</Text>
+              <Text style={[S.navMainText, { color: '#92400E', fontSize: 12 }]}>{trackingWarning}</Text>
+            </View>
+          </View>
+        ) : null}
 
         {/* Premium Navigation Instructions for Customer */}
         {isTrackingRider && etaData.duration && (

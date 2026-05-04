@@ -1413,17 +1413,47 @@ export const notifications = {
 };
 
 export const payments = {
-  initiateGcashCheckout: async (id) => {
-    const numericId = (typeof id === 'object') ? (id.dbId || id.id) : id;
-    console.log('[Payments] Requesting GCash checkout URL for ID=', numericId);
-    
-    const payload = await apiRequest(`/api/payments/checkout/gcash/${numericId}`, {
+  initiateGcashCheckout: async (orderRef) => {
+    const resolveTrackingNumber = async () => {
+      const normalizeTracking = (value) => {
+        const tracking = String(value || '').trim();
+        return tracking ? tracking.toUpperCase() : '';
+      };
+      const maybeFetchTrackingById = async (idValue) => {
+        const numericId = Number(idValue);
+        if (!Number.isFinite(numericId) || numericId <= 0) return '';
+        const order = await apiRequest(`/api/orders/${numericId}`);
+        return normalizeTracking(order?.trackingNumber);
+      };
+
+      if (orderRef && typeof orderRef === 'object') {
+        const directTracking =
+          normalizeTracking(orderRef.trackingNumber) ||
+          normalizeTracking(orderRef.orderTrackingNumber);
+        if (directTracking) return directTracking;
+
+        const fromDbId = await maybeFetchTrackingById(orderRef.dbId ?? orderRef.id ?? orderRef.orderId);
+        if (fromDbId) return fromDbId;
+      } else {
+        const primitiveValue = String(orderRef || '').trim();
+        if (/^WA-\d+$/i.test(primitiveValue)) return primitiveValue.toUpperCase();
+        const fromNumeric = await maybeFetchTrackingById(primitiveValue);
+        if (fromNumeric) return fromNumeric;
+      }
+
+      throw new Error('Unable to initiate payment: missing tracking number for this order.');
+    };
+
+    const trackingNumber = await resolveTrackingNumber();
+    console.log('[Payments] Requesting GCash checkout URL for tracking=', trackingNumber);
+
+    const payload = await apiRequest(`/api/payments/checkout/gcash/${encodeURIComponent(trackingNumber)}`, {
       method: 'POST',
     });
     
     console.log('[Payments] Raw checkout response=', payload);
     const checkoutUrl = payload?.checkout_url || payload?.checkoutUrl || payload?.url || null;
-    return { checkoutUrl };
+    return { checkoutUrl, trackingNumber };
   },
   collectCodPayment: async (id) => {
     return deliveries.collectCodPayment(id);

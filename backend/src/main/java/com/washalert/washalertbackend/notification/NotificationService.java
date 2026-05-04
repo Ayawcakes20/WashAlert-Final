@@ -190,6 +190,8 @@ public class NotificationService {
             notificationRepository.save(msg);
 
         } catch (Exception ex) {
+            boolean permanentPushPermissionFailure =
+                    msg.getChannel() == NotificationChannel.PUSH && isPushPermissionDenied(ex);
             if (msg.getChannel() == NotificationChannel.PUSH && isInvalidPushTokenError(ex)) {
                 userDeviceTokenService.deactivateToken(msg.getRecipient());
             }
@@ -198,7 +200,15 @@ public class NotificationService {
             msg.setAttempts(nextAttempts);
             msg.setLastError(truncate(ex.getMessage(), 500));
 
-            if (nextAttempts >= properties.getMaxAttempts()) {
+            if (permanentPushPermissionFailure) {
+                msg.setStatus(NotificationStatus.DEAD);
+                msg.setNextAttemptAt(LocalDateTime.now());
+                log.error(
+                        "[PUSH] Permission denied while sending notifications. Marking message DEAD. " +
+                                "Action required: grant Firebase service account Cloud Messaging Sender role and enable FCM API. error={}",
+                        ex.getMessage()
+                );
+            } else if (nextAttempts >= properties.getMaxAttempts()) {
                 msg.setStatus(NotificationStatus.DEAD);
                 msg.setNextAttemptAt(LocalDateTime.now());
             } else {
@@ -284,6 +294,14 @@ public class NotificationService {
         return msg.contains("registration token is not a valid")
                 || msg.contains("requested entity was not found")
                 || msg.contains("unregistered");
+    }
+
+    private boolean isPushPermissionDenied(Exception ex) {
+        String msg = String.valueOf(ex.getMessage()).toLowerCase(Locale.ROOT);
+        return msg.contains("permission") && msg.contains("cloudmessaging.messages.create")
+                || msg.contains("permission denied")
+                || msg.contains("sender id")
+                || msg.contains("mismatched credential");
     }
 
     private String blankToNull(String value) {

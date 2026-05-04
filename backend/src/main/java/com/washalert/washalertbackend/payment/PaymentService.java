@@ -1,9 +1,11 @@
 package com.washalert.washalertbackend.payment;
 
+import com.washalert.washalertbackend.firebase.FirestoreSyncService;
 import com.washalert.washalertbackend.orders.JobOrder;
 import com.washalert.washalertbackend.orders.JobOrderRepository;
 import com.washalert.washalertbackend.orders.JobOrderStatus;
 import com.washalert.washalertbackend.orders.JobOrderTimelineService;
+import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
 import com.washalert.washalertbackend.payment.dto.PaymentResponse;
 import com.washalert.washalertbackend.payment.dto.SubmitPaymentProofRequest;
 import com.washalert.washalertbackend.payment.dto.VerifyPaymentRequest;
@@ -30,19 +32,22 @@ public class PaymentService {
     private final NotificationService notificationService;
     private final PaymongoService paymongoService;
     private final JobOrderTimelineService timelineService;
+    private final FirestoreSyncService firestoreSyncService;
 
     public PaymentService(
             PaymentRecordRepository paymentRepository,
             JobOrderRepository orderRepository,
             NotificationService notificationService,
             PaymongoService paymongoService,
-            JobOrderTimelineService timelineService
+            JobOrderTimelineService timelineService,
+            FirestoreSyncService firestoreSyncService
     ) {
         this.paymentRepository = paymentRepository;
         this.orderRepository = orderRepository;
         this.notificationService = notificationService;
         this.paymongoService = paymongoService;
         this.timelineService = timelineService;
+        this.firestoreSyncService = firestoreSyncService;
     }
 
     @Transactional
@@ -140,7 +145,12 @@ public class PaymentService {
         }
 
         PaymentRecord saved = paymentRepository.save(payment);
-        orderRepository.save(saved.getJobOrder());
+        JobOrder savedOrder = orderRepository.save(saved.getJobOrder());
+        firestoreSyncService.upsert(
+                "orders",
+                savedOrder.getTrackingNumber(),
+                JobOrderResponse.from(savedOrder, saved.getStatus())
+        );
         notificationService.enqueueEmail(
                 saved.getJobOrder().getCustomerEmail(),
                 "WashAlert Payment Update",
@@ -170,7 +180,7 @@ public class PaymentService {
         String tracking = normalizeTracking(trackingNumber);
         log.info("[PAYMENT][GCASH] Initiating checkout request tracking={}", tracking);
         JobOrder order = orderRepository.findByTrackingNumber(tracking)
-                .orElseThrow(() -> new IllegalArgumentException("Order not found."));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found."));
 
         // Pre-create or update payment record as PENDING
         PaymentRecord payment = paymentRepository.findByJobOrder_TrackingNumber(tracking)
@@ -224,7 +234,7 @@ public class PaymentService {
 
     private String normalizeTracking(String tracking) {
         if (tracking == null || tracking.isBlank()) {
-            throw new IllegalArgumentException("Tracking number is required.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tracking number is required.");
         }
         return tracking.trim().toUpperCase();
     }
