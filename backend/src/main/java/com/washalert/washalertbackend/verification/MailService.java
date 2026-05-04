@@ -242,14 +242,11 @@ public class MailService {
     }
 
     public void sendStaffInvitationEmail(String to, String fullName, String setPasswordLink) {
-        validateMailBasics();
+        validateResendMailBasics();
         try {
             log.info("[MAIL][INVITE] Dispatching invitation email to {}", maskEmail(to));
-            SimpleMailMessage msg = new SimpleMailMessage();
-            msg.setFrom(from);
-            msg.setTo(to);
-            msg.setSubject("WashAlert Staff Account Invitation");
-            msg.setText("""
+            String name = fullName == null ? "there" : fullName;
+            String plainText = """
                     Hi %s,
 
                     Your administrator created a WashAlert staff account for you.
@@ -259,9 +256,18 @@ public class MailService {
 
                     This link expires soon and can only be used once.
                     If you were not expecting this invite, please contact your administrator.
-                    """.formatted(fullName == null ? "there" : fullName, setPasswordLink));
-
-            mailSender.send(msg);
+                    """.formatted(name, setPasswordLink);
+            String html = """
+                    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">
+                      <p style="margin:0 0 12px 0;">Hi %s,</p>
+                      <p style="margin:0 0 12px 0;">Your administrator created a <strong>WashAlert staff account</strong> for you.</p>
+                      <p style="margin:0 0 12px 0;">Set your password using this one-time link:</p>
+                      <p style="margin:0 0 16px 0;"><a href="%s" style="color:#2563eb;text-decoration:underline;font-weight:600;">Set Up My Password</a></p>
+                      <p style="margin:0 0 8px 0;font-size:13px;color:#6b7280;">This link expires soon and can only be used once.</p>
+                      <p style="margin:0;font-size:13px;color:#6b7280;">If you were not expecting this invite, please contact your administrator.</p>
+                    </div>
+                    """.formatted(name, setPasswordLink);
+            sendViaResendApi(to, "WashAlert Staff Account Invitation", plainText, html);
             log.info("[MAIL][INVITE] Invitation email dispatch succeeded to {}", maskEmail(to));
         } catch (RuntimeException ex) {
             throw toMailDispatchException("INVITE", to, ex);
