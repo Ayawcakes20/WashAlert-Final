@@ -11,6 +11,8 @@ import java.util.List;
 public record OrderTrackingResponse(
         String trackingNumber,
         String customerName,
+        String deliveryContactName,
+        String deliveryContactPhone,
         String branch,
         ServiceType serviceType,
         JobOrderStatus currentStatus,
@@ -18,6 +20,7 @@ public record OrderTrackingResponse(
         LocalTime slotStartTime,
         LocalTime slotEndTime,
         LocalDateTime lastUpdatedAt,
+        String createdByName,
         List<OrderTrackingEventResponse> timeline
 ) {
 }

@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8081";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
 export type MeResponse = {
   id: number;
@@ -41,7 +41,7 @@ export type JobOrderResponse = {
   trackingNumber: string;
   customerName: string;
   branch: string;
-  status: "PENDING" | "WASHING" | "DRYING" | "READY" | "PICKED_UP" | "DELIVERED" | "CANCELLED";
+  status: "PENDING" | "ORDER_RECEIVED" | "AWAITING_PRICE_CONFIRMATION" | "PRICE_CONFIRMED" | "WASHING" | "DRYING" | "READY" | "ASSIGNED_FOR_DELIVERY" | "EN_ROUTE_TO_BRANCH" | "PICKED_UP_FROM_BRANCH" | "OUT_FOR_DELIVERY" | "DELIVERED" | "COLLECTION_FAILED" | "CANCELLED" | "FAILED";
   createdAt: string;
   updatedAt: string;
   serviceType: "DROP_OFF" | "PICKUP_DELIVERY";
@@ -50,6 +50,7 @@ export type JobOrderResponse = {
   slotEndTime: string;
   detergentPreference: string;
   fabricConditionerPreference: string;
+  serviceName: string;
   loadSize: "SMALL" | "MEDIUM" | "LARGE";
   estimatedWeightKg: number;
   specialInstructions: string;
@@ -59,6 +60,7 @@ export type JobOrderResponse = {
   servicePrice?: number | null;
   suppliesPrice?: number | null;
   deliveryPrice?: number | null;
+  rushPrice?: number | null;
   totalPrice?: number | null;
   isPaid?: boolean;
   paymentMethod?: string | null;
@@ -67,18 +69,45 @@ export type JobOrderResponse = {
   deliveryLongitude?: number | null;
   branchLatitude?: number | null;
   branchLongitude?: number | null;
+  actualWeightKg?: number | null;
+  confirmedPrice?: number | null;
+  priceConfirmationDeadline?: string | null;
+  priceConfirmedAt?: string | null;
+  priceConfirmedByCustomer?: boolean;
+  assignedDriverId?: number | null;
+  assignedDriverName?: string | null;
+  assignedAt?: string | null;
+  pickupConfirmedAt?: string | null;
+  deliveredAt?: string | null;
+  codCollected?: boolean;
+  codCollectedAt?: string | null;
+  deliveryFailedReason?: string | null;
+  driverLat?: number | null;
+  driverLng?: number | null;
 };
 
 export type CreateOrderPayload = {
   customerName: string;
   serviceType: "DROP_OFF" | "PICKUP_DELIVERY";
   branch: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  deliveryAddress?: string;
+  deliveryContactName?: string;
+  deliveryContactPhone?: string;
+  paymentMethod?: string;
 };
 
 export type UpdateOrderPayload = {
   customerName: string;
   serviceType: "DROP_OFF" | "PICKUP_DELIVERY";
   branch: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  deliveryAddress?: string;
+  deliveryContactName?: string;
+  deliveryContactPhone?: string;
+  paymentMethod?: string;
 };
 
 export type UserAdminRecord = {
@@ -306,6 +335,35 @@ export const ordersApi = {
     apiRequest<JobOrderResponse>(`/api/bookings/${id}/cancel`, {
       method: "PATCH",
     }),
+  setActualWeight: (id: number, payload: { actualWeightKg: number; finalPrice: number }) =>
+    apiRequest<JobOrderResponse>(`/api/orders/${id}/set-actual-weight`, {
+      method: "PUT",
+      body: payload,
+    }),
+  setPrice: (id: number, payload: { actualWeightKg: number; finalPrice: number }) =>
+    apiRequest<JobOrderResponse>(`/api/orders/${id}/set-price`, {
+      method: "POST",
+      body: payload,
+    }),
+  confirmPrice: (id: number) =>
+    apiRequest<JobOrderResponse>(`/api/orders/${id}/confirm-price`, {
+      method: "PUT",
+    }),
+  assignDriver: (id: number, payload: { driverId: number }) =>
+    apiRequest<JobOrderResponse>(`/api/orders/${id}/assign-driver`, {
+      method: "PUT",
+      body: payload,
+    }),
+  assignPickupRider: (id: number, payload: { driverId: number }) =>
+    apiRequest<JobOrderResponse>(`/api/orders/${id}/assign-pickup-rider`, {
+      method: "PUT",
+      body: payload,
+    }),
+  assignDeliveryRider: (id: number, payload: { driverId: number }) =>
+    apiRequest<JobOrderResponse>(`/api/orders/${id}/assign-delivery-rider`, {
+      method: "PUT",
+      body: payload,
+    }),
 };
 
 
@@ -334,7 +392,7 @@ export const usersApi = {
   },
   listDrivers: (branch?: string) =>
     apiRequest<UserAdminRecord[]>(`/api/admin/users/drivers${branch ? `?branch=${encodeURIComponent(branch)}` : ""}`),
-  createStaff: (payload: { fullName: string; email: string; role?: "STAFF" | "DRIVER"; branch?: string; initialPassword?: string }) =>
+  createStaff: (payload: { fullName: string; email: string; role?: "STAFF" | "DRIVER"; branch?: string }) =>
     apiRequest<UserAdminRecord>("/api/admin/users/staff", {
       method: "POST",
       body: payload,

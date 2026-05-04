@@ -80,8 +80,10 @@ public class DeliveryController {
     }
 
     @GetMapping("/track/{trackingNumber}")
-    public DeliveryResponse track(@PathVariable String trackingNumber) {
-        return deliveryService.trackByTrackingNumber(trackingNumber);
+    public org.springframework.http.ResponseEntity<DeliveryResponse> track(@PathVariable String trackingNumber) {
+        DeliveryResponse res = deliveryService.trackByTrackingNumber(trackingNumber);
+        if (res == null) return org.springframework.http.ResponseEntity.notFound().build();
+        return org.springframework.http.ResponseEntity.ok(res);
     }
 
     @PutMapping("/{deliveryId}/status")

@@ -2,9 +2,13 @@ package com.washalert.washalertbackend.orders;
 
 import com.washalert.washalertbackend.orders.dto.CreateJobOrderRequest;
 import com.washalert.washalertbackend.orders.dto.DashboardSummaryResponse;
+import com.washalert.washalertbackend.orders.dto.AssignDriverRequest;
+import com.washalert.washalertbackend.orders.dto.DriverConfirmDeliveryRequest;
+import com.washalert.washalertbackend.orders.dto.DriverDeliveryFailedRequest;
 import com.washalert.washalertbackend.orders.dto.EditJobOrderRequest;
 import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
 import com.washalert.washalertbackend.orders.dto.OrderTrackingResponse;
+import com.washalert.washalertbackend.orders.dto.SetPriceRequest;
 import com.washalert.washalertbackend.orders.dto.UpdateJobOrderRequest;
 import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.common.dto.PagedResponse;
@@ -28,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -162,5 +167,143 @@ public class JobOrderController {
             @AuthenticationPrincipal AuthUserDetails principal
     ) {
         return service.markAsPaid(id, principal);
+    }
+
+    // ── PRICE CONFIRMATION FLOW ───────────────────────────────────────────────
+
+    /**
+     * Staff sets the actual weighed kg + confirmed price, then notifies the customer.
+     * Advances order to AWAITING_PRICE_CONFIRMATION and fires FCM push.
+     */
+    @PutMapping("/{id}/set-actual-weight")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public JobOrderResponse setActualWeight(
+            @PathVariable Long id,
+            @Valid @RequestBody SetPriceRequest req,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.setActualWeight(id, req, principal);
+    }
+
+    // Backward-compatible alias
+    @PostMapping("/{id}/set-price")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public JobOrderResponse setPrice(
+            @PathVariable Long id,
+            @Valid @RequestBody SetPriceRequest req,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.setActualWeight(id, req, principal);
+    }
+
+    /**
+     * Customer confirms the price — advances order to WASHING.
+     * Authenticated customers only (must own the order).
+     */
+    @PutMapping("/{id}/confirm-price")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public JobOrderResponse confirmPrice(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.confirmPrice(id, principal);
+    }
+
+    @PutMapping("/{id}/assign-pickup-rider")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public JobOrderResponse assignPickupRider(
+            @PathVariable Long id,
+            @Valid @RequestBody AssignDriverRequest req,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.assignPickupRider(id, req.driverId(), principal);
+    }
+
+    @PutMapping("/{id}/driver/start-pickup-leg")
+    @PreAuthorize("hasRole('DRIVER')")
+    public JobOrderResponse startPickupLeg(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.startPickupLeg(id, principal);
+    }
+
+    @PutMapping("/{id}/driver/confirm-laundry-collected")
+    @PreAuthorize("hasRole('DRIVER')")
+    public JobOrderResponse confirmLaundryCollected(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.confirmLaundryCollected(id, principal);
+    }
+
+    @PutMapping("/{id}/driver/confirm-arrived-at-branch")
+    @PreAuthorize("hasRole('DRIVER')")
+    public JobOrderResponse confirmArrivedAtBranch(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.confirmArrivedAtBranch(id, principal);
+    }
+
+    @PutMapping("/{id}/assign-delivery-rider")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public JobOrderResponse assignDeliveryRider(
+            @PathVariable Long id,
+            @Valid @RequestBody AssignDriverRequest req,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.assignDeliveryRider(id, req.driverId(), principal);
+    }
+
+    @PutMapping("/{id}/driver/start-delivery-leg")
+    @PreAuthorize("hasRole('DRIVER')")
+    public JobOrderResponse startDeliveryLeg(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.startDeliveryLeg(id, principal);
+    }
+
+    @PutMapping("/{id}/driver/confirm-delivery")
+    @PreAuthorize("hasRole('DRIVER')")
+    public JobOrderResponse confirmDelivery(
+            @PathVariable Long id,
+            @Valid @RequestBody DriverConfirmDeliveryRequest req,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.confirmDelivery(id, req.codCollected(), principal);
+    }
+
+    @GetMapping("/driver/tasks")
+    @PreAuthorize("hasRole('DRIVER')")
+    public PagedResponse<JobOrderResponse> listDriverTasks(
+            @AuthenticationPrincipal AuthUserDetails principal,
+            @PageableDefault(size = 20, sort = "updatedAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        return service.listDriverTasks(principal, pageable);
+    }
+
+    /**
+     * Driver fetches a single assigned order by its numeric DB ID.
+     * Only returns the order if it is actually assigned to the requesting driver.
+     */
+    @GetMapping("/driver/task/{id}")
+    @PreAuthorize("hasRole('DRIVER')")
+    public JobOrderResponse getDriverTaskById(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.getDriverTaskById(id, principal);
+    }
+
+    @PutMapping("/{id}/driver/location")
+    @PreAuthorize("hasRole('DRIVER')")
+    public JobOrderResponse updateDriverLocation(
+            @PathVariable Long id,
+            @RequestBody Map<String, Double> location,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.updateDriverLocation(id, location.get("latitude"), location.get("longitude"), principal);
     }
 }

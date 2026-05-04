@@ -255,19 +255,25 @@ public class MailService {
     }
 
     public void sendGeneralEmail(String to, String subject, String body) {
-        validateMailBasics();
+        validateResendMailBasics();
         try {
             log.info("[MAIL][GENERAL] Dispatching email to {}", maskEmail(to));
-            SimpleMailMessage msg = new SimpleMailMessage();
-            msg.setFrom(from);
-            msg.setTo(to);
-            msg.setSubject(subject);
-            msg.setText(body);
-            mailSender.send(msg);
+            String plainText = body == null ? "" : body;
+            String html = """
+                    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827;white-space:pre-line">%s</div>
+                    """.formatted(escapeHtml(plainText));
+            sendViaResendApi(to, subject, plainText, html);
             log.info("[MAIL][GENERAL] Email dispatch succeeded to {}", maskEmail(to));
         } catch (RuntimeException ex) {
             throw toMailDispatchException("GENERAL", to, ex);
         }
+    }
+
+    private String escapeHtml(String source) {
+        return source
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
     }
 
     private void validateMailBasics() {

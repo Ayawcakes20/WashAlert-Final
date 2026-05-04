@@ -106,8 +106,14 @@ public class JobOrder {
     @Column(name = "detergent_preference", length = 80)
     private String detergentPreference;
 
+    @Column(name = "detergent_quantity")
+    private Integer detergentQuantity;
+
     @Column(name = "fabric_conditioner_preference", length = 80)
     private String fabricConditionerPreference;
+
+    @Column(name = "conditioner_quantity")
+    private Integer conditionerQuantity;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "load_size", length = 20)
@@ -115,6 +121,22 @@ public class JobOrder {
 
     @Column(name = "estimated_weight_kg", precision = 7, scale = 2)
     private BigDecimal estimatedWeightKg;
+
+    @Column(name = "actual_weight_kg", precision = 7, scale = 2)
+    private BigDecimal actualWeightKg;
+
+    @Column(name = "final_price", precision = 10, scale = 2)
+    private BigDecimal finalPrice;
+
+    @Column(name = "price_confirmed_at")
+    private LocalDateTime priceConfirmedAt;
+
+    @Builder.Default
+    @Column(name = "price_confirmed_by_customer", nullable = false)
+    private boolean priceConfirmedByCustomer = false;
+
+    @Column(name = "price_confirmation_deadline")
+    private LocalDateTime priceConfirmationDeadline;
 
     @Column(name = "special_instructions", length = 500)
     private String specialInstructions;
@@ -127,6 +149,9 @@ public class JobOrder {
 
     @Column(name = "delivery_price", precision = 10, scale = 2)
     private BigDecimal deliveryPrice;
+
+    @Column(name = "rush_price", precision = 10, scale = 2)
+    private BigDecimal rushPrice;
 
     @Column(name = "total_price", precision = 10, scale = 2)
     private BigDecimal totalPrice;
@@ -141,6 +166,52 @@ public class JobOrder {
     @Convert(converter = JobOrderStatusConverter.class)
     @Column(name = "status", nullable = false, length = 40)
     private JobOrderStatus status;
+
+    @Column(name = "service_name", length = 100)
+    private String serviceName;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_driver_id")
+    private User assignedDriver;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_pickup_driver_id")
+    private User assignedPickupDriver;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_delivery_driver_id")
+    private User assignedDeliveryDriver;
+
+    @Column(name = "assigned_at")
+    private LocalDateTime assignedAt;
+
+    @Column(name = "pickup_confirmed_at")
+    private LocalDateTime pickupConfirmedAt;
+
+    @Column(name = "laundry_collected_at")
+    private LocalDateTime laundryCollectedAt;
+
+    @Column(name = "arrived_at_branch_at")
+    private LocalDateTime arrivedAtBranchAt;
+
+    @Column(name = "delivered_at")
+    private LocalDateTime deliveredAt;
+
+    @Builder.Default
+    @Column(name = "cod_collected", nullable = false)
+    private boolean codCollected = false;
+
+    @Column(name = "cod_collected_at")
+    private LocalDateTime codCollectedAt;
+
+    @Column(name = "delivery_failed_reason", length = 300)
+    private String deliveryFailedReason;
+
+    @Column(name = "driver_lat")
+    private Double driverLat;
+
+    @Column(name = "driver_lng")
+    private Double driverLng;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by_user_id")

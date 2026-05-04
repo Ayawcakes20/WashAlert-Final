@@ -2,6 +2,7 @@ package com.washalert.washalertbackend.auth;
 
 import com.washalert.washalertbackend.firebase.FirestoreSyncService;
 import com.washalert.washalertbackend.firebase.FirestoreUserPayloadFactory;
+import com.washalert.washalertbackend.user.UserStatus;
 import com.washalert.washalertbackend.user.User;
 import com.washalert.washalertbackend.user.UserRepository;
 import com.washalert.washalertbackend.verification.MailService;
@@ -24,6 +25,7 @@ public class StaffInvitationService {
     private final PasswordEncoder passwordEncoder;
     private final MailService mailService;
     private final StaffInvitationProperties props;
+    private final FirebaseIdentityService firebaseIdentityService;
     private final PersistentTokenRepository rememberMeTokenRepository;
     private final FirestoreSyncService firestoreSyncService;
 
@@ -33,6 +35,7 @@ public class StaffInvitationService {
             PasswordEncoder passwordEncoder,
             MailService mailService,
             StaffInvitationProperties props,
+            FirebaseIdentityService firebaseIdentityService,
             PersistentTokenRepository rememberMeTokenRepository,
             FirestoreSyncService firestoreSyncService
     ) {
@@ -41,6 +44,7 @@ public class StaffInvitationService {
         this.passwordEncoder = passwordEncoder;
         this.mailService = mailService;
         this.props = props;
+        this.firebaseIdentityService = firebaseIdentityService;
         this.rememberMeTokenRepository = rememberMeTokenRepository;
         this.firestoreSyncService = firestoreSyncService;
     }
@@ -98,9 +102,15 @@ public class StaffInvitationService {
             throw new IllegalArgumentException("Please choose a different password.");
         }
 
+        if (user.getFirebaseUid() != null && !user.getFirebaseUid().isBlank()) {
+            firebaseIdentityService.updateUserPassword(user.getFirebaseUid(), newPassword);
+        }
+
         user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setStatus(UserStatus.ACTIVE);
         user.setEnabled(true);
         user.setMustChangePassword(false);
+        user.setActivatedAt(now);
         user.setVerifiedAt(now);
         User saved = userRepository.save(user);
         firestoreSyncService.upsert("users", String.valueOf(saved.getId()), FirestoreUserPayloadFactory.fromUser(saved));

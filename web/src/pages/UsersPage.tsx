@@ -103,11 +103,9 @@ export default function UsersPage() {
     email: "",
     role: "STAFF" as "STAFF" | "DRIVER",
     branch: "",
-    initialPassword: "",
-    showPassword: false,
   });
   const [createErrors, setCreateErrors] = useState<
-    Partial<Record<"fullName" | "email" | "role" | "branch" | "initialPassword", string>>
+    Partial<Record<"fullName" | "email" | "role" | "branch", string>>
   >({});
 
   const [editOpen, setEditOpen] = useState(false);
@@ -201,7 +199,7 @@ export default function UsersPage() {
   };
 
   const submitCreate = async () => {
-    const nextErrors: Partial<Record<"fullName" | "email" | "role" | "branch" | "initialPassword", string>> = {};
+    const nextErrors: Partial<Record<"fullName" | "email" | "role" | "branch", string>> = {};
     if (!createForm.fullName.trim()) {
       nextErrors.fullName = "Full name is required.";
     }
@@ -219,14 +217,6 @@ export default function UsersPage() {
       nextErrors.branch = "Branch is required.";
     }
 
-    if (createForm.role === "DRIVER") {
-      if (!createForm.initialPassword.trim()) {
-        nextErrors.initialPassword = "Password is required for driver accounts.";
-      } else if (createForm.initialPassword.trim().length < 8) {
-        nextErrors.initialPassword = "Password must be at least 8 characters.";
-      }
-    }
-
     setCreateErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
       toast.error("Please fix the highlighted fields.");
@@ -240,15 +230,10 @@ export default function UsersPage() {
         email: createForm.email.trim(),
         role: createForm.role,
         branch: createForm.branch.trim() || undefined,
-        initialPassword: createForm.role === "DRIVER" ? createForm.initialPassword.trim() || undefined : undefined,
       });
-      if (createForm.role === "DRIVER") {
-        toast.success("Driver account created. They can now log in on the mobile app.");
-      } else {
-        toast.success("Invitation sent successfully");
-      }
+      toast.success("Invite sent. User must set password through email.");
       setCreateOpen(false);
-      setCreateForm({ fullName: "", email: "", role: "STAFF", branch: "", initialPassword: "", showPassword: false });
+      setCreateForm({ fullName: "", email: "", role: "STAFF", branch: "" });
       setCreateErrors({});
       await loadUsers(Math.max(0, usersPage - 1));
     } catch (err: any) {
@@ -522,7 +507,7 @@ export default function UsersPage() {
           setCreateOpen(open);
           if (!open) {
             setCreateErrors({});
-            setCreateForm({ fullName: "", email: "", role: "STAFF", branch: "", initialPassword: "", showPassword: false });
+            setCreateForm({ fullName: "", email: "", role: "STAFF", branch: "" });
           }
         }}
       >
@@ -530,9 +515,7 @@ export default function UsersPage() {
           <DialogHeader>
             <DialogTitle>Invite Internal User</DialogTitle>
             <DialogDescription>
-              {createForm.role === "DRIVER"
-                ? "Create a driver account with a direct password. The driver can immediately log in on the mobile app."
-                : "Create a pending staff account and send a one-time password setup email."}
+              Invite a staff or driver account. The user will receive a secure password setup email.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -606,33 +589,6 @@ export default function UsersPage() {
               {!AVAILABLE_BRANCHES.length ? <p className="text-xs text-muted-foreground">No branches available</p> : null}
               {createErrors.branch ? <p className="text-xs text-destructive">{createErrors.branch}</p> : null}
             </div>
-            {createForm.role === "DRIVER" && (
-              <div className="space-y-2">
-                <Label htmlFor="create-password">Initial Password</Label>
-                <div className="relative">
-                  <Input
-                    id="create-password"
-                    type={createForm.showPassword ? "text" : "password"}
-                    value={createForm.initialPassword}
-                    onChange={(e) => {
-                      setCreateForm((prev) => ({ ...prev, initialPassword: e.target.value }));
-                      setCreateErrors((prev) => ({ ...prev, initialPassword: "" }));
-                    }}
-                    placeholder="Min. 8 characters"
-                    className={createErrors.initialPassword ? "border-destructive pr-10" : "pr-10"}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setCreateForm((prev) => ({ ...prev, showPassword: !prev.showPassword }))}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {createForm.showPassword ? "🙈" : "👁"}
-                  </button>
-                </div>
-                <p className="text-xs text-muted-foreground">Driver will use this password to log in on the mobile app.</p>
-                {createErrors.initialPassword ? <p className="text-xs text-destructive">{createErrors.initialPassword}</p> : null}
-              </div>
-            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={createSubmitting}>
@@ -640,9 +596,7 @@ export default function UsersPage() {
             </Button>
             <Button onClick={() => void submitCreate()} disabled={createSubmitting}>
               {createSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              {createSubmitting
-                ? (createForm.role === "DRIVER" ? "Creating..." : "Sending Invite...")
-                : (createForm.role === "DRIVER" ? "Create Driver Account" : "Send Invitation")}
+              {createSubmitting ? "Sending Invite..." : "Send Invitation"}
             </Button>
           </DialogFooter>
         </DialogContent>

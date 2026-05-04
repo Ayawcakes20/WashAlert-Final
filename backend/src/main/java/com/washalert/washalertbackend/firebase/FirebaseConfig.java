@@ -45,6 +45,12 @@ public class FirebaseConfig {
         log.info("[Firebase] Initializing FirebaseApp for project: {}", firebaseProperties.projectId());
 
         GoogleCredentials credentials = resolveCredentials();
+        if (credentials instanceof com.google.auth.oauth2.ServiceAccountCredentials sac) {
+            log.info("[Firebase] Credential Project ID: {}", sac.getProjectId());
+            if (!sac.getProjectId().equals(firebaseProperties.projectId())) {
+                log.warn("[Firebase] PROJECT ID MISMATCH! Config: {}, Credential: {}", firebaseProperties.projectId(), sac.getProjectId());
+            }
+        }
 
         FirebaseOptions.Builder builder = FirebaseOptions.builder()
                 .setCredentials(credentials);

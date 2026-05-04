@@ -38,8 +38,7 @@ public class SecurityConfig {
             RememberMeServices rememberMeServices,
             RateLimitFilter rateLimitFilter,
             @Value("${washalert.frontend-base-url:http://localhost:5173}") String frontendBaseUrl,
-            @Value("${washalert.cors.allowed-origins:http://localhost:5173,http://127.0.0.1:5173}") String allowedOrigins
-    ) {
+            @Value("${washalert.cors.allowed-origins:http://localhost:5173,http://127.0.0.1:5173}") String allowedOrigins) {
         this.restAuthHandlers = restAuthHandlers;
         this.rememberMeServices = rememberMeServices;
         this.rateLimitFilter = rateLimitFilter;
@@ -51,12 +50,14 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http, GoogleOAuth2UserService googleOAuth2UserService) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, GoogleOAuth2UserService googleOAuth2UserService)
+            throws Exception {
         http
                 .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
-                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.ALWAYS))
 
+                .securityContext(sc -> sc.requireExplicitSave(false))
                 .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .rememberMe(rm -> rm.rememberMeServices(rememberMeServices))
 
@@ -69,13 +70,11 @@ public class SecurityConfig {
                         .successHandler((req, res, auth) -> {
                             res.setStatus(HttpServletResponse.SC_FOUND);
                             res.sendRedirect(frontendBaseUrl + "/app/dashboard");
-                        })
-                )
+                        }))
 
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(restAuthHandlers)
-                        .accessDeniedHandler(restAuthHandlers)
-                )
+                        .accessDeniedHandler(restAuthHandlers))
 
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
@@ -98,8 +97,8 @@ public class SecurityConfig {
                                 "/api/bookings",
                                 "/api/payments/proof",
                                 "/api/payments/webhook",
-                                "/api/support/chat"
-                        ).permitAll()
+                                "/api/support/chat")
+                        .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/bookings/slots").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/orders/track/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/payments/track/**").permitAll()
@@ -111,7 +110,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/admin/users/drivers").hasAnyRole("ADMIN", "STAFF")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/machines/**").hasAnyRole("ADMIN", "STAFF")
-                        .requestMatchers("/api/orders/**").hasAnyRole("ADMIN", "STAFF")
+                        .requestMatchers(HttpMethod.GET,  "/api/orders/my/paged").hasRole("CUSTOMER")
+                        .requestMatchers(HttpMethod.POST, "/api/orders/*/confirm-price").hasRole("CUSTOMER")
+                        .requestMatchers("/api/orders/**").hasAnyRole("ADMIN", "STAFF", "CUSTOMER", "DRIVER")
+                        .requestMatchers("/api/deliveries/**").hasAnyRole("ADMIN", "STAFF", "DRIVER")
                         .anyRequest().authenticated()
                 );
 
@@ -134,8 +136,7 @@ public class SecurityConfig {
         CorsConfiguration cfg = new CorsConfiguration();
         cfg.setAllowedOrigins(allowedOrigins);
         cfg.setAllowedMethods(List.of(
-                "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
-        ));
+                "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cfg.setAllowedHeaders(List.of("*"));
         cfg.setAllowCredentials(true);
 

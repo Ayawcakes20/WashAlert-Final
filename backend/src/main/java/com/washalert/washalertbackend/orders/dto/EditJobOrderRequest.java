@@ -15,5 +15,12 @@ public record EditJobOrderRequest(
 
         @NotBlank(message = "Branch is required.")
         @Size(max = 80, message = "Branch is too long.")
-        String branch
+        String branch,
+
+        String customerPhone,
+        String customerEmail,
+        String deliveryAddress,
+        String deliveryContactName,
+        String deliveryContactPhone,
+        String paymentMethod
 ) {}

@@ -9,18 +9,26 @@ import {
 import { dashboardApi, type JobOrderResponse } from "@/lib/api";
 
 const statusColor: Record<string, string> = {
-  Pending: "bg-accent/20 text-accent-foreground",
-  Washing: "bg-primary/10 text-primary",
-  Drying: "bg-secondary/30 text-secondary-foreground",
-  Ready: "bg-mint/20 text-mint-foreground",
-  "For Delivery": "bg-destructive/10 text-destructive",
+  "Pending Confirmation": "bg-amber-100 text-amber-700",
+  "Washing": "bg-blue-100 text-blue-700",
+  "Drying": "bg-violet-100 text-violet-700",
+  "Ready": "bg-emerald-100 text-emerald-700",
+  "Delivering": "bg-slate-900 text-white",
+  "Awaiting Confirmation": "bg-indigo-100 text-indigo-700",
+  "Price Approved": "bg-teal-100 text-teal-700",
 };
 
 const statusLabel: Record<string, string> = {
-  PENDING: "Pending",
+  PENDING: "Pending Confirmation",
+  ORDER_RECEIVED: "Order Received",
+  AWAITING_PRICE_CONFIRMATION: "Awaiting Confirmation",
+  PRICE_CONFIRMED: "Price Approved",
   WASHING: "Washing",
   DRYING: "Drying",
   READY: "Ready",
+  OUT_FOR_DELIVERY: "Delivering",
+  DELIVERED: "Completed",
+  CANCELLED: "Cancelled",
 };
 
 const item = {
@@ -111,7 +119,7 @@ export default function DashboardPage() {
 
       {loading ? <p className="text-sm text-muted-foreground">Loading dashboard data...</p> : null}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {stats.map((s) => (
           <motion.div key={s.label} variants={item} className="glass-card rounded-2xl p-5 hover:shadow-[var(--shadow-elevated)] transition-shadow">
             <div className="flex items-center justify-between mb-3">

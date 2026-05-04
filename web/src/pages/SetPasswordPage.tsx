@@ -3,20 +3,14 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, CheckCircle2, Circle } from "lucide-react";
 import { authApi } from "@/lib/api";
-import { firebaseAuthApi } from "@/lib/firebaseAuth";
 import { toast } from "@/components/ui/sonner";
-
-const hasUpper = (value: string) => /[A-Z]/.test(value);
-const hasLower = (value: string) => /[a-z]/.test(value);
-const hasNumber = (value: string) => /\d/.test(value);
-const hasSpecial = (value: string) => /[^A-Za-z\d]/.test(value);
 
 type FieldErrors = Partial<Record<"password" | "confirmPassword", string>>;
 
 export default function SetPasswordPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const oobCode = searchParams.get("oobCode") || "";
+  const token = searchParams.get("token") || "";
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -33,10 +27,6 @@ export default function SetPasswordPage() {
   const rules = useMemo(
     () => [
       { label: "At least 8 characters", ok: password.length >= 8 },
-      { label: "Has uppercase letter", ok: hasUpper(password) },
-      { label: "Has lowercase letter", ok: hasLower(password) },
-      { label: "Has a number", ok: hasNumber(password) },
-      { label: "Has special character", ok: hasSpecial(password) },
       { label: "Passwords match", ok: password.length > 0 && password === confirmPassword },
     ],
     [password, confirmPassword],
@@ -44,8 +34,8 @@ export default function SetPasswordPage() {
 
   const validateForm = (): FieldErrors => {
     const nextErrors: FieldErrors = {};
-    if (password.length < 8 || !hasUpper(password) || !hasLower(password) || !hasNumber(password) || !hasSpecial(password)) {
-      nextErrors.password = "Password must satisfy all requirements below.";
+    if (password.length < 8) {
+      nextErrors.password = "Password must be at least 8 characters.";
     }
     if (!confirmPassword) {
       nextErrors.confirmPassword = "Please confirm your password.";
@@ -59,7 +49,7 @@ export default function SetPasswordPage() {
     e.preventDefault();
     setError("");
 
-    if (!oobCode) {
+    if (!token) {
       const message = "Invalid invitation link. Please ask an administrator to resend your invite.";
       setError(message);
       toast.error(message);
@@ -75,14 +65,12 @@ export default function SetPasswordPage() {
 
     setSubmitting(true);
     try {
-      const resetResult = await firebaseAuthApi.confirmPasswordReset(oobCode, password);
-      const signIn = await firebaseAuthApi.signInWithPassword(resetResult.email, password);
-      await authApi.completeInvitation({ idToken: signIn.idToken });
+      await authApi.setPassword({ token, newPassword: password });
       toast.success("Password setup complete. Your account is now active.");
       setCompleted(true);
     } catch (err: any) {
       const message =
-        err?.message?.includes("INVALID_OOB_CODE") || err?.message?.includes("EXPIRED_OOB_CODE")
+        err?.message?.toLowerCase?.().includes("invalid") || err?.message?.toLowerCase?.().includes("expired")
           ? "This invitation link is invalid or expired. Ask an administrator to resend your invite."
           : err?.message || "Unable to set password.";
       setError(message);

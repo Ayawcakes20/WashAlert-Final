@@ -2,7 +2,7 @@ package com.washalert.washalertbackend.user;
 
 import com.washalert.washalertbackend.audit.StaffAuditService;
 import com.washalert.washalertbackend.auth.FirebaseIdentityService;
-import com.washalert.washalertbackend.auth.StaffInvitationProperties;
+import com.washalert.washalertbackend.auth.StaffInvitationService;
 import com.washalert.washalertbackend.common.DataReadProperties;
 import com.washalert.washalertbackend.common.dto.PagedResponse;
 import com.washalert.washalertbackend.firebase.FirestoreReadService;
@@ -12,7 +12,6 @@ import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.user.dto.CreateStaffRequest;
 import com.washalert.washalertbackend.user.dto.UpdateStaffRequest;
 import com.washalert.washalertbackend.user.dto.UserAdminResponse;
-import com.washalert.washalertbackend.verification.MailService;
 import jakarta.transaction.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -33,8 +32,7 @@ public class UserAdminService {
     private final FirestoreReadService firestoreReadService;
     private final DataReadProperties dataReadProperties;
     private final FirebaseIdentityService firebaseIdentityService;
-    private final MailService mailService;
-    private final StaffInvitationProperties staffInvitationProperties;
+    private final StaffInvitationService staffInvitationService;
     private static final String FIREBASE_MANAGED_PASSWORD_MARKER = "{FIREBASE_MANAGED}";
 
     public UserAdminService(
@@ -44,8 +42,7 @@ public class UserAdminService {
             FirestoreReadService firestoreReadService,
             DataReadProperties dataReadProperties,
             FirebaseIdentityService firebaseIdentityService,
-            MailService mailService,
-            StaffInvitationProperties staffInvitationProperties
+            StaffInvitationService staffInvitationService
     ) {
         this.userRepository = userRepository;
         this.staffAuditService = staffAuditService;
@@ -53,8 +50,7 @@ public class UserAdminService {
         this.firestoreReadService = firestoreReadService;
         this.dataReadProperties = dataReadProperties;
         this.firebaseIdentityService = firebaseIdentityService;
-        this.mailService = mailService;
-        this.staffInvitationProperties = staffInvitationProperties;
+        this.staffInvitationService = staffInvitationService;
     }
 
     public List<UserAdminResponse> listStaff() {
@@ -122,26 +118,11 @@ public class UserAdminService {
             throw new IllegalArgumentException("Branch is required for staff and driver accounts.");
         }
 
-        String initialPassword = blankToNull(req.initialPassword());
-        if (role == Role.DRIVER && initialPassword == null) {
-            throw new IllegalArgumentException("Initial password is required for driver accounts.");
-        }
-        boolean hasInitialPassword = initialPassword != null;
-        boolean requiresPasswordChange = role == Role.DRIVER && hasInitialPassword;
         LocalDateTime now = LocalDateTime.now();
         User actor = currentUserOrNull();
 
-        // Create Firebase user
-        var firebaseUser = hasInitialPassword
-                ? firebaseIdentityService.createUser(email, req.fullName().trim(), initialPassword)
-                : firebaseIdentityService.createInvitationUser(email, req.fullName().trim());
-
-        // Determine initial account status
-        // If a password was provided (driver), set ACTIVE immediately
-        // Otherwise (staff invitation), set PENDING and send invite email
-        UserStatus initialStatus = hasInitialPassword ? UserStatus.ACTIVE : UserStatus.PENDING;
-        boolean initialEnabled = hasInitialPassword;
-        LocalDateTime activatedAt = hasInitialPassword ? now : null;
+        // Create Firebase user without requiring admin-provided password.
+        var firebaseUser = firebaseIdentityService.createInvitationUser(email, req.fullName().trim());
 
         User internalUser = User.builder()
                 .firebaseUid(firebaseUser.getUid())
@@ -149,36 +130,26 @@ public class UserAdminService {
                 .fullName(req.fullName().trim())
                 .passwordHash(FIREBASE_MANAGED_PASSWORD_MARKER)
                 .role(role)
-                .status(initialStatus)
-                .enabled(initialEnabled)
-                .verifiedAt(hasInitialPassword ? now : null)
+                .status(UserStatus.PENDING)
+                .enabled(false)
+                .verifiedAt(null)
                 .createdAt(now)
                 .updatedAt(now)
                 .branch(branch)
                 .branchId(null)
                 .invitedBy(actor == null ? null : actor.getId())
                 .invitedAt(now)
-                .activatedAt(activatedAt)
+                .activatedAt(null)
                 .deactivatedAt(null)
                 .lastLoginAt(null)
-                .mustChangePassword(requiresPasswordChange)
+                .mustChangePassword(false)
                 .provider(AuthProvider.LOCAL)
                 .build();
 
         User saved = userRepository.save(internalUser);
         staffAuditService.logCreateStaff(actor, saved);
         firestoreSyncService.upsert("users", String.valueOf(saved.getId()), FirestoreUserPayloadFactory.fromUser(saved));
-
-        if (!hasInitialPassword) {
-            // Send invitation email only for accounts without a direct password
-            String firebaseInviteLink = firebaseIdentityService.generatePasswordResetLink(email);
-            String inviteLink = firebaseIdentityService.toFrontendActionLink(
-                    firebaseInviteLink,
-                    staffInvitationProperties.getFrontendBaseUrl(),
-                    staffInvitationProperties.getSetPasswordPath()
-            );
-            mailService.sendStaffInvitationEmail(saved.getEmail(), saved.getFullName(), inviteLink);
-        }
+        staffInvitationService.createAndSendInvitation(saved);
 
         return toResponse(saved);
     }
@@ -232,18 +203,13 @@ public class UserAdminService {
         if (!(u.getRole() == Role.STAFF || u.getRole() == Role.DRIVER)) {
             throw new IllegalArgumentException("You can only resend invites for staff or driver accounts.");
         }
-        String firebaseInviteLink = firebaseIdentityService.generatePasswordResetLink(u.getEmail());
-        String inviteLink = firebaseIdentityService.toFrontendActionLink(
-                firebaseInviteLink,
-                staffInvitationProperties.getFrontendBaseUrl(),
-                staffInvitationProperties.getSetPasswordPath()
-        );
         u.setInvitedAt(LocalDateTime.now());
         u.setStatus(UserStatus.PENDING);
+        u.setMustChangePassword(false);
         u.syncEnabledFromStatus();
         User saved = userRepository.save(u);
         firestoreSyncService.upsert("users", String.valueOf(saved.getId()), FirestoreUserPayloadFactory.fromUser(saved));
-        mailService.sendStaffInvitationEmail(saved.getEmail(), saved.getFullName(), inviteLink);
+        staffInvitationService.createAndSendInvitation(saved);
     }
 
     @Transactional

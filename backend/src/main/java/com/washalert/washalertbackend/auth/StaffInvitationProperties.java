@@ -5,9 +5,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "washalert.staff-invitation")
 public class StaffInvitationProperties {
 
-    private int ttlMinutes = 60;
+    private int ttlMinutes = 30;
     private int tokenBytes = 32;
-    private String frontendBaseUrl = "http://localhost:8080";
+    private String frontendBaseUrl = "https://www.washalert.com";
     private String setPasswordPath = "/set-password";
     private Cleanup cleanup = new Cleanup();
 

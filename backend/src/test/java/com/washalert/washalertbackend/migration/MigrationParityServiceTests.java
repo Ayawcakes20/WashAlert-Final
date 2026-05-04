@@ -64,9 +64,8 @@ class MigrationParityServiceTests {
                 new JobOrderResponse(
                         1L, "WA-10001", "Customer", "Main", JobOrderStatus.PENDING, LocalDateTime.now(), LocalDateTime.now(),
                         ServiceType.DROP_OFF, null, null, null, null, null, null, null, null, null, null, null,
-                        BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, false, "GCash", null,
-                        null, null, null, null, null, null, null
-                )
+                        BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, BigDecimal.ZERO, false, "GCash", null,
+                        null, null, null, null, null, null, null, null, null, null, null)
         ));
         when(firestoreReadService.listDeliveries()).thenReturn(List.of(
                 new DeliveryResponse(

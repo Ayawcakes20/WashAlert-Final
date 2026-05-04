@@ -622,7 +622,7 @@ public class DeliveryService {
 
         if (!dataReadProperties.prefersFirestoreReads()) {
             List<DeliveryOrder> deliveries = deliveryRepository.findByJobOrder_TrackingNumber(normalized);
-            if (deliveries.isEmpty()) throw new IllegalArgumentException("Delivery not found.");
+            if (deliveries.isEmpty()) return null; // Return null instead of throwing
             return toResponse(selectPreferredDeliveryForTracking(deliveries));
         }
 
@@ -637,11 +637,11 @@ public class DeliveryService {
 
         if (dataReadProperties.allowsMysqlFallback() || !firestoreReadService.isAvailable()) {
             List<DeliveryOrder> deliveries = deliveryRepository.findByJobOrder_TrackingNumber(normalized);
-            if (deliveries.isEmpty()) throw new IllegalArgumentException("Delivery not found.");
+            if (deliveries.isEmpty()) return null; // Return null instead of throwing
             return toResponse(selectPreferredDeliveryForTracking(deliveries));
         }
 
-        throw new IllegalArgumentException("Delivery not found.");
+        return null; // Return null instead of throwing
     }
 
     @Transactional
@@ -902,7 +902,7 @@ public class DeliveryService {
         JobOrder order = delivery.getJobOrder();
         if (order.getServiceType() != ServiceType.PICKUP_DELIVERY) return false;
         if (order.getStatus() != JobOrderStatus.READY
-                && order.getStatus() != JobOrderStatus.PICKED_UP
+                && order.getStatus() != JobOrderStatus.ORDER_RECEIVED
                 && order.getStatus() != JobOrderStatus.DELIVERED) {
             return false;
         }
@@ -945,9 +945,9 @@ public class DeliveryService {
         JobOrderStatus previous = order.getStatus();
         if (delivery.getLeg() == DeliveryLeg.PICKUP_FROM_CUSTOMER) {
             if (delivery.getStatus() == DeliveryStatus.PICKED_UP) {
-                order.setStatus(JobOrderStatus.PICKED_UP);
-            } else if (delivery.getStatus() == DeliveryStatus.DELIVERED) {
-                order.setStatus(JobOrderStatus.WASHING);
+                order.setStatus(JobOrderStatus.ORDER_RECEIVED);
+            } else if (delivery.getStatus() == DeliveryStatus.DELIVERED || delivery.getStatus() == DeliveryStatus.HANDED_TO_BRANCH) {
+                order.setStatus(JobOrderStatus.ORDER_RECEIVED);
             }
         } else if (delivery.getLeg() == DeliveryLeg.DELIVERY_TO_CUSTOMER) {
             if (delivery.getStatus() == DeliveryStatus.DELIVERED) {
@@ -1014,6 +1014,17 @@ public class DeliveryService {
                 ? d.getBagCount()
                 : (order.getEstimatedWeightKg() != null ? order.getEstimatedWeightKg().intValue() : null);
         String paymentStatus = order.isPaid() ? "PAID" : "UNPAID";
+
+        // ── Contact resolution ──────────────────────────────────────────────────
+        // If staff entered a specific delivery contact, use it.
+        // Otherwise always fall back to the actual customer (who booked the order).
+        String resolvedContactName = (order.getDeliveryContactName() != null && !order.getDeliveryContactName().isBlank())
+                ? order.getDeliveryContactName().trim()
+                : order.getCustomerName();
+        String resolvedContactPhone = (order.getDeliveryContactPhone() != null && !order.getDeliveryContactPhone().isBlank())
+                ? order.getDeliveryContactPhone().trim()
+                : order.getCustomerPhone();
+
         return new DeliveryResponse(
                 d.getId(),
                 order.getId(),
@@ -1050,12 +1061,13 @@ public class DeliveryService {
                 order.getDeliveryLatitude(),
                 order.getDeliveryLongitude(),
                 order.getDeliveryUnitFloor(),
-                order.getDeliveryContactName(),
-                order.getDeliveryContactPhone(),
+                resolvedContactName,
+                resolvedContactPhone,
                 d.getBagCount(),
                 d.getConfirmationCode(),
                 d.getBranchHandoverPhotoUrl(),
-                d.getFinalDeliveryPhotoUrl()
+                d.getFinalDeliveryPhotoUrl(),
+                order.getCreatedBy() != null ? order.getCreatedBy().getFullName() : "System"
         );
     }
 
@@ -1107,8 +1119,8 @@ public class DeliveryService {
         syncToFirestore(saved);
         // Update job order status to AT_SHOP
         JobOrder order = saved.getJobOrder();
-        if (order.getStatus() == JobOrderStatus.PENDING || order.getStatus() == JobOrderStatus.PICKED_UP) {
-            order.setStatus(JobOrderStatus.WASHING);
+        if (order.getStatus() == JobOrderStatus.PENDING || order.getStatus() == JobOrderStatus.ORDER_RECEIVED) {
+            order.setStatus(JobOrderStatus.ORDER_RECEIVED);
             orderRepository.save(order);
         }
         return toResponse(saved);
@@ -1131,6 +1143,14 @@ public class DeliveryService {
         d.setStatus(DeliveryStatus.OUT_FOR_DELIVERY);
         ensureConfirmationCode(d);
         DeliveryOrder saved = deliveryRepository.save(d);
+
+        // Update JobOrder status for customer tracking
+        JobOrder order = saved.getJobOrder();
+        if (order != null && order.getStatus() == JobOrderStatus.READY) {
+            order.setStatus(JobOrderStatus.OUT_FOR_DELIVERY);
+            orderRepository.save(order);
+        }
+
         dispatchConfirmationCodeNotice(saved, false, false);
         syncToFirestore(saved);
         return toResponse(saved);

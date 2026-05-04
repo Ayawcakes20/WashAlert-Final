@@ -7,71 +7,55 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
-import { deliveries as deliveriesApi } from '../../services/api';
+import { driverOrders } from '../../services/api';
 
+// ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CONFIG = {
-  // Phase A — Inbound
-  accepted:           { label: 'Heading to Pickup',  color: '#3B82F6',      bg: 'hsla(214,88%,57%,0.1)' },
-  at_customer:        { label: 'At Customer',        color: '#F59E0B',      bg: 'hsla(38,96%,58%,0.1)' },
-  picked_up:          { label: 'Picked Up',          color: colors.accent,  bg: colors.accentLight },
-  at_branch:          { label: 'At Branch',          color: '#7C3AED',      bg: 'hsla(263,70%,58%,0.1)' },
-  handed_over:        { label: 'Handed Over',        color: '#7C3AED',      bg: 'hsla(263,70%,58%,0.1)' },
-  // Phase B — Outbound
-  ready_for_dispatch: { label: 'Ready to Deliver',   color: colors.success, bg: colors.successLight },
-  en_route:           { label: 'Out for Delivery',   color: '#3B82F6',      bg: 'hsla(214,88%,57%,0.1)' },
-  at_delivery:        { label: 'At Customer',        color: '#F59E0B',      bg: 'hsla(38,96%,58%,0.1)' },
-  // Generic
-  pending:            { label: 'New Order',          color: colors.warning, bg: colors.warningLight },
-  in_progress:        { label: 'In Transit',         color: colors.primary, bg: colors.primaryLight },
-  completed:          { label: 'Completed',          color: colors.success, bg: colors.successLight },
-  failed:             { label: 'Failed',             color: colors.error,   bg: colors.errorLight },
+  ASSIGNED_FOR_DELIVERY: { label: 'Assigned',          color: '#3B82F6', bg: 'hsla(214,88%,57%,0.12)' },
+  EN_ROUTE_TO_BRANCH:    { label: 'Heading to Branch', color: '#F59E0B', bg: 'hsla(38,96%,58%,0.12)'  },
+  PICKED_UP_FROM_BRANCH: { label: 'Out for Delivery',  color: '#10B981', bg: 'hsla(160,71%,39%,0.12)' },
+  OUT_FOR_DELIVERY:      { label: 'Out for Delivery',  color: '#10B981', bg: 'hsla(160,71%,39%,0.12)' },
+  DELIVERED:             { label: 'Completed',         color: '#10B981', bg: 'hsla(160,71%,39%,0.12)' },
+  COLLECTION_FAILED:     { label: 'Failed',            color: '#EF4444', bg: 'hsla(0,86%,60%,0.12)'   },
 };
+const getStatusCfg = (s) =>
+  STATUS_CONFIG[s] || { label: s, color: colors.textSecondary, bg: colors.surfaceVariant };
 
-const getStatusCfg = (status) =>
-  STATUS_CONFIG[status] || { label: status, color: colors.textSecondary, bg: colors.surfaceVariant };
+const ACTIVE_STATUSES = [
+  'ASSIGNED_FOR_DELIVERY', 'EN_ROUTE_TO_BRANCH', 'PICKED_UP_FROM_BRANCH', 'OUT_FOR_DELIVERY'
+];
 
+// ─── Component ────────────────────────────────────────────────────────────────
 const DriverDashboardScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const [deliveries, setDeliveries] = useState([]);
-  const [availableCount, setAvailableCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
+  const [tasks, setTasks]                 = useState([]);
+  const [loading, setLoading]             = useState(true);
+  const [refreshing, setRefreshing]       = useState(false);
+  const [error, setError]                 = useState('');
   const [visibleDeliveries, setVisibleDeliveries] = useState(4);
 
-  const hour = new Date().getHours();
+  const hour     = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   const firstName = user?.fullName?.split(' ')[0] || 'Driver';
 
   const loadData = useCallback(async () => {
     try {
       setError('');
-      const [assignedResult, availableResult] = await Promise.allSettled([
-        deliveriesApi.getAssigned('all'),
-        deliveriesApi.getAvailable(),
-      ]);
-
-      const assignedData = assignedResult.status === 'fulfilled' ? assignedResult.value : { deliveries: [] };
-      const availableData = availableResult.status === 'fulfilled' ? availableResult.value : { orders: [] };
-
-      setDeliveries(assignedData?.deliveries || []);
-      setAvailableCount((availableData?.orders || []).length);
+      const response = await driverOrders.getTasks(0, 50);
+      const sorted = (response.content || []).sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+      setTasks(sorted);
       setVisibleDeliveries(4);
-
-      if (assignedResult.status === 'rejected') {
-        throw assignedResult.reason;
-      }
     } catch (e) {
-      setDeliveries([]);
-      setAvailableCount(0);
-      setError(e?.message || 'Unable to load dashboard data.');
+      setTasks([]);
+      setError(e?.message || 'Unable to load driver tasks.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -82,7 +66,6 @@ const DriverDashboardScreen = ({ navigation }) => {
     useCallback(() => {
       setLoading(true);
       loadData();
-      // Poll every 30 s while screen is focused — catches new order assignments
       const poll = setInterval(loadData, 30000);
       return () => clearInterval(poll);
     }, [loadData])
@@ -94,361 +77,388 @@ const DriverDashboardScreen = ({ navigation }) => {
     loadData();
   }, [loadData]);
 
-  // All statuses that mean a delivery is actively in-flight
-  const ACTIVE_STATUSES = ['accepted', 'at_customer', 'picked_up', 'at_branch', 'ready_for_dispatch', 'en_route', 'at_delivery', 'in_progress'];
-  const pending   = availableCount;
-  const completed = deliveries.filter((d) => d.status === 'completed').length;
-  const active    = deliveries.find((d) => ACTIVE_STATUSES.includes(d.status));
+  const completed = tasks.filter((d) => d.status === 'DELIVERED').length;
+  const active    = tasks.find((d) => ACTIVE_STATUSES.includes(d.status));
+  const pending   = tasks.filter((d) => d.status === 'ASSIGNED_FOR_DELIVERY').length;
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Loading dashboard…</Text>
-        </View>
-      </SafeAreaView>
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color="#fff" />
+        <Text style={styles.loadingText}>Loading dashboard…</Text>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 + insets.bottom }]}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
-      >
-
-        {/* ── Header ──────────────────────────────────────────────────── */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greetingText}>{greeting} 👋</Text>
-            <Text style={styles.nameText}>{firstName}</Text>
-            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+    <View style={styles.root}>
+      {/* ── Dark navy header ─────────────────────────────────────────── */}
+      <View style={[styles.navBar, { paddingTop: insets.top + 4 }]}>
+        {/* Logo + Brand */}
+        <View style={styles.brandRow}>
+          <View style={styles.logoBox}>
+            <MaterialCommunityIcons name="washing-machine" size={22} color="#fff" />
           </View>
-          <View style={styles.avatarCircle}>
-            <Text style={styles.avatarInitial}>{firstName.charAt(0)}</Text>
-          </View>
+          <Text style={styles.brandName}>WashAlert</Text>
         </View>
+        {/* Actions */}
+        <View style={styles.navActions}>
+          <TouchableOpacity style={styles.navBtn}>
+            <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.85)" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navBtn}>
+            <Ionicons name="notifications-outline" size={20} color="rgba(255,255,255,0.85)" />
+            {/* Notification dot */}
+            {pending > 0 && <View style={styles.notifDot} />}
+          </TouchableOpacity>
+        </View>
+      </View>
 
-        {/* ── Summary tiles ────────────────────────────────────────────── */}
-        <Text style={styles.sectionLabel}>Today&apos;s Summary</Text>
+      {/* ── Hero greeting inside nav (still dark) ────────────────────── */}
+      <View style={styles.heroSection}>
+        <Text style={styles.heroGreeting}>{greeting}, <Text style={styles.heroName}>{firstName} 👋</Text></Text>
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+        {/* Stat tiles */}
         <View style={styles.tilesRow}>
-          <View style={[styles.tile, styles.tilePrimary]}>
-            <MaterialCommunityIcons name="package-variant-closed" size={22} color={colors.primary} />
-            <Text style={styles.tileValue}>{deliveries.length}</Text>
+          <View style={styles.tile}>
+            <MaterialCommunityIcons name="package-variant-closed" size={20} color="rgba(255,255,255,0.7)" />
+            <Text style={styles.tileValue}>{tasks.length}</Text>
             <Text style={styles.tileLabel}>Total</Text>
           </View>
-          <View style={[styles.tile, styles.tileSuccess]}>
-            <MaterialCommunityIcons name="check-circle-outline" size={22} color={colors.success} />
-            <Text style={[styles.tileValue, { color: colors.success }]}>{completed}</Text>
+          <View style={styles.tile}>
+            <MaterialCommunityIcons name="check-circle-outline" size={20} color="#4ADE80" />
+            <Text style={[styles.tileValue, { color: '#4ADE80' }]}>{completed}</Text>
             <Text style={styles.tileLabel}>Done</Text>
           </View>
-          <View style={[styles.tile, styles.tilePending]}>
-            <MaterialCommunityIcons name="clock-outline" size={22} color={colors.warning} />
-            <Text style={[styles.tileValue, { color: colors.warning }]}>{pending}</Text>
-            <Text style={styles.tileLabel}>Pending</Text>
+          <View style={styles.tile}>
+            <MaterialCommunityIcons name="clock-outline" size={20} color="#FCD34D" />
+            <Text style={[styles.tileValue, { color: '#FCD34D' }]}>{pending}</Text>
+            <Text style={styles.tileLabel}>Assigned</Text>
           </View>
         </View>
+      </View>
 
-        {/* ── Active delivery banner ───────────────────────────────────── */}
+      {/* ── White card body ──────────────────────────────────────────── */}
+      <ScrollView
+        style={styles.body}
+        contentContainerStyle={[styles.bodyContent, { paddingBottom: 120 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
+        }
+      >
+        {/* Active banner */}
         {active ? (
-          <View style={styles.activeBanner}>
-            <View style={styles.activeBannerLeft}>
-              <View style={styles.activePulse}>
-                <View style={styles.activeDot} />
-              </View>
-              <View>
-                <Text style={styles.activeBannerLabel}>
-                  {getStatusCfg(active.status).label.toUpperCase()}
-                </Text>
-                <Text style={styles.activeBannerCustomer}>{active.customerName}</Text>
-                <View style={styles.addressRow}>
-                  <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
-                  <Text style={styles.addressText} numberOfLines={1}>{active.deliveryAddress}</Text>
-                </View>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={styles.goBtn}
-              onPress={() => {
-                if (!active?.id) return;
-                navigation.navigate('DeliveryDetail', { deliveryId: active.id });
-              }}
-            >
-              <Text style={styles.goBtnText}>Resume</Text>
-              <Ionicons name="arrow-forward" size={14} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        ) : pending > 0 ? (
           <TouchableOpacity
-            style={[styles.activeBanner, styles.pendingBanner]}
-            onPress={() => navigation.navigate('Deliveries')}
+            style={styles.activeBanner}
+            onPress={() => navigation.navigate('DeliveryDetail', { deliveryId: active.id })}
             activeOpacity={0.85}
           >
-            <View style={styles.activeBannerLeft}>
-              <View style={[styles.activePulse, { backgroundColor: colors.warningLight }]}>
-                <Ionicons name="notifications" size={14} color={colors.warning} />
+            <View style={styles.bannerRow}>
+              <View style={styles.bannerMainInfo}>
+                <View style={styles.activeLabelRow}>
+                   <View style={styles.pulseDot} />
+                   <Text style={styles.activeLabelText}>ACTIVE TASK</Text>
+                </View>
+                <Text style={styles.bannerSubLabel}>PERSON TO MEET</Text>
+                <Text style={styles.bannerCustomer}>{active.contactName || active.customerName}</Text>
+                <View style={styles.bannerStatusBadge}>
+                   <Text style={styles.bannerStatusText}>{getStatusCfg(active.status).label}</Text>
+                </View>
               </View>
-              <View>
-                <Text style={[styles.activeBannerLabel, { color: colors.warning }]}>
-                  {pending} NEW ORDER{pending > 1 ? 'S' : ''} AVAILABLE
-                </Text>
-                <Text style={styles.activeBannerCustomer}>Tap to view & accept</Text>
+              <View style={styles.bannerAction}>
+                 <View style={styles.resumeCircle}>
+                    <Ionicons name="play" size={20} color="#FFF" />
+                 </View>
+                 <Text style={styles.resumeLabel}>Resume</Text>
               </View>
             </View>
-            <View style={[styles.goBtn, { backgroundColor: colors.warning }]}>
-              <Text style={styles.goBtnText}>View</Text>
-              <Ionicons name="arrow-forward" size={14} color="#fff" />
+            <View style={styles.bannerDivider} />
+            <View style={styles.bannerFooter}>
+               <Ionicons name="location-sharp" size={14} color={colors.accent} />
+               <Text style={styles.bannerAddress} numberOfLines={1}>{active.deliveryAddress || 'Branch'}</Text>
             </View>
           </TouchableOpacity>
         ) : null}
 
-        {/* ── Today's deliveries list ──────────────────────────────────── */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Today&apos;s Deliveries</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Deliveries')}>
-              <Text style={styles.seeAll}>See All</Text>
-            </TouchableOpacity>
-          </View>
-
-          {!deliveries.length ? (
-            <View style={styles.emptyCard}>
-              <MaterialCommunityIcons name="truck-check-outline" size={40} color={colors.border} />
-              <Text style={styles.emptyTitle}>All clear!</Text>
-              <Text style={styles.emptyMsg}>No deliveries assigned for today.</Text>
-            </View>
-          ) : (
-            <>
-              {deliveries.slice(0, visibleDeliveries).map((item) => {
-                const cfg = getStatusCfg(item.status);
-                return (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[styles.deliveryCard, { borderLeftColor: cfg.color }]}
-                    onPress={() => {
-                      if (!item?.id) return;
-                      navigation.navigate('DeliveryDetail', { deliveryId: item.id });
-                    }}
-                    activeOpacity={0.75}
-                  >
-                    <View style={styles.deliveryCardTop}>
-                      <Text style={styles.customerName}>{item.customerName}</Text>
-                      <View style={[styles.statusPill, { backgroundColor: cfg.bg }]}>
-                        <View style={[styles.statusDot, { backgroundColor: cfg.color }]} />
-                        <Text style={[styles.statusText, { color: cfg.color }]}>{cfg.label}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.addressRow}>
-                      <Ionicons name="map-outline" size={12} color={colors.textSecondary} />
-                      <Text style={styles.addressText} numberOfLines={1}>
-                        {item.leg === 'PICKUP_FROM_CUSTOMER' ? `Pickup: ${item.customerName}` : `Deliver: ${item.deliveryAddress}`}
-                      </Text>
-                    </View>
-                    <View style={styles.cardFooter}>
-                      <Text style={styles.cardFooterText}>View details</Text>
-                      <Ionicons name="chevron-forward" size={13} color={colors.textTertiary} />
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-              {deliveries.length > visibleDeliveries ? (
-                <TouchableOpacity
-                  style={styles.loadMoreBtn}
-                  onPress={() => setVisibleDeliveries((prev) => prev + 4)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.loadMoreText}>Load More Deliveries</Text>
-                </TouchableOpacity>
-              ) : null}
-            </>
-          )}
+        {/* Today's Deliveries */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Active Tasks</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Deliveries')}>
+            <Text style={styles.seeAll}>See All</Text>
+          </TouchableOpacity>
         </View>
 
+        {!tasks.length ? (
+          <View style={styles.emptyCard}>
+            <MaterialCommunityIcons name="truck-check-outline" size={42} color={colors.border} />
+            <Text style={styles.emptyTitle}>All clear!</Text>
+            <Text style={styles.emptyMsg}>No delivery tasks assigned to you yet.</Text>
+          </View>
+        ) : (
+          <>
+            {tasks.slice(0, visibleDeliveries).map((item) => {
+              const cfg = getStatusCfg(item.status);
+              const isCompleted = item.status === 'DELIVERED';
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.taskCard}
+                  onPress={() => item?.id && navigation.navigate('DeliveryDetail', { deliveryId: item.id })}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.taskCardTop}>
+                    <View style={styles.taskIconBox}>
+                       <MaterialCommunityIcons 
+                         name={isCompleted ? "check-circle" : "package-variant"} 
+                         size={22} 
+                         color={isCompleted ? "#4ADE80" : colors.primary} 
+                       />
+                    </View>
+                    <View style={styles.taskMeta}>
+                       <Text style={styles.taskCustomer}>{item.contactName || item.customerName}</Text>
+                       <Text style={styles.taskStatus}>{cfg.label}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color="#D1D5DB" />
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+            {tasks.length > visibleDeliveries && (
+              <TouchableOpacity
+                style={styles.loadMoreBtn}
+                onPress={() => setVisibleDeliveries((p) => p + 4)}
+              >
+                <Text style={styles.loadMoreText}>Load More Tasks</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 32 },
-  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { fontSize: 14, color: colors.textSecondary },
+// ─── Styles ───────────────────────────────────────────────────────────────────
+const NAV_BG = '#0F2044'; // deep navy — matches customer home header
 
-  // Header
-  header: {
+const styles = StyleSheet.create({
+  root:         { flex: 1, backgroundColor: NAV_BG },
+  loadingScreen:{ flex: 1, backgroundColor: NAV_BG, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  loadingText:  { fontSize: 14, color: 'rgba(255,255,255,0.7)' },
+
+  // ── Nav bar ──────────────────────────────────────────────────────────────
+  navBar:{
+    flexDirection:'row', alignItems:'center', justifyContent:'space-between',
+    paddingHorizontal:20, paddingBottom:8,
+    backgroundColor: NAV_BG,
+  },
+  brandRow:   { flexDirection:'row', alignItems:'center', gap:10 },
+  logoBox:{
+    width:36, height:36, borderRadius:10,
+    backgroundColor:'rgba(255,255,255,0.12)',
+    alignItems:'center', justifyContent:'center',
+  },
+  brandName:  { fontSize:18, fontWeight:'800', color:'#fff', letterSpacing:0.2 },
+  navActions: { flexDirection:'row', alignItems:'center', gap:6 },
+  navBtn:{
+    width:36, height:36, borderRadius:10,
+    backgroundColor:'rgba(255,255,255,0.1)',
+    alignItems:'center', justifyContent:'center',
+    position:'relative',
+  },
+  notifDot:{
+    width:7, height:7, borderRadius:4,
+    backgroundColor:'#FBBF24',
+    position:'absolute', top:6, right:6,
+    borderWidth:1.5, borderColor:NAV_BG,
+  },
+
+  // ── Hero greeting + tiles ─────────────────────────────────────────────────
+  heroSection:{
+    backgroundColor: NAV_BG,
+    paddingHorizontal:20, paddingBottom:32, paddingTop:12,
+  },
+  heroGreeting:{ fontSize:14, color:'rgba(255,255,255,0.6)', marginBottom:2 },
+  heroName:   { fontSize:14, fontWeight:'700', color:'#fff' },
+  errorText:  { fontSize:12, color:'#F87171', marginTop:4 },
+
+  tilesRow:{ flexDirection:'row', gap:10, marginTop:18 },
+  tile:{
+    flex:1, backgroundColor:'rgba(255,255,255,0.08)',
+    borderRadius:16, paddingVertical:16,
+    alignItems:'center', gap:6,
+    borderWidth:1, borderColor:'rgba(255,255,255,0.1)',
+  },
+  tileValue:{ fontSize:24, fontWeight:'900', color:'#fff' },
+  tileLabel:{ fontSize:10, fontWeight:'600', color:'rgba(255,255,255,0.5)', letterSpacing:0.3 },
+
+  // ── White body ────────────────────────────────────────────────────────────
+  body:{ flex:1, backgroundColor:'#F5F7FA', borderTopLeftRadius:28, borderTopRightRadius:28, marginTop:-20 },
+  bodyContent:{ paddingTop:24, paddingHorizontal:20 },
+
+  // Available / active banner
+  // Active Task Banner
+  activeBanner: {
+    backgroundColor: '#FFF',
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 24,
+    elevation: 8,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.03)',
+  },
+  bannerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 24,
   },
-  greetingText: { fontSize: 13, color: colors.textSecondary, marginBottom: 2 },
-  nameText: { fontSize: 24, fontWeight: '800', color: colors.text },
-  errorText: { fontSize: 12, color: colors.error, marginTop: 4 },
-  avatarCircle: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
-    backgroundColor: colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  avatarInitial: { fontSize: 20, fontWeight: '800', color: colors.primary },
-
-  // Section label
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textTertiary,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    marginBottom: 10,
-  },
-
-  // Summary tiles
-  tilesRow: {
+  bannerMainInfo: { flex: 1 },
+  activeLabelRow: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 20,
-  },
-  tile: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    paddingVertical: 16,
     alignItems: 'center',
     gap: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
+    marginBottom: 4,
   },
-  tilePrimary: { borderTopColor: colors.primary, borderTopWidth: 3 },
-  tileSuccess:  { borderTopColor: colors.success, borderTopWidth: 3 },
-  tilePending:  { borderTopColor: colors.warning, borderTopWidth: 3 },
-  tileValue: { fontSize: 22, fontWeight: '800', color: colors.primary },
-  tileLabel: { fontSize: 10, fontWeight: '600', color: colors.textTertiary, letterSpacing: 0.2 },
-
-  // Active delivery banner
-  activeBanner: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.accent,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  pulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.accent,
   },
-  pendingBanner: {
-    borderLeftColor: colors.warning,
+  activeLabelText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: colors.accent,
+    letterSpacing: 1.2,
   },
-  activeBannerLeft: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, flex: 1 },
-  activePulse: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: colors.accentLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
+  bannerSubLabel: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 4,
+    marginBottom: 2,
   },
-  activeDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.accent },
-  activeBannerLabel: { fontSize: 10, fontWeight: '700', color: colors.accent, letterSpacing: 0.5, marginBottom: 2 },
-  activeBannerCustomer: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 2 },
-  addressRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  addressText: { fontSize: 12, color: colors.textSecondary, flex: 1 },
-  goBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  goBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
-
-  // Section
-  section: { marginBottom: 8 },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
-  seeAll: { fontSize: 13, fontWeight: '600', color: colors.accent },
-
-  // Empty
-  emptyCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 32,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 8,
-  },
-  emptyTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
-  emptyMsg: { fontSize: 13, color: colors.textSecondary, textAlign: 'center' },
-
-  // Delivery card
-  deliveryCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderLeftWidth: 4,
-  },
-  deliveryCardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  bannerCustomer: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: colors.text,
     marginBottom: 6,
   },
-  customerName: { fontSize: 14, fontWeight: '700', color: colors.text, flex: 1, paddingRight: 8 },
-  statusPill: {
-    flexDirection: 'row',
+  bannerStatusBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.accentLight,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  bannerStatusText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.accent,
+  },
+  bannerAction: {
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 20,
   },
-  statusDot: { width: 5, height: 5, borderRadius: 2.5 },
-  statusText: { fontSize: 10, fontWeight: '700' },
-  cardFooter: {
+  resumeCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: colors.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  resumeLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.accent,
+  },
+  bannerDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 16,
+  },
+  bannerFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    gap: 6,
   },
-  cardFooterText: { fontSize: 12, color: colors.textTertiary, fontWeight: '600' },
-  loadMoreBtn: {
-    marginTop: 2,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  loadMoreText: {
+  bannerAddress: {
     fontSize: 13,
-    fontWeight: '700',
-    color: colors.primary,
+    color: colors.textSecondary,
+    fontWeight: '500',
+    flex: 1,
   },
+
+  // Section
+  sectionHeader:{
+    flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:12,
+  },
+  sectionTitle:{ fontSize:18, fontWeight:'800', color: colors.text },
+  seeAll:{ fontSize:13, fontWeight:'600', color: colors.accent },
+
+  // Empty
+  emptyCard:{
+    backgroundColor:'#fff', borderRadius:16, padding:32,
+    alignItems:'center', borderWidth:1, borderColor:'rgba(0,0,0,0.06)', gap:8,
+  },
+  emptyTitle:{ fontSize:15, fontWeight:'700', color: colors.text },
+  emptyMsg:{ fontSize:13, color: colors.textSecondary, textAlign:'center' },
+
+  // Task Card
+  taskCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.04)',
+  },
+  taskCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  taskIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taskMeta: { flex: 1 },
+  taskCustomer: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  taskStatus: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+
+  // Load more
+  loadMoreBtn:{
+    borderRadius:12, borderWidth:1, borderColor:'rgba(0,0,0,0.08)',
+    backgroundColor:'#fff', paddingVertical:13, alignItems:'center', marginTop:2,
+  },
+  loadMoreText:{ fontSize:13, fontWeight:'700', color: colors.primary },
 });
 
 export default DriverDashboardScreen;

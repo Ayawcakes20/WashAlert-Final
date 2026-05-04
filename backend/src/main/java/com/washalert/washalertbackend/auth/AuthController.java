@@ -34,10 +34,16 @@ public class AuthController {
 
     private final AuthService authService;
     private final OtpService otpService;
+    private final StaffInvitationService staffInvitationService;
 
-    public AuthController(AuthService authService, OtpService otpService) {
+    public AuthController(
+            AuthService authService,
+            OtpService otpService,
+            StaffInvitationService staffInvitationService
+    ) {
         this.authService = authService;
         this.otpService = otpService;
+        this.staffInvitationService = staffInvitationService;
     }
 
     @PostMapping("/register")
@@ -188,7 +194,8 @@ public class AuthController {
     @PostMapping("/firebase-login-otp/verify")
     public ResponseEntity<?> verifyFirebaseLoginOtp(
             @Valid @RequestBody FirebaseLoginOtpVerifyRequest req,
-            HttpServletRequest request
+            HttpServletRequest request,
+            HttpServletResponse response
     ) {
         User user;
         try {
@@ -212,18 +219,19 @@ public class AuthController {
         }
 
         User finalizedUser = authService.markLoginSuccess(user.getId());
-        establishSession(finalizedUser, request);
+        establishSession(finalizedUser, request, response);
         return ResponseEntity.ok(authService.toSessionResponse(finalizedUser, req.platform().trim().toUpperCase()));
     }
 
     @PostMapping("/firebase/complete-first-login-password")
     public ResponseEntity<?> completeFirstLoginPassword(
             @Valid @RequestBody CompleteFirstLoginPasswordRequest req,
-            HttpServletRequest request
+            HttpServletRequest request,
+            HttpServletResponse response
     ) {
         try {
             User finalizedUser = authService.completeMobileFirstLoginPasswordUpdate(req.idToken(), req.platform());
-            establishSession(finalizedUser, request);
+            establishSession(finalizedUser, request, response);
             return ResponseEntity.ok(authService.toSessionResponse(finalizedUser, req.platform().trim().toUpperCase()));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
@@ -320,12 +328,18 @@ public class AuthController {
     }
 
     @PostMapping("/set-password")
-    public ResponseEntity<?> setPassword(HttpServletRequest request) {
-        return ResponseEntity.status(410).body(apiError(
-                request,
-                410,
-                "Use Firebase invitation/password setup link flow directly from the client."
-        ));
+    public ResponseEntity<?> setPassword(
+            @Valid @RequestBody SetPasswordRequest req,
+            HttpServletRequest request
+    ) {
+        try {
+            staffInvitationService.setInitialPassword(req.token(), req.newPassword());
+            return ResponseEntity.ok().build();
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
+        } catch (IllegalStateException ex) {
+            return ResponseEntity.status(503).body(apiError(request, 503, ex.getMessage()));
+        }
     }
 
     @PostMapping("/change-password")
@@ -362,7 +376,11 @@ public class AuthController {
     }
 
     @PostMapping("/otp/verify")
-    public ResponseEntity<?> verifyOtp(@Valid @RequestBody VerifyOtpRequest req, HttpServletRequest request) {
+    public ResponseEntity<?> verifyOtp(
+            @Valid @RequestBody VerifyOtpRequest req,
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) {
         String normalizedEmail = req.email() == null ? "" : req.email().trim().toLowerCase();
         log.info("[OTP][VERIFY] Verification requested for {} with codeLength={}",
                 maskEmail(normalizedEmail),
@@ -374,7 +392,7 @@ public class AuthController {
                     user.getRole(),
                     user.getStatus(),
                     user.isEnabled());
-            establishSession(user, request);
+            establishSession(user, request, response);
             return ResponseEntity.ok(authService.toSessionResponse(user, "MOBILE"));
         } catch (IllegalArgumentException ex) {
             log.warn("[OTP][VERIFY] Verification rejected for {}: {}", maskEmail(normalizedEmail), ex.getMessage());
@@ -462,18 +480,30 @@ public class AuthController {
         return local.substring(0, 2) + "***@" + email.substring(at + 1);
     }
 
-    private void establishSession(User user, HttpServletRequest request) {
+    private void establishSession(User user, HttpServletRequest request, HttpServletResponse response) {
         AuthUserDetails principal = new AuthUserDetails(user);
         Authentication sessionAuth = new UsernamePasswordAuthenticationToken(
                 principal,
                 null,
                 principal.getAuthorities()
         );
-        SecurityContextHolder.getContext().setAuthentication(sessionAuth);
+
+        // 1. Create/Get Session
         HttpSession session = request.getSession(true);
-        session.setAttribute(
-                HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
-                SecurityContextHolder.getContext()
-        );
+        
+        // 2. Create and Set Context
+        org.springframework.security.core.context.SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(sessionAuth);
+        SecurityContextHolder.setContext(context);
+
+        // 3. Persist via Repository (Spring Boot 3+ Way)
+        HttpSessionSecurityContextRepository repo = new HttpSessionSecurityContextRepository();
+        repo.saveContext(context, request, response);
+        
+        // 4. Persist via Manual Attribute (Legacy Fallback - Very Reliable)
+        session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, context);
+
+        log.info("[AUTH][SESSION] SUCCESS! Session established. ID: {} | User: {} | Role: {}", 
+                session.getId(), user.getEmail(), user.getRole());
     }
 }

@@ -63,21 +63,21 @@ washalert:
   data:
     read-mode: ${DATA_READ_MODE:MYSQL}
 
-  frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
+  frontend-base-url: ${FRONTEND_BASE_URL:http://192.168.1.4:5173}
 
   cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:8080,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081}
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:8080,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081,http://192.168.1.4:5173,http://192.168.1.4:8080,http://192.168.1.4:8081,https://stimulant-bobcat-glare.ngrok-free.dev}
 
   mail:
     from: ${MAIL_FROM:WashAlert <noreply@washalert.local>}
 
   password-reset:
-    frontend-base-url: ${PASSWORD_RESET_FRONTEND_BASE_URL:${FRONTEND_BASE_URL:http://localhost:5173}}
+    frontend-base-url: ${PASSWORD_RESET_FRONTEND_BASE_URL:${FRONTEND_BASE_URL:http://192.168.1.4:5173}}
 
   staff-invitation:
-    frontend-base-url: ${STAFF_INVITATION_FRONTEND_BASE_URL:${FRONTEND_BASE_URL:http://localhost:5173}}
+    frontend-base-url: ${STAFF_INVITATION_FRONTEND_BASE_URL:https://www.washalert.com}
     set-password-path: ${STAFF_INVITATION_SET_PASSWORD_PATH:/set-password}
-    ttl-minutes: ${STAFF_INVITATION_TTL_MINUTES:60}
+    ttl-minutes: ${STAFF_INVITATION_TTL_MINUTES:30}
     token-bytes: ${STAFF_INVITATION_TOKEN_BYTES:32}
     cleanup:
       enabled: ${STAFF_INVITATION_CLEANUP_ENABLED:true}

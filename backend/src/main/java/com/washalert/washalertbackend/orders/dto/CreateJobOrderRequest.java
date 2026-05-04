@@ -14,5 +14,12 @@ public record CreateJobOrderRequest(
         ServiceType serviceType,
 
         // optional: if blank, we fall back to actor branch
-        String branch
+        String branch,
+
+        String customerPhone,
+        String customerEmail,
+        String deliveryAddress,
+        String deliveryContactName,
+        String deliveryContactPhone,
+        String paymentMethod
 ) {}
