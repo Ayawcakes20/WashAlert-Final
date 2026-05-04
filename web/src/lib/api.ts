@@ -392,7 +392,7 @@ export const usersApi = {
   },
   listDrivers: (branch?: string) =>
     apiRequest<UserAdminRecord[]>(`/api/admin/users/drivers${branch ? `?branch=${encodeURIComponent(branch)}` : ""}`),
-  createStaff: (payload: { fullName: string; email: string; role?: "STAFF" | "DRIVER"; branch?: string; initialPassword?: string }) =>
+  createStaff: (payload: { fullName: string; email: string; role?: "STAFF" | "DRIVER"; branch?: string }) =>
     apiRequest<UserAdminRecord>("/api/admin/users/staff", {
       method: "POST",
       body: payload,

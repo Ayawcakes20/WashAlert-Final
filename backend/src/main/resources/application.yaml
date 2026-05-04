@@ -75,9 +75,9 @@ washalert:
     frontend-base-url: ${PASSWORD_RESET_FRONTEND_BASE_URL:${FRONTEND_BASE_URL:http://192.168.1.4:5173}}
 
   staff-invitation:
-    frontend-base-url: ${STAFF_INVITATION_FRONTEND_BASE_URL:${FRONTEND_BASE_URL:http://192.168.1.4:5173}}
+    frontend-base-url: ${STAFF_INVITATION_FRONTEND_BASE_URL:https://www.washalert.com}
     set-password-path: ${STAFF_INVITATION_SET_PASSWORD_PATH:/set-password}
-    ttl-minutes: ${STAFF_INVITATION_TTL_MINUTES:60}
+    ttl-minutes: ${STAFF_INVITATION_TTL_MINUTES:30}
     token-bytes: ${STAFF_INVITATION_TOKEN_BYTES:32}
     cleanup:
       enabled: ${STAFF_INVITATION_CLEANUP_ENABLED:true}

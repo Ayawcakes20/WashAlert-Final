@@ -34,10 +34,16 @@ public class AuthController {
 
     private final AuthService authService;
     private final OtpService otpService;
+    private final StaffInvitationService staffInvitationService;
 
-    public AuthController(AuthService authService, OtpService otpService) {
+    public AuthController(
+            AuthService authService,
+            OtpService otpService,
+            StaffInvitationService staffInvitationService
+    ) {
         this.authService = authService;
         this.otpService = otpService;
+        this.staffInvitationService = staffInvitationService;
     }
 
     @PostMapping("/register")
@@ -318,12 +324,18 @@ public class AuthController {
     }
 
     @PostMapping("/set-password")
-    public ResponseEntity<?> setPassword(HttpServletRequest request) {
-        return ResponseEntity.status(410).body(apiError(
-                request,
-                410,
-                "Use Firebase invitation/password setup link flow directly from the client."
-        ));
+    public ResponseEntity<?> setPassword(
+            @Valid @RequestBody SetPasswordRequest req,
+            HttpServletRequest request
+    ) {
+        try {
+            staffInvitationService.setInitialPassword(req.token(), req.newPassword());
+            return ResponseEntity.ok().build();
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
+        } catch (IllegalStateException ex) {
+            return ResponseEntity.status(503).body(apiError(request, 503, ex.getMessage()));
+        }
     }
 
     @PostMapping("/change-password")
