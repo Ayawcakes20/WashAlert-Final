@@ -96,8 +96,12 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
           
           const checkoutUrl = response?.checkoutUrl;
           if (checkoutUrl) {
-            console.log('[PAYMENT] Opening checkout URL:', checkoutUrl);
-            await Linking.openURL(checkoutUrl);
+            console.log('[PAYMENT] Opening checkout URL via WebBrowser:', checkoutUrl);
+            await WebBrowser.openBrowserAsync(checkoutUrl, {
+              showTitle: true,
+              toolbarColor: '#2563EB',
+              controlsColor: '#ffffff',
+            });
           } else {
             console.error('[PAYMENT] No checkout URL in response:', response);
             throw new Error('Could not generate payment link.');
