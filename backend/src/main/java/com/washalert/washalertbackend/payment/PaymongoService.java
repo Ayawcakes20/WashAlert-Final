@@ -29,6 +29,7 @@ public class PaymongoService {
         return (properties.getSecretKey() != null) ? properties.getSecretKey().trim() : null;
     }
 
+    @SuppressWarnings("unchecked")
     public String createCheckoutSession(JobOrder order) {
         String secretKey = getSecretKey();
         if (secretKey == null || secretKey.isBlank()) {
@@ -97,8 +98,7 @@ public class PaymongoService {
 
         try {
             log.info("[PAYMONGO] Creating session tracking={} body={}", order.getTrackingNumber(), payload);
-            @SuppressWarnings("unchecked")
-            Map<String, Object> response = restTemplate.postForObject(url, request, Map.class);
+            response = restTemplate.postForObject(url, request, Map.class);
             
             if (response != null && response.containsKey("data")) {
                 Map<String, Object> data = (Map<String, Object>) response.get("data");
@@ -124,12 +124,5 @@ public class PaymongoService {
             log.error("[PAYMONGO] Critical failure tracking={}", order.getTrackingNumber(), ex);
             throw new IllegalStateException("Failed to initiate GCash checkout: " + ex.getMessage());
         }
-
-        log.error(
-                "[PAYMONGO] Checkout response missing data.attributes.checkout_url tracking={} fullResponse={}",
-                order.getTrackingNumber(),
-                String.valueOf(response)
-        );
-        throw new IllegalStateException("Failed to get checkout URL from PayMongo response.");
     }
 }
