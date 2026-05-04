@@ -41,30 +41,61 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
     try {
       const isGcash = String(orderData.paymentMethod || '').toUpperCase() === 'GCASH';
       
+      console.log('[PAYMENT] Starting confirmation process for:', orderData.trackingNumber || orderData.id);
+      console.log('[PAYMENT] Payment method:', orderData.paymentMethod);
+      console.log('[PAYMENT] Order data:', JSON.stringify(orderData, null, 2));
+      
       // 1. Confirm the price first (Backend sets status to PRICE_CONFIRMED)
-      const confirmedOrder = await bookings.confirmPrice(orderData);
+      console.log('[PAYMENT] Step 1: Confirming price...');
+      let confirmedOrder;
+      try {
+        confirmedOrder = await bookings.confirmPrice(orderData);
+        console.log('[PAYMENT] ✓ Price confirmed successfully:', confirmedOrder);
+      } catch (confirmErr) {
+        console.error('[PAYMENT] ✗ confirmPrice FAILED');
+        console.error('[PAYMENT] Error message:', confirmErr.message);
+        console.error('[PAYMENT] Error response:', confirmErr.response);
+        console.error('[PAYMENT] Error status:', confirmErr.status);
+        console.error('[PAYMENT] Full error:', JSON.stringify(confirmErr, null, 2));
+        throw new Error(`Price confirmation failed: ${confirmErr.message}`);
+      }
       
       // 2. If GCash, trigger PayMongo Checkout
       if (isGcash) {
         try {
+          console.log('[PAYMENT] Step 2: Initiating GCash checkout...');
           const checkoutTarget = confirmedOrder?.trackingNumber || orderData?.trackingNumber || orderData;
-          const { checkoutUrl } = await payments.initiateGcashCheckout(checkoutTarget);
+          console.log('[PAYMENT] Checkout target:', checkoutTarget);
+          
+          const response = await payments.initiateGcashCheckout(checkoutTarget);
+          console.log('[PAYMENT] ✓ GCash response:', response);
+          
+          const checkoutUrl = response?.checkoutUrl;
           if (checkoutUrl) {
+            console.log('[PAYMENT] Opening checkout URL:', checkoutUrl);
             await Linking.openURL(checkoutUrl);
           } else {
+            console.error('[PAYMENT] No checkout URL in response:', response);
             throw new Error('Could not generate payment link.');
           }
         } catch (paymentErr) {
-          console.error('[PAYMENT_ERROR]', paymentErr);
-          Alert.alert(
-            'Payment Setup',
-            'Order confirmed! However, we couldn\'t open the GCash portal automatically. Please use the "Pay Now" button in your Order Details screen.'
-          );
+          console.error('[PAYMENT] ✗ GCash checkout FAILED');
+          console.error('[PAYMENT] Error message:', paymentErr.message);
+          console.error('[PAYMENT] Error response:', paymentErr.response);
+          console.error('[PAYMENT] Error status:', paymentErr.status);
+          console.error('[PAYMENT] Full error:', JSON.stringify(paymentErr, null, 2));
+          const errMsg = paymentErr?.message || '';
+          const userMessage = errMsg && !errMsg.includes('Request failed')
+            ? errMsg
+            : 'We couldn\'t open the GCash portal automatically. Please use the "Pay Now" button in your Order Details screen.';
+          Alert.alert('Payment Setup', 'Order confirmed! However, ' + userMessage);
         }
       }
 
       onConfirmed && onConfirmed();
     } catch (e) {
+      console.error('[PAYMENT_CONFIRM_ERROR]', e);
+      console.error('[PAYMENT_CONFIRM_ERROR] Stack:', e.stack);
       Alert.alert('Error', e?.message || 'Failed to confirm. Please try again.');
     } finally {
       setLoading(false);

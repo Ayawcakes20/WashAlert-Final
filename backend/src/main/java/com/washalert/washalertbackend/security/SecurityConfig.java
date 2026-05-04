@@ -97,12 +97,14 @@ public class SecurityConfig {
                                 "/api/bookings",
                                 "/api/payments/proof",
                                 "/api/payments/webhook",
+                                "/api/payments/checkout/**",
                                 "/api/support/chat")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/bookings/slots").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/orders/track/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/payments/track/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/deliveries/track/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/support/history").permitAll()
 
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/auth/logout").authenticated()

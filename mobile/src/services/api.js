@@ -1461,16 +1461,22 @@ export const payments = {
 };
 
 export const support = {
-  chat: async (message, trackingNumber = null) => {
+  chat: async (message, trackingNumber = null, selectedBranch = null, senderName = null) => {
     const sessionId = await getSupportSessionId();
     return await apiRequest('/api/support/chat', {
       method: 'POST',
       body: {
         message,
         trackingNumber,
+        selectedBranch,
+        senderName,
         sessionId,
       },
     });
+  },
+  getHistory: async () => {
+    const sessionId = await getSupportSessionId();
+    return await apiRequest(`/api/support/history?sessionId=${encodeURIComponent(sessionId)}`);
   },
 };
 
@@ -1532,6 +1538,7 @@ export const profileApi = {
 };
 
 export default {
+  BRANCH_CATALOG,
   fetchBranches,
   fetchOrders,
   createOrder,

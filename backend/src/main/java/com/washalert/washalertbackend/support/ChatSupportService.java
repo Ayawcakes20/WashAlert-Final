@@ -90,7 +90,20 @@ public class ChatSupportService {
         }
 
         saveMessage(sessionId, ChatResponderType.USER, userMessage, "user", null, req.senderName());
-        ChatSupportResponse response = buildReply(req, userMessage, sessionId);
+
+        ChatSupportResponse response;
+        try {
+            response = buildReply(req, userMessage, sessionId);
+        } catch (Exception ex) {
+            // Ensure AI failures never bubble up as HTTP errors — always return a usable chat response
+            response = new ChatSupportResponse(
+                    "ai_unavailable",
+                    "AI support is temporarily unavailable. You can type 'talk to staff' any time to open a support ticket.",
+                    false,
+                    null,
+                    null);
+        }
+
         saveMessage(
                 sessionId,
                 ChatResponderType.AI,

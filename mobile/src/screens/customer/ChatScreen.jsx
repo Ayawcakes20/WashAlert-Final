@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity, TextInp
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
-import { support, BRANCH_CATALOG } from '../../services/api';
+import api from '../../services/api';
+const { support, BRANCH_CATALOG } = api;
 import { useAuth } from '../../context/AuthContext';
 
 const QUICK_REPLIES = [
@@ -106,8 +107,11 @@ const ChatScreen = ({ navigation }) => {
       if (payload?.reply) {
         reply = payload.reply;
       }
-    } catch {
-      reply = 'Support service is temporarily unavailable. Please try again or ask for staff assistance.';
+    } catch (err) {
+      const msg = err?.message || '';
+      reply = msg && !msg.includes('Request failed')
+        ? msg
+        : 'Support service is temporarily unavailable. Please try again or ask for staff assistance.';
     } finally {
       setIsTyping(false);
     }
@@ -143,8 +147,11 @@ const ChatScreen = ({ navigation }) => {
       if (payload?.reply) {
         reply = payload.reply;
       }
-    } catch {
-      reply = 'Support service is temporarily unavailable. Please try again or ask for staff assistance.';
+    } catch (err) {
+      const msg = err?.message || '';
+      reply = msg && !msg.includes('Request failed')
+        ? msg
+        : 'Support service is temporarily unavailable. Please try again or ask for staff assistance.';
     } finally {
       setIsTyping(false);
     }

@@ -131,8 +131,10 @@ public class PaymentService {
         if (actor.getRole() == Role.STAFF && !sameBranch(actor.getBranch(), payment.getJobOrder().getBranch())) {
             throw new IllegalArgumentException("You can only verify payments in your branch.");
         }
-        if (payment.getStatus() != PaymentStatus.PENDING) {
-            throw new IllegalStateException("Only pending payments can be verified.");
+        
+        // Allow verification of PAID payments (from GCash webhook) as well as PENDING
+        if (payment.getStatus() != PaymentStatus.PENDING && payment.getStatus() != PaymentStatus.PAID) {
+            throw new IllegalStateException("Only pending or paid payments can be verified.");
         }
 
         payment.setStatus(Boolean.TRUE.equals(req.approved()) ? PaymentStatus.VERIFIED : PaymentStatus.REJECTED);
@@ -187,7 +189,7 @@ public class PaymentService {
                 .orElseGet(() -> PaymentRecord.builder().jobOrder(order).build());
         
         if (payment.getStatus() == PaymentStatus.PAID || payment.getStatus() == PaymentStatus.VERIFIED) {
-            throw new IllegalStateException("Order is already paid.");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Order is already paid.");
         }
 
         payment.setMethod(PaymentMethod.GCASH);
@@ -198,7 +200,7 @@ public class PaymentService {
         String checkoutUrl = paymongoService.createCheckoutSession(order);
         if (checkoutUrl == null || checkoutUrl.isBlank()) {
             log.error("[PAYMENT][GCASH] PayMongo returned empty checkout URL tracking={}", tracking);
-            throw new IllegalStateException("Unable to generate GCash checkout URL.");
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Unable to generate GCash checkout URL.");
         }
         log.info("CHECKOUT URL GENERATED: {}", checkoutUrl);
         /* 

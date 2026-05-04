@@ -179,7 +179,7 @@ public class GeminiChatClient {
         }
 
         int maxAttempts = 3;
-        long[] backoffMs = {0, 2000, 4000};
+        long[] backoffMs = {0, 3000, 8000};
 
         for (int attempt = 0; attempt < maxAttempts; attempt++) {
             try {

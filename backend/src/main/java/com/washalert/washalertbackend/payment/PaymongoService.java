@@ -31,10 +31,24 @@ public class PaymongoService {
             throw new IllegalStateException("PayMongo secret key is not configured. Set PAYMONGO_SECRET_KEY.");
         }
 
+        // Resolve amount: totalPrice → finalPrice → servicePrice (fallback chain for newly created orders)
+        java.math.BigDecimal amount = order.getTotalPrice();
+        if (amount == null || amount.compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            amount = order.getFinalPrice();
+        }
+        if (amount == null || amount.compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            amount = order.getServicePrice();
+        }
+        if (amount == null || amount.compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            log.error("[PAYMONGO] Order has no price set tracking={}", order.getTrackingNumber());
+            throw new IllegalStateException(
+                    "Cannot process payment: the order price has not been set yet. Please wait for staff to confirm the weight and price.");
+        }
+
         String url = "https://api.paymongo.com/v1/checkout_sessions";
 
         // Paymongo amount is in centavos (PHP 1.00 = 100)
-        long amountCentavos = order.getTotalPrice().multiply(new java.math.BigDecimal("100")).longValue();
+        long amountCentavos = amount.multiply(new java.math.BigDecimal("100")).longValue();
 
         Map<String, Object> lineItem = Map.of(
                 "currency", "PHP",
@@ -93,8 +107,10 @@ public class PaymongoService {
                         order.getTrackingNumber(),
                         String.valueOf(response)
                 );
-                throw new RuntimeException("Failed to get checkout URL from Paymongo response.");
+                throw new IllegalStateException("Failed to get checkout URL from PayMongo response.");
             }
+        } catch (IllegalStateException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.error(
                     "[PAYMONGO] Checkout session creation failed tracking={} reason={} fullResponse={}",
@@ -102,7 +118,7 @@ public class PaymongoService {
                     ex.getMessage(),
                     String.valueOf(response)
             );
-            throw new RuntimeException("Paymongo session creation failed: " + ex.getMessage(), ex);
+            throw new IllegalStateException("GCash checkout failed: " + ex.getMessage(), ex);
         }
 
         log.error(
@@ -110,6 +126,6 @@ public class PaymongoService {
                 order.getTrackingNumber(),
                 String.valueOf(response)
         );
-        throw new RuntimeException("Failed to get checkout URL from Paymongo response.");
+        throw new IllegalStateException("Failed to get checkout URL from PayMongo response.");
     }
 }
