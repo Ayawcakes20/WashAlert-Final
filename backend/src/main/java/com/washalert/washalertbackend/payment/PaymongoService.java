@@ -25,8 +25,13 @@ public class PaymongoService {
         this.restTemplate = restTemplate;
     }
 
+    private String getSecretKey() {
+        return (properties.getSecretKey() != null) ? properties.getSecretKey().trim() : null;
+    }
+
     public String createCheckoutSession(JobOrder order) {
-        if (properties.getSecretKey() == null || properties.getSecretKey().isBlank()) {
+        String secretKey = getSecretKey();
+        if (secretKey == null || secretKey.isBlank()) {
             log.error("[PAYMONGO] Missing secret key configuration for tracking={}", order.getTrackingNumber());
             throw new IllegalStateException("PayMongo secret key is not configured. Set PAYMONGO_SECRET_KEY.");
         }
@@ -83,48 +88,41 @@ public class PaymongoService {
         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
         
         // Basic Auth: secretKey as username, password empty
-        String auth = properties.getSecretKey() + ":";
-        String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes());
+        String auth = secretKey + ":";
+        String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         headers.set("Authorization", "Basic " + encodedAuth);
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(payload, headers);
         Map<String, Object> response = null;
 
         try {
+            log.info("[PAYMONGO] Creating session tracking={} body={}", order.getTrackingNumber(), payload);
             @SuppressWarnings("unchecked")
-            Map<String, Object> paymongoResponse = restTemplate.postForObject(url, request, Map.class);
-            response = paymongoResponse;
+            Map<String, Object> response = restTemplate.postForObject(url, request, Map.class);
+            
             if (response != null && response.containsKey("data")) {
-                @SuppressWarnings("unchecked")
                 Map<String, Object> data = (Map<String, Object>) response.get("data");
-                @SuppressWarnings("unchecked")
-                Map<String, Object> respAttrs = (Map<String, Object>) data.get("attributes");
-                String checkoutUrl = (String) respAttrs.get("checkout_url");
-                if (checkoutUrl != null && !checkoutUrl.isBlank()) {
-                    log.info("CHECKOUT URL GENERATED: {}", checkoutUrl);
-                    return checkoutUrl;
+                if (data != null && data.containsKey("attributes")) {
+                    Map<String, Object> respAttrs = (Map<String, Object>) data.get("attributes");
+                    if (respAttrs != null && respAttrs.containsKey("checkout_url")) {
+                        String checkoutUrl = (String) respAttrs.get("checkout_url");
+                        log.info("[PAYMONGO] Success: tracking={} checkoutUrl={}", order.getTrackingNumber(), checkoutUrl);
+                        return checkoutUrl;
+                    }
                 }
-                log.error(
-                        "[PAYMONGO] CHECKOUT URL GENERATED: null tracking={} fullResponse={}",
-                        order.getTrackingNumber(),
-                        String.valueOf(response)
-                );
-                throw new IllegalStateException("Failed to get checkout URL from PayMongo response.");
             }
+            log.error("[PAYMONGO] Response missing checkout_url: {}", response);
+            throw new IllegalStateException("PayMongo response was missing checkout URL.");
         } catch (IllegalStateException ex) {
             throw ex;
         } catch (org.springframework.web.client.HttpStatusCodeException ex) {
+            String errorBody = ex.getResponseBodyAsString();
             log.error("[PAYMONGO] API Error tracking={} status={} body={}", 
-                    order.getTrackingNumber(), ex.getStatusCode(), ex.getResponseBodyAsString());
-            throw new IllegalStateException("PayMongo API error: " + ex.getStatusText());
+                    order.getTrackingNumber(), ex.getStatusCode(), errorBody);
+            throw new IllegalStateException("PayMongo Error: " + errorBody);
         } catch (Exception ex) {
-            log.error(
-                    "[PAYMONGO] Checkout session creation failed tracking={} reason={} fullResponse={}",
-                    order.getTrackingNumber(),
-                    ex.getMessage(),
-                    String.valueOf(response)
-            );
-            throw new IllegalStateException("GCash checkout failed: " + ex.getMessage(), ex);
+            log.error("[PAYMONGO] Critical failure tracking={}", order.getTrackingNumber(), ex);
+            throw new IllegalStateException("Failed to initiate GCash checkout: " + ex.getMessage());
         }
 
         log.error(
