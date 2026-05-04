@@ -10,7 +10,6 @@ import com.washalert.washalertbackend.firebase.FirestoreSyncService;
 import com.washalert.washalertbackend.firebase.FirestoreUserPayloadFactory;
 import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.user.*;
-import com.washalert.washalertbackend.verification.MailService;
 import com.washalert.washalertbackend.verification.OtpService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,9 +30,8 @@ public class AuthService {
     private final FirestoreReadService firestoreReadService;
     private final DataReadProperties dataReadProperties;
     private final FirebaseIdentityService firebaseIdentityService;
-    private final MailService mailService;
     private final OtpService otpService;
-    private final PasswordResetProperties passwordResetProperties;
+    private final PasswordResetService passwordResetService;
 
     public AuthService(
             UserRepository users,
@@ -42,9 +40,8 @@ public class AuthService {
             FirestoreReadService firestoreReadService,
             DataReadProperties dataReadProperties,
             FirebaseIdentityService firebaseIdentityService,
-            MailService mailService,
             OtpService otpService,
-            PasswordResetProperties passwordResetProperties
+            PasswordResetService passwordResetService
     ) {
         this.users = users;
         this.encoder = encoder;
@@ -52,9 +49,8 @@ public class AuthService {
         this.firestoreReadService = firestoreReadService;
         this.dataReadProperties = dataReadProperties;
         this.firebaseIdentityService = firebaseIdentityService;
-        this.mailService = mailService;
         this.otpService = otpService;
-        this.passwordResetProperties = passwordResetProperties;
+        this.passwordResetService = passwordResetService;
     }
 
     public void register(RegisterRequest req) {
@@ -179,19 +175,9 @@ public class AuthService {
         if (user == null) {
             return;
         }
-        if (!firebaseIdentityService.isEnabled()) {
-            log.error("Password reset requested for {} but Firebase Auth is disabled", normalized);
-            throw new IllegalStateException("Password reset is temporarily unavailable. Please contact support.");
-        }
 
         try {
-            String firebaseLink = firebaseIdentityService.generatePasswordResetLink(normalized);
-            String appLink = firebaseIdentityService.toFrontendActionLink(
-                    firebaseLink,
-                    passwordResetProperties.getFrontendBaseUrl(),
-                    passwordResetProperties.getResetPath()
-            );
-            mailService.sendPasswordResetEmail(normalized, appLink);
+            passwordResetService.createAndSendResetToken(normalized);
             log.info("Password reset email dispatched for {}", normalized);
         } catch (Exception ex) {
             log.error("Failed to dispatch password reset email for {}", normalized, ex);

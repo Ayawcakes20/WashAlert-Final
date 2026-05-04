@@ -8,8 +8,8 @@ public class PasswordResetProperties {
     private int ttlMinutes = 30;
     private int tokenBytes = 32;
 
-    private String frontendBaseUrl = "http://localhost:8080";
-    private String resetPath = "/reset-password";
+    private String frontendBaseUrl = "https://www.washalert.com";
+    private String resetPath = "/set-password";
 
     private Cleanup cleanup = new Cleanup();
 

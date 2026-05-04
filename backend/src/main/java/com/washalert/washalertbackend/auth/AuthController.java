@@ -35,15 +35,18 @@ public class AuthController {
     private final AuthService authService;
     private final OtpService otpService;
     private final StaffInvitationService staffInvitationService;
+    private final PasswordResetService passwordResetService;
 
     public AuthController(
             AuthService authService,
             OtpService otpService,
-            StaffInvitationService staffInvitationService
+            StaffInvitationService staffInvitationService,
+            PasswordResetService passwordResetService
     ) {
         this.authService = authService;
         this.otpService = otpService;
         this.staffInvitationService = staffInvitationService;
+        this.passwordResetService = passwordResetService;
     }
 
     @PostMapping("/register")
@@ -336,6 +339,16 @@ public class AuthController {
             staffInvitationService.setInitialPassword(req.token(), req.newPassword());
             return ResponseEntity.ok().build();
         } catch (IllegalArgumentException ex) {
+            if ("Invalid or expired invitation token.".equalsIgnoreCase(ex.getMessage())) {
+                try {
+                    passwordResetService.resetPassword(req.token(), req.newPassword());
+                    return ResponseEntity.ok().build();
+                } catch (IllegalArgumentException resetEx) {
+                    return ResponseEntity.status(400).body(apiError(request, 400, resetEx.getMessage()));
+                } catch (IllegalStateException resetEx) {
+                    return ResponseEntity.status(503).body(apiError(request, 503, resetEx.getMessage()));
+                }
+            }
             return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
         } catch (IllegalStateException ex) {
             return ResponseEntity.status(503).body(apiError(request, 503, ex.getMessage()));

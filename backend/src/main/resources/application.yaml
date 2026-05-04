@@ -72,7 +72,8 @@ washalert:
     from: ${MAIL_FROM:WashAlert <noreply@washalert.local>}
 
   password-reset:
-    frontend-base-url: ${PASSWORD_RESET_FRONTEND_BASE_URL:${FRONTEND_BASE_URL:http://192.168.1.4:5173}}
+    frontend-base-url: ${PASSWORD_RESET_FRONTEND_BASE_URL:${FRONTEND_URL:https://www.washalert.com}}
+    reset-path: ${PASSWORD_RESET_PATH:/set-password}
 
   staff-invitation:
     frontend-base-url: ${STAFF_INVITATION_FRONTEND_BASE_URL:https://www.washalert.com}
