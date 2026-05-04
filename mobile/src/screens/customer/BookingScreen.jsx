@@ -734,7 +734,7 @@ const S = StyleSheet.create({
   breakDiv: { height:1, backgroundColor:colors.border, marginVertical:12 },
   breakTotalLbl: { fontSize:15, fontWeight:'800', color:colors.text },
   breakTotalVal: { fontSize:18, fontWeight:'800', color:colors.primary },
-  footer: { position:'absolute', bottom:0, left:0, right:0, backgroundColor:colors.surface, padding:20, borderTopWidth:1, borderTopColor:colors.border },
+  footer: { backgroundColor:colors.surface, padding:20, borderTopWidth:1, borderTopColor:colors.border },
   footerTop: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:16 },
   footerHint: { fontSize:12, fontWeight:'600', color:colors.textTertiary },
   footerTotal: { fontSize:20, fontWeight:'800', color:colors.primary },

@@ -154,6 +154,8 @@ export default function TrackingScreen({ route, navigation }) {
   const driverName    = delivData?.driverName || order?.delivery?.driver || order?.assignedDriverName || 'Assigned Driver';
   const driverPhoto   = delivData?.driverPhotoUrl || order?.delivery?.driverPhotoUrl || order?.assignedDriverPhotoUrl || null;
 
+  const canContactDriver = !!driverPhone && driverPhone.length > 5;
+
   const callDriver    = () => driverPhone && Linking.openURL(`tel:${driverPhone.replace(/[^0-9+]/g, '')}`);
   const smsDriver     = () => driverPhone && Linking.openURL(`sms:${driverPhone.replace(/[^0-9+]/g, '')}`);
   const headline = 
