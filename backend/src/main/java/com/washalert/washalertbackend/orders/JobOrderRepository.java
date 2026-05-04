@@ -60,7 +60,7 @@ public interface JobOrderRepository extends JpaRepository<JobOrder, Long> {
             value = """
                     select jo
                     from JobOrder jo
-                    where (:branch is null or lower(replace(jo.branch, ' BRANCH', '')) = lower(replace(:branch, ' BRANCH', '')))
+                    where (:branch is null or replace(lower(jo.branch), ' branch', '') = replace(lower(:branch), ' branch', ''))
                       and (:statusesEmpty = true or jo.status in :statuses)
                       and (:search is null or lower(jo.trackingNumber) like lower(concat('%', :search, '%'))
                            or lower(jo.customerName) like lower(concat('%', :search, '%')))
@@ -84,7 +84,7 @@ public interface JobOrderRepository extends JpaRepository<JobOrder, Long> {
             countQuery = """
                     select count(jo)
                     from JobOrder jo
-                    where (:branch is null or lower(replace(jo.branch, ' BRANCH', '')) = lower(replace(:branch, ' BRANCH', '')))
+                    where (:branch is null or replace(lower(jo.branch), ' branch', '') = replace(lower(:branch), ' branch', ''))
                       and (:statusesEmpty = true or jo.status in :statuses)
                       and (:search is null or lower(jo.trackingNumber) like lower(concat('%', :search, '%'))
                            or lower(jo.customerName) like lower(concat('%', :search, '%')))
