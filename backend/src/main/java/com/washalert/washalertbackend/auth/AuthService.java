@@ -429,19 +429,6 @@ public class AuthService {
     }
 
     private String passwordResetFailureMessage(Exception ex) {
-        String message = ex == null || ex.getMessage() == null ? "" : ex.getMessage().trim();
-        if (message.isBlank()) {
-            return "Unable to send password reset email. Please verify mail configuration and try again.";
-        }
-
-        String normalized = message.toLowerCase();
-        if (normalized.contains("smtp")
-                || normalized.contains("mail_")
-                || normalized.contains("sender")
-                || normalized.contains("email dispatch")) {
-            return message;
-        }
-
-        return "Unable to send password reset email. Please verify mail configuration and try again.";
+        return "We couldn't send the reset link right now. Please try again later.";
     }
 }

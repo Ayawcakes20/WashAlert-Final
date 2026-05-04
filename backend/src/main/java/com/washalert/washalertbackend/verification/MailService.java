@@ -204,23 +204,37 @@ public class MailService {
     }
 
     public void sendPasswordResetEmail(String to, String resetLink) {
-        validateMailBasics();
         try {
             log.info("[MAIL][RESET] Dispatching password reset email to {}", maskEmail(to));
-            SimpleMailMessage msg = new SimpleMailMessage();
-            msg.setFrom(from);
-            msg.setTo(to);
-            msg.setSubject("WashAlert Password Reset");
-            msg.setText("""
+            String plainText = """
                     We received a request to reset your WashAlert password.
 
                     Reset your password using this link:
                     %s
 
                     This link expires soon. If you did not request this, you can ignore this email.
-                    """.formatted(resetLink));
+                    """.formatted(resetLink);
+            String html = """
+                    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">
+                      <p style="margin:0 0 12px 0;">We received a request to reset your WashAlert password.</p>
+                      <p style="margin:0 0 12px 0;">Reset your password using this link:</p>
+                      <p style="margin:0 0 16px 0;"><a href="%s" style="color:#2563eb;text-decoration:underline;">Reset Password</a></p>
+                      <p style="margin:0;">This link expires soon. If you did not request this, you can ignore this email.</p>
+                    </div>
+                    """.formatted(resetLink);
 
-            mailSender.send(msg);
+            if (hasText(resolveResendApiKey())) {
+                validateResendMailBasics();
+                sendViaResendApi(to, "WashAlert Password Reset", plainText, html);
+            } else {
+                validateMailBasics();
+                SimpleMailMessage msg = new SimpleMailMessage();
+                msg.setFrom(from);
+                msg.setTo(to);
+                msg.setSubject("WashAlert Password Reset");
+                msg.setText(plainText);
+                mailSender.send(msg);
+            }
             log.info("[MAIL][RESET] Password reset email dispatch succeeded to {}", maskEmail(to));
         } catch (RuntimeException ex) {
             throw toMailDispatchException("RESET", to, ex);

@@ -31,13 +31,10 @@ export default function ForgotPasswordPage() {
     setSubmitting(true);
     try {
       await authApi.forgotPassword({ email: trimmedEmail });
-      toast.success("If your account exists, a reset link was sent to your email.");
+      toast.success("Password reset link sent. Please check your email.");
       navigate("/login");
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : "Unable to send reset email right now. Please try again.";
+    } catch {
+      const message = "We couldn't send the reset link right now. Please try again later.";
       setError(message);
       toast.error(message);
     } finally {
