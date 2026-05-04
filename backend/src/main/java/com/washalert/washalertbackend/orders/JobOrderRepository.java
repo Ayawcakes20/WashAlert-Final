@@ -23,6 +23,7 @@ public interface JobOrderRepository extends JpaRepository<JobOrder, Long> {
     Optional<JobOrder> findByTrackingNumber(String trackingNumber);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<JobOrder> findByTrackingNumberIgnoreCase(String trackingNumber);
+    List<JobOrder> findByStatusInAndCreatedAtAfter(Collection<JobOrderStatus> statuses, LocalDateTime after);
 
     List<JobOrder> findTop10ByOrderByCreatedAtDesc();
     List<JobOrder> findAllByOrderByCreatedAtDesc();

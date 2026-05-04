@@ -62,6 +62,13 @@ public class InventoryItem {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    @Column(name = "projected_days_remaining")
+    private Integer projectedDaysRemaining;
+
+    @Builder.Default
+    @Column(name = "low_stock_warning", nullable = false)
+    private boolean lowStockWarning = false;
+
     @PrePersist
     void onCreate() {
         LocalDateTime now = LocalDateTime.now();

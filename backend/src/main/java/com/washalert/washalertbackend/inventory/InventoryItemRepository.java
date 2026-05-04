@@ -9,4 +9,5 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem, Lo
     List<InventoryItem> findByBranchIgnoreCaseOrderByItemNameAsc(String branch);
     List<InventoryItem> findAllByOrderByBranchAscItemNameAsc();
     Optional<InventoryItem> findByBranchIgnoreCaseAndItemNameIgnoreCase(String branch, String itemName);
+    List<InventoryItem> findByItemNameIgnoreCase(String itemName);
 }
