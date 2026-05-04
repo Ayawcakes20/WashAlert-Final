@@ -16,6 +16,16 @@ public class PersistentTokenRepoConfig {
     @Bean
     public PersistentTokenRepository persistentTokenRepository(DataSource dataSource) {
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        try {
+            jdbc.execute("CREATE TABLE IF NOT EXISTS persistent_logins (" +
+                    "username VARCHAR(64) NOT NULL, " +
+                    "series VARCHAR(64) PRIMARY KEY, " +
+                    "token VARCHAR(64) NOT NULL, " +
+                    "last_used TIMESTAMP NOT NULL)");
+        } catch (Exception ex) {
+            // Log or ignore if the driver doesn't support IF NOT EXISTS, 
+            // though MySQL and H2 both do.
+        }
 
         return new PersistentTokenRepository() {
             @Override
