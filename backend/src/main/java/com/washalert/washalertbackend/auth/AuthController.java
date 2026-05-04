@@ -338,20 +338,32 @@ public class AuthController {
         try {
             staffInvitationService.setInitialPassword(req.token(), req.newPassword());
             return ResponseEntity.ok().build();
-        } catch (IllegalArgumentException ex) {
-            if ("Invalid or expired invitation token.".equalsIgnoreCase(ex.getMessage())) {
-                try {
-                    passwordResetService.resetPassword(req.token(), req.newPassword());
-                    return ResponseEntity.ok().build();
-                } catch (IllegalArgumentException resetEx) {
-                    return ResponseEntity.status(400).body(apiError(request, 400, resetEx.getMessage()));
-                } catch (IllegalStateException resetEx) {
-                    return ResponseEntity.status(503).body(apiError(request, 503, resetEx.getMessage()));
-                }
+        } catch (IllegalArgumentException invitationEx) {
+            if (!"Invalid or expired invitation token.".equalsIgnoreCase(invitationEx.getMessage())) {
+                return ResponseEntity.status(400).body(apiError(request, 400, invitationEx.getMessage()));
             }
-            return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
+            try {
+                passwordResetService.resetPassword(req.token(), req.newPassword());
+                return ResponseEntity.ok().build();
+            } catch (IllegalArgumentException resetEx) {
+                return ResponseEntity.status(400).body(apiError(request, 400, resetEx.getMessage()));
+            } catch (IllegalStateException resetEx) {
+                return ResponseEntity.status(503).body(apiError(request, 503, resetEx.getMessage()));
+            } catch (RuntimeException resetEx) {
+                return ResponseEntity.status(400).body(apiError(
+                        request,
+                        400,
+                        "Invalid or expired token. Please request a new password reset link."
+                ));
+            }
         } catch (IllegalStateException ex) {
             return ResponseEntity.status(503).body(apiError(request, 503, ex.getMessage()));
+        } catch (RuntimeException ex) {
+            return ResponseEntity.status(400).body(apiError(
+                    request,
+                    400,
+                    "Invalid or expired token. Please request a new password reset link."
+            ));
         }
     }
 

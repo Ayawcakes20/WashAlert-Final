@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, CheckCircle2, Circle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Circle, Eye, EyeOff } from "lucide-react";
 import { authApi } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
 
@@ -17,6 +17,8 @@ export default function SetPasswordPage() {
   const [error, setError] = useState("");
   const [completed, setCompleted] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
     if (!completed) return;
@@ -50,7 +52,7 @@ export default function SetPasswordPage() {
     setError("");
 
     if (!token) {
-      const message = "Invalid invitation link. Please ask an administrator to resend your invite.";
+      const message = "Invalid or expired link. Please request a new password reset link.";
       setError(message);
       toast.error(message);
       return;
@@ -71,7 +73,7 @@ export default function SetPasswordPage() {
     } catch (err: any) {
       const message =
         err?.message?.toLowerCase?.().includes("invalid") || err?.message?.toLowerCase?.().includes("expired")
-          ? "This invitation link is invalid or expired. Ask an administrator to resend your invite."
+          ? "Invalid or expired link. Please request a new password reset link."
           : err?.message || "Unable to set password.";
       setError(message);
       toast.error(message);
@@ -99,7 +101,7 @@ export default function SetPasswordPage() {
           <div className="mb-7">
             <h1 className="text-2xl font-bold text-foreground tracking-tight">Set Your Password</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Complete account setup using your invitation link.
+              Set or reset your WashAlert password securely.
             </p>
           </div>
 
@@ -122,20 +124,30 @@ export default function SetPasswordPage() {
               <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">
                 New Password
               </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  setFieldErrors((prev) => ({ ...prev, password: "" }));
-                }}
-                placeholder="Enter new password"
-                className={`w-full h-12 px-4 rounded-xl border bg-muted/30 text-sm text-foreground outline-none focus:ring-2 transition-all ${
-                  fieldErrors.password
-                    ? "border-destructive focus:ring-destructive/20 focus:border-destructive"
-                    : "border-border focus:ring-primary/20 focus:border-primary"
-                }`}
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setFieldErrors((prev) => ({ ...prev, password: "" }));
+                  }}
+                  placeholder="Enter new password"
+                  className={`w-full h-12 px-4 pr-11 rounded-xl border bg-muted/30 text-sm text-foreground outline-none focus:ring-2 transition-all ${
+                    fieldErrors.password
+                      ? "border-destructive focus:ring-destructive/20 focus:border-destructive"
+                      : "border-border focus:ring-primary/20 focus:border-primary"
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-3 inline-flex items-center text-muted-foreground hover:text-foreground"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
               {fieldErrors.password ? <p className="text-xs text-destructive mt-1.5">{fieldErrors.password}</p> : null}
             </div>
 
@@ -143,20 +155,30 @@ export default function SetPasswordPage() {
               <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">
                 Confirm Password
               </label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => {
-                  setConfirmPassword(e.target.value);
-                  setFieldErrors((prev) => ({ ...prev, confirmPassword: "" }));
-                }}
-                placeholder="Confirm password"
-                className={`w-full h-12 px-4 rounded-xl border bg-muted/30 text-sm text-foreground outline-none focus:ring-2 transition-all ${
-                  fieldErrors.confirmPassword
-                    ? "border-destructive focus:ring-destructive/20 focus:border-destructive"
-                    : "border-border focus:ring-primary/20 focus:border-primary"
-                }`}
-              />
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    setFieldErrors((prev) => ({ ...prev, confirmPassword: "" }));
+                  }}
+                  placeholder="Confirm password"
+                  className={`w-full h-12 px-4 pr-11 rounded-xl border bg-muted/30 text-sm text-foreground outline-none focus:ring-2 transition-all ${
+                    fieldErrors.confirmPassword
+                      ? "border-destructive focus:ring-destructive/20 focus:border-destructive"
+                      : "border-border focus:ring-primary/20 focus:border-primary"
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-3 inline-flex items-center text-muted-foreground hover:text-foreground"
+                  aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
               {fieldErrors.confirmPassword ? (
                 <p className="text-xs text-destructive mt-1.5">{fieldErrors.confirmPassword}</p>
               ) : null}

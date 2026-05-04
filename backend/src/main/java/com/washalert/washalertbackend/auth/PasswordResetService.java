@@ -2,6 +2,7 @@ package com.washalert.washalertbackend.auth;
 
 import com.washalert.washalertbackend.firebase.FirestoreSyncService;
 import com.washalert.washalertbackend.firebase.FirestoreUserPayloadFactory;
+import com.washalert.washalertbackend.user.UserStatus;
 import com.washalert.washalertbackend.user.User;
 import com.washalert.washalertbackend.user.UserRepository;
 import com.washalert.washalertbackend.verification.MailService;
@@ -24,6 +25,7 @@ public class PasswordResetService {
     private final PasswordEncoder passwordEncoder;
     private final MailService mailService;
     private final PasswordResetProperties props;
+    private final FirebaseIdentityService firebaseIdentityService;
     private final PersistentTokenRepository rememberMeTokenRepository;
     private final FirestoreSyncService firestoreSyncService;
 
@@ -33,6 +35,7 @@ public class PasswordResetService {
             PasswordEncoder passwordEncoder,
             MailService mailService,
             PasswordResetProperties props,
+            FirebaseIdentityService firebaseIdentityService,
             PersistentTokenRepository rememberMeTokenRepository,
             FirestoreSyncService firestoreSyncService
     ) {
@@ -41,6 +44,7 @@ public class PasswordResetService {
         this.passwordEncoder = passwordEncoder;
         this.mailService = mailService;
         this.props = props;
+        this.firebaseIdentityService = firebaseIdentityService;
         this.rememberMeTokenRepository = rememberMeTokenRepository;
         this.firestoreSyncService = firestoreSyncService;
     }
@@ -102,7 +106,22 @@ public class PasswordResetService {
             throw new IllegalArgumentException("New password must be different from your current password.");
         }
 
+        if (user.getFirebaseUid() != null && !user.getFirebaseUid().isBlank()) {
+            try {
+                firebaseIdentityService.updateUserPassword(user.getFirebaseUid(), newPassword);
+            } catch (Exception ex) {
+                throw new IllegalStateException("Unable to update account password right now. Please try again later.");
+            }
+        }
+
         user.setPasswordHash(passwordEncoder.encode(newPassword));
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            user.setStatus(UserStatus.ACTIVE);
+            user.setActivatedAt(user.getActivatedAt() == null ? now : user.getActivatedAt());
+            user.setVerifiedAt(user.getVerifiedAt() == null ? now : user.getVerifiedAt());
+            user.setMustChangePassword(false);
+            user.syncEnabledFromStatus();
+        }
         User saved = userRepository.save(user);
         firestoreSyncService.upsert("users", String.valueOf(saved.getId()), FirestoreUserPayloadFactory.fromUser(saved));
 
