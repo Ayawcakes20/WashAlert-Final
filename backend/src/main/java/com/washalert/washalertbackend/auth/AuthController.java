@@ -140,6 +140,10 @@ public class AuthController {
             ));
         } catch (ExecutionException ex) {
             Throwable root = ex.getCause() != null ? ex.getCause() : ex;
+            if (root instanceof IllegalArgumentException) {
+                log.warn("[AUTH][LOGIN][OTP] OTP send rejected for userId={}: {}", user.getId(), root.getMessage());
+                return ResponseEntity.status(400).body(apiError(request, 400, root.getMessage()));
+            }
             log.error("[AUTH][LOGIN][OTP] OTP send execution failed for userId={}: {}", user.getId(), root.getMessage(), root);
             return ResponseEntity.status(503).body(apiError(
                     request,
