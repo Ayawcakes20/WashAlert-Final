@@ -12,6 +12,8 @@ public record InventoryItemResponse(
         BigDecimal currentStock,
         BigDecimal reorderLevel,
         boolean lowStock,
+        Integer projectedDaysRemaining,
+        boolean lowStockWarning,
         LocalDateTime updatedAt
 ) {
 }

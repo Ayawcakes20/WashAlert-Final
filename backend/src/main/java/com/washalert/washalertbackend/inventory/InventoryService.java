@@ -80,24 +80,42 @@ public class InventoryService {
 
     @Transactional
     public InventoryItemResponse create(CreateInventoryItemRequest req) {
-        itemRepository.findByBranchIgnoreCaseAndItemNameIgnoreCase(req.branch().trim(), req.itemName().trim())
-                .ifPresent(existing -> {
-                    throw new IllegalStateException("Inventory item already exists for this branch.");
-                });
+        log.info("[INVENTORY] Attempting to create item: {} in branch: {}", req.itemName(), req.branch());
+        try {
+            itemRepository.findByBranchIgnoreCaseAndItemNameIgnoreCase(req.branch().trim(), req.itemName().trim())
+                    .ifPresent(existing -> {
+                        throw new IllegalStateException("Inventory item already exists for this branch.");
+                    });
 
-        InventoryItem item = InventoryItem.builder()
-                .branch(req.branch().trim())
-                .itemName(req.itemName().trim())
-                .category(req.category().trim())
-                .unit(req.unit().trim())
-                .currentStock(req.currentStock())
-                .reorderLevel(req.reorderLevel())
-                .build();
+            InventoryItem item = InventoryItem.builder()
+                    .branch(req.branch().trim())
+                    .itemName(req.itemName().trim())
+                    .category(req.category().trim())
+                    .unit(req.unit().trim())
+                    .currentStock(req.currentStock())
+                    .reorderLevel(req.reorderLevel())
+                    .lowStockWarning(false) // Explicitly set default
+                    .projectedDaysRemaining(null) // Initially null
+                    .build();
 
-        InventoryItem saved = itemRepository.save(item);
-        firestoreSyncService.upsert("inventory", String.valueOf(saved.getId()), toResponse(saved));
-        maybeNotifyLowStockCrossed(saved, false, isLowStock(saved), "created");
-        return toResponse(saved);
+            InventoryItem saved = itemRepository.save(item);
+            log.info("[INVENTORY] Successfully saved item to DB with ID: {}", saved.getId());
+
+            InventoryItemResponse response = toResponse(saved);
+            
+            try {
+                firestoreSyncService.upsert("inventory", String.valueOf(saved.getId()), response);
+            } catch (Exception fe) {
+                log.warn("[INVENTORY] Firestore sync failed for item ID: {}, but DB save succeeded: {}", saved.getId(), fe.getMessage());
+                // Don't fail the whole transaction if only Firestore sync fails (optional design choice)
+            }
+
+            maybeNotifyLowStockCrossed(saved, false, isLowStock(saved), "created");
+            return response;
+        } catch (Exception ex) {
+            log.error("[INVENTORY] CRITICAL ERROR while creating inventory item: {}", ex.getMessage(), ex);
+            throw ex;
+        }
     }
 
     @Transactional
@@ -363,6 +381,8 @@ public class InventoryService {
                 item.getCurrentStock(),
                 item.getReorderLevel(),
                 item.getCurrentStock().compareTo(item.getReorderLevel()) <= 0,
+                item.getProjectedDaysRemaining(),
+                item.isLowStockWarning(),
                 item.getUpdatedAt()
         );
     }
