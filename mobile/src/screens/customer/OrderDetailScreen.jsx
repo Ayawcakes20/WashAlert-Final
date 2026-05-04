@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { bookings as bookingsApi, branches as branchesApi, payments } from '../../services/api';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';

@@ -49,11 +49,13 @@ public class PaymongoService {
 
         // Paymongo amount is in centavos (PHP 1.00 = 100)
         long amountCentavos = amount.multiply(new java.math.BigDecimal("100")).longValue();
+        log.info("[PAYMONGO] Creating checkout session for tracking={} amountCentavos={}", 
+                order.getTrackingNumber(), amountCentavos);
 
         Map<String, Object> lineItem = Map.of(
                 "currency", "PHP",
                 "amount", amountCentavos,
-                "description", "Laundry Service: " + order.getServiceType(),
+                "description", "Laundry Service: " + String.valueOf(order.getServiceType()),
                 "name", "WashAlert Order " + order.getTrackingNumber(),
                 "quantity", 1
         );
