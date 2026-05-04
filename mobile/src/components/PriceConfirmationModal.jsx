@@ -4,6 +4,7 @@ import {
   StyleSheet, Animated, Linking, Alert, BackHandler, Image, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
 import { bookings, payments } from '../services/api';
 import logoLaundryHubs from '../../assets/images/logo-laundryhubs.webp';
 import logoSpeedyWash from '../../assets/images/logo-speedywash.webp';
@@ -19,7 +20,30 @@ const ReceiptRow = ({ label, value, bold, accent }) => (
 
 export default function PriceConfirmationModal({ visible, orderData, onConfirmed, onDismiss }) {
   const [loading, setLoading] = useState(false);
+  const [fullOrderData, setFullOrderData] = useState(orderData);
   const slideAnim = useRef(new Animated.Value(400)).current;
+
+  // Sync internal state with prop
+  useEffect(() => {
+    setFullOrderData(orderData);
+  }, [orderData]);
+
+  // Fetch full details if only ID is provided (e.g. from notification)
+  useEffect(() => {
+    if (visible && orderData && (!orderData.amount || !orderData.serviceName)) {
+      (async () => {
+        try {
+          const id = orderData.id || orderData.dbId;
+          if (id) {
+            const full = await bookings.getById(id);
+            if (full) setFullOrderData(full);
+          }
+        } catch (e) {
+          console.warn('[PriceModal] Failed to fetch full details:', e);
+        }
+      })();
+    }
+  }, [visible, orderData]);
 
   useEffect(() => {
     if (visible) {
@@ -36,10 +60,10 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
   }, [visible]);
 
   const handleConfirm = async () => {
-    if (!orderData) return;
+    if (!fullOrderData) return;
     setLoading(true);
     try {
-      const isGcash = String(orderData.paymentMethod || '').toUpperCase() === 'GCASH';
+      const isGcash = String(fullOrderData.paymentMethod || '').toUpperCase() === 'GCASH';
       
       console.log('[PAYMENT] Starting confirmation process for:', orderData.trackingNumber || orderData.id);
       console.log('[PAYMENT] Payment method:', orderData.paymentMethod);
@@ -108,21 +132,21 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
     );
   };
 
-  if (!orderData) return null;
+  if (!fullOrderData) return null;
 
-  const logo = orderData.branchName?.toLowerCase().includes('makati') ? logoLaundryHubs : logoSpeedyWash;
+  const logo = fullOrderData.branchName?.toLowerCase().includes('makati') ? logoLaundryHubs : logoSpeedyWash;
 
   // Use trackingNumber for display, dbId/id for API calls
-  const displayTrackingNumber = orderData.trackingNumber 
-    ? String(orderData.trackingNumber).replace(/^WA-/, '')
-    : String(orderData.id || '');
+  const displayTrackingNumber = fullOrderData.trackingNumber 
+    ? String(fullOrderData.trackingNumber).replace(/^WA-/, '')
+    : String(fullOrderData.id || '');
   
-  const weight        = orderData.actualWeightKg ? `${orderData.actualWeightKg} kg` : null;
-  const serviceName   = orderData.serviceName || orderData.serviceType || 'Laundry Service';
-  const serviceTotal  = orderData.finalPrice ?? orderData.servicePrice ?? 0;
-  const deliveryFee   = orderData.deliveryPrice ?? 0;
-  const grandTotal    = orderData.amount || orderData.totalPrice || (Number(serviceTotal) + Number(deliveryFee));
-  const paymentMethod = String(orderData.paymentMethod || 'Cash on Delivery').replace('_', ' ');
+  const weight        = fullOrderData.actualWeightKg ? `${fullOrderData.actualWeightKg} kg` : null;
+  const serviceName   = fullOrderData.serviceName || fullOrderData.serviceType || 'Laundry Service';
+  const serviceTotal  = fullOrderData.finalPrice ?? fullOrderData.servicePrice ?? 0;
+  const deliveryFee   = fullOrderData.deliveryPrice ?? 0;
+  const grandTotal    = fullOrderData.amount || fullOrderData.totalPrice || (Number(serviceTotal) + Number(deliveryFee));
+  const paymentMethod = String(fullOrderData.paymentMethod || 'Cash on Delivery').replace('_', ' ');
 
 
   const dateStr = new Date().toLocaleDateString('en-PH', {
@@ -155,7 +179,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
                 <Image source={logo} style={S.logoImg} resizeMode="contain" />
               </View>
               <Text style={S.brandName}>WashAlert</Text>
-              <Text style={S.branchName}>{String(orderData.branchName || 'MAKATI BRANCH').toUpperCase()}</Text>
+              <Text style={S.branchName}>{String(fullOrderData.branchName || 'MAKATI BRANCH').toUpperCase()}</Text>
             </View>
 
             {/* Tracking Number */}
@@ -167,11 +191,11 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
             {/* Customer row */}
             <View style={S.customerRow}>
               <View style={{flex:1}}>
-                <Text style={S.custName}>{orderData.customerName || 'Customer'}</Text>
-                {orderData.customerPhone ? <Text style={S.custPhone}>{orderData.customerPhone}</Text> : null}
+                <Text style={S.custName}>{fullOrderData.customerName || 'Customer'}</Text>
+                {fullOrderData.customerPhone ? <Text style={S.custPhone}>{fullOrderData.customerPhone}</Text> : null}
               </View>
               <View style={S.serviceChip}>
-                <Text style={S.serviceChipTxt}>{String(orderData.serviceType||'').replace('_',' ') || 'Standard'}</Text>
+                <Text style={S.serviceChipTxt}>{String(fullOrderData.serviceType||'').replace('_',' ') || 'Standard'}</Text>
               </View>
             </View>
 
@@ -191,11 +215,11 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
             {Number(deliveryFee) > 0 && (
               <ReceiptRow label="Logistics & Delivery" value={fmt(deliveryFee)} />
             )}
-            {orderData.detergent && orderData.detergent !== 'None' && (
-              <ReceiptRow label={`Detergent (${orderData.detergent})`} value="Included" />
+            {fullOrderData.detergent && fullOrderData.detergent !== 'None' && (
+              <ReceiptRow label={`Detergent (${fullOrderData.detergent})`} value="Included" />
             )}
-            {orderData.conditioner && orderData.conditioner !== 'None' && (
-              <ReceiptRow label={`Conditioner (${orderData.conditioner})`} value="Included" />
+            {fullOrderData.conditioner && fullOrderData.conditioner !== 'None' && (
+              <ReceiptRow label={`Conditioner (${fullOrderData.conditioner})`} value="Included" />
             )}
 
             {/* Total box */}
@@ -220,7 +244,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
               {loading
                 ? <ActivityIndicator color="#fff" />
                 : <Text style={S.confirmBtnTxt}>
-                    {String(orderData.paymentMethod || '').toUpperCase() === 'GCASH' 
+                    {String(fullOrderData.paymentMethod || '').toUpperCase() === 'GCASH' 
                       ? 'Confirm & Pay with GCash' 
                       : 'Confirm & start washing'}
                   </Text>

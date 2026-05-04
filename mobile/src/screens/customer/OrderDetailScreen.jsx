@@ -480,6 +480,20 @@ export default function OrderDetailScreen({ route, navigation }) {
             valueStyle={{fontWeight:'900', color:colors.primary, fontSize:18}}
           />
           <Row label="Payment" value={order.paymentMethod || '—'}/>
+
+          {/* ADDED: Pay Now button for GCash */}
+          {String(order.paymentMethod || '').toLowerCase() === 'gcash' && 
+           String(order.paymentStatus || '').toLowerCase() !== 'paid' && 
+           ['price_approved', 'washing', 'ready_for_delivery', 'delivering'].includes(ns) && (
+            <TouchableOpacity 
+              style={styles.payNowBtn} 
+              onPress={payNow}
+              activeOpacity={0.8}
+            >
+              <MaterialCommunityIcons name="cellphone-wireless" size={18} color="#fff" />
+              <Text style={styles.payNowTxt}>Pay via GCash Now</Text>
+            </TouchableOpacity>
+          )}
         </Accordion>
 
         {/* DELIVERY ADDRESS (if applicable) */}
@@ -633,4 +647,26 @@ const styles = StyleSheet.create({
   footerPrimaryText: { fontSize:15, fontWeight:'700', color:'#FFF' },
   cancelBtn:  { alignItems:'center', paddingVertical:8 },
   cancelText: { fontSize:13, fontWeight:'700', color:colors.error },
+
+  // Pay Now Button
+  payNowBtn: {
+    backgroundColor: '#007AFF',
+    borderRadius: 12,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 16,
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  payNowTxt: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
 });
