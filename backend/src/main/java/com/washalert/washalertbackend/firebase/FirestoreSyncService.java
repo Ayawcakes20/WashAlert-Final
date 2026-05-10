@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class FirestoreSyncService {
@@ -54,6 +55,32 @@ public class FirestoreSyncService {
                     .set(normalized);
         } catch (Exception ex) {
             log.warn("Firestore upsert failed for collection={} docId={}: {}", collection, documentId, ex.getMessage());
+        }
+    }
+
+    /**
+     * Blocking variant of upsert for critical documents (order status, delivery assignment).
+     * Waits up to 5 seconds for Firestore to confirm the write. Logs an error on timeout
+     * rather than silently losing the update.
+     */
+    public void upsertBlocking(String collection, String documentId, Object payload) {
+        if (!isEnabled()) return;
+        if (!StringUtils.hasText(collection) || !StringUtils.hasText(documentId) || payload == null) return;
+
+        try {
+            Map<String, Object> doc = objectMapper.convertValue(payload, new TypeReference<>() {});
+            Map<String, Object> normalized = normalizeMap(doc);
+            normalized.put("_syncedAt", Instant.now().toString());
+
+            firestore.get()
+                    .collection(collection.trim())
+                    .document(sanitizeDocumentId(documentId))
+                    .set(normalized)
+                    .get(5, TimeUnit.SECONDS);
+        } catch (java.util.concurrent.TimeoutException tex) {
+            log.error("Firestore blocking upsert timed out for collection={} docId={}", collection, documentId);
+        } catch (Exception ex) {
+            log.error("Firestore blocking upsert failed for collection={} docId={}: {}", collection, documentId, ex.getMessage());
         }
     }
 

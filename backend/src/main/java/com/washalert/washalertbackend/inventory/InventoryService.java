@@ -19,6 +19,10 @@ import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import com.washalert.washalertbackend.common.dto.PagedResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -192,10 +196,68 @@ public class InventoryService {
         firestoreSyncService.delete("inventory", String.valueOf(item.getId()));
     }
 
+    public PagedResponse<InventoryItemResponse> listPaged(String branch, AuthUserDetails principal, Pageable pageable) {
+        User actor = principal.getUser();
+        String effectiveBranch = resolveEffectiveBranch(branch, actor);
+
+        Page<InventoryItem> page = effectiveBranch == null
+                ? itemRepository.findAll(pageable)
+                : itemRepository.findByBranchIgnoreCase(effectiveBranch, pageable);
+
+        return PagedResponse.from(page.map(this::toResponse));
+    }
+
     public List<InventoryItemResponse> lowStockAlerts(AuthUserDetails principal) {
         return list(null, principal).stream()
                 .filter(InventoryItemResponse::lowStock)
                 .toList();
+    }
+
+    /**
+     * Auto-deducts 1 pack each of the order's detergent and fabric conditioner
+     * from branch inventory when washing begins. Failures are swallowed so an
+     * inventory gap never blocks an order status transition.
+     */
+    @Transactional
+    public void deductForOrder(JobOrder order) {
+        if (order == null || order.getBranch() == null) return;
+        String branch = order.getBranch().trim();
+        String actor = "system";
+
+        deductConsumable(branch, order.getDetergentPreference(), order.getTrackingNumber(), actor);
+        deductConsumable(branch, order.getFabricConditionerPreference(), order.getTrackingNumber(), actor);
+    }
+
+    private void deductConsumable(String branch, String itemName, String trackingNumber, String actor) {
+        if (itemName == null || itemName.isBlank()) return;
+        try {
+            InventoryItem item = itemRepository
+                    .findByBranchIgnoreCaseAndItemNameIgnoreCase(branch, itemName.trim())
+                    .orElse(null);
+            if (item == null) {
+                log.warn("[INVENTORY] Deduct skipped — item '{}' not found in branch '{}'", itemName, branch);
+                return;
+            }
+            BigDecimal next = item.getCurrentStock().subtract(BigDecimal.ONE);
+            if (next.compareTo(BigDecimal.ZERO) < 0) {
+                log.warn("[INVENTORY] Deduct skipped — negative stock would result for '{}' in '{}'", itemName, branch);
+                return;
+            }
+            boolean wasLow = isLowStock(item);
+            item.setCurrentStock(next);
+            InventoryItem saved = itemRepository.save(item);
+            InventoryMovement movement = InventoryMovement.builder()
+                    .inventoryItem(saved)
+                    .quantityDelta(BigDecimal.ONE.negate())
+                    .reason("Order: " + trackingNumber)
+                    .performedBy(actor)
+                    .build();
+            movementRepository.save(movement);
+            firestoreSyncService.upsert("inventory", String.valueOf(saved.getId()), toResponse(saved));
+            maybeNotifyLowStockCrossed(saved, wasLow, isLowStock(saved), "deducted");
+        } catch (Exception ex) {
+            log.error("[INVENTORY] Failed to deduct '{}' for order '{}': {}", itemName, trackingNumber, ex.getMessage());
+        }
     }
 
     public List<InventoryForecastResponse> forecast(String branch, Integer days, AuthUserDetails principal) {

@@ -8,6 +8,7 @@ import com.washalert.washalertbackend.orders.dto.DriverDeliveryFailedRequest;
 import com.washalert.washalertbackend.orders.dto.EditJobOrderRequest;
 import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
 import com.washalert.washalertbackend.orders.dto.OrderTrackingResponse;
+import com.washalert.washalertbackend.orders.dto.RescheduleOrderRequest;
 import com.washalert.washalertbackend.orders.dto.SetPriceRequest;
 import com.washalert.washalertbackend.orders.dto.UpdateJobOrderRequest;
 import com.washalert.washalertbackend.security.AuthUserDetails;
@@ -74,6 +75,25 @@ public class JobOrderController {
                 toDate,
                 pageable
         );
+    }
+
+    @PostMapping("/my/{trackingNumber}/cancel")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public JobOrderResponse cancelMyOrder(
+            @PathVariable String trackingNumber,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.cancelMyOrder(trackingNumber, principal);
+    }
+
+    @PutMapping("/my/{trackingNumber}/reschedule")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public JobOrderResponse rescheduleMyOrder(
+            @PathVariable String trackingNumber,
+            @Valid @RequestBody RescheduleOrderRequest req,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.rescheduleMyOrder(trackingNumber, req, principal);
     }
 
     @GetMapping("/my/paged")

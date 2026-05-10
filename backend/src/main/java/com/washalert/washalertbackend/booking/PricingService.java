@@ -4,12 +4,14 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class PricingService {
 
     public static record PriceEstimation(
             BigDecimal servicePrice,
+            BigDecimal rushPrice,
             BigDecimal suppliesPrice,
             BigDecimal deliveryPrice,
             BigDecimal totalPrice
@@ -25,22 +27,23 @@ public class PricingService {
             BigDecimal distanceKm
     ) {
         BigDecimal servicePrice = calculateServicePrice(serviceName, weightKg);
-        
-        if (isRush) {
-            servicePrice = servicePrice.add(new BigDecimal("150.00"));
-        }
-
+        BigDecimal rushPrice = isRush ? new BigDecimal("150.00") : BigDecimal.ZERO;
         BigDecimal suppliesPrice = calculateSuppliesPrice(detergent, fabcon);
-        BigDecimal deliveryPrice = calculateDeliveryPrice(branch, distanceKm);
+        BigDecimal deliveryPrice = calculateDeliveryPrice(distanceKm);
 
-        BigDecimal total = servicePrice.add(suppliesPrice).add(deliveryPrice);
+        BigDecimal total = servicePrice.add(rushPrice).add(suppliesPrice).add(deliveryPrice);
 
-        return new PriceEstimation(servicePrice, suppliesPrice, deliveryPrice, total);
+        return new PriceEstimation(servicePrice, rushPrice, suppliesPrice, deliveryPrice, total);
     }
 
     private BigDecimal calculateServicePrice(String serviceName, BigDecimal weight) {
         if (serviceName == null) return BigDecimal.ZERO;
         String name = serviceName.toLowerCase(Locale.ROOT);
+
+        // Dry cleaning requires a manual staff quote — return zero until staff sets it
+        if (name.contains("dry clean")) {
+            return BigDecimal.ZERO;
+        }
 
         // Standard 7kg Wash/Dry
         if (name.contains("wash") && !name.contains("dry") && !name.contains("full") && !name.contains("hand")) {
@@ -62,7 +65,6 @@ public class PricingService {
         }
         if (name.contains("basic full")) {
             if (weight.compareTo(new BigDecimal("8.0")) > 0) {
-                // Madness limit: 245 + 50 per extra kg? The requirement said "Madness Limit additional 1kg on top of 8kg - 50pesos"
                 BigDecimal extra = weight.subtract(new BigDecimal("8.0")).max(BigDecimal.ZERO);
                 return new BigDecimal("245.00").add(extra.multiply(new BigDecimal("50.00")));
             }
@@ -104,25 +106,18 @@ public class PricingService {
         return total;
     }
 
-    private BigDecimal calculateDeliveryPrice(String branch, BigDecimal distanceKm) {
+    private BigDecimal calculateDeliveryPrice(BigDecimal distanceKm) {
         if (distanceKm == null || distanceKm.compareTo(BigDecimal.ZERO) <= 0) return BigDecimal.ZERO;
-        
-        // Makati is always free
-        if (branch != null && branch.toLowerCase(Locale.ROOT).contains("makati")) {
-            return BigDecimal.ZERO;
-        }
 
-        // 3km or less is free
+        // 3km or less is free for all branches
         if (distanceKm.compareTo(new BigDecimal("3.0")) <= 0) {
             return BigDecimal.ZERO;
         }
 
-        // 3.1km -> 40
-        // 4.0km -> 50
-        // Formula: 40 + (ceil(distance) - 3) * 10
+        // 3.1km -> 40, 4.0km -> 50, formula: 40 + (ceil(distance) - 3) * 10
         double dist = distanceKm.doubleValue();
         int extraKm = (int) Math.ceil(dist) - 3;
-        
+
         return new BigDecimal("40.00").add(new BigDecimal(String.valueOf(extraKm * 10)));
     }
 }

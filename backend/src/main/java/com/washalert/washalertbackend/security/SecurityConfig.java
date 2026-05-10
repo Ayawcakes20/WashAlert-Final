@@ -16,6 +16,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.RememberMeServices;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -52,9 +54,27 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http, GoogleOAuth2UserService googleOAuth2UserService)
             throws Exception {
+        CookieCsrfTokenRepository csrfRepo = CookieCsrfTokenRepository.withHttpOnlyFalse();
+        CsrfTokenRequestAttributeHandler csrfHandler = new CsrfTokenRequestAttributeHandler();
+
         http
                 .cors(Customizer.withDefaults())
-                .csrf(csrf -> csrf.disable())
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(csrfRepo)
+                        .csrfTokenRequestHandler(csrfHandler)
+                        // Webhooks use HMAC signature verification — exempt from CSRF
+                        .ignoringRequestMatchers(
+                                "/api/payments/webhook",
+                                "/api/payments/paymongo/webhook",
+                                // Mobile and auth endpoints rely on Bearer tokens, not cookies
+                                "/api/auth/**",
+                                "/api/bookings",
+                                "/api/payments/checkout/**",
+                                "/api/support/chat",
+                                "/oauth2/**",
+                                "/login/oauth2/**"
+                        )
+                )
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.ALWAYS))
 
                 .securityContext(sc -> sc.requireExplicitSave(false))
@@ -79,7 +99,6 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
-                        .requestMatchers("/test").permitAll()
                         .requestMatchers("/api/auth/firebase-login-otp/**").permitAll()
 
                         .requestMatchers(HttpMethod.POST,
@@ -95,7 +114,6 @@ public class SecurityConfig {
                                 "/api/auth/set-password",
                                 "/api/auth/otp/**",
                                 "/api/bookings",
-                                "/api/payments/proof",
                                 "/api/payments/webhook",
                                 "/api/payments/checkout/**",
                                 "/api/payments/paymongo/webhook",
@@ -110,10 +128,13 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/auth/logout").authenticated()
 
+                        // /api/payments/proof now requires CUSTOMER authentication
+                        .requestMatchers(HttpMethod.POST, "/api/payments/proof").hasRole("CUSTOMER")
+
                         .requestMatchers(HttpMethod.GET, "/api/admin/users/drivers").hasAnyRole("ADMIN", "STAFF")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/machines/**").hasAnyRole("ADMIN", "STAFF")
-                        .requestMatchers(HttpMethod.GET,  "/api/orders/my/paged").hasRole("CUSTOMER")
+                        .requestMatchers(HttpMethod.GET, "/api/orders/my/paged").hasRole("CUSTOMER")
                         .requestMatchers(HttpMethod.PUT, "/api/orders/*/confirm-price").hasRole("CUSTOMER")
                         .requestMatchers("/api/orders/**").hasAnyRole("ADMIN", "STAFF", "CUSTOMER", "DRIVER")
                         .requestMatchers("/api/deliveries/**").hasAnyRole("ADMIN", "STAFF", "DRIVER")
@@ -141,6 +162,7 @@ public class SecurityConfig {
         cfg.setAllowedMethods(List.of(
                 "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cfg.setAllowedHeaders(List.of("*"));
+        cfg.setExposedHeaders(List.of("X-XSRF-TOKEN"));
         cfg.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

@@ -1059,6 +1059,11 @@ export default function OrderManagementPage() {
                         <div className="font-black text-slate-800 text-[12px] uppercase tracking-tight leading-none">
                           {order.serviceName || serviceTypeLabel[order.serviceType]}
                         </div>
+                        {order.serviceName?.toLowerCase().includes("dry") && (
+                          <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 w-fit">
+                            <span className="text-[8px] font-black text-amber-700 uppercase tracking-wide">Quote Required</span>
+                          </div>
+                        )}
                         <div className="flex items-center gap-1.5">
                           {(order.paymentMethod?.toUpperCase().includes('GCASH')) ? (
                              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-blue-50 border border-blue-100 shadow-sm">
@@ -1183,7 +1188,7 @@ export default function OrderManagementPage() {
                             className="h-9 px-4 rounded-xl font-black text-xs bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/20"
                             onClick={() => openSetPriceModal(order)}
                           >
-                            Set Weight
+                            {order.serviceName?.toLowerCase().includes("dry") ? "Set Quote" : "Set Weight"}
                           </Button>
                         )}
                         
@@ -1274,7 +1279,9 @@ export default function OrderManagementPage() {
               </div>
               <div className="min-w-0">
                 <DialogTitle className="text-xl font-black tracking-tight text-white leading-none">
-                  Finalize Weight & Receipt
+                  {orders.find(o => o.id === setPriceOrderId)?.serviceName?.toLowerCase().includes("dry")
+                    ? "Set Dry Cleaning Quote"
+                    : "Finalize Weight & Receipt"}
                 </DialogTitle>
                 <div className="flex items-center gap-2.5 mt-1.5">
                   <span className="text-blue-400 font-black text-xs tabular-nums uppercase tracking-widest">{orders.find(o => o.id === setPriceOrderId)?.orderId || `WA-${setPriceOrderId}`}</span>
@@ -2072,7 +2079,7 @@ export default function OrderManagementPage() {
                       className="flex-1 bg-violet-600 hover:bg-violet-700 text-white font-black rounded-xl h-14 shadow-lg shadow-violet-200"
                       onClick={() => openSetPriceModal(selectedOrder)}
                     >
-                      <Scale className="mr-2 h-5 w-5" /> Set Weight & Price
+                      <Scale className="mr-2 h-5 w-5" /> {selectedOrder.serviceName?.toLowerCase().includes("dry") ? "Set Dry-Clean Quote" : "Set Weight & Price"}
                     </Button>
                   ) : selectedOrder.status === 'AWAITING_PRICE_CONFIRMATION' ? (
                     <>

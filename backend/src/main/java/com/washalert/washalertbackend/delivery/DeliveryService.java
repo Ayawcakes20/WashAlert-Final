@@ -183,7 +183,7 @@ public class DeliveryService {
                 )
         );
 
-        firestoreSyncService.upsert("deliveries", saved.getJobOrder().getTrackingNumber(), toResponse(saved));
+        firestoreSyncService.upsertBlocking("deliveries", saved.getJobOrder().getTrackingNumber(), toResponse(saved));
         return toResponse(saved);
     }
 

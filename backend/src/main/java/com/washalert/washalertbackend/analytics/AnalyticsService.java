@@ -14,6 +14,7 @@ import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +41,7 @@ public class AnalyticsService {
         this.paymentRepository = paymentRepository;
     }
 
+    @Cacheable(value = "analytics-summary", key = "(#branch ?: 'global') + ':' + #fromDate + ':' + #toDate + ':' + #principal.user.role.name()")
     @Transactional(readOnly = true)
     public AnalyticsSummaryResponse summary(LocalDate fromDate, LocalDate toDate, String branch, AuthUserDetails principal) {
         LocalDate from = (fromDate == null) ? LocalDate.now().minusDays(6) : fromDate;

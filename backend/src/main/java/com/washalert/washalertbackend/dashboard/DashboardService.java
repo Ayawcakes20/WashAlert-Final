@@ -10,6 +10,7 @@ import com.washalert.washalertbackend.payment.PaymentStatus;
 import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -26,6 +27,7 @@ public class DashboardService {
         this.machines = machines;
     }
 
+    @Cacheable(value = "dashboard-summary", key = "#principal.user.role.name() + ':' + (#principal.user.branch ?: 'global')")
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public DashboardSummaryResponse summary(AuthUserDetails principal) {
         User actor = principal.getUser();

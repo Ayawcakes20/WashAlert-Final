@@ -5,6 +5,9 @@ import com.washalert.washalertbackend.common.dto.PagedResponse;
 import com.washalert.washalertbackend.delivery.DeliveryService;
 import com.washalert.washalertbackend.firebase.FirestoreReadService;
 import com.washalert.washalertbackend.firebase.FirestoreSyncService;
+import com.washalert.washalertbackend.inventory.InventoryService;
+import com.washalert.washalertbackend.machines.MachineRepository;
+import com.washalert.washalertbackend.machines.MachineStatus;
 import com.washalert.washalertbackend.notification.NotificationService;
 import com.washalert.washalertbackend.orders.dto.CreateJobOrderRequest;
 import com.washalert.washalertbackend.orders.dto.DashboardSummaryResponse;
@@ -56,6 +59,8 @@ public class JobOrderService {
     private final PaymentRecordRepository paymentRepository;
     private final DeliveryService deliveryService;
     private final UserRepository userRepository;
+    private final InventoryService inventoryService;
+    private final MachineRepository machineRepository;
 
     public JobOrderService(
             JobOrderRepository repo,
@@ -67,7 +72,9 @@ public class JobOrderService {
             DataReadProperties dataReadProperties,
             PaymentRecordRepository paymentRepository,
             DeliveryService deliveryService,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            InventoryService inventoryService,
+            MachineRepository machineRepository) {
         this.repo = repo;
         this.historyRepository = historyRepository;
         this.timelineService = timelineService;
@@ -78,6 +85,8 @@ public class JobOrderService {
         this.paymentRepository = paymentRepository;
         this.deliveryService = deliveryService;
         this.userRepository = userRepository;
+        this.inventoryService = inventoryService;
+        this.machineRepository = machineRepository;
     }
 
     @Transactional(readOnly = true)
@@ -347,6 +356,9 @@ public class JobOrderService {
                         "Invalid job order status transition from " + jo.getStatus() + " to " + req.status() + ".");
             }
             jo.setStatus(req.status());
+            if (req.status() == JobOrderStatus.WASHING) {
+                inventoryService.deductForOrder(jo);
+            }
             timelineService.log(jo, jo.getStatus(), actor.getEmail(), "Status updated by staff/admin");
             notificationService.enqueueEmail(
                     jo.getCustomerEmail(),
@@ -385,7 +397,7 @@ public class JobOrderService {
 
         JobOrder saved = repo.save(jo);
         JobOrderResponse response = toResponse(saved);
-        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        firestoreSyncService.upsertBlocking("orders", saved.getTrackingNumber(), response);
         return response;
     }
 
@@ -1117,5 +1129,84 @@ public class JobOrderService {
             case CANCELLED -> false;
             case COLLECTION_FAILED -> to == JobOrderStatus.ASSIGNED_FOR_PICKUP || to == JobOrderStatus.CANCELLED;
         };
+    }
+
+    // ── CUSTOMER SELF-SERVICE ─────────────────────────────────────────────────
+
+    @Transactional
+    public JobOrderResponse cancelMyOrder(String trackingNumber, AuthUserDetails principal) {
+        User actor = principal.getUser();
+        JobOrder jo = repo.findByTrackingNumber(normalizeTrackingNumber(trackingNumber))
+                .orElseThrow(() -> new OrderNotFoundException("Order not found."));
+
+        if (!jo.getCustomerEmail().equalsIgnoreCase(actor.getEmail())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can only cancel your own orders.");
+        }
+        if (jo.getStatus() != JobOrderStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Only PENDING orders can be cancelled. Current status: " + jo.getStatus());
+        }
+
+        jo.setStatus(JobOrderStatus.CANCELLED);
+        timelineService.log(jo, jo.getStatus(), actor.getEmail(), "Cancelled by customer");
+        notificationService.enqueuePushToRoles(
+                List.of(Role.STAFF, Role.ADMIN),
+                jo.getBranch(),
+                "Order Cancelled",
+                "Customer cancelled order " + jo.getTrackingNumber() + ".",
+                "ORDER_CANCELLED",
+                jo.getTrackingNumber() + ":cancelled");
+
+        JobOrder saved = repo.save(jo);
+        JobOrderResponse response = toResponse(saved);
+        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        return response;
+    }
+
+    @Transactional
+    public JobOrderResponse rescheduleMyOrder(String trackingNumber, RescheduleOrderRequest req,
+            AuthUserDetails principal) {
+        User actor = principal.getUser();
+        JobOrder jo = repo.findByTrackingNumber(normalizeTrackingNumber(trackingNumber))
+                .orElseThrow(() -> new OrderNotFoundException("Order not found."));
+
+        if (!jo.getCustomerEmail().equalsIgnoreCase(actor.getEmail())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can only reschedule your own orders.");
+        }
+        if (jo.getStatus() != JobOrderStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Only PENDING orders can be rescheduled. Current status: " + jo.getStatus());
+        }
+        if (req.newDate().isBefore(java.time.LocalDate.now())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "New date cannot be in the past.");
+        }
+
+        long booked = repo.countByBranchIgnoreCaseAndBookingDateAndSlotStartTime(
+                jo.getBranch(), req.newDate(), req.newSlotStartTime());
+        long capacity = machineRepository.countByBranchIgnoreCaseAndStatusNot(jo.getBranch(), MachineStatus.MAINTENANCE);
+        if (capacity <= 0) capacity = 1L;
+        if (booked >= capacity) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "The selected time slot is full. Please choose another.");
+        }
+
+        jo.setBookingDate(req.newDate());
+        jo.setSlotStartTime(req.newSlotStartTime());
+        jo.setSlotEndTime(req.newSlotStartTime().plusMinutes(90));
+        timelineService.log(jo, jo.getStatus(), actor.getEmail(),
+                "Rescheduled to " + req.newDate() + " " + req.newSlotStartTime());
+        notificationService.enqueuePushToRoles(
+                List.of(Role.STAFF, Role.ADMIN),
+                jo.getBranch(),
+                "Order Rescheduled",
+                "Customer rescheduled order " + jo.getTrackingNumber() + " to "
+                        + req.newDate() + " " + req.newSlotStartTime() + ".",
+                "ORDER_RESCHEDULED",
+                jo.getTrackingNumber() + ":rescheduled");
+
+        JobOrder saved = repo.save(jo);
+        JobOrderResponse response = toResponse(saved);
+        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        return response;
     }
 }

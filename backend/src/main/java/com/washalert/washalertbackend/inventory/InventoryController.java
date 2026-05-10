@@ -5,8 +5,12 @@ import com.washalert.washalertbackend.inventory.dto.CreateInventoryItemRequest;
 import com.washalert.washalertbackend.inventory.dto.InventoryForecastResponse;
 import com.washalert.washalertbackend.inventory.dto.InventoryItemResponse;
 import com.washalert.washalertbackend.inventory.dto.UpdateInventoryItemRequest;
+import com.washalert.washalertbackend.common.dto.PagedResponse;
 import com.washalert.washalertbackend.security.AuthUserDetails;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -39,6 +43,16 @@ public class InventoryController {
             @AuthenticationPrincipal AuthUserDetails principal
     ) {
         return inventoryService.list(branch, principal);
+    }
+
+    @GetMapping("/paged")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public PagedResponse<InventoryItemResponse> listPaged(
+            @RequestParam(required = false) String branch,
+            @AuthenticationPrincipal AuthUserDetails principal,
+            @PageableDefault(size = 20, sort = "itemName", direction = Sort.Direction.ASC) Pageable pageable
+    ) {
+        return inventoryService.listPaged(branch, principal, pageable);
     }
 
     @PostMapping("/items")

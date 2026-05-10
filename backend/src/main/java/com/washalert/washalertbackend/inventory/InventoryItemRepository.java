@@ -1,5 +1,7 @@
 package com.washalert.washalertbackend.inventory;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -10,4 +12,7 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem, Lo
     List<InventoryItem> findAllByOrderByBranchAscItemNameAsc();
     Optional<InventoryItem> findByBranchIgnoreCaseAndItemNameIgnoreCase(String branch, String itemName);
     List<InventoryItem> findByItemNameIgnoreCase(String itemName);
+
+    Page<InventoryItem> findByBranchIgnoreCase(String branch, Pageable pageable);
+    Page<InventoryItem> findAll(Pageable pageable);
 }

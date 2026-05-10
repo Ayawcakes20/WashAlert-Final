@@ -191,6 +191,11 @@ type ApiRequestOptions = {
   headers?: Record<string, string>;
 };
 
+const getCsrfToken = (): string | null => {
+  const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : null;
+};
+
 const parseResponse = async <T>(response: Response): Promise<T> => {
   const text = await response.text();
   let data: any = null;
@@ -214,11 +219,14 @@ const parseResponse = async <T>(response: Response): Promise<T> => {
 
 export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {}): Promise<T> => {
   const { method = "GET", body, headers } = options;
+  const isMutating = method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
+  const csrfToken = isMutating ? getCsrfToken() : null;
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...(csrfToken ? { "X-XSRF-TOKEN": csrfToken } : {}),
       ...headers,
     },
     body: body ? JSON.stringify(body) : undefined,

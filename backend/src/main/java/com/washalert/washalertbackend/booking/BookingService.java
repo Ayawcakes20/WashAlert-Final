@@ -171,7 +171,7 @@ public class BookingService {
                 .specialInstructions(trimToNull(req.specialInstructions()))
                 .servicePrice(req.servicePrice() != null ? req.servicePrice() : est.servicePrice())
                 .suppliesPrice(req.suppliesPrice() != null ? req.suppliesPrice() : est.suppliesPrice())
-                .rushPrice(req.rushPrice() != null ? req.rushPrice() : (req.isRush() ? new BigDecimal("150.00") : BigDecimal.ZERO))
+                .rushPrice(req.rushPrice() != null ? req.rushPrice() : est.rushPrice())
                 .deliveryPrice(req.deliveryPrice() != null ? req.deliveryPrice() : est.deliveryPrice())
                 .totalPrice(req.total() != null ? req.total() : est.totalPrice())
                 .paymentMethod(req.paymentMethod())
