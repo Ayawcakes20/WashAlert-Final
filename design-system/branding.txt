@@ -1,0 +1,66 @@
+Brand: Triplets LaundryHubs
+
+Colors:
+Primary: #0F2A44 (Navy Blue)
+Secondary: #2ED1C1 (Mint Green)
+Accent: #F5C542 (Yellow / Gold)
+
+Background:
+- Main: #F7F9FC (Light Gray)
+- Surface: #FFFFFF (White)
+- Card: #FFFFFF
+
+Text:
+- Primary: #1A1A1A
+- Secondary: #6B7280
+- Disabled: #9CA3AF
+
+Status Colors:
+- Pending: #F5C542 (Yellow)
+- In Progress: #3B82F6 (Blue)
+- Completed: #22C55E (Green)
+- Cancelled: #EF4444 (Red)
+
+Style:
+- Clean, modern, and minimal
+- Friendly and professional tone
+- Soft rounded corners (12px–16px)
+- Consistent spacing (8px grid system)
+- Light shadows for elevation
+- Avoid clutter, prioritize readability
+
+Components:
+- Buttons:
+  - Primary: Navy background, white text
+  - Secondary: Mint background, dark text
+  - Outline: Navy border, transparent background
+- Cards:
+  - White background
+  - Rounded corners
+  - Soft shadow
+- Inputs:
+  - Light border (#E5EAF0)
+  - Rounded corners
+  - Clear focus states (mint highlight)
+
+Web:
+- Dashboard-style layout
+- Left sidebar navigation (navy background)
+- Active menu highlighted (mint or gold)
+- Clean tables with spacing and hover states
+- Status badges with color coding
+- Cards for analytics and summaries
+
+Mobile:
+- Card-based layout
+- Large touch-friendly buttons
+- Clear section separation
+- Sticky bottom CTA buttons (booking, confirm)
+- Consistent header styling
+- Friendly and readable UI for customers
+
+UX:
+- Simple and intuitive navigation
+- Clear call-to-action buttons
+- Minimal steps for booking flow
+- Visual feedback for loading, success, and errors
