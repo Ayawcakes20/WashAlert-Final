@@ -1,34 +1,31 @@
 package com.washalert.washalertbackend.config;
 
+import com.github.benmanes.caffeine.cache.Caffeine;
+import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.caffeine.CaffeineCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.cache.RedisCacheConfiguration;
-import org.springframework.data.redis.cache.RedisCacheManager;
-import org.springframework.data.redis.connection.RedisConnectionFactory;
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
-import org.springframework.data.redis.serializer.RedisSerializationContext;
 
-import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 
 @Configuration
 @EnableCaching
 public class CacheConfig {
 
     @Bean
-    public RedisCacheManager cacheManager(RedisConnectionFactory factory) {
-        RedisCacheConfiguration defaults = RedisCacheConfiguration.defaultCacheConfig()
-                .entryTtl(Duration.ofMinutes(5))
-                .disableCachingNullValues()
-                .serializeValuesWith(RedisSerializationContext.SerializationPair
-                        .fromSerializer(new GenericJackson2JsonRedisSerializer()));
+    public CacheManager cacheManager() {
+        CaffeineCacheManager manager = new CaffeineCacheManager();
 
-        return RedisCacheManager.builder(factory)
-                .cacheDefaults(defaults)
-                .withCacheConfiguration("dashboard-summary",
-                        defaults.entryTtl(Duration.ofMinutes(2)))
-                .withCacheConfiguration("analytics-summary",
-                        defaults.entryTtl(Duration.ofMinutes(10)))
-                .build();
+        // Default 5-minute TTL for all caches
+        manager.setCaffeine(Caffeine.newBuilder()
+                .expireAfterWrite(5, TimeUnit.MINUTES)
+                .maximumSize(500));
+
+        // Pre-declare named caches (TTL is driven by the default spec above;
+        // per-cache TTL requires individual CaffeineCache beans — kept simple here)
+        manager.setCacheNames(java.util.List.of("dashboard-summary", "analytics-summary"));
+
+        return manager;
     }
 }
