@@ -191,9 +191,11 @@ type ApiRequestOptions = {
   headers?: Record<string, string>;
 };
 
+let memoryCsrfToken: string | null = null;
+
 const getCsrfToken = (): string | null => {
   const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]*)/);
-  return match ? decodeURIComponent(match[1]) : null;
+  return match ? decodeURIComponent(match[1]) : memoryCsrfToken;
 };
 
 const parseResponse = async <T>(response: Response): Promise<T> => {
@@ -226,7 +228,9 @@ const ensureCsrfCookie = async (): Promise<string | null> => {
   let token = getCsrfToken();
   if (token) return token;
   // Fire a lightweight GET to force the backend to set the cookie
-  await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: "include" });
+  const res = await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: "include" });
+  const headerToken = res.headers.get("X-XSRF-TOKEN");
+  if (headerToken) memoryCsrfToken = headerToken;
   return getCsrfToken();
 };
 
@@ -248,10 +252,18 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
     body: body ? JSON.stringify(body) : undefined,
   });
 
+  const responseToken = response.headers.get("X-XSRF-TOKEN");
+  if (responseToken) {
+    memoryCsrfToken = responseToken;
+  }
+
   // If we still get a 403, the token may have been stale — refresh and retry once
   if (isMutating && response.status === 403) {
     // Force-refresh the CSRF cookie regardless of what's currently cached
-    await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: "include" });
+    const refreshRes = await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: "include" });
+    const headerToken = refreshRes.headers.get("X-XSRF-TOKEN");
+    if (headerToken) memoryCsrfToken = headerToken;
+    
     const freshToken = getCsrfToken();
     if (freshToken) {
       const retryResponse = await fetch(`${API_BASE_URL}${path}`, {
