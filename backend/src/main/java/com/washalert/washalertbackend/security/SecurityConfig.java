@@ -17,6 +17,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.RememberMeServices;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -78,6 +79,8 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.ALWAYS))
 
                 .securityContext(sc -> sc.requireExplicitSave(false))
+                // Force CSRF cookie to be written on every response (including GET requests)
+                .addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class)
                 .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .rememberMe(rm -> rm.rememberMeServices(rememberMeServices))
 
@@ -134,6 +137,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/admin/users/drivers").hasAnyRole("ADMIN", "STAFF")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/machines/**").hasAnyRole("ADMIN", "STAFF")
+                        .requestMatchers("/api/inventory/**").hasAnyRole("ADMIN", "STAFF")
                         .requestMatchers(HttpMethod.GET, "/api/orders/my/paged").hasRole("CUSTOMER")
                         .requestMatchers(HttpMethod.PUT, "/api/orders/*/confirm-price").hasRole("CUSTOMER")
                         .requestMatchers("/api/orders/**").hasAnyRole("ADMIN", "STAFF", "CUSTOMER", "DRIVER")
