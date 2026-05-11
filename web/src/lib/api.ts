@@ -217,10 +217,26 @@ const parseResponse = async <T>(response: Response): Promise<T> => {
   return data as T;
 };
 
+/**
+ * Ensures the XSRF-TOKEN cookie is present by issuing a lightweight GET.
+ * The CsrfCookieFilter on the backend writes the cookie on every response,
+ * so any authenticated GET will prime it.
+ */
+const ensureCsrfCookie = async (): Promise<string | null> => {
+  let token = getCsrfToken();
+  if (token) return token;
+  // Fire a lightweight GET to force the backend to set the cookie
+  await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: "include" });
+  return getCsrfToken();
+};
+
 export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {}): Promise<T> => {
   const { method = "GET", body, headers } = options;
   const isMutating = method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
-  const csrfToken = isMutating ? getCsrfToken() : null;
+
+  // For mutating requests, ensure the CSRF cookie exists before sending
+  const csrfToken = isMutating ? await ensureCsrfCookie() : null;
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
     credentials: "include",
@@ -231,6 +247,26 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
     },
     body: body ? JSON.stringify(body) : undefined,
   });
+
+  // If we still get a 403, the token may have been stale — refresh and retry once
+  if (isMutating && response.status === 403) {
+    // Force-refresh the CSRF cookie regardless of what's currently cached
+    await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: "include" });
+    const freshToken = getCsrfToken();
+    if (freshToken) {
+      const retryResponse = await fetch(`${API_BASE_URL}${path}`, {
+        method,
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "X-XSRF-TOKEN": freshToken,
+          ...headers,
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      return parseResponse<T>(retryResponse);
+    }
+  }
 
   return parseResponse<T>(response);
 };
