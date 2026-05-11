@@ -29,6 +29,7 @@ import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @Service
@@ -228,14 +229,25 @@ public class InventoryService {
         deductConsumable(branch, order.getFabricConditionerPreference(), order.getTrackingNumber(), actor);
     }
 
+    private String resolveInventoryItemName(String preference) {
+        if (preference == null) return "";
+        String p = preference.toLowerCase(Locale.ROOT);
+        if (p.contains("surf")) return "Surf Detergent";
+        if (p.contains("ariel")) return "Ariel Detergent";
+        if (p.contains("charm")) return "Charm Fabric Conditioner";
+        if (p.contains("downy")) return "Downy Fabric Conditioner";
+        return preference.trim();
+    }
+
     private void deductConsumable(String branch, String itemName, String trackingNumber, String actor) {
         if (itemName == null || itemName.isBlank()) return;
         try {
+            String resolvedName = resolveInventoryItemName(itemName);
             InventoryItem item = itemRepository
-                    .findByBranchIgnoreCaseAndItemNameIgnoreCase(branch, itemName.trim())
+                    .findByBranchIgnoreCaseAndItemNameIgnoreCase(branch, resolvedName)
                     .orElse(null);
             if (item == null) {
-                log.warn("[INVENTORY] Deduct skipped — item '{}' not found in branch '{}'", itemName, branch);
+                log.warn("[INVENTORY] Deduct skipped — item '{}' (resolved: '{}') not found in branch '{}'", itemName, resolvedName, branch);
                 return;
             }
             BigDecimal next = item.getCurrentStock().subtract(BigDecimal.ONE);

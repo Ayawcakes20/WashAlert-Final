@@ -81,6 +81,15 @@ type Order = {
   paymentStatus?: "PENDING" | "VERIFIED" | "REJECTED" | "PAID" | null;
   isPaid?: boolean;
   totalPrice?: number;
+  servicePrice?: number;
+  rushPrice?: number;
+  suppliesPrice?: number;
+  deliveryPrice?: number;
+  systemFee?: number;
+  extraWeightCost?: number;
+  detergentBreakdown?: string;
+  fabricConditionerBreakdown?: string;
+  finalPrice?: number;
   serviceName?: string;
   detergent?: string;
   detergentQuantity?: number;
@@ -272,6 +281,15 @@ const mapOrder = (order: JobOrderResponse): Order => ({
   paymentStatus: order.paymentStatus,
   isPaid: order.isPaid,
   totalPrice: order.totalPrice || 0,
+  servicePrice: order.servicePrice != null ? Number(order.servicePrice) : undefined,
+  rushPrice: order.rushPrice != null ? Number(order.rushPrice) : undefined,
+  suppliesPrice: order.suppliesPrice != null ? Number(order.suppliesPrice) : undefined,
+  deliveryPrice: order.deliveryPrice != null ? Number(order.deliveryPrice) : undefined,
+  systemFee: order.systemFee != null ? Number(order.systemFee) : undefined,
+  extraWeightCost: order.extraWeightCost != null ? Number(order.extraWeightCost) : undefined,
+  detergentBreakdown: order.detergentBreakdown ?? undefined,
+  fabricConditionerBreakdown: order.fabricConditionerBreakdown ?? undefined,
+  finalPrice: order.finalPrice != null ? Number(order.finalPrice) : undefined,
   serviceName: order.serviceName,
   assignedDriverId: order.assignedDriverId,
   assignedDriverName: order.assignedDriverName,
@@ -1363,30 +1381,54 @@ export default function OrderManagementPage() {
                     const o = orders.find(x => x.id === setPriceOrderId);
                     if (!o) return null;
                     const weight = parseFloat(setPriceForm.actualWeightKg) || 0;
-                    const base = calculatePriceForOrder(o, weight);
+                    const baseCalc = calculatePriceForOrder(o, weight);
+                    // Prefer server-provided breakdown; fall back to frontend calculation
+                    const serviceBase = o.servicePrice ?? (weight > 8 ? baseCalc - (weight - 8) * 50 : baseCalc);
+                    const extraWeight = o.extraWeightCost ?? (weight > 8 ? (weight - 8) * 50 : 0);
+                    const rush = o.rushPrice ?? 0;
+                    const detergentCost = o.detergentBreakdown
+                      ? (o.detergent?.toLowerCase().includes('ariel') ? 30 : 25) * (o.detergentQuantity || 1)
+                      : (o.detergent && o.detergent.toLowerCase() !== 'none'
+                          ? (o.detergent.toLowerCase().includes('ariel') ? 30 : 25) * (o.detergentQuantity || 1)
+                          : 0);
+                    const conditionerCost = o.fabricConditionerBreakdown
+                      ? (o.conditioner?.toLowerCase().includes('downy') ? 25 : 15) * (o.conditionerQuantity || 1)
+                      : (o.conditioner && o.conditioner.toLowerCase() !== 'none'
+                          ? (o.conditioner.toLowerCase().includes('downy') ? 25 : 15) * (o.conditionerQuantity || 1)
+                          : 0);
                     const delFee = parseFloat(setPriceForm.deliveryFee || "0");
-                    const total = base + delFee;
+                    const subtotal = serviceBase + extraWeight + rush + detergentCost + conditionerCost + delFee;
+                    const sysFee = o.systemFee ?? Math.round(subtotal * 0.02 * 100) / 100;
+                    const total = subtotal + sysFee;
 
                     return (
                       <>
                         <div className="flex justify-between items-center">
-                          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">{o.serviceName || serviceTypeLabel[o.serviceType] || "Service"}</span>
-                          <span className="text-sm font-black text-slate-900 tabular-nums">₱{base.toFixed(2)}</span>
+                          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">{o.serviceName || "Service"}</span>
+                          <span className="text-sm font-black text-slate-900 tabular-nums">₱{serviceBase.toFixed(2)}</span>
                         </div>
-                        {o.detergent && o.detergent.toLowerCase() !== 'none' && (
+                        {extraWeight > 0 && (
                           <div className="flex justify-between items-center">
-                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">Detergent ({o.detergent} x{o.detergentQuantity || 1})</span>
-                            <span className="text-sm font-black text-slate-900 tabular-nums">
-                              ₱{((o.detergent.toLowerCase().includes('premium') || o.detergent.toLowerCase().includes('ariel') ? 30 : 25) * (o.detergentQuantity || 1)).toFixed(2)}
-                            </span>
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">Extra Weight ({weight > 8 ? `${(weight - 8).toFixed(1)}kg × ₱50` : ""})</span>
+                            <span className="text-sm font-black text-slate-900 tabular-nums">₱{extraWeight.toFixed(2)}</span>
                           </div>
                         )}
-                        {o.conditioner && o.conditioner.toLowerCase() !== 'none' && (
+                        {rush > 0 && (
                           <div className="flex justify-between items-center">
-                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">Conditioner ({o.conditioner} x{o.conditionerQuantity || 1})</span>
-                            <span className="text-sm font-black text-slate-900 tabular-nums">
-                              ₱{((o.conditioner.toLowerCase().includes('premium') || o.conditioner.toLowerCase().includes('downy') ? 25 : 15) * (o.conditionerQuantity || 1)).toFixed(2)}
-                            </span>
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">Rush Fee</span>
+                            <span className="text-sm font-black text-slate-900 tabular-nums">₱{rush.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {detergentCost > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">Detergent ({o.detergent} ×{o.detergentQuantity || 1})</span>
+                            <span className="text-sm font-black text-slate-900 tabular-nums">₱{detergentCost.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {conditionerCost > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">Conditioner ({o.conditioner} ×{o.conditionerQuantity || 1})</span>
+                            <span className="text-sm font-black text-slate-900 tabular-nums">₱{conditionerCost.toFixed(2)}</span>
                           </div>
                         )}
                         <div className="flex justify-between items-center">
@@ -1399,6 +1441,10 @@ export default function OrderManagementPage() {
                               onChange={(e) => setSetPriceForm(p => ({ ...p, deliveryFee: e.target.value }))}
                             />
                           </div>
+                        </div>
+                        <div className="flex justify-between items-center text-slate-400">
+                          <span className="text-[10px] font-bold uppercase tracking-tight">System Fee (2%)</span>
+                          <span className="text-xs font-black tabular-nums">₱{sysFee.toFixed(2)}</span>
                         </div>
                         <div className="pt-4 mt-1 border-t-2 border-dashed border-slate-100 flex justify-between items-center">
                           <span className="text-[10px] font-black text-slate-900 uppercase tracking-[0.15em]">Total Due</span>
@@ -2293,6 +2339,81 @@ export default function OrderManagementPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── Receipt Preview Dialog ── */}
+      {selectedOrder && (
+        <Dialog open={showReceiptPreview} onOpenChange={setShowReceiptPreview}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-center text-lg font-black tracking-tight">Order Receipt</DialogTitle>
+              <DialogDescription className="text-center text-xs text-slate-400">
+                {selectedOrder.orderId}
+              </DialogDescription>
+            </DialogHeader>
+
+            {(() => {
+              const o = selectedOrder;
+              const weight = o.actualWeightKg ?? o.estimatedWeightKg ?? 0;
+              const serviceBase = o.servicePrice ?? 0;
+              const extraWeight = o.extraWeightCost ?? 0;
+              const rush = o.rushPrice ?? 0;
+              const detergentCost = o.detergent && o.detergent.toLowerCase() !== 'none'
+                ? (o.detergent.toLowerCase().includes('ariel') ? 30 : 25) * (o.detergentQuantity || 1)
+                : 0;
+              const conditionerCost = o.conditioner && o.conditioner.toLowerCase() !== 'none'
+                ? (o.conditioner.toLowerCase().includes('downy') ? 25 : 15) * (o.conditionerQuantity || 1)
+                : 0;
+              const delivery = o.deliveryPrice ?? 0;
+              const subtotal = serviceBase + extraWeight + rush + detergentCost + conditionerCost + delivery;
+              const sysFee = o.systemFee ?? Math.round(subtotal * 0.02 * 100) / 100;
+              const total = o.finalPrice ?? o.totalPrice ?? (subtotal + sysFee);
+
+              const row = (label: string, value: number, muted = false) => (
+                <div className={`flex justify-between items-center py-1 ${muted ? "text-slate-400" : ""}`}>
+                  <span className={`text-xs font-semibold ${muted ? "text-slate-400" : "text-slate-600"}`}>{label}</span>
+                  <span className={`text-sm font-black tabular-nums ${muted ? "text-slate-400" : "text-slate-900"}`}>₱{value.toFixed(2)}</span>
+                </div>
+              );
+
+              return (
+                <div className="space-y-1 py-2">
+                  <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-400 pb-2 border-b border-slate-100">
+                    <span>Customer</span>
+                    <span>{o.customerName}</span>
+                  </div>
+                  <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-400 pb-2 border-b border-slate-100">
+                    <span>Status</span>
+                    <span>{statusLabel[o.status] || o.status}</span>
+                  </div>
+                  <div className="pt-2 space-y-0.5">
+                    {row(o.serviceName || "Service", serviceBase)}
+                    {extraWeight > 0 && row(`Extra Weight (${weight > 8 ? `${(weight - 8).toFixed(1)}kg × ₱50` : ""})`, extraWeight)}
+                    {rush > 0 && row("Rush Fee", rush)}
+                    {detergentCost > 0 && row(`Detergent (${o.detergent} ×${o.detergentQuantity || 1})`, detergentCost)}
+                    {conditionerCost > 0 && row(`Conditioner (${o.conditioner} ×${o.conditionerQuantity || 1})`, conditionerCost)}
+                    {delivery > 0 && row("Delivery Fee", delivery)}
+                    {row("System Fee (2%)", sysFee, true)}
+                  </div>
+                  <div className="pt-3 mt-2 border-t-2 border-dashed border-slate-200 flex justify-between items-center">
+                    <span className="text-xs font-black uppercase tracking-widest text-slate-900">Total</span>
+                    <span className="text-2xl font-black text-blue-600 tabular-nums">₱{total.toFixed(2)}</span>
+                  </div>
+                  <div className="pt-2 flex justify-between text-[11px] text-slate-400">
+                    <span>Payment</span>
+                    <span className="font-bold">{o.paymentMethod || "Cash on Delivery"} · {resolvePaymentStatusLabel(o)}</span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <DialogFooter>
+              <Button variant="outline" className="w-full" onClick={() => setShowReceiptPreview(false)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
     </motion.div>
   );

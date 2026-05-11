@@ -88,12 +88,8 @@ public class PricingService {
             return new BigDecimal("325.00");
         }
         if (name.contains("basic full")) {
-            if (weight.compareTo(new BigDecimal("8.0")) > 0) {
-                BigDecimal extra = weight.subtract(new BigDecimal("8.0")).max(BigDecimal.ZERO);
-                return new BigDecimal("245.00").add(extra.multiply(new BigDecimal("50.00")));
-            }
             if (weight.compareTo(new BigDecimal("7.0")) <= 0) return new BigDecimal("240.00");
-            return new BigDecimal("245.00"); // up to 8kg
+            return new BigDecimal("245.00"); // base rate only; per-kg surcharge above 8kg handled by calculateExtraWeightCost
         }
         if (name.contains("premium full")) {
             if (weight.compareTo(new BigDecimal("7.0")) <= 0) return new BigDecimal("270.00");
