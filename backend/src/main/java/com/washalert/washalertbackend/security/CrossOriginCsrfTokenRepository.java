@@ -43,26 +43,29 @@ public class CrossOriginCsrfTokenRepository implements CsrfTokenRepository {
     public void saveToken(CsrfToken token, HttpServletRequest request, HttpServletResponse response) {
         String tokenValue = (token != null) ? token.getToken() : "";
 
+        // Use Secure+SameSite=None only on HTTPS; on plain HTTP (local dev) use Lax
+        boolean isSecure = request.isSecure()
+                || "https".equalsIgnoreCase(request.getHeader("X-Forwarded-Proto"));
+        String sameSite = isSecure ? "None" : "Lax";
+
         if (!StringUtils.hasLength(tokenValue)) {
-            // Token is null, delete the cookie
             ResponseCookie deleteCookie = ResponseCookie
                     .from(DEFAULT_CSRF_COOKIE_NAME, "")
                     .path("/")
                     .maxAge(0)
-                    .secure(true)
+                    .secure(isSecure)
                     .httpOnly(false)
-                    .sameSite("None")
+                    .sameSite(sameSite)
                     .build();
             response.addHeader("Set-Cookie", deleteCookie.toString());
         } else {
-            // Create the CSRF token cookie with SameSite=None for cross-origin
             ResponseCookie csrfCookie = ResponseCookie
                     .from(DEFAULT_CSRF_COOKIE_NAME, tokenValue)
                     .path("/")
                     .maxAge(COOKIE_MAX_AGE)
-                    .secure(true)
+                    .secure(isSecure)
                     .httpOnly(false)
-                    .sameSite("None")
+                    .sameSite(sameSite)
                     .build();
             response.addHeader("Set-Cookie", csrfCookie.toString());
         }
@@ -71,7 +74,7 @@ public class CrossOriginCsrfTokenRepository implements CsrfTokenRepository {
     @Override
     public CsrfToken loadToken(HttpServletRequest request) {
         Cookie cookie = WebUtils.getCookie(request, DEFAULT_CSRF_COOKIE_NAME);
-        if (cookie == null) {
+        if (cookie == null || !StringUtils.hasLength(cookie.getValue())) {
             return null;
         }
         return new DefaultCsrfToken(
