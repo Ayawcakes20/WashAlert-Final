@@ -47,6 +47,10 @@ public class JobOrderResponse {
     private BigDecimal suppliesPrice;
     private BigDecimal deliveryPrice;
     private BigDecimal rushPrice;
+    private BigDecimal systemFee;
+    private BigDecimal extraWeightCost;
+    private String detergentBreakdown;
+    private String fabricConditionerBreakdown;
     private BigDecimal totalPrice;
     private boolean isPaid;
     private String paymentMethod;
@@ -95,16 +99,22 @@ public class JobOrderResponse {
 
         User activeDriver = jo.getAssignedDriver();
         if (activeDriver == null) {
-            if (jo.getStatus() == JobOrderStatus.ASSIGNED_FOR_PICKUP || 
+            if (jo.getStatus() == JobOrderStatus.ASSIGNED_FOR_PICKUP ||
                 jo.getStatus() == JobOrderStatus.EN_ROUTE_TO_CUSTOMER ||
                 jo.getStatus() == JobOrderStatus.LAUNDRY_COLLECTED ||
                 jo.getStatus() == JobOrderStatus.EN_ROUTE_TO_BRANCH) {
                 activeDriver = jo.getAssignedPickupDriver();
-            } else if (jo.getStatus() == JobOrderStatus.ASSIGNED_FOR_DELIVERY || 
+            } else if (jo.getStatus() == JobOrderStatus.ASSIGNED_FOR_DELIVERY ||
                        jo.getStatus() == JobOrderStatus.OUT_FOR_DELIVERY) {
                 activeDriver = jo.getAssignedDeliveryDriver();
             }
         }
+
+        String detergentBreakdown = getDetergentBreakdown(jo.getDetergentPreference());
+        String fabricConditionerBreakdown = getFabricConditionerBreakdown(jo.getFabricConditionerPreference());
+        BigDecimal systemFee = jo.getServicePrice() != null
+                ? jo.getServicePrice().multiply(new BigDecimal("0.02")).setScale(2, java.math.RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
 
         return JobOrderResponse.builder()
                 .id(jo.getId())
@@ -133,6 +143,10 @@ public class JobOrderResponse {
                 .suppliesPrice(jo.getSuppliesPrice())
                 .deliveryPrice(jo.getDeliveryPrice())
                 .rushPrice(jo.getRushPrice())
+                .systemFee(systemFee)
+                .extraWeightCost(BigDecimal.ZERO)
+                .detergentBreakdown(detergentBreakdown)
+                .fabricConditionerBreakdown(fabricConditionerBreakdown)
                 .totalPrice(jo.getTotalPrice())
                 .isPaid(jo.isPaid())
                 .paymentMethod(jo.getPaymentMethod())
@@ -170,5 +184,21 @@ public class JobOrderResponse {
                 .createdByName(jo.getCreatedBy() != null ? jo.getCreatedBy().getFullName() : "System")
                 .assignedByName(jo.getAssignedDriver() != null ? "Staff" : null)
                 .build();
+    }
+
+    private static String getDetergentBreakdown(String detergent) {
+        if (detergent == null || detergent.isBlank()) return "None selected";
+        String d = detergent.toLowerCase();
+        if (d.contains("surf")) return "Surf Detergent - ₱25.00";
+        if (d.contains("ariel")) return "Ariel Detergent - ₱30.00";
+        return detergent;
+    }
+
+    private static String getFabricConditionerBreakdown(String fabcon) {
+        if (fabcon == null || fabcon.isBlank()) return "None selected";
+        String f = fabcon.toLowerCase();
+        if (f.contains("charm")) return "Charm Fabric Conditioner - ₱15.00";
+        if (f.contains("downy")) return "Downy Fabric Conditioner - ₱25.00";
+        return fabcon;
     }
 }
