@@ -300,7 +300,7 @@ export default function HomeScreen({ navigation }) {
             <Text style={S.greetLine1}>
               {'Hi '}
               <Text style={S.greetName}>{firstName}</Text>
-              {', '}<Text style={S.greetAccent}>Here's</Text>
+              {', '}<Text style={S.greetAccent}>{"Here's"}</Text>
             </Text>
             <Text style={S.greetTitle}>Our Laundry Services.</Text>
           </View>

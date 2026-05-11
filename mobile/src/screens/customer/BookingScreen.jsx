@@ -424,7 +424,7 @@ export default function BookingScreen({ route, navigation }) {
                 <View style={{flex:1}}>
                   <Text style={S.pricingInfoTitle}>Transparent Pricing</Text>
                   <Text style={S.pricingInfoText}>
-                    Laundry is weighed upon arrival. You'll get a <Text style={{fontWeight:'700',color:colors.primary}}>final price for confirmation</Text> before we start washing.
+                    Laundry is weighed upon arrival. {"You'll"} get a <Text style={{fontWeight:'700',color:colors.primary}}>final price for confirmation</Text> before we start washing.
                   </Text>
                 </View>
               </View>
@@ -663,7 +663,7 @@ const S = StyleSheet.create({
   // ── Section label (all caps) ─────────────────────────────────────────────────
   sectionLabel:{fontSize:11,fontWeight:'700',color:colors.textTertiary,letterSpacing:1.2,textTransform:'uppercase',marginBottom:12},
   // ── Beddings toggle ───────────────────────────────────────────────────
-  beddingsCard:{flexDirection:'row',alignItems:'center',backgroundColor:colors.surface,borderRadius:16,padding:16,borderWidth:1,borderColor:colors.border,gap:12},
+  beddingsCard:{flexDirection:'row',alignItems:'center',backgroundColor:colors.surface,borderRadius:14,padding:14,borderWidth:1,borderColor:colors.border,marginBottom:16,gap:12},
   beddingsIconWrap:{width:38,height:38,borderRadius:12,backgroundColor:colors.primaryLight,alignItems:'center',justifyContent:'center'},
   beddingsTitle:{fontSize:14,fontWeight:'700',color:colors.text},
   beddingsSub:{fontSize:12,color:colors.textSecondary,marginTop:2},
@@ -730,10 +730,6 @@ const S = StyleSheet.create({
   liveDivider:{height:1,backgroundColor:colors.border,marginVertical:4},
   liveTotalAmt:{fontSize:22,fontWeight:'900',color:colors.text},
   liveBreak:{fontSize:12,color:colors.textSecondary},
-  // Beddings toggle card
-  beddingsCard:{flexDirection:'row',alignItems:'center',backgroundColor:colors.surface,borderRadius:14,padding:14,borderWidth:1,borderColor:colors.border,marginBottom:16,gap:12},
-  beddingsTitle:{fontSize:14,fontWeight:'700',color:colors.text},
-  beddingsSub:{fontSize:12,color:colors.textSecondary,marginTop:2},
   pillRow:{flexDirection:'row',flexWrap:'wrap',gap:10,marginBottom:4},
   pill:{paddingHorizontal:16,paddingVertical:10,borderRadius:24,borderWidth:1.5,borderColor:colors.border,backgroundColor:colors.surface},
   pillOn:{borderColor:colors.primary,backgroundColor:colors.primary},
