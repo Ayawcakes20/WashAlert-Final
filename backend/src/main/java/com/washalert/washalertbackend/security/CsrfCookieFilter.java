@@ -19,9 +19,11 @@ import java.io.IOException;
  * accesses the token, so the cookie is never written. This means the first
  * mutating request from a new session has no cookie to send, causing a 403.
  *
- * The cookie is written in a finally block AFTER filterChain.doFilter() so that
- * any session establishment or token refresh that occurs during request
- * processing is captured before the cookie value is committed to the response.
+ * CsrfFilter runs before this filter and always calls requestHandler.handle()
+ * to set the CsrfToken attribute, even for safe methods. This filter accesses
+ * the attribute immediately (before filterChain.doFilter()) to trigger the
+ * deferred token initialization and force the cookie to be written to the
+ * response before any subsequent processing.
  */
 public class CsrfCookieFilter extends OncePerRequestFilter {
 
@@ -31,19 +33,19 @@ public class CsrfCookieFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
-        try {
-            filterChain.doFilter(request, response);
-        } finally {
-            // Trigger deferred token load after full request processing so
-            // the cookie reflects the final session/token state.
-            CsrfToken csrfToken = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
-            if (csrfToken == null) {
-                // Fallback: some Spring Security versions store it under "_csrf"
-                csrfToken = (CsrfToken) request.getAttribute("_csrf");
-            }
-            if (csrfToken != null && !response.isCommitted()) {
-                csrfToken.getToken();
-            }
+        // CsrfFilter has already run and set the deferred token as a request attribute.
+        // Access it here to force the lazy initialization and cookie write.
+        CsrfToken csrfToken = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
+        if (csrfToken == null) {
+            // Fallback: some Spring Security versions store it under "_csrf"
+            csrfToken = (CsrfToken) request.getAttribute("_csrf");
         }
+        if (csrfToken != null) {
+            // Accessing the token forces CookieCsrfTokenRepository to write the cookie
+            // to the response before filterChain.doFilter() is called, ensuring the
+            // Set-Cookie header is included in this response.
+            csrfToken.getToken();
+        }
+        filterChain.doFilter(request, response);
     }
 }
