@@ -196,7 +196,7 @@ export type AnnouncementRecord = {
 };
 
 type ApiRequestOptions = {
-  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
   body?: unknown;
   headers?: Record<string, string>;
 };
@@ -273,7 +273,7 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
     const refreshRes = await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: "include" });
     const headerToken = refreshRes.headers.get("X-XSRF-TOKEN");
     if (headerToken) memoryCsrfToken = headerToken;
-    
+
     const freshToken = getCsrfToken();
     if (freshToken) {
       const retryResponse = await fetch(`${API_BASE_URL}${path}`, {
@@ -388,7 +388,7 @@ export const ordersApi = {
     apiRequest<void>(`/api/orders/${id}`, {
       method: "DELETE",
     }),
-  updateStatus: (id: number, status: "PENDING" | "WASHING" | "DRYING" | "READY" | "PICKED_UP" | "DELIVERED") =>
+  updateStatus: (id: number, status: JobOrderResponse["status"]) =>
     apiRequest<JobOrderResponse>(`/api/orders/${id}/status`, {
       method: "PATCH",
       body: { status },
@@ -401,12 +401,12 @@ export const ordersApi = {
     apiRequest<JobOrderResponse>(`/api/bookings/${id}/cancel`, {
       method: "PATCH",
     }),
-  setActualWeight: (id: number, payload: { actualWeightKg: number; finalPrice: number }) =>
+  setActualWeight: (id: number, payload: { actualWeightKg: number; finalPrice: number; deliveryFee?: number }) =>
     apiRequest<JobOrderResponse>(`/api/orders/${id}/set-actual-weight`, {
       method: "PUT",
       body: payload,
     }),
-  setPrice: (id: number, payload: { actualWeightKg: number; finalPrice: number }) =>
+  setPrice: (id: number, payload: { actualWeightKg: number; finalPrice: number; deliveryFee?: number }) =>
     apiRequest<JobOrderResponse>(`/api/orders/${id}/set-price`, {
       method: "POST",
       body: payload,
@@ -723,15 +723,5 @@ export const supportApi = {
       method: "POST",
       body: { message },
     }),
-  history: (sessionId: string) =>
-    apiRequest<{
-      messages: Array<{
-        id: number;
-        senderType: string;
-        message: string;
-        category: string;
-        escalationTicket: string | null;
-        createdAt: string;
-      }>;
-    }>(`/api/support/history?sessionId=${encodeURIComponent(sessionId)}`),
 };
+

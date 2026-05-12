@@ -398,6 +398,7 @@ export default function OrderManagementPage() {
   const [setPriceSubmitting, setSetPriceSubmitting] = useState(false);
   const [setPriceForm, setSetPriceForm] = useState({ actualWeightKg: "", finalPrice: "", deliveryFee: "" });
   const [showReceiptPreview, setShowReceiptPreview] = useState(false);
+  const [loadType, setLoadType] = useState<'PURE_CLOTHES' | 'WITH_TOWELS'>('PURE_CLOTHES');
 
   // Rider Assignment state
   const [assignRiderOpen, setAssignRiderOpen] = useState(false);
@@ -454,78 +455,136 @@ export default function OrderManagementPage() {
     }
   };
 
-  const calculatePriceForOrder = (order: any, weight: number) => {
-    const name = order.serviceName?.toLowerCase() || "";
-    
-    // ── Handwash Tiered ──
-    let base = 0;
-    if (name.includes("handwash")) {
-      base = weight <= 3 ? weight * 150 : weight * 90;
-    } else if (name.includes("ecowash")) {
-      base = 220;
-    } else if (name.includes("dry")) {
-      base = 90;
-    } else if (name.includes("wash") && !name.includes("full")) {
-      base = 80;
-    } else if (name.includes("basic full")) {
-      base = weight <= 7 ? 240 : 245;
-    } else if (name.includes("premium full")) {
-      base = weight <= 7 ? 270 : 275;
+  // ── Pricing helpers ──────────────────────────────────────────────
+  const getMaxKgPerLoad = (lt: 'PURE_CLOTHES' | 'WITH_TOWELS') => lt === 'PURE_CLOTHES' ? 8 : 7;
+
+  const getDetergentPricePerPack = (name?: string) => {
+    if (!name || name.toLowerCase() === 'none') return 0;
+    return name.toLowerCase().includes('ariel') ? 30 : 25;
+  };
+
+  const getConditionerPricePerPack = (name?: string) => {
+    if (!name || name.toLowerCase() === 'none') return 0;
+    return name.toLowerCase().includes('downy') ? 25 : 15;
+  };
+
+  const computeOrderPricing = (
+    order: Order,
+    actualKg: number,
+    lt: 'PURE_CLOTHES' | 'WITH_TOWELS',
+    deliveryFee: number
+  ) => {
+    const name = order.serviceName?.toLowerCase() || '';
+    const maxKgPerLoad = getMaxKgPerLoad(lt);
+    const isHandwash = name.includes('handwash');
+    let numberOfLoads = 1;
+    let pricePerLoad = 0;
+    let serviceTotal = 0;
+
+    if (isHandwash) {
+      pricePerLoad = actualKg <= 3 ? 150 : 90;
+      serviceTotal = pricePerLoad * actualKg;
+      numberOfLoads = 1;
     } else {
-      base = weight * 35; 
+      // Machine absolute limit is 9kg
+      const absoluteMaxPerLoad = 9;
+      numberOfLoads = Math.ceil(actualKg / absoluteMaxPerLoad);
+      
+      if (name.includes('ecowash')) pricePerLoad = 220;
+      else if (name.includes('dry') && !name.includes('full')) pricePerLoad = 90;
+      else if (name.includes('wash') && !name.includes('full') && !name.includes('eco')) pricePerLoad = 80;
+      else if (name.includes('basic full')) pricePerLoad = lt === 'PURE_CLOTHES' ? 245 : 240;
+      else if (name.includes('premium full')) pricePerLoad = lt === 'PURE_CLOTHES' ? 275 : 270;
+      else pricePerLoad = lt === 'PURE_CLOTHES' ? 245 : 240;
+      
+      serviceTotal = pricePerLoad * numberOfLoads;
     }
 
-    // Madness surcharge: +₱50 for every kg over 8kg
-    const madness = weight > 8 ? (weight - 8) * 50 : 0;
+    // Madness: Charge ₱50 per kg for weight exceeding the base service limit (7kg or 8kg)
+    const baseTotalCapacity = numberOfLoads * maxKgPerLoad;
+    const madnessKg = Math.max(0, actualKg - baseTotalCapacity);
+    const madnessFee = Math.round(madnessKg * 50);
+
+    const detPPP = getDetergentPricePerPack(order.detergent);
+    const detQty = order.detergentQuantity || 0;
+    const detCost = detPPP * detQty;
+
+    const conPPP = getConditionerPricePerPack(order.conditioner);
+    const conQty = order.conditionerQuantity || 0;
+    const conCost = conPPP * conQty;
+
+    const isRush = (order.rushPrice || 0) > 0;
+    const rushFee = isRush ? 150 * numberOfLoads : 0;
     
-    // ── Supplies ──
-    let suppliesCost = 0;
-    if (order.detergent && order.detergent.toLowerCase() !== 'none') {
-      const pricePerPack = order.detergent.toLowerCase().includes('premium') || order.detergent.toLowerCase().includes('ariel') ? 30 : 25;
-      suppliesCost += pricePerPack * (order.detergentQuantity || 1);
-    }
-    if (order.conditioner && order.conditioner.toLowerCase() !== 'none') {
-      const pricePerPack = order.conditioner.toLowerCase().includes('premium') || order.conditioner.toLowerCase().includes('downy') ? 25 : 15;
-      suppliesCost += pricePerPack * (order.conditionerQuantity || 1);
-    }
+    // Panel Requirement: Transparency for fees
+    const pickupFee = (order.serviceType === 'PICKUP_DELIVERY' && !name.includes('full')) ? 25 : 0;
+    const convenienceFee = 20; // Online booking fee
+    
+    // System Fee: usually 2% or a flat rate. I'll use 2% of subtotal as a placeholder or a flat ₱10
+    const subtotal = serviceTotal + madnessFee + detCost + conCost + rushFee + deliveryFee + pickupFee + convenienceFee;
+    const systemFee = Math.round(subtotal * 0.02); 
+    
+    const grandTotal = subtotal + systemFee;
 
-    return base + madness + suppliesCost;
+    return { 
+      numberOfLoads, 
+      pricePerLoad, 
+      serviceTotal, 
+      madnessFee, 
+      madnessKg, 
+      detPPP, 
+      detQty, 
+      detCost, 
+      conPPP, 
+      conQty, 
+      conCost, 
+      rushFee, 
+      deliveryFee,
+      pickupFee,
+      convenienceFee,
+      systemFee,
+      grandTotal, 
+      maxKgPerLoad, 
+      isHandwash, 
+      isRush 
+    };
   };
 
   const openSetPriceModal = (order: Order) => {
     setSetPriceOrderId(order.id);
-    setSetPriceForm({ 
-      actualWeightKg: order.actualWeightKg?.toString() || "", 
-      finalPrice: order.totalPrice?.toString() || "", 
-      deliveryFee: "0" 
+    setSetPriceForm({
+      actualWeightKg: order.actualWeightKg?.toString() || "",
+      finalPrice: "",
+      deliveryFee: order.serviceType === 'PICKUP_DELIVERY' ? "50" : "0",
     });
+    setLoadType('PURE_CLOTHES');
     setSetPriceOpen(true);
   };
 
   const submitSetPrice = async () => {
     if (!setPriceOrderId) return;
     const kg = parseFloat(setPriceForm.actualWeightKg);
-    const price = parseFloat(setPriceForm.finalPrice);
     const delFee = parseFloat(setPriceForm.deliveryFee || "0");
-    if (!kg || kg <= 0) { toast.error("Enter a valid weight."); return; }
-    if (!price || price <= 0) { toast.error("Enter a valid price."); return; }
+    if (!kg || kg < 5) { toast.error("Minimum order weight is 5 kg."); return; }
+    const o = orders.find(x => x.id === setPriceOrderId);
+    if (!o) return;
+    const pricing = computeOrderPricing(o, kg, loadType, delFee);
     setSetPriceSubmitting(true);
     try {
       await ordersApi.setActualWeight(setPriceOrderId, {
         actualWeightKg: kg,
-        finalPrice: price,
+        finalPrice: pricing.grandTotal,
         deliveryFee: delFee,
       });
-      toast.success("✓ Price sent — waiting for customer confirmation");
+      toast.success("✓ Receipt sent to customer");
       setSetPriceOpen(false);
       await loadOrders(Math.max(0, ordersPage - 1), true);
-      // Update selected order in side panel if it matches
       if (selectedOrder && selectedOrder.id === setPriceOrderId) {
         const refreshed = await ordersApi.getById(setPriceOrderId);
         setSelectedOrder(mapOrder(refreshed));
       }
     } catch (err: any) {
-      toast.error(err?.message || "Failed to set price.");
+      toast.error(err?.message || "Failed to send receipt.");
     } finally {
       setSetPriceSubmitting(false);
     }
@@ -1287,324 +1346,404 @@ export default function OrderManagementPage() {
       </motion.div>
 
       <Dialog open={setPriceOpen} onOpenChange={setSetPriceOpen}>
-        <DialogContent className="sm:max-w-5xl max-h-[85vh] border-slate-200 rounded-[2.5rem] p-0 overflow-hidden bg-[#F8FAFC] shadow-[0_30px_90px_rgba(0,0,0,0.2)] flex flex-col transition-all duration-500">
-          {/* ── HEADER (FIXED) ── */}
-          <div className="bg-slate-900 px-8 py-5 text-white border-b border-white/5 shrink-0 flex items-center justify-between relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-blue-600/10 to-transparent pointer-events-none" />
+        <DialogContent className="sm:max-w-6xl max-h-[92vh] border-0 rounded-[2rem] p-0 overflow-hidden bg-slate-100 shadow-[0_30px_100px_rgba(0,0,0,0.25)] flex flex-col">
+          <div className="bg-slate-900 px-7 py-6 text-white shrink-0 flex items-center justify-between relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 via-transparent to-transparent pointer-events-none" />
             <div className="flex items-center gap-4 relative z-10">
-              <div className="h-11 w-11 rounded-2xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
-                <Scale className="h-5 w-5 text-white" />
+              <div className="h-14 w-14 rounded-3xl bg-blue-600 flex items-center justify-center shadow-2xl shadow-blue-500/50 shrink-0 border border-blue-400/30">
+                <Scale className="h-7 w-7 text-white" />
               </div>
-              <div className="min-w-0">
-                <DialogTitle className="text-xl font-black tracking-tight text-white leading-none">
-                  {orders.find(o => o.id === setPriceOrderId)?.serviceName?.toLowerCase().includes("dry")
-                    ? "Set Dry Cleaning Quote"
-                    : "Finalize Weight & Receipt"}
-                </DialogTitle>
-                <div className="flex items-center gap-2.5 mt-1.5">
-                  <span className="text-blue-400 font-black text-xs tabular-nums uppercase tracking-widest">{orders.find(o => o.id === setPriceOrderId)?.orderId || `WA-${setPriceOrderId}`}</span>
-                  <div className="h-1 w-1 rounded-full bg-slate-700" />
-                  <span className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.1em]">{orders.find(o => o.id === setPriceOrderId)?.customerName}</span>
+              <div>
+                <DialogTitle className="text-2xl font-black tracking-tight text-white leading-none mb-1.5">Finalize Weight</DialogTitle>
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-blue-500/20 text-blue-400 border-blue-400/30 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md">
+                    {orders.find(o => o.id === setPriceOrderId)?.orderId}
+                  </Badge>
+                  <span className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">{orders.find(o => o.id === setPriceOrderId)?.customerName}</span>
                 </div>
               </div>
             </div>
-            <div className="bg-white/5 rounded-2xl px-5 py-2 border border-white/10 flex flex-col items-end">
-              <p className="text-[8px] font-black text-slate-500 uppercase tracking-[0.2em]">Estimated Load</p>
-              <p className="text-lg font-black text-white tabular-nums leading-none mt-0.5">{orders.find(o => o.id === setPriceOrderId)?.estimatedWeightKg || "—"} <span className="text-[10px] text-slate-400">kg</span></p>
+            <div className="flex items-stretch gap-4 relative z-10">
+              <div className="bg-white/5 border border-white/10 rounded-2xl px-5 py-2.5 text-right">
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Estimated</p>
+                <p className="text-2xl font-black text-slate-300 tabular-nums leading-none">{orders.find(o => o.id === setPriceOrderId)?.estimatedWeightKg ?? "—"} <span className="text-sm text-slate-500">kg</span></p>
+              </div>
+              <div className="flex items-center text-slate-700">
+                <div className="h-10 w-[1px] bg-slate-800" />
+              </div>
+              <div className="bg-blue-600/10 border border-blue-500/20 rounded-2xl px-5 py-2.5 text-right">
+                <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">Actual</p>
+                <p className="text-2xl font-black text-white tabular-nums leading-none">{setPriceForm.actualWeightKg || "0.0"} <span className="text-sm text-blue-400">kg</span></p>
+              </div>
             </div>
           </div>
 
-          {/* ── SCROLLABLE CONTENT AREA ── */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar">
-            <div className="p-8 grid grid-cols-1 lg:grid-cols-12 gap-10">
-              {/* LEFT: CONTROLS (7/12) */}
-              <div className="lg:col-span-7 space-y-8">
+          <div className="bg-blue-600/5 px-8 py-3 border-b border-slate-200">
+            <p className="text-[10px] font-bold text-slate-500 flex items-center gap-2 leading-relaxed">
+              <Info className="h-4 w-4 text-blue-500 shrink-0" />
+              <span>This order was booked with an estimated weight. Please perform a manual weigh-in to generate the accurate receipt for the customer.</span>
+            </p>
+          </div>
 
-              {/* Weight + Price Inputs */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2.5">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
-                    <div className="h-1.5 w-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
-                    Actual Weight
-                  </label>
-                  <div className="relative group">
-                    <Input
-                      type="number"
-                      className="h-16 text-center text-3xl font-black border-2 border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 rounded-2xl bg-white shadow-sm transition-all pr-12 [appearance:textfield]"
-                      value={setPriceForm.actualWeightKg}
-                      placeholder="0"
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setSetPriceForm(p => {
-                          const next = { ...p, actualWeightKg: val };
-                          const weight = parseFloat(val);
-                          const o = orders.find(x => x.id === setPriceOrderId);
-                          if (!isNaN(weight) && o) {
-                            next.finalPrice = calculatePriceForOrder(o, weight).toString();
-                          }
-                          return next;
-                        });
-                      }}
-                    />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-lg border border-blue-100 uppercase">kg</span>
-                  </div>
-                </div>
-                <div className="space-y-2.5">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
-                    <div className="h-1.5 w-1.5 rounded-full bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.5)]" />
-                    Final Price
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-black text-xl">₱</span>
-                    <Input
-                      type="number"
-                      className="h-16 text-center text-3xl font-black border-2 border-slate-200 focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 rounded-2xl bg-white shadow-sm transition-all pl-10 [appearance:textfield]"
-                      value={setPriceForm.finalPrice}
-                      placeholder="0"
-                      onChange={(e) => setSetPriceForm(p => ({ ...p, finalPrice: e.target.value }))}
-                    />
-                  </div>
-                </div>
-              </div>
+          {/* BODY */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-              {/* Price Breakdown Card */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden">
-                <div className="px-5 py-3 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Order Summary</span>
-                  <div className="flex gap-1">
-                    <div className="h-1 w-1 rounded-full bg-slate-200" />
-                    <div className="h-1 w-4 rounded-full bg-slate-200" />
+              {/* LEFT COLUMN */}
+              <div className="lg:col-span-7 space-y-5">
+
+                {/* Customer Booking — READ ONLY */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="px-5 py-3 bg-emerald-50 border-b border-emerald-100 flex items-center gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Customer's Booking (Read-Only)</span>
                   </div>
-                </div>
-                <div className="p-5 space-y-4">
                   {(() => {
                     const o = orders.find(x => x.id === setPriceOrderId);
                     if (!o) return null;
-                    const weight = parseFloat(setPriceForm.actualWeightKg) || 0;
-                    const baseCalc = calculatePriceForOrder(o, weight);
-                    // Prefer server-provided breakdown; fall back to frontend calculation
-                    const serviceBase = o.servicePrice ?? (weight > 8 ? baseCalc - (weight - 8) * 50 : baseCalc);
-                    const extraWeight = o.extraWeightCost ?? (weight > 8 ? (weight - 8) * 50 : 0);
-                    const rush = o.rushPrice ?? 0;
-                    const detergentCost = o.detergentBreakdown
-                      ? (o.detergent?.toLowerCase().includes('ariel') ? 30 : 25) * (o.detergentQuantity || 1)
-                      : (o.detergent && o.detergent.toLowerCase() !== 'none'
-                          ? (o.detergent.toLowerCase().includes('ariel') ? 30 : 25) * (o.detergentQuantity || 1)
-                          : 0);
-                    const conditionerCost = o.fabricConditionerBreakdown
-                      ? (o.conditioner?.toLowerCase().includes('downy') ? 25 : 15) * (o.conditionerQuantity || 1)
-                      : (o.conditioner && o.conditioner.toLowerCase() !== 'none'
-                          ? (o.conditioner.toLowerCase().includes('downy') ? 25 : 15) * (o.conditionerQuantity || 1)
-                          : 0);
-                    const delFee = parseFloat(setPriceForm.deliveryFee || "0");
-                    const subtotal = serviceBase + extraWeight + rush + detergentCost + conditionerCost + delFee;
-                    const sysFee = o.systemFee ?? Math.round(subtotal * 0.02 * 100) / 100;
-                    const total = subtotal + sysFee;
-
                     return (
-                      <>
-                        <div className="flex justify-between items-center">
-                          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">{o.serviceName || "Service"}</span>
-                          <span className="text-sm font-black text-slate-900 tabular-nums">₱{serviceBase.toFixed(2)}</span>
-                        </div>
-                        {extraWeight > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">Extra Weight ({weight > 8 ? `${(weight - 8).toFixed(1)}kg × ₱50` : ""})</span>
-                            <span className="text-sm font-black text-slate-900 tabular-nums">₱{extraWeight.toFixed(2)}</span>
+                      <div className="p-5 grid grid-cols-2 gap-x-6 gap-y-4">
+                        <div><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Service</p><p className="text-sm font-black text-slate-900">{o.serviceName || "—"}</p></div>
+                        <div><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Payment Method</p><p className="text-sm font-black text-slate-900">{o.paymentMethod || "Cash"}</p></div>
+                        <div><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Detergent</p><p className="text-sm font-black text-slate-900">{o.detergent && o.detergent.toLowerCase() !== 'none' ? `${o.detergent} ×${o.detergentQuantity || 1}` : "None"}</p></div>
+                        <div><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Conditioner</p><p className="text-sm font-black text-slate-900">{o.conditioner && o.conditioner.toLowerCase() !== 'none' ? `${o.conditioner} ×${o.conditionerQuantity || 1}` : "None"}</p></div>
+                        {(o.rushPrice || 0) > 0 && (
+                          <div className="col-span-2 bg-amber-50 rounded-xl px-4 py-2.5 border border-amber-100">
+                            <p className="text-xs font-black text-amber-700">⚡ Rush Order — ₱150 per load will be added</p>
                           </div>
                         )}
-                        {rush > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">Rush Fee</span>
-                            <span className="text-sm font-black text-slate-900 tabular-nums">₱{rush.toFixed(2)}</span>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Staff Input */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="px-5 py-3 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
+                    <span className="text-[10px] font-black text-blue-700 uppercase tracking-widest">Staff Input</span>
+                  </div>
+                  <div className="p-5 space-y-5">
+                    {/* Actual Weight */}
+                    <div className="space-y-2">
+                      <label htmlFor="actual-weight-input" className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Actual Weight (kg)</label>
+                      <div className="relative">
+                        <input
+                          id="actual-weight-input"
+                          type="number" min="5" step="0.1"
+                          className={`w-full h-16 text-center text-4xl font-black border-2 rounded-2xl bg-white shadow-sm transition-all focus:outline-none [appearance:textfield] pr-16 ${setPriceForm.actualWeightKg && parseFloat(setPriceForm.actualWeightKg) < 5 ? 'border-red-400 focus:ring-4 focus:ring-red-500/10' : 'border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10'}`}
+                          value={setPriceForm.actualWeightKg}
+                          placeholder="0.0"
+                          onChange={(e) => setSetPriceForm(p => ({ ...p, actualWeightKg: e.target.value }))}
+                        />
+                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100 uppercase">kg</span>
+                      </div>
+                      {setPriceForm.actualWeightKg && parseFloat(setPriceForm.actualWeightKg) < 5 && (
+                        <div className="flex items-center gap-2 text-red-600 bg-red-50 rounded-xl px-4 py-2.5 border border-red-100">
+                          <AlertCircle className="h-4 w-4 shrink-0" />
+                          <p className="text-xs font-black">Minimum order is 5 kg — cannot process below this weight.</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Load Type */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Load Type</label>
+                      <div className="grid grid-cols-2 gap-3">
+                        {([['PURE_CLOTHES', '👕', 'Pure Clothes', 'max 8 kg/load', 'blue'] as const, ['WITH_TOWELS', '🛏️', 'With Towels/Beddings', 'max 7 kg/load', 'indigo'] as const]).map(([val, icon, label, sub, color]) => (
+                          <button key={val} type="button" onClick={() => setLoadType(val)}
+                            className={`h-16 rounded-2xl border-2 transition-all font-black text-sm ${loadType === val ? `border-${color}-500 bg-${color}-50 text-${color}-700 shadow-[0_0_0_4px_rgba(99,102,241,0.1)]` : 'border-slate-200 text-slate-500 bg-white hover:border-slate-300'}`}>
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span className="text-lg">{icon}</span>
+                              <span className="text-[10px] font-black">{label}</span>
+                              <span className="text-[8px] opacity-60">{sub}</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Delivery Fee */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Delivery Fee (₱)</label>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-black text-lg">₱</span>
+                        <input type="number" min="0"
+                          className="w-full h-12 pl-10 text-lg font-black border-2 border-slate-200 rounded-2xl bg-white focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all [appearance:textfield]"
+                          value={setPriceForm.deliveryFee} placeholder="0"
+                          onChange={(e) => setSetPriceForm(p => ({ ...p, deliveryFee: e.target.value }))} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Loads + Price Breakdown */}
+                {(() => {
+                  const o = orders.find(x => x.id === setPriceOrderId);
+                  const kg = parseFloat(setPriceForm.actualWeightKg) || 0;
+                  const delFee = parseFloat(setPriceForm.deliveryFee || "0");
+                  if (!o || kg < 5) return (
+                    <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-8 text-center">
+                      <p className="text-slate-300 font-black text-sm">Enter weight ≥ 5 kg to see breakdown</p>
+                    </div>
+                  );
+                  const p = computeOrderPricing(o, kg, loadType, delFee);
+                  return (
+                    <div className="space-y-4">
+                      {/* Number of Loads — MOST PROMINENT */}
+                      <div className="bg-slate-900 rounded-2xl p-5 flex items-center justify-between shadow-lg">
+                        <div>
+                          <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Number of Loads</p>
+                          <p className="text-[9px] text-slate-500 mt-0.5">max {p.maxKgPerLoad} kg/load · {loadType === 'PURE_CLOTHES' ? 'pure clothes' : 'with towels/beddings'}</p>
+                        </div>
+                    <div className="flex-1 space-y-4">
+                      <div className="flex items-center justify-between p-4 bg-slate-900 rounded-[1.5rem] shadow-inner">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
+                            <Scale className="h-5 w-5 text-blue-400" />
                           </div>
-                        )}
-                        {detergentCost > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">Detergent ({o.detergent} ×{o.detergentQuantity || 1})</span>
-                            <span className="text-sm font-black text-slate-900 tabular-nums">₱{detergentCost.toFixed(2)}</span>
-                          </div>
-                        )}
-                        {conditionerCost > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">Conditioner ({o.conditioner} ×{o.conditionerQuantity || 1})</span>
-                            <span className="text-sm font-black text-slate-900 tabular-nums">₱{conditionerCost.toFixed(2)}</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between items-center">
-                          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">Logistics Fee</span>
-                          <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-1.5 border border-slate-100 focus-within:border-brand-navy/30 transition-colors">
-                            <span className="text-slate-400 text-xs font-black">₱</span>
-                            <input
-                              className="w-14 bg-transparent text-right focus:outline-none font-black text-slate-900 text-sm tabular-nums"
-                              value={setPriceForm.deliveryFee}
-                              onChange={(e) => setSetPriceForm(p => ({ ...p, deliveryFee: e.target.value }))}
-                            />
+                          <div>
+                            <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Computed Loads</p>
+                            <p className="text-xs text-slate-400 font-bold">Max 9kg per machine</p>
                           </div>
                         </div>
-                        <div className="flex justify-between items-center text-slate-400">
-                          <span className="text-[10px] font-bold uppercase tracking-tight">System Fee (2%)</span>
-                          <span className="text-xs font-black tabular-nums">₱{sysFee.toFixed(2)}</span>
+                        <div className="text-right">
+                          <span className="text-7xl font-black text-white tabular-nums leading-none tracking-tighter">{p.numberOfLoads}</span>
+                          <span className="text-blue-400 text-xl font-black ml-2 uppercase">Loads</span>
                         </div>
-                        <div className="pt-4 mt-1 border-t-2 border-dashed border-slate-100 flex justify-between items-center">
-                          <span className="text-[10px] font-black text-slate-900 uppercase tracking-[0.15em]">Total Due</span>
-                          <span className="text-2xl font-black text-blue-600 tabular-nums drop-shadow-sm">₱{total.toFixed(2)}</span>
+                      </div>
+
+                      {/* Itemized Breakdown Card */}
+                      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
+                        <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+                          <span className="text-xs font-black text-slate-500 uppercase tracking-widest">Itemized Receipt</span>
+                          <Badge variant="outline" className="bg-white border-slate-200 text-slate-400 font-black uppercase text-[9px]">Official Breakdown</Badge>
                         </div>
-                      </>
+                        <div className="p-6 space-y-4">
+                          {/* Service Line */}
+                          <div className="flex justify-between items-start">
+                            <div className="space-y-0.5">
+                              <span className="text-sm font-black text-slate-800">{o.serviceName || "Service"}</span>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tabular-nums">
+                                {p.isHandwash ? `₱${p.pricePerLoad}/kg × ${kg} kg` : `₱${p.pricePerLoad}/load × ${p.numberOfLoads} load${p.numberOfLoads !== 1 ? 's' : ''}`}
+                              </p>
+                            </div>
+                            <span className="text-sm font-black text-slate-900 tabular-nums">₱{p.serviceTotal.toFixed(2)}</span>
+                          </div>
+
+                          {/* Madness Surcharge */}
+                          {p.madnessFee > 0 && (
+                            <div className="flex justify-between items-start bg-orange-50/50 -mx-2 px-3 py-2 rounded-xl border border-orange-100">
+                              <div className="space-y-0.5">
+                                <span className="text-sm font-black text-orange-700 flex items-center gap-2">
+                                  <AlertCircle className="h-4 w-4" /> Madness Surcharge
+                                </span>
+                                <p className="text-[10px] text-orange-500 font-bold uppercase tracking-tight">₱50.00 × {p.madnessKg.toFixed(1)} extra kg over {p.maxKgPerLoad}kg base</p>
+                              </div>
+                              <span className="text-sm font-black text-orange-700 tabular-nums">₱{p.madnessFee.toFixed(2)}</span>
+                            </div>
+                          )}
+
+                          {/* Supplies */}
+                          {(p.detCost > 0 || p.conCost > 0) && (
+                            <div className="space-y-3 pt-2 border-t border-slate-50">
+                              {p.detCost > 0 && (
+                                <div className="flex justify-between items-center">
+                                  <div className="flex items-center gap-2">
+                                    <div className="h-2 w-2 rounded-full bg-blue-400" />
+                                    <span className="text-xs font-bold text-slate-600">{o.detergent}</span>
+                                    <span className="text-[10px] text-slate-400 font-black uppercase">× {p.detQty}</span>
+                                  </div>
+                                  <span className="text-xs font-black text-slate-800 tabular-nums">₱{p.detCost.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {p.conCost > 0 && (
+                                <div className="flex justify-between items-center">
+                                  <div className="flex items-center gap-2">
+                                    <div className="h-2 w-2 rounded-full bg-pink-400" />
+                                    <span className="text-xs font-bold text-slate-600">{o.conditioner}</span>
+                                    <span className="text-[10px] text-slate-400 font-black uppercase">× {p.conQty}</span>
+                                  </div>
+                                  <span className="text-xs font-black text-slate-800 tabular-nums">₱{p.conCost.toFixed(2)}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Fees Block */}
+                          <div className="pt-4 border-t border-slate-100 space-y-2.5">
+                            {p.rushFee > 0 && (
+                              <div className="flex justify-between text-xs font-bold text-slate-500 uppercase tracking-tight">
+                                <span>Rush Processing (₱150 × {p.numberOfLoads})</span>
+                                <span className="tabular-nums">₱{p.rushFee.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {p.deliveryFee > 0 && (
+                              <div className="flex justify-between text-xs font-bold text-slate-500 uppercase tracking-tight">
+                                <span>Delivery Fee</span>
+                                <span className="tabular-nums">₱{p.deliveryFee.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {p.pickupFee > 0 && (
+                              <div className="flex justify-between text-xs font-bold text-slate-500 uppercase tracking-tight">
+                                <span>Pickup Fee</span>
+                                <span className="tabular-nums">₱{p.pickupFee.toFixed(2)}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between text-xs font-bold text-slate-400 uppercase tracking-tight italic">
+                              <span>Convenience Fee (Online)</span>
+                              <span className="tabular-nums">₱{p.convenienceFee.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between text-xs font-bold text-slate-400 uppercase tracking-tight italic">
+                              <span>System Service Fee</span>
+                              <span className="tabular-nums">₱{p.systemFee.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                          {p.detCost > 0 && (
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <span className="text-xs font-black text-slate-700">Detergent — {o.detergent}</span>
+                                <p className="text-[10px] text-slate-400">₱{p.detPPP}/pack × {p.detQty} pack{p.detQty !== 1 ? 's' : ''} (customer chose)</p>
+                              </div>
+                              <span className="text-sm font-black text-slate-900 tabular-nums">₱{p.detCost.toFixed(2)}</span>
+                            </div>
+                          )}
+                          {p.conCost > 0 && (
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <span className="text-xs font-black text-slate-700">Conditioner — {o.conditioner}</span>
+                                <p className="text-[10px] text-slate-400">₱{p.conPPP}/pack × {p.conQty} pack{p.conQty !== 1 ? 's' : ''} (customer chose)</p>
+                              </div>
+                              <span className="text-sm font-black text-slate-900 tabular-nums">₱{p.conCost.toFixed(2)}</span>
+                            </div>
+                          )}
+                          {p.rushFee > 0 && (
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <span className="text-xs font-black text-amber-700">⚡ Rush Fee</span>
+                                <p className="text-[10px] text-amber-400">₱150/load × {p.numberOfLoads} load{p.numberOfLoads !== 1 ? 's' : ''}</p>
+                              </div>
+                              <span className="text-sm font-black text-amber-700 tabular-nums">₱{p.rushFee.toFixed(2)}</span>
+                            </div>
+                          )}
+                          {delFee > 0 && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs font-black text-slate-700">Delivery Fee</span>
+                              <span className="text-sm font-black text-slate-900 tabular-nums">₱{delFee.toFixed(2)}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <span className="text-xs font-black text-slate-500">Convenience Fee</span>
+                              <p className="text-[10px] text-slate-400">Online booking system fee</p>
+                            </div>
+                            <span className="text-sm font-black text-slate-500 tabular-nums">₱{p.convenienceFee.toFixed(2)}</span>
+                          </div>
+                          <div className="pt-4 border-t-2 border-dashed border-slate-100 flex justify-between items-center">
+                            <span className="text-sm font-black text-slate-900 uppercase tracking-wide">Grand Total</span>
+                            <span className="text-3xl font-black text-blue-600 tabular-nums">₱{p.grandTotal.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* RIGHT COLUMN — Receipt Preview */}
+              <div className="lg:col-span-5">
+                <div className="bg-white rounded-[2rem] border border-slate-200 shadow-[0_20px_50px_rgba(0,0,0,0.07)] overflow-hidden flex flex-col sticky top-6">
+                  <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex items-center justify-between">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Live Receipt Preview</span>
+                    <div className="flex gap-1.5 items-center">
+                      <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="text-[8px] text-emerald-600 font-black uppercase">Live</span>
+                    </div>
+                  </div>
+                  {(() => {
+                    const o = orders.find(x => x.id === setPriceOrderId);
+                    const kg = parseFloat(setPriceForm.actualWeightKg) || 0;
+                    const delFee = parseFloat(setPriceForm.deliveryFee || "0");
+                    const p = o && kg >= 5 ? computeOrderPricing(o, kg, loadType, delFee) : null;
+                    return (
+                      <div className="p-6 flex flex-col items-center bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:20px_20px]">
+                        <div className="w-full bg-white shadow-lg rounded-2xl relative">
+                          <div className="absolute -top-2 left-0 w-full flex justify-between overflow-hidden px-1">
+                            {[...Array(18)].map((_, i) => <div key={i} className="w-3.5 h-3.5 bg-slate-100 rotate-45 -mt-2 shrink-0" />)}
+                          </div>
+                          <div className="p-6 pt-8 space-y-4">
+                            <div className="text-center border-b border-dashed border-slate-200 pb-4">
+                              <h3 className="font-black text-slate-900 text-2xl tracking-tighter">WashAlert</h3>
+                              <p className="text-[9px] text-slate-400 font-black uppercase tracking-[0.2em]">{o?.branch || "Branch"}</p>
+                              <p className="text-2xl font-black text-blue-600 mt-3 tracking-tight">{o?.orderId || `WA-${setPriceOrderId}`}</p>
+                              <p className="text-[10px] text-slate-400">{new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                            </div>
+                            <div className="space-y-1 border-b border-dashed border-slate-200 pb-4 text-[11px]">
+                              <div className="flex justify-between"><span className="text-slate-500 font-bold">Customer</span><span className="font-black text-slate-900">{o?.customerName}</span></div>
+                              <div className="flex justify-between"><span className="text-slate-500 font-bold">Actual weight</span><span className="font-black text-slate-900">{kg > 0 ? `${kg} kg` : "—"}</span></div>
+                              <div className="flex justify-between"><span className="text-slate-500 font-bold">Load type</span><span className="font-black text-slate-900">{loadType === 'PURE_CLOTHES' ? 'Pure clothes' : 'With towels/beddings'}</span></div>
+                              {p && <div className="flex justify-between"><span className="text-slate-500 font-bold">No. of loads</span><span className="font-black text-slate-900">{p.numberOfLoads} load{p.numberOfLoads !== 1 ? 's' : ''}</span></div>}
+                              <div className="flex justify-between"><span className="text-slate-500 font-bold">Payment</span><span className="font-black text-slate-900">{o?.paymentMethod || "Cash"}</span></div>
+                            </div>
+                            {p && (
+                              <div className="space-y-1 border-b border-dashed border-slate-200 pb-4">
+                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Service Breakdown</p>
+                                <div className="flex justify-between text-[11px]"><span className="text-slate-600">{o?.serviceName}</span><span className="font-black text-slate-900">₱{p.serviceTotal.toFixed(0)}</span></div>
+                                <div className="flex justify-between text-[9px] -mt-0.5"><span className="text-slate-400 pl-1">{p.isHandwash ? `₱${p.pricePerLoad}/kg × ${kg}kg` : `₱${p.pricePerLoad} × ${p.numberOfLoads} load${p.numberOfLoads !== 1 ? 's' : ''}`}</span></div>
+                                {p.detCost > 0 && <><div className="flex justify-between text-[11px]"><span className="text-slate-600">{o?.detergent} detergent</span><span className="font-black text-slate-900">₱{p.detCost.toFixed(0)}</span></div><div className="text-[9px] text-slate-400 pl-1">₱{p.detPPP} × {p.detQty} pack{p.detQty !== 1 ? 's' : ''}</div></>}
+                                {p.conCost > 0 && <><div className="flex justify-between text-[11px]"><span className="text-slate-600">{o?.conditioner} conditioner</span><span className="font-black text-slate-900">₱{p.conCost.toFixed(0)}</span></div><div className="text-[9px] text-slate-400 pl-1">₱{p.conPPP} × {p.conQty} pack{p.conQty !== 1 ? 's' : ''}</div></>}
+                                {p.rushFee > 0 && <div className="flex justify-between text-[11px]"><span className="text-amber-600 font-bold">⚡ Rush fee</span><span className="font-black text-amber-700">₱{p.rushFee.toFixed(0)}</span></div>}
+                                {p.madnessFee > 0 && <div className="flex justify-between text-[11px]"><span className="text-orange-600 font-bold">Madness surcharge</span><span className="font-black text-orange-700">₱{p.madnessFee.toFixed(0)}</span></div>}
+                                {delFee > 0 && <div className="flex justify-between text-[11px]"><span className="text-slate-600">Delivery fee</span><span className="font-black text-slate-900">₱{delFee.toFixed(0)}</span></div>}
+                                <div className="flex justify-between text-[11px]"><span className="text-slate-500">Convenience fee</span><span className="font-black text-slate-500">₱{p.convenienceFee.toFixed(0)}</span></div>
+                              </div>
+                            )}
+                            <div className="flex justify-between items-end">
+                              <div>
+                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Total</p>
+                                <p className="text-3xl font-black text-slate-900 tabular-nums">{p ? `₱${p.grandTotal.toFixed(0)}` : "—"}</p>
+                              </div>
+                              <Badge className="bg-slate-800 text-white border-0 text-[8px] font-black uppercase px-2 py-1 rounded-lg">{o?.paymentMethod || "Cash"}</Badge>
+                            </div>
+                            <p className="text-center text-[8px] text-slate-300 font-bold pt-2 border-t border-dashed border-slate-100">Thank you for choosing WashAlert!</p>
+                          </div>
+                          <div className="absolute -bottom-2 left-0 w-full flex justify-between overflow-hidden px-1">
+                            {[...Array(18)].map((_, i) => <div key={i} className="w-3.5 h-3.5 bg-slate-100 rotate-45 mt-2 shrink-0" />)}
+                          </div>
+                        </div>
+                      </div>
                     );
                   })()}
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* RIGHT: PREVIEW (5/12) */}
-            <div className="lg:col-span-5 relative group">
-                <div className="absolute -inset-4 bg-blue-500/5 rounded-[3rem] blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-                <div className="relative bg-white rounded-[2rem] border border-slate-200 shadow-[0_20px_50px_rgba(0,0,0,0.08)] overflow-hidden flex flex-col h-full min-h-[500px]">
-                  <div className="bg-slate-50/80 px-6 py-4 border-b border-slate-100 flex justify-between items-center shrink-0">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Live Client Preview</span>
-                    <div className="flex gap-1.5">
-                      <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      <div className="h-1.5 w-10 rounded-full bg-slate-200" />
-                    </div>
-                  </div>
-                  
-                  <div className="flex-1 p-8 flex flex-col items-center bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:20px_20px]">
-                    <div className="w-full bg-white p-6 shadow-[0_10px_40px_rgba(0,0,0,0.05)] rounded-2xl relative mb-4">
-                      {/* Serrated Edge Top */}
-                      <div className="absolute -top-1.5 left-0 w-full flex justify-between overflow-hidden px-1">
-                        {[...Array(20)].map((_, i) => (
-                          <div key={i} className="w-3 h-3 bg-[#F8FAFC] rotate-45 -mt-1.5 shrink-0" />
-                        ))}
-                      </div>
-
-                      <div className="flex flex-col items-center pt-2">
-                        <div className="h-16 w-16 bg-white border border-slate-100 rounded-2xl shadow-sm flex items-center justify-center mb-3 overflow-hidden p-2">
-                          <img 
-                            src={orders.find(o => o.id === setPriceOrderId)?.branch?.toLowerCase().includes("makati") ? logoLaundryHubs : logoSpeedyWash} 
-                            alt="Logo" 
-                            className="w-full h-full object-contain"
-                          />
-                        </div>
-                        <h3 className="font-black text-slate-900 text-xl tracking-tighter">WashAlert</h3>
-                        <p className="text-[9px] text-slate-400 font-black uppercase tracking-[0.2em] mb-6">
-                          {orders.find(o => o.id === setPriceOrderId)?.branch || "MAKATI BRANCH"}
-                        </p>
-                        
-                        <div className="w-full space-y-5">
-                          <div className="flex flex-col items-center border-b border-dashed border-slate-200 pb-5">
-                            <p className="text-3xl font-black text-blue-600 tracking-[-0.05em] leading-none mb-1 tabular-nums">
-                              {orders.find(o => o.id === setPriceOrderId)?.orderId || `WA-${setPriceOrderId}`}
-                            </p>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest opacity-60">
-                              {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                            </p>
-                          </div>
-
-                          <div className="space-y-4">
-                            <div className="flex justify-between items-center">
-                              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Load Info</p>
-                              <div className="flex items-center gap-2 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-lg border border-emerald-100">
-                                <Scale className="h-3 w-3" />
-                                <span className="text-[10px] font-black uppercase tracking-widest">{setPriceForm.actualWeightKg || "0"} kg</span>
-                              </div>
-                            </div>
-                            
-                            <div className="space-y-3 pt-1">
-                              <div className="flex justify-between text-[11px] font-bold text-slate-500 uppercase tracking-tight">
-                                <span>Service Type</span>
-                                <span className="text-slate-900 font-black">{orders.find(o => o.id === setPriceOrderId)?.serviceName || serviceTypeLabel[orders.find(o => o.id === setPriceOrderId)?.serviceType as ApiServiceType] || 'Service'}</span>
-                              </div>
-                              
-                              <div className="flex justify-between text-[11px] font-bold text-slate-500 uppercase tracking-tight">
-                                <span>Base Price</span>
-                                <span className="text-slate-900 font-black tabular-nums">₱{(parseFloat(setPriceForm.finalPrice || "0")).toFixed(2)}</span>
-                              </div>
-
-                              {orders.find(o => o.id === setPriceOrderId)?.detergent && orders.find(o => o.id === setPriceOrderId)?.detergent !== 'None' && (
-                                <div className="flex justify-between text-[11px] font-bold text-slate-500 uppercase tracking-tight">
-                                  <span>Detergent ({orders.find(o => o.id === setPriceOrderId)?.detergent})</span>
-                                  <span className="text-slate-900 font-black tabular-nums">x{(orders.find(o => o.id === setPriceOrderId) as any)?.detergentQuantity || 1}</span>
-                                </div>
-                              )}
-
-                              {orders.find(o => o.id === setPriceOrderId)?.conditioner && orders.find(o => o.id === setPriceOrderId)?.conditioner !== 'None' && (
-                                <div className="flex justify-between text-[11px] font-bold text-slate-500 uppercase tracking-tight">
-                                  <span>Conditioner ({orders.find(o => o.id === setPriceOrderId)?.conditioner})</span>
-                                  <span className="text-slate-900 font-black tabular-nums">x{(orders.find(o => o.id === setPriceOrderId) as any)?.conditionerQuantity || 1}</span>
-                                </div>
-                              )}
-                              
-                              {parseFloat(setPriceForm.deliveryFee || "0") > 0 && (
-                                <div className="flex justify-between text-[11px] font-bold text-slate-500 uppercase tracking-tight">
-                                  <span>Logistics</span>
-                                  <span className="text-slate-900 font-black tabular-nums">₱{parseFloat(setPriceForm.deliveryFee || "0").toFixed(2)}</span>
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="mt-6 pt-5 border-t border-slate-100 flex justify-between items-end">
-                              <div>
-                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Total Pay</p>
-                                <p className="text-3xl font-black tabular-nums tracking-tighter leading-none text-slate-900">
-                                  ₱{(parseFloat(setPriceForm.finalPrice || "0") + parseFloat(setPriceForm.deliveryFee || "0")).toFixed(2)}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <Badge className="bg-amber-500 text-white border-0 text-[8px] font-black uppercase px-2 py-0.5 rounded-md">COD Only</Badge>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Serrated Edge Bottom */}
-                      <div className="absolute -bottom-1.5 left-0 w-full flex justify-between overflow-hidden px-1">
-                        {[...Array(20)].map((_, i) => (
-                          <div key={i} className="w-3 h-3 bg-[#F8FAFC] rotate-45 mt-1.5 shrink-0" />
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="mt-auto w-full bg-blue-600/5 rounded-2xl p-4 border border-blue-500/10">
-                      <p className="text-[10px] text-blue-600 text-center font-bold uppercase tracking-tight leading-relaxed">
-                        Receipt will be sent to the customer app for approval.
-                      </p>
-                    </div>
-                  </div>
-            </div>
-        </div>
-      </div>
-    </div>
-
-          {/* ── FOOTER (FIXED CTA) ── */}
-          <div className="bg-white border-t border-slate-100 p-8 shrink-0 flex flex-col md:flex-row items-center gap-6">
-            <div className="flex-1 hidden md:flex items-center gap-4 bg-slate-50 px-6 py-4 rounded-2xl border border-slate-100">
-              <div className="h-10 w-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0 border border-amber-200">
-                <Info className="h-5 w-5 text-amber-600" />
-              </div>
-              <p className="text-[10px] text-slate-500 leading-tight font-bold uppercase tracking-tight">
-                Digital confirmation required. <br />
-                <span className="text-slate-900">Staff must verify weight twice before sending.</span>
-              </p>
-            </div>
-            
+          {/* FOOTER */}
+          <div className="bg-white border-t border-slate-100 px-7 py-5 shrink-0 flex items-center justify-end gap-4">
+            <Button variant="outline" className="h-12 px-6 rounded-xl font-black text-slate-500" onClick={() => setSetPriceOpen(false)}>
+              Cancel
+            </Button>
             <Button
-              className="w-full md:w-auto min-w-[320px] h-16 rounded-[1.25rem] font-black text-lg tracking-tight bg-slate-900 hover:bg-black text-white shadow-[0_20px_40px_rgba(0,0,0,0.15)] border-0 transition-all active:scale-[0.98] group relative overflow-hidden"
+              id="send-receipt-btn"
+              className="h-14 px-10 rounded-[1.25rem] font-black text-base tracking-tight bg-slate-900 hover:bg-blue-600 text-white shadow-[0_10px_30px_rgba(0,0,0,0.15)] border-0 transition-all active:scale-[0.98] group relative overflow-hidden min-w-[260px]"
               onClick={() => void submitSetPrice()}
-              disabled={setPriceSubmitting || !setPriceForm.actualWeightKg || !setPriceForm.finalPrice}
+              disabled={setPriceSubmitting}
             >
               <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
               <span className="relative flex items-center justify-center gap-3">
                 {setPriceSubmitting
-                  ? <><Loader2 className="h-6 w-6 animate-spin" /> Processing...</>
-                  : <><CheckCircle2 className="h-6 w-6" /> Send Receipt to Customer</>
+                  ? <><Loader2 className="h-5 w-5 animate-spin" /> Sending...</>
+                  : <><CheckCircle2 className="h-5 w-5" /> Send Receipt to Customer</>
                 }
               </span>
             </Button>
           </div>
         </DialogContent>
       </Dialog>
+
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-xl border-slate-200 rounded-3xl p-0 overflow-hidden bg-[#F8FAFC] shadow-2xl">
@@ -2113,13 +2252,31 @@ export default function OrderManagementPage() {
               <div className="bg-white border-t border-slate-200 p-6 space-y-4">
                 <div className="flex flex-wrap gap-3">
                   {selectedOrder.status === 'PENDING' ? (
-                    <Button 
-                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14"
-                      onClick={() => void applyStatusUpdate(selectedOrder)}
-                    >
-                      {statusUpdatingId === selectedOrder.id ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <CheckCircle2 className="h-5 w-5 mr-2" />}
-                      Receive Order
-                    </Button>
+                    <>
+                      {selectedOrder.serviceType === 'PICKUP_DELIVERY' ? (
+                        <Button 
+                          className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14 shadow-lg shadow-blue-200"
+                          onClick={() => openAssignRiderModal(selectedOrder, 'pickup')}
+                        >
+                          <CheckCircle2 className="mr-2 h-5 w-5" /> Assign Pickup
+                        </Button>
+                      ) : (
+                        <Button 
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14"
+                          onClick={() => void applyStatusUpdate(selectedOrder)}
+                        >
+                          {statusUpdatingId === selectedOrder.id ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <CheckCircle2 className="h-5 w-5 mr-2" />}
+                          Receive Order
+                        </Button>
+                      )}
+                      <Button 
+                        variant="outline"
+                        className="flex-1 border-slate-200 text-slate-600 font-black rounded-xl h-14"
+                        onClick={() => setShowReceiptPreview(true)}
+                      >
+                        <Eye className="mr-2 h-4 w-4" /> Receipt
+                      </Button>
+                    </>
                   ) : selectedOrder.status === 'ORDER_RECEIVED' ? (
                     <Button 
                       className="flex-1 bg-violet-600 hover:bg-violet-700 text-white font-black rounded-xl h-14 shadow-lg shadow-violet-200"
@@ -2158,22 +2315,6 @@ export default function OrderManagementPage() {
                       >
                         {statusUpdatingId === selectedOrder.id ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <RefreshCw className="h-5 w-5 mr-2" />}
                         Mark as Washing
-                      </Button>
-                      <Button 
-                        variant="outline"
-                        className="flex-1 border-slate-200 text-slate-600 font-black rounded-xl h-14"
-                        onClick={() => setShowReceiptPreview(true)}
-                      >
-                        <Eye className="mr-2 h-4 w-4" /> Receipt
-                      </Button>
-                    </>
-                  ) : selectedOrder.status === 'PENDING' && selectedOrder.serviceType === 'PICKUP_DELIVERY' ? (
-                    <>
-                      <Button 
-                        className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14 shadow-lg shadow-blue-200"
-                        onClick={() => openAssignRiderModal(selectedOrder, 'pickup')}
-                      >
-                        <CheckCircle2 className="mr-2 h-5 w-5" /> Assign Pickup
                       </Button>
                       <Button 
                         variant="outline"
