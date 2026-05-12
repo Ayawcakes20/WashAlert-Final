@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronRight,
   Info,
   Eye,
   Filter,
@@ -12,12 +13,16 @@ import {
   Pencil,
   Phone,
   Plus,
+  Receipt,
   RefreshCw,
   Scale,
   Search,
+  Send,
   Trash2,
   User,
+  Zap,
 } from "lucide-react";
+
 import {
   ordersApi,
   deliveriesApi,
