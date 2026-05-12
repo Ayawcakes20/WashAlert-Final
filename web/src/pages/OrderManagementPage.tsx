@@ -1388,7 +1388,7 @@ export default function OrderManagementPage() {
                 const o = orders.find(x => x.id === setPriceOrderId);
                 if (!o) return null;
                 const kg = parseFloat(setPriceForm.actualWeightKg) || 0;
-                const p = kg >= 5 ? computeOrderPricing(o, kg, loadType) : null;
+                const p = kg >= 5 ? computeOrderPricing(o, kg, loadType, parseFloat(setPriceForm.deliveryFee || '0')) : null;
                 return (
                   <>
                     {/* Info Banner */}
@@ -1507,7 +1507,7 @@ export default function OrderManagementPage() {
                       const o3 = orders.find(x => x.id === setPriceOrderId);
                       const kg3 = parseFloat(setPriceForm.actualWeightKg) || 0;
                       const del3 = parseFloat(setPriceForm.deliveryFee || '0');
-                      const p3 = o3 && kg3 >= 5 ? computeOrderPricing(o3, kg3, loadType) : null;
+                      const p3 = o3 && kg3 >= 5 ? computeOrderPricing(o3, kg3, loadType, del3) : null;
                       if (!o3 || !p3) return null;
                       return (
                         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
@@ -1554,7 +1554,7 @@ export default function OrderManagementPage() {
                 if (!o) return null;
                 const kg = parseFloat(setPriceForm.actualWeightKg) || 0;
                 const delFee = parseFloat(setPriceForm.deliveryFee || '0');
-                const p = kg >= 5 ? computeOrderPricing(o, kg, loadType) : null;
+                const p = kg >= 5 ? computeOrderPricing(o, kg, loadType, delFee) : null;
                 return (
                   <>
                     <div className="bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between">
