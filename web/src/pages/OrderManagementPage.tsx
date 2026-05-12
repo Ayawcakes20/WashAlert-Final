@@ -1501,13 +1501,54 @@ export default function OrderManagementPage() {
                         )}
                       </div>
                     </div>
+
+                    {/* STEP 3: BREAKDOWN TABLE */}
+                    {(() => {
+                      const o3 = orders.find(x => x.id === setPriceOrderId);
+                      const kg3 = parseFloat(setPriceForm.actualWeightKg) || 0;
+                      const del3 = parseFloat(setPriceForm.deliveryFee || '0');
+                      const p3 = o3 && kg3 >= 5 ? computeOrderPricing(o3, kg3, loadType) : null;
+                      if (!o3 || !p3) return null;
+                      return (
+                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                          <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center"><Receipt className="h-4 w-4 text-blue-600" /></div>
+                            <div>
+                              <p className="text-sm font-semibold text-slate-800">Step 3 — Full price breakdown</p>
+                              <p className="text-xs text-slate-400">All charges visible — required for receipt</p>
+                            </div>
+                          </div>
+                          <div className="p-5">
+                            <table className="w-full">
+                              <tbody className="divide-y divide-slate-50">
+                                <tr>
+                                  <td className="py-2.5"><p className="text-sm font-medium text-slate-800">{o3.serviceName}</p><p className="text-[10px] text-slate-400 font-mono mt-0.5">₱{p3.pricePerLoad} × {p3.isHandwash ? `${kg3}kg` : `${p3.numberOfLoads} load${p3.numberOfLoads!==1?'s':''}`}</p></td>
+                                  <td className="py-2.5 text-right font-mono text-sm font-semibold text-slate-800">₱{p3.serviceTotal.toFixed(0)}</td>
+                                </tr>
+                                {p3.madnessFee > 0 && <tr><td className="py-2.5"><p className="text-sm font-medium text-red-600">Madness limit surcharge</p><p className="text-[10px] text-slate-400 font-mono mt-0.5">+{p3.madnessKg.toFixed(1)} kg × ₱50</p></td><td className="py-2.5 text-right font-mono text-sm font-semibold text-red-600">₱{p3.madnessFee.toFixed(0)}</td></tr>}
+                                {p3.detCost > 0 && <tr><td className="py-2.5"><p className="text-sm font-medium text-slate-800">{o3.detergent} detergent</p><p className="text-[10px] text-slate-400 font-mono mt-0.5">₱{p3.detPPP} × {p3.detQty} pack{p3.detQty!==1?'s':''}</p></td><td className="py-2.5 text-right font-mono text-sm font-semibold text-slate-800">₱{p3.detCost.toFixed(0)}</td></tr>}
+                                {p3.conCost > 0 && <tr><td className="py-2.5"><p className="text-sm font-medium text-slate-800">{o3.conditioner} conditioner</p><p className="text-[10px] text-slate-400 font-mono mt-0.5">₱{p3.conPPP} × {p3.conQty} pack{p3.conQty!==1?'s':''}</p></td><td className="py-2.5 text-right font-mono text-sm font-semibold text-slate-800">₱{p3.conCost.toFixed(0)}</td></tr>}
+                                {p3.rushFee > 0 && <tr><td className="py-2.5"><p className="text-sm font-medium text-amber-600">⚡ Rush service fee</p><p className="text-[10px] text-slate-400 font-mono mt-0.5">₱150/load × {p3.numberOfLoads} load{p3.numberOfLoads!==1?'s':''}</p></td><td className="py-2.5 text-right font-mono text-sm font-semibold text-amber-600">₱{p3.rushFee.toFixed(0)}</td></tr>}
+                                {del3 > 0 && <tr><td className="py-2.5"><p className="text-sm font-medium text-slate-800">Delivery fee</p><p className="text-[10px] text-slate-400 mt-0.5">Location-based rate</p></td><td className="py-2.5 text-right font-mono text-sm font-semibold text-slate-800">₱{del3.toFixed(0)}</td></tr>}
+                                {p3.pickupFee > 0 && <tr><td className="py-2.5"><p className="text-sm font-medium text-slate-800">Pickup fee</p></td><td className="py-2.5 text-right font-mono text-sm font-semibold text-slate-800">₱{p3.pickupFee.toFixed(0)}</td></tr>}
+                                <tr><td className="py-2.5"><p className="text-sm font-medium text-slate-500">Convenience fee</p><p className="text-[10px] text-slate-400 mt-0.5">Online booking system fee</p></td><td className="py-2.5 text-right font-mono text-sm font-semibold text-slate-500">₱{p3.convenienceFee.toFixed(0)}</td></tr>
+                              </tbody>
+                            </table>
+                            <div className="flex justify-between items-center pt-4 mt-3 border-t-2 border-slate-800">
+                              <span className="text-base font-semibold text-slate-800">Total amount due</span>
+                              <span className="text-2xl font-bold text-blue-600 font-mono">₱{p3.grandTotal.toFixed(0)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </>
                 );
               })()}
             </div>
 
-            {/* RIGHT PANEL — PHYSICAL RECEIPT */}
-            <div className="w-[400px] shrink-0 flex flex-col bg-white border-l border-slate-200 overflow-hidden">
+            {/* RIGHT PANEL — RECEIPT PREVIEW */}
+            <div className="w-[360px] shrink-0 flex flex-col bg-[#F8F7F5] border-l border-slate-200 overflow-hidden">
               {(() => {
                 const o = orders.find(x => x.id === setPriceOrderId);
                 if (!o) return null;
@@ -1516,9 +1557,9 @@ export default function OrderManagementPage() {
                 const p = kg >= 5 ? computeOrderPricing(o, kg, loadType) : null;
                 return (
                   <>
-                    <div className="bg-slate-50 px-6 py-4 border-b border-slate-200">
-                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Step 3 — Full Price Breakdown</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">All charges visible — required for receipt</p>
+                    <div className="bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between">
+                      <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Receipt Preview</p>
+                      <div className="flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" /><span className="text-[9px] text-blue-600 font-semibold uppercase">Live</span></div>
                     </div>
 
                     {/* RECEIPT BODY */}
