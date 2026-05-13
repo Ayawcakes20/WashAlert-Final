@@ -7,6 +7,7 @@ import com.washalert.washalertbackend.user.User;
 import com.washalert.washalertbackend.user.UserRepository;
 import com.washalert.washalertbackend.user.InviteDispatchException;
 import com.washalert.washalertbackend.verification.MailService;
+import com.washalert.washalertbackend.security.PasswordStrengthValidator;
 import jakarta.transaction.Transactional;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.authentication.rememberme.PersistentTokenRepository;
@@ -29,6 +30,7 @@ public class StaffInvitationService {
     private final FirebaseIdentityService firebaseIdentityService;
     private final PersistentTokenRepository rememberMeTokenRepository;
     private final FirestoreSyncService firestoreSyncService;
+    private final PasswordStrengthValidator passwordStrengthValidator;
 
     public StaffInvitationService(
             StaffInvitationTokenRepository invitationTokenRepository,
@@ -38,7 +40,8 @@ public class StaffInvitationService {
             StaffInvitationProperties props,
             FirebaseIdentityService firebaseIdentityService,
             PersistentTokenRepository rememberMeTokenRepository,
-            FirestoreSyncService firestoreSyncService
+            FirestoreSyncService firestoreSyncService,
+            PasswordStrengthValidator passwordStrengthValidator
     ) {
         this.invitationTokenRepository = invitationTokenRepository;
         this.userRepository = userRepository;
@@ -48,6 +51,7 @@ public class StaffInvitationService {
         this.firebaseIdentityService = firebaseIdentityService;
         this.rememberMeTokenRepository = rememberMeTokenRepository;
         this.firestoreSyncService = firestoreSyncService;
+        this.passwordStrengthValidator = passwordStrengthValidator;
     }
 
     @Transactional(dontRollbackOn = InviteDispatchException.class)
@@ -89,6 +93,7 @@ public class StaffInvitationService {
 
     @Transactional
     public void setInitialPassword(String rawToken, String newPassword) {
+        passwordStrengthValidator.validate(newPassword);
         if (rawToken == null || rawToken.isBlank()) {
             throw new IllegalArgumentException("Invalid or expired invitation token.");
         }

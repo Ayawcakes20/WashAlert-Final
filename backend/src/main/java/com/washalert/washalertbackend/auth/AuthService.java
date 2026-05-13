@@ -9,6 +9,7 @@ import com.washalert.washalertbackend.firebase.FirestoreReadService;
 import com.washalert.washalertbackend.firebase.FirestoreSyncService;
 import com.washalert.washalertbackend.firebase.FirestoreUserPayloadFactory;
 import com.washalert.washalertbackend.security.AuthUserDetails;
+import com.washalert.washalertbackend.security.PasswordStrengthValidator;
 import com.washalert.washalertbackend.user.*;
 import com.washalert.washalertbackend.verification.OtpService;
 import org.slf4j.Logger;
@@ -32,6 +33,7 @@ public class AuthService {
     private final FirebaseIdentityService firebaseIdentityService;
     private final OtpService otpService;
     private final PasswordResetService passwordResetService;
+    private final PasswordStrengthValidator passwordStrengthValidator;
 
     public AuthService(
             UserRepository users,
@@ -41,7 +43,8 @@ public class AuthService {
             DataReadProperties dataReadProperties,
             FirebaseIdentityService firebaseIdentityService,
             OtpService otpService,
-            PasswordResetService passwordResetService
+            PasswordResetService passwordResetService,
+            PasswordStrengthValidator passwordStrengthValidator
     ) {
         this.users = users;
         this.encoder = encoder;
@@ -51,6 +54,7 @@ public class AuthService {
         this.firebaseIdentityService = firebaseIdentityService;
         this.otpService = otpService;
         this.passwordResetService = passwordResetService;
+        this.passwordStrengthValidator = passwordStrengthValidator;
     }
 
     public void register(RegisterRequest req) {
@@ -195,6 +199,7 @@ public class AuthService {
     }
 
     public void resetPasswordWithOtp(String email, String newPassword) {
+        passwordStrengthValidator.validate(newPassword);
         String normalized = normalizeEmail(email);
         User user = users.findByEmail(normalized)
                 .orElseThrow(() -> new IllegalArgumentException("User not found."));
