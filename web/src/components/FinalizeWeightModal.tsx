@@ -290,7 +290,7 @@ export function FinalizeWeightModal({
       // Auto-focus weight input
       setTimeout(() => weightInputRef.current?.focus(), 80);
     }
-  }, [open, order]);
+  }, [open, order?.id]);
 
   if (!order) return null;
 
@@ -541,10 +541,10 @@ export function FinalizeWeightModal({
               </div>
 
               {/* ── NUMBER OF LOADS HERO ── */}
-              <AnimatePresence mode="wait">
+              <AnimatePresence>
                 {pricing ? (
                   <motion.div
-                    key={`loads-${pricing.numberOfLoads}-${loadType}`}
+                    key="loads-active"
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}

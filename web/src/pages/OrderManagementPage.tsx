@@ -178,7 +178,7 @@ const statusBadgeVariant = (status: ApiOrderStatus): "default" | "secondary" | "
 
 const renderStatusBadge = (status: ApiOrderStatus) => {
   const label = statusLabel[status] || status;
-  
+
   if (status === "WASHING" || status === "DRYING") {
     return (
       <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 border border-blue-100 w-fit">
@@ -187,7 +187,7 @@ const renderStatusBadge = (status: ApiOrderStatus) => {
       </div>
     );
   }
-  
+
   if (status === "PRICE_CONFIRMED") {
     return (
       <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 text-amber-700 border border-amber-100 w-fit">
@@ -309,12 +309,12 @@ const mapOrder = (order: JobOrderResponse): Order => ({
 const formatDateTime = (timestamp?: string) =>
   timestamp
     ? new Date(timestamp).toLocaleString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "2-digit",
-        hour: "numeric",
-        minute: "2-digit",
-      })
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "numeric",
+      minute: "2-digit",
+    })
     : "-";
 
 const normalizePaymentMethod = (value?: string | null) => (value || "").trim().toUpperCase();
@@ -443,7 +443,7 @@ export default function OrderManagementPage() {
       setAssignRiderOpen(false);
       setSelectedDriverId("");
       await loadOrders(Math.max(0, ordersPage - 1), true);
-      
+
       // Update side panel if needed
       if (selectedOrder && selectedOrder.id === assignRiderOrderId) {
         const refreshed = await ordersApi.getById(assignRiderOrderId);
@@ -732,7 +732,10 @@ export default function OrderManagementPage() {
 
   useEffect(() => {
     let active = true;
-    const pickupDeliveryOrders = orders.filter((order) => order.serviceType === "PICKUP_DELIVERY");
+    const pickupDeliveryOrders = orders.filter((order) => 
+      order.serviceType === "PICKUP_DELIVERY" && 
+      !["PENDING", "ORDER_RECEIVED", "WASHING", "DRYING"].includes(order.status)
+    );
     if (pickupDeliveryOrders.length === 0) {
       setDeliveryMetaByTracking({});
       return () => {
@@ -990,9 +993,8 @@ export default function OrderManagementPage() {
                   : "-";
                 const nextStatuses = getAllowedStatusTransitions(order.status);
                 return (
-                  <tr key={order.id} className={`group hover:bg-slate-50/80 transition-all duration-200 ${
-                    isEscalated(order) ? "bg-red-50/50" : ""
-                  }`}>
+                  <tr key={order.id} className={`group hover:bg-slate-50/80 transition-all duration-200 ${isEscalated(order) ? "bg-red-50/50" : ""
+                    }`}>
                     <td className="p-5">
                       <div className="font-black text-brand-navy tabular-nums mb-0.5">{order.orderId}</div>
                       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{formatDateTime(order.createdAt)}</div>
@@ -1043,26 +1045,26 @@ export default function OrderManagementPage() {
                         )}
                         <div className="flex items-center gap-1.5">
                           {(order.paymentMethod?.toUpperCase().includes('GCASH')) ? (
-                             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-blue-50 border border-blue-100 shadow-sm">
-                               <div className="h-1.5 w-1.5 rounded-full bg-blue-500 shadow-[0_0_5px_rgba(59,130,246,0.5)]" />
-                               <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest">GCash</span>
-                             </div>
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-blue-50 border border-blue-100 shadow-sm">
+                              <div className="h-1.5 w-1.5 rounded-full bg-blue-500 shadow-[0_0_5px_rgba(59,130,246,0.5)]" />
+                              <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest">GCash</span>
+                            </div>
                           ) : (
-                             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-50 border border-slate-100">
-                               <div className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-                               <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                                 {order.paymentMethod || 'COD'}
-                               </span>
-                             </div>
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-50 border border-slate-100">
+                              <div className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                                {order.paymentMethod || 'COD'}
+                              </span>
+                            </div>
                           )}
-                          
+
                           {order.isPaid ? (
                             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-100">
-                               <span className="text-[8px] font-black uppercase">Paid</span>
+                              <span className="text-[8px] font-black uppercase">Paid</span>
                             </div>
                           ) : (
                             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-500 border border-rose-100">
-                               <span className="text-[8px] font-black uppercase">Unpaid</span>
+                              <span className="text-[8px] font-black uppercase">Unpaid</span>
                             </div>
                           )}
                         </div>
@@ -1085,9 +1087,8 @@ export default function OrderManagementPage() {
                     <td className="p-5">
                       <div className="space-y-2.5">
                         {renderStatusBadge(order.status)}
-                        <div className={`px-2 py-1 rounded-lg w-fit text-[9px] font-black uppercase tracking-[0.1em] flex items-center gap-2 ${
-                          order.isPaid ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-amber-50 text-amber-600 border border-amber-100"
-                        }`}>
+                        <div className={`px-2 py-1 rounded-lg w-fit text-[9px] font-black uppercase tracking-[0.1em] flex items-center gap-2 ${order.isPaid ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-amber-50 text-amber-600 border border-amber-100"
+                          }`}>
                           <div className={`h-1.5 w-1.5 rounded-full ${order.isPaid ? "bg-emerald-500 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.5)]" : "bg-amber-400"}`} />
                           {order.isPaid ? "Verified Paid" : "Awaiting Payment"}
                         </div>
@@ -1107,7 +1108,7 @@ export default function OrderManagementPage() {
                         </div>
                       ) : order.status === "COLLECTION_FAILED" ? (
                         <div className="flex flex-col gap-1">
-                           <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-100 w-fit">
+                          <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-100 w-fit">
                             <span className="text-[9px] font-black uppercase tracking-widest">Failed</span>
                           </div>
                           <span className="text-[10px] text-rose-400 font-bold max-w-[120px] truncate">{order.deliveryFailedReason}</span>
@@ -1139,7 +1140,7 @@ export default function OrderManagementPage() {
                             <span className="text-[11px] font-black text-slate-700 truncate max-w-[100px]">{order.assignedDriverName}</span>
                           </div>
                           {order.status === "ASSIGNED_FOR_DELIVERY" && (
-                             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Awaiting Pickup</span>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Awaiting Pickup</span>
                           )}
                         </div>
                       ) : (
@@ -1158,7 +1159,7 @@ export default function OrderManagementPage() {
                         >
                           Details
                         </Button>
-                        
+
                         {order.status === "ORDER_RECEIVED" && (
                           <Button
                             size="sm"
@@ -1168,18 +1169,17 @@ export default function OrderManagementPage() {
                             {order.serviceName?.toLowerCase().includes("dry") ? "Set Quote" : "Set Weight"}
                           </Button>
                         )}
-                        
+
                         {(order.status === "PENDING" || (nextStatuses.length && order.status !== "ORDER_RECEIVED")) ? (
                           <Button
                             size="sm"
-                            className={`h-9 px-4 rounded-xl font-black text-xs text-white shadow-lg transition-all ${
-                              order.status === "PENDING" 
-                                ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20" 
+                            className={`h-9 px-4 rounded-xl font-black text-xs text-white shadow-lg transition-all ${order.status === "PENDING"
+                                ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20"
                                 : "bg-slate-900 hover:bg-black shadow-slate-900/20"
-                            }`}
+                              }`}
                             onClick={() => void applyStatusUpdate(order)}
                             disabled={
-                              statusUpdatingId === order.id || 
+                              statusUpdatingId === order.id ||
                               (order.status === "PRICE_CONFIRMED" && !order.priceConfirmedByCustomer)
                             }
                           >
@@ -1277,10 +1277,10 @@ export default function OrderManagementPage() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-xl border-slate-200 rounded-3xl p-0 overflow-hidden bg-[#F8FAFC] shadow-2xl">
           <div className="bg-gradient-to-br from-slate-900 to-brand-navy px-8 py-10 text-white border-b border-white/5">
-             <DialogTitle className="text-3xl font-black tracking-tight flex items-center gap-3">
-               <Plus className="h-8 w-8 text-blue-400" /> New Job Order
-             </DialogTitle>
-             <DialogDescription className="text-slate-400 font-bold mt-1 uppercase tracking-widest text-[10px]">Manual Staff Intake</DialogDescription>
+            <DialogTitle className="text-3xl font-black tracking-tight flex items-center gap-3">
+              <Plus className="h-8 w-8 text-blue-400" /> New Job Order
+            </DialogTitle>
+            <DialogDescription className="text-slate-400 font-bold mt-1 uppercase tracking-widest text-[10px]">Manual Staff Intake</DialogDescription>
           </div>
 
           <div className="p-8 space-y-8">
@@ -1332,9 +1332,8 @@ export default function OrderManagementPage() {
                 value={createForm.deliveryAddress}
                 onChange={(e) => setCreateForm((prev) => ({ ...prev, deliveryAddress: e.target.value }))}
                 placeholder={createForm.serviceType === 'PICKUP_DELIVERY' ? "Enter customer's home address" : "Optional for walk-ins"}
-                className={`h-14 bg-white border-slate-200 rounded-2xl font-black text-slate-900 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all ${
-                  createForm.serviceType === 'PICKUP_DELIVERY' && !createForm.deliveryAddress ? 'border-amber-300 bg-amber-50/20' : ''
-                }`}
+                className={`h-14 bg-white border-slate-200 rounded-2xl font-black text-slate-900 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all ${createForm.serviceType === 'PICKUP_DELIVERY' && !createForm.deliveryAddress ? 'border-amber-300 bg-amber-50/20' : ''
+                  }`}
               />
             </div>
 
@@ -1400,8 +1399,8 @@ export default function OrderManagementPage() {
             <Button variant="ghost" className="font-bold text-slate-400 hover:text-slate-600" onClick={() => setCreateOpen(false)} disabled={createSubmitting}>
               Discard
             </Button>
-            <Button 
-              onClick={() => void submitCreate()} 
+            <Button
+              onClick={() => void submitCreate()}
               disabled={createSubmitting}
               className="bg-slate-900 hover:bg-black text-white font-black px-8 h-12 rounded-xl shadow-xl shadow-slate-900/10 transition-all active:scale-95"
             >
@@ -1428,16 +1427,16 @@ export default function OrderManagementPage() {
                 </DialogDescription>
               </div>
             </div>
-            
+
             {assignRiderOrderId && (
               <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
                 <div className="flex justify-between items-center text-xs">
-                   <span className="text-slate-400 font-bold uppercase tracking-wider">Customer</span>
-                   <span className="font-black text-white">{orders.find(o => o.id === assignRiderOrderId)?.customerName}</span>
+                  <span className="text-slate-400 font-bold uppercase tracking-wider">Customer</span>
+                  <span className="font-black text-white">{orders.find(o => o.id === assignRiderOrderId)?.customerName}</span>
                 </div>
                 <div className="flex justify-between items-center text-xs mt-2">
-                   <span className="text-slate-400 font-bold uppercase tracking-wider">Total Due</span>
-                   <span className="font-black text-blue-400">₱{orders.find(o => o.id === assignRiderOrderId)?.totalPrice?.toFixed(2)}</span>
+                  <span className="text-slate-400 font-bold uppercase tracking-wider">Total Due</span>
+                  <span className="font-black text-blue-400">₱{orders.find(o => o.id === assignRiderOrderId)?.totalPrice?.toFixed(2)}</span>
                 </div>
               </div>
             )}
@@ -1447,12 +1446,12 @@ export default function OrderManagementPage() {
             <div className="space-y-3">
               <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Delivery Destination</Label>
               <div className="bg-white p-4 rounded-2xl border border-slate-200 flex items-start gap-3 shadow-sm">
-                 <div className="h-8 w-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 border border-amber-100">
-                    <Search className="h-4 w-4 text-amber-600" />
-                 </div>
-                 <p className="text-xs font-bold text-slate-700 leading-relaxed">
-                   {orders.find(o => o.id === assignRiderOrderId)?.deliveryAddress || "No address provided"}
-                 </p>
+                <div className="h-8 w-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 border border-amber-100">
+                  <Search className="h-4 w-4 text-amber-600" />
+                </div>
+                <p className="text-xs font-bold text-slate-700 leading-relaxed">
+                  {orders.find(o => o.id === assignRiderOrderId)?.deliveryAddress || "No address provided"}
+                </p>
               </div>
             </div>
 
@@ -1482,7 +1481,7 @@ export default function OrderManagementPage() {
                     ))}
                   </select>
                   <div className="absolute inset-y-0 right-5 flex items-center pointer-events-none text-slate-400">
-                     <Plus className="h-5 w-5 rotate-45" />
+                    <Plus className="h-5 w-5 rotate-45" />
                   </div>
                 </div>
               )}
@@ -1490,20 +1489,20 @@ export default function OrderManagementPage() {
           </div>
 
           <DialogFooter className="bg-white p-8 border-t border-slate-100 flex items-center justify-end gap-4">
-            <Button 
-              variant="ghost" 
-              className="font-black text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl h-14 px-8" 
+            <Button
+              variant="ghost"
+              className="font-black text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl h-14 px-8"
               onClick={() => setAssignRiderOpen(false)}
             >
               Cancel
             </Button>
-            <Button 
-              onClick={() => void submitAssignRider()} 
+            <Button
+              onClick={() => void submitAssignRider()}
               disabled={assignRiderSubmitting || !selectedDriverId}
               className="bg-blue-600 hover:bg-blue-700 text-white font-black px-10 h-14 rounded-2xl shadow-xl shadow-blue-500/20 transition-all active:scale-[0.98] group flex-1 sm:flex-none"
             >
-              {assignRiderSubmitting 
-                ? <Loader2 className="h-5 w-5 animate-spin" /> 
+              {assignRiderSubmitting
+                ? <Loader2 className="h-5 w-5 animate-spin" />
                 : <><CheckCircle2 className="h-5 w-5 mr-2" /> Confirm Assignment</>
               }
             </Button>
@@ -1528,13 +1527,12 @@ export default function OrderManagementPage() {
                   <p className="text-slate-400 text-[11px] font-medium mt-0.5">{formatDateTime(selectedOrder.createdAt)}</p>
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
-                  <Badge className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide border-none whitespace-nowrap ${
-                    selectedOrder.status === 'READY' || selectedOrder.status === 'PRICE_CONFIRMED' ? 'bg-emerald-500 text-white' :
-                    selectedOrder.status === 'AWAITING_PRICE_CONFIRMATION' ? 'bg-amber-500 text-white' :
-                    selectedOrder.status === 'WASHING' || selectedOrder.status === 'DRYING' ? 'bg-blue-600 text-white' :
-                    selectedOrder.status === 'CANCELLED' ? 'bg-red-500 text-white' :
-                    'bg-slate-600 text-white'
-                  }`}>
+                  <Badge className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide border-none whitespace-nowrap ${selectedOrder.status === 'READY' || selectedOrder.status === 'PRICE_CONFIRMED' ? 'bg-emerald-500 text-white' :
+                      selectedOrder.status === 'AWAITING_PRICE_CONFIRMATION' ? 'bg-amber-500 text-white' :
+                        selectedOrder.status === 'WASHING' || selectedOrder.status === 'DRYING' ? 'bg-blue-600 text-white' :
+                          selectedOrder.status === 'CANCELLED' ? 'bg-red-500 text-white' :
+                            'bg-slate-600 text-white'
+                    }`}>
                     {statusLabel[selectedOrder.status]}
                   </Badge>
                   <span className="text-[10px] text-slate-400 font-semibold">{selectedOrder.branch}</span>
@@ -1545,20 +1543,20 @@ export default function OrderManagementPage() {
               <div className="flex-1 overflow-y-auto p-5 space-y-4">
 
                 {/* COD Warning Banner */}
-                {selectedOrder.serviceType === 'PICKUP_DELIVERY' && 
-                 (selectedOrder.paymentMethod?.toUpperCase().includes('CASH') || !selectedOrder.paymentMethod) && 
-                 selectedOrder.status === 'DELIVERED' && 
-                 !selectedOrder.codCollected && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-4 shadow-sm animate-in fade-in slide-in-from-top-2">
-                    <div className="h-10 w-10 rounded-full bg-amber-500 flex items-center justify-center shrink-0">
-                      <AlertCircle className="h-6 w-6 text-white" />
+                {selectedOrder.serviceType === 'PICKUP_DELIVERY' &&
+                  (selectedOrder.paymentMethod?.toUpperCase().includes('CASH') || !selectedOrder.paymentMethod) &&
+                  selectedOrder.status === 'DELIVERED' &&
+                  !selectedOrder.codCollected && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-4 shadow-sm animate-in fade-in slide-in-from-top-2">
+                      <div className="h-10 w-10 rounded-full bg-amber-500 flex items-center justify-center shrink-0">
+                        <AlertCircle className="h-6 w-6 text-white" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-black text-amber-900">COD Collection Required</p>
+                        <p className="text-xs font-bold text-amber-700/80">Rider has not yet confirmed cash collection.</p>
+                      </div>
                     </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-black text-amber-900">COD Collection Required</p>
-                      <p className="text-xs font-bold text-amber-700/80">Rider has not yet confirmed cash collection.</p>
-                    </div>
-                  </div>
-                )}
+                  )}
 
                 {/* COD Success Banner */}
                 {selectedOrder.codCollected && (
@@ -1619,11 +1617,10 @@ export default function OrderManagementPage() {
                   <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Delivery Details</p>
-                      <div className={`px-2 py-0.5 rounded text-[8px] font-black uppercase border ${
-                        selectedOrder.status === 'DELIVERED' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                        selectedOrder.status === 'COLLECTION_FAILED' ? 'bg-rose-50 text-rose-700 border-rose-100' :
-                        'bg-blue-50 text-blue-700 border-blue-100'
-                      }`}>
+                      <div className={`px-2 py-0.5 rounded text-[8px] font-black uppercase border ${selectedOrder.status === 'DELIVERED' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                          selectedOrder.status === 'COLLECTION_FAILED' ? 'bg-rose-50 text-rose-700 border-rose-100' :
+                            'bg-blue-50 text-blue-700 border-blue-100'
+                        }`}>
                         {statusLabel[selectedOrder.status]}
                       </div>
                     </div>
@@ -1645,7 +1642,7 @@ export default function OrderManagementPage() {
                           </div>
                         </div>
                       </div>
-                      
+
                       <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-50">
                         <div>
                           <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Assigned At</p>
@@ -1765,12 +1762,10 @@ export default function OrderManagementPage() {
                       </div>
                     )}
                     <div className="relative pl-6">
-                      <div className={`absolute -left-[9px] top-0.5 h-4 w-4 rounded-full ring-2 ring-white ${
-                        ['READY','PRICE_CONFIRMED','WASHING','DRYING'].includes(selectedOrder.status) ? 'bg-emerald-500' : 'bg-slate-200'
-                      }`} />
-                      <p className={`text-xs font-black ${
-                        ['READY','PRICE_CONFIRMED','WASHING','DRYING'].includes(selectedOrder.status) ? 'text-emerald-600' : 'text-slate-300'
-                      }`}>{statusLabel[selectedOrder.status]}</p>
+                      <div className={`absolute -left-[9px] top-0.5 h-4 w-4 rounded-full ring-2 ring-white ${['READY', 'PRICE_CONFIRMED', 'WASHING', 'DRYING'].includes(selectedOrder.status) ? 'bg-emerald-500' : 'bg-slate-200'
+                        }`} />
+                      <p className={`text-xs font-black ${['READY', 'PRICE_CONFIRMED', 'WASHING', 'DRYING'].includes(selectedOrder.status) ? 'text-emerald-600' : 'text-slate-300'
+                        }`}>{statusLabel[selectedOrder.status]}</p>
                     </div>
                   </div>
                 </div>
@@ -1783,14 +1778,14 @@ export default function OrderManagementPage() {
                   {selectedOrder.status === 'PENDING' ? (
                     <>
                       {selectedOrder.serviceType === 'PICKUP_DELIVERY' ? (
-                        <Button 
+                        <Button
                           className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14 shadow-lg shadow-blue-200"
                           onClick={() => openAssignRiderModal(selectedOrder, 'pickup')}
                         >
                           <CheckCircle2 className="mr-2 h-5 w-5" /> Assign Pickup
                         </Button>
                       ) : (
-                        <Button 
+                        <Button
                           className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14"
                           onClick={() => void applyStatusUpdate(selectedOrder)}
                         >
@@ -1798,7 +1793,7 @@ export default function OrderManagementPage() {
                           Receive Order
                         </Button>
                       )}
-                      <Button 
+                      <Button
                         variant="outline"
                         className="flex-1 border-slate-200 text-slate-600 font-black rounded-xl h-14"
                         onClick={() => setShowReceiptPreview(true)}
@@ -1807,7 +1802,7 @@ export default function OrderManagementPage() {
                       </Button>
                     </>
                   ) : selectedOrder.status === 'ORDER_RECEIVED' ? (
-                    <Button 
+                    <Button
                       className="flex-1 bg-violet-600 hover:bg-violet-700 text-white font-black rounded-xl h-14 shadow-lg shadow-violet-200"
                       onClick={() => openSetPriceModal(selectedOrder)}
                     >
@@ -1815,20 +1810,20 @@ export default function OrderManagementPage() {
                     </Button>
                   ) : selectedOrder.status === 'AWAITING_PRICE_CONFIRMATION' ? (
                     <>
-                      <Button 
+                      <Button
                         className="flex-[2] bg-slate-100 text-slate-400 font-black rounded-xl h-14 cursor-not-allowed border-2 border-dashed border-slate-200"
                         disabled
                       >
                         <RefreshCw className="mr-2 h-5 w-5 animate-spin" /> Waiting for Customer...
                       </Button>
-                      <Button 
+                      <Button
                         variant="outline"
                         className="flex-1 border-brand-navy text-brand-navy font-black rounded-xl h-14"
                         onClick={() => openSetPriceModal(selectedOrder)}
                       >
                         <Pencil className="mr-2 h-4 w-4" /> Edit
                       </Button>
-                      <Button 
+                      <Button
                         variant="outline"
                         className="flex-1 border-slate-200 text-slate-600 font-black rounded-xl h-14"
                         onClick={() => setShowReceiptPreview(true)}
@@ -1838,14 +1833,14 @@ export default function OrderManagementPage() {
                     </>
                   ) : selectedOrder.status === 'PRICE_CONFIRMED' ? (
                     <>
-                      <Button 
+                      <Button
                         className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14 shadow-lg shadow-blue-200"
                         onClick={() => void applyStatusUpdate(selectedOrder)}
                       >
                         {statusUpdatingId === selectedOrder.id ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <RefreshCw className="h-5 w-5 mr-2" />}
                         Mark as Washing
                       </Button>
-                      <Button 
+                      <Button
                         variant="outline"
                         className="flex-1 border-slate-200 text-slate-600 font-black rounded-xl h-14"
                         onClick={() => setShowReceiptPreview(true)}
@@ -1855,13 +1850,13 @@ export default function OrderManagementPage() {
                     </>
                   ) : selectedOrder.status === 'READY' && selectedOrder.serviceType === 'PICKUP_DELIVERY' ? (
                     <>
-                      <Button 
+                      <Button
                         className="flex-[2] bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl h-14 shadow-lg shadow-emerald-200"
                         onClick={() => openAssignRiderModal(selectedOrder, 'delivery')}
                       >
                         <CheckCircle2 className="mr-2 h-5 w-5" /> Assign Delivery
                       </Button>
-                      <Button 
+                      <Button
                         variant="outline"
                         className="flex-1 border-slate-200 text-slate-600 font-black rounded-xl h-14"
                         onClick={() => setShowReceiptPreview(true)}
@@ -1871,7 +1866,7 @@ export default function OrderManagementPage() {
                     </>
                   ) : (
                     <>
-                      <Button 
+                      <Button
                         className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14"
                         onClick={() => void applyStatusUpdate(selectedOrder)}
                       >
@@ -1879,7 +1874,7 @@ export default function OrderManagementPage() {
                         Mark as {statusLabel[getAllowedStatusTransitions(selectedOrder.status)[0]] || 'Next Step'}
                       </Button>
                       {(['WASHING', 'DRYING', 'READY', 'DELIVERED', 'OUT_FOR_DELIVERY'].includes(selectedOrder.status)) && (
-                        <Button 
+                        <Button
                           variant="outline"
                           className="flex-1 border-slate-200 text-slate-600 font-black rounded-xl h-14"
                           onClick={() => setShowReceiptPreview(true)}
@@ -1889,12 +1884,12 @@ export default function OrderManagementPage() {
                       )}
                     </>
                   )}
-                  
+
                   <Button variant="destructive" className="font-black rounded-xl h-14 px-8" onClick={() => void submitCancel()}>
                     Cancel Order
                   </Button>
                 </div>
-                
+
                 {selectedOrder.status === 'PRICE_CONFIRMED' && !selectedOrder.priceConfirmedByCustomer && (
                   <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
                     <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest italic">
