@@ -196,14 +196,16 @@ export type AnnouncementRecord = {
 };
 
 type ApiRequestOptions = {
-  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
   body?: unknown;
   headers?: Record<string, string>;
 };
 
+let memoryCsrfToken: string | null = null;
+
 const getCsrfToken = (): string | null => {
   const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]*)/);
-  return match ? decodeURIComponent(match[1]) : null;
+  return match ? decodeURIComponent(match[1]) : memoryCsrfToken;
 };
 
 const parseResponse = async <T>(response: Response): Promise<T> => {
@@ -227,10 +229,28 @@ const parseResponse = async <T>(response: Response): Promise<T> => {
   return data as T;
 };
 
+/**
+ * Ensures the XSRF-TOKEN cookie is present by issuing a lightweight GET.
+ * The CsrfCookieFilter on the backend writes the cookie on every response,
+ * so any authenticated GET will prime it.
+ */
+const ensureCsrfCookie = async (): Promise<string | null> => {
+  let token = getCsrfToken();
+  if (token) return token;
+  // Fire a lightweight GET to force the backend to set the cookie
+  const res = await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: "include" });
+  const headerToken = res.headers.get("X-XSRF-TOKEN");
+  if (headerToken) memoryCsrfToken = headerToken;
+  return getCsrfToken();
+};
+
 export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {}): Promise<T> => {
   const { method = "GET", body, headers } = options;
   const isMutating = method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
-  const csrfToken = isMutating ? getCsrfToken() : null;
+
+  // For mutating requests, ensure the CSRF cookie exists before sending
+  const csrfToken = isMutating ? await ensureCsrfCookie() : null;
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
     credentials: "include",
@@ -241,6 +261,34 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
     },
     body: body ? JSON.stringify(body) : undefined,
   });
+
+  const responseToken = response.headers.get("X-XSRF-TOKEN");
+  if (responseToken) {
+    memoryCsrfToken = responseToken;
+  }
+
+  // If we still get a 403, the token may have been stale — refresh and retry once
+  if (isMutating && response.status === 403) {
+    // Force-refresh the CSRF cookie regardless of what's currently cached
+    const refreshRes = await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: "include" });
+    const headerToken = refreshRes.headers.get("X-XSRF-TOKEN");
+    if (headerToken) memoryCsrfToken = headerToken;
+
+    const freshToken = getCsrfToken();
+    if (freshToken) {
+      const retryResponse = await fetch(`${API_BASE_URL}${path}`, {
+        method,
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "X-XSRF-TOKEN": freshToken,
+          ...headers,
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      return parseResponse<T>(retryResponse);
+    }
+  }
 
   return parseResponse<T>(response);
 };
@@ -340,7 +388,7 @@ export const ordersApi = {
     apiRequest<void>(`/api/orders/${id}`, {
       method: "DELETE",
     }),
-  updateStatus: (id: number, status: "PENDING" | "WASHING" | "DRYING" | "READY" | "PICKED_UP" | "DELIVERED") =>
+  updateStatus: (id: number, status: JobOrderResponse["status"]) =>
     apiRequest<JobOrderResponse>(`/api/orders/${id}/status`, {
       method: "PATCH",
       body: { status },
@@ -353,12 +401,12 @@ export const ordersApi = {
     apiRequest<JobOrderResponse>(`/api/bookings/${id}/cancel`, {
       method: "PATCH",
     }),
-  setActualWeight: (id: number, payload: { actualWeightKg: number; finalPrice: number }) =>
+  setActualWeight: (id: number, payload: { actualWeightKg: number; finalPrice: number; deliveryFee?: number }) =>
     apiRequest<JobOrderResponse>(`/api/orders/${id}/set-actual-weight`, {
       method: "PUT",
       body: payload,
     }),
-  setPrice: (id: number, payload: { actualWeightKg: number; finalPrice: number }) =>
+  setPrice: (id: number, payload: { actualWeightKg: number; finalPrice: number; deliveryFee?: number }) =>
     apiRequest<JobOrderResponse>(`/api/orders/${id}/set-price`, {
       method: "POST",
       body: payload,
@@ -675,15 +723,5 @@ export const supportApi = {
       method: "POST",
       body: { message },
     }),
-  history: (sessionId: string) =>
-    apiRequest<{
-      messages: Array<{
-        id: number;
-        senderType: string;
-        message: string;
-        category: string;
-        escalationTicket: string | null;
-        createdAt: string;
-      }>;
-    }>(`/api/support/history?sessionId=${encodeURIComponent(sessionId)}`),
 };
+

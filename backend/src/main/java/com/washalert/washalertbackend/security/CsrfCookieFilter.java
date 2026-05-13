@@ -44,6 +44,7 @@ public class CsrfCookieFilter extends OncePerRequestFilter {
             // Accessing the token forces CookieCsrfTokenRepository to write the cookie
             // to the response before filterChain.doFilter() is called, ensuring the
             // Set-Cookie header is included in this response.
+            response.setHeader(csrfToken.getHeaderName(), csrfToken.getToken());
             csrfToken.getToken();
         }
         filterChain.doFilter(request, response);
