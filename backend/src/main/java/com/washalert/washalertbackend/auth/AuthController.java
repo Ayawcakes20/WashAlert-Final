@@ -3,6 +3,7 @@ package com.washalert.washalertbackend.auth;
 import com.washalert.washalertbackend.auth.dto.*;
 import com.washalert.washalertbackend.common.ApiError;
 import com.washalert.washalertbackend.security.AuthUserDetails;
+import com.washalert.washalertbackend.security.LoginAttemptService;
 import com.washalert.washalertbackend.user.User;
 import com.washalert.washalertbackend.user.UserStatus;
 import com.washalert.washalertbackend.verification.OtpService;
@@ -36,17 +37,20 @@ public class AuthController {
     private final OtpService otpService;
     private final StaffInvitationService staffInvitationService;
     private final PasswordResetService passwordResetService;
+    private final LoginAttemptService loginAttemptService;
 
     public AuthController(
             AuthService authService,
             OtpService otpService,
             StaffInvitationService staffInvitationService,
-            PasswordResetService passwordResetService
+            PasswordResetService passwordResetService,
+            LoginAttemptService loginAttemptService
     ) {
         this.authService = authService;
         this.otpService = otpService;
         this.staffInvitationService = staffInvitationService;
         this.passwordResetService = passwordResetService;
+        this.loginAttemptService = loginAttemptService;
     }
 
     @PostMapping("/register")
@@ -215,12 +219,24 @@ public class AuthController {
             ));
         }
 
+        // Account lockout: reject early if too many failed attempts
+        if (loginAttemptService.isLocked(user.getEmail())) {
+            long remaining = loginAttemptService.getLockRemainingSeconds(user.getEmail());
+            log.warn("[AUTH][LOCKOUT] Blocked OTP verify for {} — locked for {} more seconds",
+                    maskEmail(user.getEmail()), remaining);
+            return ResponseEntity.status(429).body(apiError(request, 429,
+                    "Account temporarily locked due to too many failed attempts. Try again in "
+                            + (remaining / 60 + 1) + " minute(s)."));
+        }
+
         try {
             otpService.verifyLoginCode(user.getEmail(), req.code());
         } catch (IllegalArgumentException ex) {
+            loginAttemptService.recordFailure(user.getEmail());
             return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
         }
 
+        loginAttemptService.recordSuccess(user.getEmail());
         User finalizedUser = authService.markLoginSuccess(user.getId());
         establishSession(finalizedUser, request, response);
         return ResponseEntity.ok(authService.toSessionResponse(finalizedUser, req.platform().trim().toUpperCase()));
@@ -410,6 +426,17 @@ public class AuthController {
         log.info("[OTP][VERIFY] Verification requested for {} with codeLength={}",
                 maskEmail(normalizedEmail),
                 req.code() == null ? 0 : req.code().length());
+
+        // Account lockout: reject early if too many failed attempts
+        if (loginAttemptService.isLocked(normalizedEmail)) {
+            long remaining = loginAttemptService.getLockRemainingSeconds(normalizedEmail);
+            log.warn("[AUTH][LOCKOUT] Blocked OTP verify (registration) for {} — locked for {} more seconds",
+                    maskEmail(normalizedEmail), remaining);
+            return ResponseEntity.status(429).body(apiError(request, 429,
+                    "Account temporarily locked due to too many failed attempts. Try again in "
+                            + (remaining / 60 + 1) + " minute(s)."));
+        }
+
         try {
             User user = otpService.verifyAndActivate(req.email(), req.code());
             log.info("[OTP][VERIFY] Account activated for {} role={} status={} enabled={}",
@@ -417,9 +444,11 @@ public class AuthController {
                     user.getRole(),
                     user.getStatus(),
                     user.isEnabled());
+            loginAttemptService.recordSuccess(normalizedEmail);
             establishSession(user, request, response);
             return ResponseEntity.ok(authService.toSessionResponse(user, "MOBILE"));
         } catch (IllegalArgumentException ex) {
+            loginAttemptService.recordFailure(normalizedEmail);
             log.warn("[OTP][VERIFY] Verification rejected for {}: {}", maskEmail(normalizedEmail), ex.getMessage());
             return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
         }

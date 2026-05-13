@@ -2,6 +2,8 @@ server:
   port: ${PORT:${SERVER_PORT:8081}}
   servlet:
     session:
+      # Inactivity timeout: 15 minutes; override via SESSION_TIMEOUT env var
+      timeout: ${SESSION_TIMEOUT:15m}
       cookie:
         same-site: ${SESSION_COOKIE_SAME_SITE:none}
         secure: ${SESSION_COOKIE_SECURE:true}
@@ -86,6 +88,13 @@ washalert:
     cleanup:
       enabled: ${STAFF_INVITATION_CLEANUP_ENABLED:true}
       cron: ${STAFF_INVITATION_CLEANUP_CRON:0 */30 * * * *}
+
+  otp:
+    # Reduce TTL to 10 min (down from default 15) to minimise exposure window
+    ttl-minutes: ${OTP_TTL_MINUTES:10}
+    length: ${OTP_LENGTH:6}
+    resend-cooldown-seconds: ${OTP_RESEND_COOLDOWN:60}
+    max-attempts: ${OTP_MAX_ATTEMPTS:5}
 
   booking:
     open-hour: ${BOOKING_OPEN_HOUR:7}

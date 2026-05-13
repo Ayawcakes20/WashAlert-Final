@@ -6,6 +6,7 @@ import com.washalert.washalertbackend.user.UserStatus;
 import com.washalert.washalertbackend.user.User;
 import com.washalert.washalertbackend.user.UserRepository;
 import com.washalert.washalertbackend.verification.MailService;
+import com.washalert.washalertbackend.security.PasswordStrengthValidator;
 import jakarta.transaction.Transactional;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.authentication.rememberme.PersistentTokenRepository;
@@ -28,6 +29,7 @@ public class PasswordResetService {
     private final FirebaseIdentityService firebaseIdentityService;
     private final PersistentTokenRepository rememberMeTokenRepository;
     private final FirestoreSyncService firestoreSyncService;
+    private final PasswordStrengthValidator passwordStrengthValidator;
 
     public PasswordResetService(
             UserRepository userRepository,
@@ -37,7 +39,8 @@ public class PasswordResetService {
             PasswordResetProperties props,
             FirebaseIdentityService firebaseIdentityService,
             PersistentTokenRepository rememberMeTokenRepository,
-            FirestoreSyncService firestoreSyncService
+            FirestoreSyncService firestoreSyncService,
+            PasswordStrengthValidator passwordStrengthValidator
     ) {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
@@ -47,6 +50,7 @@ public class PasswordResetService {
         this.firebaseIdentityService = firebaseIdentityService;
         this.rememberMeTokenRepository = rememberMeTokenRepository;
         this.firestoreSyncService = firestoreSyncService;
+        this.passwordStrengthValidator = passwordStrengthValidator;
     }
 
     @Transactional
@@ -84,6 +88,7 @@ public class PasswordResetService {
 
     @Transactional
     public void resetPassword(String rawToken, String newPassword) {
+        passwordStrengthValidator.validate(newPassword);
         if (rawToken == null || rawToken.isBlank()) {
             throw new IllegalArgumentException("Invalid or expired reset token.");
         }

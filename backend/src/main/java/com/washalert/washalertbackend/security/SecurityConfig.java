@@ -19,6 +19,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -29,6 +30,11 @@ import java.util.List;
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
+
+    // CSP appropriate for a REST API server — restricts browser from loading any
+    // sub-resources from API responses; frame-ancestors prevents clickjacking.
+    private static final String CSP_POLICY =
+            "default-src 'none'; frame-ancestors 'none'; form-action 'self';";
 
     private final RestAuthHandlers restAuthHandlers;
     private final RememberMeServices rememberMeServices;
@@ -60,6 +66,26 @@ public class SecurityConfig {
 
         http
                 .cors(Customizer.withDefaults())
+
+                // ── Security headers ────────────────────────────────────────────────
+                .headers(headers -> headers
+                        // Prevent clickjacking
+                        .frameOptions(frame -> frame.deny())
+                        // Prevent MIME-type sniffing
+                        .contentTypeOptions(Customizer.withDefaults())
+                        // HSTS — only sent on HTTPS; Spring Security skips on plain HTTP
+                        .httpStrictTransportSecurity(hsts -> hsts
+                                .includeSubDomains(true)
+                                .maxAgeInSeconds(31_536_000) // 1 year
+                                .preload(false)
+                        )
+                        // CSP
+                        .contentSecurityPolicy(csp -> csp.policyDirectives(CSP_POLICY))
+                        // Referrer-Policy — don't leak path info across origins
+                        .referrerPolicy(rp -> rp.policy(
+                                ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                )
+
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(csrfRepo)
                         .csrfTokenRequestHandler(csrfHandler)
@@ -76,7 +102,14 @@ public class SecurityConfig {
                                 "/login/oauth2/**"
                         )
                 )
-                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.ALWAYS))
+
+                // Session timeout is configured via server.servlet.session.timeout in yaml.
+                // maximumSessions(3) prevents unlimited concurrent sessions per account.
+                .sessionManagement(sm -> sm
+                        .sessionCreationPolicy(SessionCreationPolicy.ALWAYS)
+                        .maximumSessions(3)
+                        .maxSessionsPreventsLogin(false)
+                )
 
                 .securityContext(sc -> sc.requireExplicitSave(false))
                 // Force CSRF cookie to be written on every response (including GET requests)
@@ -131,7 +164,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/auth/logout").authenticated()
 
-                        // /api/payments/proof now requires CUSTOMER authentication
+                        // /api/payments/proof requires CUSTOMER authentication
                         .requestMatchers(HttpMethod.POST, "/api/payments/proof").hasRole("CUSTOMER")
 
                         .requestMatchers(HttpMethod.GET, "/api/admin/users/drivers").hasAnyRole("ADMIN", "STAFF")
