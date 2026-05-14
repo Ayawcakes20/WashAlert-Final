@@ -121,10 +121,10 @@ export const computeOrderPricing = (
     serviceTotal = pricePerLoad * numberOfLoads;
   }
 
-  // Madness surcharge — ₱50/kg over standard base capacity
-  // Capstone Requirement: Show exactly why extra is charged.
-  const baseTotalCapacity = numberOfLoads * baseServiceLimit;
-  const madnessKg = Math.max(0, actualKg - baseTotalCapacity);
+  // Madness surcharge — ₱50/kg over combined base capacity (Panel-Recommended Logic)
+  // Total capacity = Loads * Service Limit (e.g., 2 loads @ 8kg = 16kg capacity)
+  const totalBaseCapacity = numberOfLoads * baseServiceLimit;
+  const madnessKg = Math.max(0, actualKg - totalBaseCapacity);
   const madnessFee = Math.round(madnessKg * 50);
 
   // Detergent & Conditioner
