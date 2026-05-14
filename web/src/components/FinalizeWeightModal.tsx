@@ -61,6 +61,8 @@ interface FinalizeWeightModalProps {
     actualWeightKg: number;
     finalPrice: number;
     deliveryFee: number;
+    staffNotes?: string;
+    manualAdjustment?: number;
   }) => void;
   onCancel: () => void;
 }
@@ -84,9 +86,11 @@ interface ReceiptPreviewProps {
   loadType: LoadType;
   pricing: PricingResult | null;
   deliveryFee: number;
+  manualAdjustment: number;
+  staffNotes: string;
 }
 
-function ReceiptPreview({ order, actualKg, loadType, pricing: p, deliveryFee }: ReceiptPreviewProps) {
+function ReceiptPreview({ order, actualKg, loadType, pricing: p, deliveryFee, manualAdjustment, staffNotes }: ReceiptPreviewProps) {
   return (
     <div className="p-5 space-y-0 font-mono text-[11px]">
       {/* Header */}
@@ -183,6 +187,14 @@ function ReceiptPreview({ order, actualKg, loadType, pricing: p, deliveryFee }: 
               sub="Online booking · system fee"
               amount={p.convenienceFee}
             />
+            {manualAdjustment !== 0 && (
+              <ReceiptLineItem
+                label="Adjustment"
+                sub="Staff manual override"
+                amount={manualAdjustment}
+                className={manualAdjustment < 0 ? "text-emerald-700" : "text-blue-700"}
+              />
+            )}
           </div>
 
           {/* Total */}
@@ -198,6 +210,13 @@ function ReceiptPreview({ order, actualKg, loadType, pricing: p, deliveryFee }: 
               </p>
             </div>
           </div>
+
+          {staffNotes && (
+            <div className="mt-2 mb-4 p-2 bg-slate-50 border border-slate-200 rounded-lg text-[9px] text-slate-500 italic leading-tight">
+              <p className="font-black uppercase not-italic text-[8px] text-slate-400 mb-1 tracking-tighter">Staff Remarks:</p>
+              {staffNotes}
+            </div>
+          )}
 
           {/* Footer */}
           <div className="border-t border-dashed border-slate-300 pt-3 text-center space-y-1">
@@ -275,6 +294,10 @@ export function FinalizeWeightModal({
   const [actualWeightRaw, setActualWeightRaw] = useState("");
   const [loadType, setLoadType] = useState<LoadType>("PURE_CLOTHES");
   const [deliveryFeeRaw, setDeliveryFeeRaw] = useState("0");
+  const [manualAdjustmentRaw, setManualAdjustmentRaw] = useState("0");
+  const [detQty, setDetQty] = useState(0);
+  const [conQty, setConQty] = useState(0);
+  const [staffNotes, setStaffNotes] = useState("");
   const weightInputRef = useRef<HTMLInputElement>(null);
 
   // Reset form when a new order is opened
@@ -287,6 +310,10 @@ export function FinalizeWeightModal({
           ? (order.deliveryPrice ?? 50).toString()
           : "0",
       );
+      setDetQty(order.detergentQuantity ?? 0);
+      setConQty(order.conditionerQuantity ?? 0);
+      setManualAdjustmentRaw("0");
+      setStaffNotes("");
       // Auto-focus weight input
       setTimeout(() => weightInputRef.current?.focus(), 80);
     }
@@ -296,11 +323,16 @@ export function FinalizeWeightModal({
 
   const actualKg = parseFloat(actualWeightRaw) || 0;
   const deliveryFee = parseFloat(deliveryFeeRaw) || 0;
+  const manualAdjustment = parseFloat(manualAdjustmentRaw) || 0;
   const weightValid = actualKg >= 5;
   const showWeightError = actualKg > 0 && !weightValid;
 
   const pricing: PricingResult | null =
-    weightValid ? computeOrderPricing(order, actualKg, loadType, deliveryFee) : null;
+    weightValid ? computeOrderPricing({
+      ...order,
+      detergentQuantity: detQty,
+      conditionerQuantity: conQty,
+    }, actualKg, loadType, deliveryFee, manualAdjustment) : null;
 
   const handleSubmit = () => {
     if (!weightValid) return;
@@ -309,6 +341,8 @@ export function FinalizeWeightModal({
       actualWeightKg: actualKg,
       finalPrice: pricing.grandTotal,
       deliveryFee,
+      staffNotes,
+      manualAdjustment,
     });
   };
 
@@ -317,55 +351,50 @@ export function FinalizeWeightModal({
       <DialogContent className="sm:max-w-[1120px] max-h-[94vh] border-0 rounded-3xl p-0 overflow-hidden shadow-2xl flex flex-col bg-white gap-0">
 
         {/* ── HEADER ─────────────────────────────────────────────────────────── */}
-        <div className="bg-slate-900 px-7 py-5 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-2xl bg-blue-600 flex items-center justify-center shrink-0">
-              <Scale className="h-6 w-6 text-white" />
+        <div className="bg-[#0F172A] px-8 py-6 flex items-center justify-between shrink-0 border-b border-slate-800">
+          <div className="flex items-center gap-5">
+            <div className="h-14 w-14 rounded-2xl bg-blue-600 flex items-center justify-center shrink-0 shadow-lg shadow-blue-900/20">
+              <Scale className="h-7 w-7 text-white" />
             </div>
             <div>
-              <DialogTitle className="text-xl font-black text-white leading-none">
-                Finalize Weight &amp; Receipt
-              </DialogTitle>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">
-                  {order.orderId}
-                </span>
-                <span className="text-slate-600">·</span>
-                <span className="text-[10px] font-bold text-slate-400 uppercase">
-                  {order.customerName}
-                </span>
+              <div className="flex items-center gap-3 mb-1">
+                <DialogTitle className="text-2xl font-black text-white tracking-tight">
+                  Finalize Weight &amp; Pricing
+                </DialogTitle>
+                <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 font-black text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-widest">
+                  Staff Audit
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1">
+                  <span className="text-[11px] font-black text-blue-400 uppercase tracking-widest">{order.orderId}</span>
+                </div>
+                <span className="text-slate-700">·</span>
+                <span className="text-xs font-bold text-slate-400">Customer: <span className="text-slate-200">{order.customerName}</span></span>
               </div>
             </div>
           </div>
 
-          {/* Weight comparison chips */}
-          <div className="flex items-center gap-3">
-            <div className="text-right bg-white/5 border border-white/10 rounded-xl px-4 py-2.5">
-              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                ESTIMATED
-              </p>
-              <p className="text-lg font-black text-slate-300 tabular-nums leading-none mt-0.5">
-                {order.estimatedWeightKg ?? "—"}{" "}
-                <span className="text-xs font-bold text-slate-500">kg</span>
-              </p>
-            </div>
-            <div className="text-right bg-blue-600/20 border border-blue-500/30 rounded-xl px-4 py-2.5">
-              <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest">
-                ACTUAL
-              </p>
-              <AnimatePresence mode="wait">
-                <motion.p
-                  key={actualWeightRaw || "empty"}
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 4 }}
-                  transition={{ duration: 0.15 }}
-                  className="text-lg font-black text-white tabular-nums leading-none mt-0.5"
-                >
-                  {actualWeightRaw || "—"}{" "}
-                  <span className="text-xs font-bold text-blue-400">kg</span>
-                </motion.p>
-              </AnimatePresence>
+          <div className="flex items-center gap-4">
+            <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-3 flex items-center gap-4">
+               <div className="text-right">
+                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Est. Weight</p>
+                  <p className="text-xl font-black text-slate-400">{order.estimatedWeightKg} <span className="text-xs">kg</span></p>
+               </div>
+               <div className="w-px h-8 bg-slate-700/50" />
+               <div className="text-right">
+                  <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest">Actual Weight</p>
+                  <AnimatePresence mode="wait">
+                    <motion.p
+                      key={actualWeightRaw || "empty"}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="text-xl font-black text-white"
+                    >
+                      {actualWeightRaw || "0.0"} <span className="text-xs">kg</span>
+                    </motion.p>
+                  </AnimatePresence>
+               </div>
             </div>
           </div>
         </div>
@@ -512,31 +541,101 @@ export function FinalizeWeightModal({
                     </div>
                   </div>
 
-                  {/* Delivery fee — only for pickup/delivery orders */}
-                  {order.serviceType === "PICKUP_DELIVERY" && (
+                  {/* Supplies Adjustment */}
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                        Delivery Fee (₱)
+                        Detergent Quantity ({order.detergent || "None"})
+                      </label>
+                      <div className="flex items-center gap-2">
+                         <Button 
+                           variant="outline" size="sm" className="h-10 w-10 rounded-lg font-black"
+                           onClick={() => setDetQty(Math.max(0, detQty - 1))}
+                         >–</Button>
+                         <Input 
+                           type="number" value={detQty} readOnly
+                           className="h-10 text-center font-bold border-2 border-slate-100 rounded-lg pointer-events-none"
+                         />
+                         <Button 
+                           variant="outline" size="sm" className="h-10 w-10 rounded-lg font-black"
+                           onClick={() => setDetQty(detQty + 1)}
+                         >+</Button>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                        Fabcon Quantity ({order.conditioner || "None"})
+                      </label>
+                      <div className="flex items-center gap-2">
+                         <Button 
+                           variant="outline" size="sm" className="h-10 w-10 rounded-lg font-black"
+                           onClick={() => setConQty(Math.max(0, conQty - 1))}
+                         >–</Button>
+                         <Input 
+                           type="number" value={conQty} readOnly
+                           className="h-10 text-center font-bold border-2 border-slate-100 rounded-lg pointer-events-none"
+                         />
+                         <Button 
+                           variant="outline" size="sm" className="h-10 w-10 rounded-lg font-black"
+                           onClick={() => setConQty(conQty + 1)}
+                         >+</Button>
+                      </div>
+                    </div>
+                  </div>
+                  {pricing && pricing.numberOfLoads > detQty && (
+                    <p className="text-[10px] font-bold text-amber-600 bg-amber-50 p-2 rounded-lg flex items-center gap-2">
+                      <Info className="h-3 w-3" />
+                      Tip: Suggested {pricing.numberOfLoads} packs for {pricing.numberOfLoads} loads
+                    </p>
+                  )}
+
+                  {/* Delivery fee & Adjustment row */}
+                  <div className="grid grid-cols-2 gap-4">
+                    {order.serviceType === "PICKUP_DELIVERY" && (
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                          Delivery Fee (₱)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-black text-sm">₱</span>
+                          <Input
+                            type="number" min="0" step="5"
+                            value={deliveryFeeRaw}
+                            onChange={(e) => setDeliveryFeeRaw(e.target.value)}
+                            className="h-12 pl-8 border-2 border-slate-200 rounded-xl font-bold focus-visible:ring-0 focus-visible:border-blue-500"
+                          />
+                        </div>
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                        Manual Adjustment (₱)
                       </label>
                       <div className="relative">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-black text-sm">
-                          ₱
-                        </span>
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-black text-sm">±</span>
                         <Input
-                          type="number"
-                          min="0"
-                          step="5"
-                          value={deliveryFeeRaw}
+                          type="number" step="5"
+                          value={manualAdjustmentRaw}
                           placeholder="0"
-                          onChange={(e) => setDeliveryFeeRaw(e.target.value)}
-                          className="h-11 pl-8 border-2 border-slate-200 rounded-xl font-bold [appearance:textfield] focus-visible:ring-0 focus-visible:border-blue-500"
+                          onChange={(e) => setManualAdjustmentRaw(e.target.value)}
+                          className="h-12 pl-8 border-2 border-slate-200 rounded-xl font-bold focus-visible:ring-0 focus-visible:border-blue-500"
                         />
                       </div>
-                      <p className="text-[10px] text-slate-400">
-                        Based on delivery location — adjust if needed
-                      </p>
                     </div>
-                  )}
+                  </div>
+
+                  {/* Staff Notes */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                      Staff Remarks / Notes
+                    </label>
+                    <textarea
+                      value={staffNotes}
+                      onChange={(e) => setStaffNotes(e.target.value)}
+                      placeholder="Add any internal remarks or special notes for the customer..."
+                      className="w-full h-24 p-4 border-2 border-slate-200 rounded-xl font-medium text-sm focus:outline-none focus:border-blue-500 resize-none transition-all"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -687,6 +786,16 @@ export function FinalizeWeightModal({
                             amount={pricing.convenienceFee}
                             className="text-slate-500"
                           />
+
+                          {/* Adjustment */}
+                          {pricing.manualAdjustment !== 0 && (
+                            <BreakdownRow
+                              label="Manual adjustment"
+                              sub="Custom discount/surcharge applied"
+                              amount={pricing.manualAdjustment}
+                              className={pricing.manualAdjustment < 0 ? "text-emerald-600" : "text-blue-600"}
+                            />
+                          )}
                         </tbody>
                       </table>
 
@@ -736,6 +845,8 @@ export function FinalizeWeightModal({
                 loadType={loadType}
                 pricing={pricing}
                 deliveryFee={deliveryFee}
+                manualAdjustment={manualAdjustment}
+                staffNotes={staffNotes}
               />
             </ScrollArea>
 
