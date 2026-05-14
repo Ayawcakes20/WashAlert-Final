@@ -41,7 +41,7 @@ const getSupportSessionId = async () => {
 // Static booking catalog used by mobile until backend exposes catalog endpoints.
 // IMPORTANT: branch 'name' must exactly match the branch names in the machines table
 // and the branch names assigned to staff accounts in the web dashboard.
-const BRANCH_CATALOG = [
+export const BRANCH_CATALOG = [
   {
     id: 1,
     name: 'Makati Branch',
@@ -174,7 +174,7 @@ const BRANCH_CATALOG = [
   },
 ];
 
-const SERVICE_CATALOG = [
+export const SERVICE_CATALOG = [
   {
     id: 'wash',
     name: 'Wash Only',

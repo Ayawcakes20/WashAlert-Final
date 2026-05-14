@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   View, Text, ScrollView, FlatList,
-  TouchableOpacity, Image, Animated, Dimensions
+  TouchableOpacity, Image, Animated, Dimensions, StyleSheet
 } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -11,11 +11,10 @@ import { db } from '../../services/firebase';
 import { colors } from '../../theme/colors';
 import { LoadingSkeleton } from '../../components';
 import { useAuth } from '../../context/AuthContext';
-import { bookings as bookingsApi } from '../../services/api';
+import { bookings as bookingsApi, BRANCH_CATALOG } from '../../services/api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// --- Static Service Data (Matching Image 3 Style) ---
 const SERVICES = [
   { id: 'w7',  img: require('../../../assets/images/svc_wash_v3.png'), tag: 'Standard', price: '₱80 / 7kg',  name: 'Wash' },
   { id: 'd7',  img: require('../../../assets/images/svc_dry_v3.png'),  tag: 'Standard', price: '₱90 / 7kg',  name: 'Dry' },
@@ -23,8 +22,12 @@ const SERVICES = [
   { id: 'eco', img: require('../../../assets/images/svc_wash.png'),    tag: 'Eco',      price: '₱220 / 5kg', name: 'Ecowash Full' },
 ];
 
-const STATUS_STEPS = ['pending', 'received', 'washing', 'drying', 'ready'];
-const STATUS_STEP_LABELS = ['Pending', 'Received', 'Washing', 'Drying', 'Ready'];
+const GUIDES = [
+  { id: 'max', icon: 'weight-kilogram', label: '9kg Maximum', sub: 'Absolute limit per load', color: '#EF4444' },
+  { id: 'clothes', icon: 'tshirt-crew', label: '8kg Pure Clothes', sub: 'Standard clothing items', color: colors.primary },
+  { id: 'bedding', icon: 'bed-double', label: '7kg Mixed Loads', sub: 'With towels or beddings', color: '#7C3AED' },
+];
+
 const ACTIVE_STATUSES = ['pending', 'received', 'awaiting_price', 'washing', 'drying', 'ready', 'delivering'];
 
 const normalize = (s) => {
@@ -40,7 +43,6 @@ const normalize = (s) => {
 
 function ActiveOrderCard({ order, navigation }) {
   const [status, setStatus] = useState(normalize(order.status));
-
   React.useEffect(() => {
     const tn = order.trackingNumber || String(order.id);
     const unsub = onSnapshot(doc(db, 'orders', tn), snap => {
@@ -49,44 +51,28 @@ function ActiveOrderCard({ order, navigation }) {
     return () => unsub();
   }, [order.id]);
 
-  const stepIdx = STATUS_STEPS.indexOf(status);
+  const displayStatus = status.replace(/_/g, ' ').toUpperCase();
+  const isAwaitingPrice = status === 'awaiting_price';
 
   return (
-    <View style={s.activeCard}>
+    <TouchableOpacity 
+      style={[s.activeCard, isAwaitingPrice && s.activeCardUrgent]} 
+      onPress={() => navigation.navigate('Orders', { screen: 'OrderDetail', params: { orderId: order.id } })}
+      activeOpacity={0.9}
+    >
       <View style={s.cardHeader}>
         <View style={s.statusBadge}>
-          <View style={s.dot} />
-          <Text style={s.statusText}>{status.toUpperCase().replace(/_/g, ' ')}</Text>
+          <View style={[s.dot, { backgroundColor: isAwaitingPrice ? colors.primary : '#10B981' }]} />
+          <Text style={s.statusText}>{displayStatus}</Text>
         </View>
-        <TouchableOpacity 
-          style={s.trackBtn}
-          onPress={() => navigation.navigate('Tracking', { orderId: order.id })}
-        >
-          <Ionicons name="navigate" size={14} color="#fff" />
-          <Text style={s.trackBtnText}>Track Live</Text>
-        </TouchableOpacity>
+        <Text style={s.orderId}>#{order.trackingNumber}</Text>
       </View>
-
-      <Text style={s.orderTitle}>{status.replace(/_/g, ' ')}</Text>
-      <Text style={s.orderNum}>Order #{order.trackingNumber || order.id}</Text>
-
-      <View style={s.progressRow}>
-        {STATUS_STEPS.map((step, i) => (
-          <View key={step} style={s.stepWrap}>
-            <View style={[s.stepDot, i <= stepIdx && s.stepDotActive]} />
-            <Text style={[s.stepLabel, i === stepIdx && s.stepLabelActive]}>{STATUS_STEP_LABELS[i]}</Text>
-          </View>
-        ))}
+      <Text style={s.activeTitle}>{isAwaitingPrice ? 'Action Required: Price Ready' : 'Order in Progress'}</Text>
+      <View style={s.cardFooter}>
+        <Text style={s.branchLabel}>{order.branchName}</Text>
+        <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
       </View>
-
-      <TouchableOpacity 
-        style={s.detailsBtn}
-        onPress={() => navigation.navigate('Orders', { screen: 'OrderDetail', params: { orderId: order.id } })}
-      >
-        <Ionicons name="document-text-outline" size={16} color={colors.text} />
-        <Text style={s.detailsBtnText}>View Details</Text>
-      </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -115,7 +101,6 @@ export default function HomeScreen({ navigation }) {
       <View style={s.svcInfo}>
         <View style={s.svcTag}>
           <Text style={s.svcTagText}>{item.tag}</Text>
-          <Ionicons name="arrow-up-outline" size={12} color={colors.primary} style={{ transform: [{ rotate: '45deg' }] }} />
         </View>
         <Text style={s.svcPrice}>{item.price}</Text>
         <Text style={s.svcName}>{item.name}</Text>
@@ -123,30 +108,43 @@ export default function HomeScreen({ navigation }) {
     </TouchableOpacity>
   );
 
+  const renderBranchItem = ({ item }) => (
+    <View style={s.branchCard}>
+      <View style={s.branchIconBox}>
+        <MaterialCommunityIcons name="storefront" size={20} color={colors.primary} />
+      </View>
+      <View style={s.branchDetails}>
+        <Text style={s.branchNameText}>{item.name}</Text>
+        <Text style={s.branchAddrText} numberOfLines={1}>{item.address}</Text>
+      </View>
+    </View>
+  );
+
   if (loading) return <LoadingSkeleton />;
 
   return (
     <SafeAreaView style={s.container} edges={['top']}>
+      {/* Minimalist Header */}
       <View style={s.header}>
-        <View style={s.headerLeft}>
-          <Image source={require('../../../assets/images/icon.png')} style={s.logo} />
-          <Text style={s.headerTitle}>WashAlert</Text>
+        <View>
+          <Text style={s.greetText}>Welcome back,</Text>
+          <Text style={s.headerName}>{user?.fullName?.split(' ')[0] || 'User'}</Text>
         </View>
-        <View style={s.headerRight}>
-          <TouchableOpacity onPress={() => navigation.navigate('Chat')} style={s.iconBtn}>
-            <Ionicons name="chatbubble-ellipses-outline" size={22} color="#fff" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('Notifications')} style={s.iconBtn}>
-            <Ionicons name="notifications-outline" size={22} color="#fff" />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity onPress={() => navigation.navigate('Notifications')} style={s.iconBtn}>
+          <Ionicons name="notifications-outline" size={24} color="#fff" />
+          {activeOrders.length > 0 && <View style={s.notifBadge} />}
+        </TouchableOpacity>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView showsVerticalScrollIndicator={false} stickyHeaderIndices={[1]}>
+        {/* Services Horizontal Section */}
         <View style={s.hero}>
-          <Text style={s.greetText}>Hi {user?.fullName?.split(' ')[0] || 'Amanda'}, Here's</Text>
-          <Text style={s.heroTitle}>Our Laundry Services.</Text>
-          
+          <View style={s.heroHeader}>
+            <Text style={s.heroTitle}>Laundry Services</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Book')}>
+              <Text style={s.bookNow}>Book Now</Text>
+            </TouchableOpacity>
+          </View>
           <FlatList
             data={SERVICES}
             renderItem={renderServiceCard}
@@ -157,75 +155,101 @@ export default function HomeScreen({ navigation }) {
           />
         </View>
 
-        <View style={s.body}>
-          <View style={s.sectionHeader}>
-            <Text style={s.sectionTitle}>Active Orders</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Orders')}>
-              <Text style={s.seeAll}>See all</Text>
-            </TouchableOpacity>
+        {/* Sticky Active Orders Banner if any */}
+        {activeOrders.length > 0 ? (
+          <View style={s.activeSection}>
+            <Text style={s.sectionTitle}>Track Active Orders</Text>
+            {(activeOrders || []).slice(0, 2).map(order => <ActiveOrderCard key={order.id} order={order} navigation={navigation} />)}
           </View>
+        ) : <View style={{ height: 10 }} />}
 
-          {activeOrders.length > 0 ? (
-            activeOrders.map(order => <ActiveOrderCard key={order.id} order={order} navigation={navigation} />)
-          ) : (
-            <View style={s.emptyOrders}>
-              <Text style={s.emptyText}>No active orders at the moment.</Text>
-            </View>
-          )}
-
-          {/* Business Hours Info */}
-          <View style={s.infoCard}>
-            <Ionicons name="time-outline" size={20} color={colors.primary} />
-            <Text style={s.infoText}>Operating Hours: 7:00 AM - 10:00 PM</Text>
+        {/* Service Standards Guide */}
+        <View style={s.guideSection}>
+          <Text style={s.sectionTitle}>Laundry Standards Guide</Text>
+          <View style={s.guideGrid}>
+            {GUIDES.map(g => (
+              <View key={g.id} style={s.guideCard}>
+                <MaterialCommunityIcons name={g.icon} size={24} color={g.color} />
+                <View style={s.guideInfo}>
+                  <Text style={s.guideLabel}>{g.label}</Text>
+                  <Text style={s.guideSub}>{g.sub}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+          <View style={s.madnessInfo}>
+            <Ionicons name="information-circle" size={16} color={colors.primary} />
+            <Text style={s.madnessText}>Madness Fee: ₱50 per kg if above service limit.</Text>
           </View>
         </View>
+
+        {/* Branches Preview Section */}
+        <View style={s.branchSection}>
+          <View style={s.heroHeader}>
+            <Text style={s.sectionTitle}>Our Branches</Text>
+            <Text style={s.branchCity}>Available in Makati & QC</Text>
+          </View>
+          <FlatList
+            data={(BRANCH_CATALOG || []).slice(0, 5)}
+            renderItem={renderBranchItem}
+            keyExtractor={item => item.id.toString()}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.branchList}
+          />
+        </View>
+
+        <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const s = {
+const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F2044' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logo: { width: 32, height: 32, borderRadius: 16 },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#fff' },
-  headerRight: { flexDirection: 'row', gap: 12 },
-  iconBtn: { padding: 4 },
-  hero: { backgroundColor: '#fff', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: 32 },
-  greetText: { fontSize: 16, color: colors.textSecondary },
-  heroTitle: { fontSize: 28, fontWeight: '900', color: colors.text, marginBottom: 20 },
-  svcList: { paddingRight: 24 },
-  svcCard: { width: SCREEN_WIDTH * 0.42, backgroundColor: '#F5F7FA', borderRadius: 24, marginRight: 16, overflow: 'hidden' },
-  svcImg: { width: '100%', height: 120, backgroundColor: '#eee' },
-  svcInfo: { padding: 16 },
-  svcTag: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#E0E7FF', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start', marginBottom: 8 },
-  svcTagText: { fontSize: 10, fontWeight: '700', color: colors.primary },
-  svcPrice: { fontSize: 14, fontWeight: '800', color: colors.primary, marginBottom: 2 },
-  svcName: { fontSize: 16, fontWeight: '700', color: colors.text },
-  body: { backgroundColor: '#F5F7FA', padding: 24, minHeight: 400 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  sectionTitle: { fontSize: 20, fontWeight: '800', color: colors.text },
-  seeAll: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
-  activeCard: { backgroundColor: '#fff', borderRadius: 24, padding: 20, marginBottom: 16, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary },
-  statusText: { fontSize: 10, fontWeight: '800', color: colors.textSecondary },
-  trackBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#1C2F3E', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
-  trackBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  orderTitle: { fontSize: 24, fontWeight: '800', color: colors.text, marginBottom: 4 },
-  orderNum: { fontSize: 14, color: colors.textTertiary, marginBottom: 20 },
-  progressRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
-  stepWrap: { alignItems: 'center', gap: 8 },
-  stepDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#E2E8F0' },
-  stepDotActive: { backgroundColor: colors.primary },
-  stepLabel: { fontSize: 10, color: colors.textTertiary, fontWeight: '500' },
-  stepLabelActive: { color: colors.text, fontWeight: '700' },
-  detailsBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: '#E2E8F0', paddingVertical: 12, borderRadius: 12 },
-  detailsBtnText: { fontSize: 14, fontWeight: '700', color: colors.text },
-  infoCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', padding: 16, borderRadius: 16, marginTop: 16 },
-  infoText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
-  emptyOrders: { padding: 32, alignItems: 'center' },
-  emptyText: { color: colors.textTertiary, fontSize: 14 }
-};
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 16 },
+  greetText: { fontSize: 13, color: 'rgba(255,255,255,0.6)', fontWeight: '600' },
+  headerName: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: -0.5 },
+  iconBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
+  notifBadge: { position: 'absolute', top: 12, right: 12, width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444', borderWidth: 2, borderColor: '#0F2044' },
+  hero: { backgroundColor: '#fff', borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingTop: 24, paddingBottom: 24 },
+  heroHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, marginBottom: 16 },
+  heroTitle: { fontSize: 18, fontWeight: '800', color: colors.text },
+  bookNow: { fontSize: 14, fontWeight: '700', color: colors.primary },
+  svcList: { paddingLeft: 24, paddingRight: 8 },
+  svcCard: { width: SCREEN_WIDTH * 0.4, backgroundColor: '#F8FAFC', borderRadius: 24, marginRight: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#F1F5F9' },
+  svcImg: { width: '100%', height: 110, backgroundColor: '#eee' },
+  svcInfo: { padding: 12 },
+  svcTag: { backgroundColor: '#E0E7FF', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start', marginBottom: 6 },
+  svcTagText: { fontSize: 9, fontWeight: '800', color: colors.primary },
+  svcPrice: { fontSize: 13, fontWeight: '800', color: colors.primary },
+  svcName: { fontSize: 14, fontWeight: '700', color: colors.text, marginTop: 2 },
+  activeSection: { backgroundColor: '#F8FAFC', padding: 24 },
+  sectionTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 16 },
+  activeCard: { backgroundColor: '#fff', borderRadius: 20, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#E2E8F0' },
+  activeCardUrgent: { borderColor: colors.primary, borderWidth: 2 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  statusText: { fontSize: 9, fontWeight: '800', color: colors.textSecondary },
+  orderId: { fontSize: 11, fontWeight: '700', color: colors.textTertiary },
+  activeTitle: { fontSize: 15, fontWeight: '800', color: colors.text, marginBottom: 12 },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  branchLabel: { fontSize: 12, color: colors.textTertiary, fontWeight: '600' },
+  guideSection: { backgroundColor: '#fff', padding: 24 },
+  guideGrid: { gap: 12 },
+  guideCard: { flexDirection: 'row', alignItems: 'center', gap: 16, padding: 16, borderRadius: 18, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#F1F5F9' },
+  guideInfo: { flex: 1 },
+  guideLabel: { fontSize: 14, fontWeight: '800', color: colors.text },
+  guideSub: { fontSize: 12, color: colors.textTertiary, marginTop: 2 },
+  madnessInfo: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, backgroundColor: '#F0F4FF', padding: 12, borderRadius: 12 },
+  madnessText: { fontSize: 12, color: colors.primary, fontWeight: '700' },
+  branchSection: { backgroundColor: '#F8FAFC', paddingVertical: 24 },
+  branchCity: { fontSize: 12, color: colors.textTertiary, fontWeight: '600' },
+  branchList: { paddingLeft: 24, paddingRight: 8 },
+  branchCard: { width: SCREEN_WIDTH * 0.65, backgroundColor: '#fff', borderRadius: 20, padding: 16, marginRight: 16, flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: '#E2E8F0' },
+  branchIconBox: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#F0F4FF', alignItems: 'center', justifyContent: 'center' },
+  branchDetails: { flex: 1 },
+  branchNameText: { fontSize: 14, fontWeight: '800', color: colors.text },
+  branchAddrText: { fontSize: 12, color: colors.textTertiary, marginTop: 2 }
+});
