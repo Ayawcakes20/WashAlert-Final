@@ -159,7 +159,7 @@ export default function HomeScreen({ navigation }) {
         {activeOrders.length > 0 ? (
           <View style={s.activeSection}>
             <Text style={s.sectionTitle}>Track Active Orders</Text>
-            {(activeOrders || []).slice(0, 2).map(order => <ActiveOrderCard key={order.id} order={order} navigation={navigation} />)}
+            {activeOrders.slice(0, 2).map(order => <ActiveOrderCard key={order.id} order={order} navigation={navigation} />)}
           </View>
         ) : <View style={{ height: 10 }} />}
 
@@ -190,7 +190,7 @@ export default function HomeScreen({ navigation }) {
             <Text style={s.branchCity}>Available in Makati & QC</Text>
           </View>
           <FlatList
-            data={(BRANCH_CATALOG || []).slice(0, 5)}
+            data={BRANCH_CATALOG.slice(0, 5)}
             renderItem={renderBranchItem}
             keyExtractor={item => item.id.toString()}
             horizontal
