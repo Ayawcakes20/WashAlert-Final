@@ -439,47 +439,76 @@ export default function OrderDetailScreen({ route, navigation }) {
           {order.scheduleDate&&<Row label="Pickup Schedule" value={`${order.scheduleDate}  ${order.scheduleTime||''}`}/>}
         </Accordion>
 
-        {/* PAYMENT ACCORDION */}
-        <Accordion title="Payment Summary" icon="receipt-outline">
+        {/* PAYMENT ACCORDION (Transparency Sync) */}
+        <Accordion title="Payment Summary" icon="receipt-outline" defaultOpen={ns === 'awaiting_price' || ns === 'washing'}>
           {order.actualWeightKg && (
-            <Row label="Actual Weight" value={`${order.actualWeightKg} kg`} valueStyle={{fontWeight:'700', color:colors.primary}}/>
-          )}
-          {order.servicePrice > 0 && (
-            <Row label="Service Fee" value={`₱${order.servicePrice.toFixed(2)}`}/>
+            <Row label="Actual Weight" value={`${order.actualWeightKg} kg`} valueStyle={{fontWeight:'800', color:colors.primary}}/>
           )}
           
-          {/* Itemized Supplies Breakdown */}
+          {/* ── Detailed Breakdown ── */}
+          <Row label="Base Service Fee" value={`₱${(order.servicePrice || 0).toFixed(2)}`}/>
+          
+          {(order.madnessFee > 0 || (order.amount - order.servicePrice - order.suppliesPrice - order.deliveryPrice - order.rushPrice - 20) > 0) && (
+            <Row 
+              label="Madness (Excess Weight)" 
+              value={`+₱${(order.madnessFee || Math.max(0, (order.actualWeightKg||0) - (order.loadKg||7)) * 50).toFixed(2)}`} 
+              valueStyle={{color:colors.accent, fontWeight:'700'}}
+            />
+          )}
+
+          {/* Supplies Breakdown */}
           {order.detergent && order.detergent !== 'None' && (
             <Row 
-              label={`Detergent: ${order.detergent}`} 
-              value={`x${order.detergentQty || 1}  (₱${((order.detergent.toLowerCase().includes('premium') || order.detergent.toLowerCase().includes('ariel') ? 30 : 25) * (order.detergentQty || 1)).toFixed(2)})`} 
-              valueStyle={{fontWeight:'600'}}
+              label={`Detergent (${order.detergent})`} 
+              value={`₱${((order.detergent.toLowerCase().includes('ariel') ? 30 : 25) * (order.detergentQty || 1)).toFixed(2)}`} 
             />
           )}
           {order.conditioner && order.conditioner !== 'None' && (
             <Row 
-              label={`Fabcon: ${order.conditioner}`} 
-              value={`x${order.conditionerQty || 1}  (₱${((order.conditioner.toLowerCase().includes('premium') || order.conditioner.toLowerCase().includes('downy') ? 25 : 15) * (order.conditionerQty || 1)).toFixed(2)})`} 
-              valueStyle={{fontWeight:'600'}}
+              label={`Fabcon (${order.conditioner})`} 
+              value={`₱${((order.conditioner.toLowerCase().includes('downy') ? 25 : 15) * (order.conditionerQty || 1)).toFixed(2)}`} 
             />
           )}
-          {order.suppliesPrice > 0 && (
-            <Row label="Supplies Total" value={`₱${order.suppliesPrice.toFixed(2)}`}/>
+
+          {order.rushPrice > 0 && (
+            <Row label="Rush Fee" value={`+₱${order.rushPrice.toFixed(2)}`}/>
+          )}
+          {order.deliveryPrice > 0 && (
+            <Row label="Logistics Fee" value={`+₱${order.deliveryPrice.toFixed(2)}`}/>
+          )}
+          
+          <Row label="Convenience Fee" value="+₱20.00" />
+
+          {order.manualAdjustment !== 0 && (
+            <Row 
+              label="Staff Adjustment" 
+              value={`${order.manualAdjustment > 0 ? '+' : ''}₱${(order.manualAdjustment || 0).toFixed(2)}`}
+              valueStyle={{color: order.manualAdjustment > 0 ? colors.accent : colors.success}}
+            />
           )}
 
-          {order.deliveryPrice > 0 && (
-            <Row label="Delivery Fee" value={`₱${order.deliveryPrice.toFixed(2)}`}/>
-          )}
-          {order.rushPrice > 0 && (
-            <Row label="Rush Service" value={`₱${order.rushPrice.toFixed(2)}`}/>
-          )}
           <View style={styles.divider}/>
+          
+          <View style={[styles.infoRow, { marginTop: 4 }]}>
+            <Text style={[styles.infoKey, { fontSize: 16, fontWeight: '800', color: colors.text }]}>GRAND TOTAL</Text>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={[styles.infoVal, { fontWeight: '900', color: colors.primary, fontSize: 24 }]}>
+                ₱{(order.amount || 0).toFixed(2)}
+              </Text>
+              {String(order.paymentStatus).toLowerCase() === 'paid' && (
+                <View style={styles.verifiedBadge}>
+                  <Ionicons name="shield-checkmark" size={10} color="#16A34A" />
+                  <Text style={styles.verifiedTxt}>AUTO-VERIFIED PAID</Text>
+                </View>
+              )}
+            </View>
+          </View>
+
           <Row 
-            label="Total Due" 
-            value={`₱${(order.totalPrice || order.amount || 0).toFixed(2)}`} 
-            valueStyle={{fontWeight:'900', color:colors.primary, fontSize:18}}
+            label="Payment Mode" 
+            value={String(order.paymentMethod || 'COD').toUpperCase()} 
+            valueStyle={{ color: colors.accent, fontWeight: '800', letterSpacing: 0.5 }}
           />
-          <Row label="Payment" value={order.paymentMethod || '—'}/>
 
           {/* ADDED: Pay Now button for GCash */}
           {String(order.paymentMethod || '').toLowerCase() === 'gcash' && 
@@ -668,5 +697,23 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '800',
+  },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+  },
+  verifiedTxt: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#16A34A',
+    letterSpacing: 0.5,
   },
 });
