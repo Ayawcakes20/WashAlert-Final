@@ -517,8 +517,10 @@ export function FinalizeWeightModal({
                         value={loadType}
                         onValueChange={(v) => setLoadType(v as LoadType)}
                       >
-                        <SelectTrigger className="h-14 border-2 border-slate-200 rounded-xl font-bold text-sm focus:border-blue-500 focus:ring-0 bg-white">
-                          <SelectValue />
+                        <SelectTrigger className="h-14 border-2 border-slate-200 rounded-xl font-bold text-sm focus:border-blue-500 focus:ring-0 bg-white w-full">
+                          <div className="truncate pr-4 text-left">
+                            <SelectValue />
+                          </div>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="PURE_CLOTHES">

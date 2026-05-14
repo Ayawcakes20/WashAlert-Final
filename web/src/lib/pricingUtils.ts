@@ -131,8 +131,8 @@ export const computeOrderPricing = (
   const isRush = (order.rushPrice ?? 0) > 0;
   const rushFee = isRush ? 150 * numberOfLoads : 0;
 
-  // Pickup fee — for pickup & delivery service
-  const pickupFee = order.serviceType === 'PICKUP_DELIVERY' && !name.includes('full') ? 25 : 0;
+  // Pickup fee — removed per client request
+  const pickupFee = 0;
 
   // Convenience fee — fixed online booking fee
   const convenienceFee = 20;
