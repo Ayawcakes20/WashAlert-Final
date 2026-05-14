@@ -138,7 +138,7 @@ function ReceiptPreview({ order, actualKg, loadType, pricing: p, deliveryFee, ma
             {p.madnessFee > 0 && (
               <ReceiptLineItem
                 label="Madness surcharge"
-                sub={`${p.madnessKg.toFixed(1)} kg excess × ₱50`}
+                sub={`(${actualKg}kg - ${p.baseServiceLimit}kg limit) × ₱50`}
                 amount={p.madnessFee}
                 className="text-orange-700"
               />
@@ -729,8 +729,8 @@ export function FinalizeWeightModal({
                           {/* Madness */}
                           {pricing.madnessFee > 0 && (
                             <BreakdownRow
-                              label="Madness limit surcharge"
-                              sub={`+${pricing.madnessKg.toFixed(1)} kg × ₱50`}
+                              label="Madness surcharge"
+                              sub={`(${actualKg}kg - ${pricing.baseServiceLimit}kg base) × ₱50`}
                               amount={pricing.madnessFee}
                               className="text-orange-600"
                             />

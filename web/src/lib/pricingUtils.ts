@@ -43,8 +43,17 @@ export interface PricingResult {
 /** Max kg per load based on load composition and service type */
 export const getBaseServiceLimit = (serviceName: string, lt: LoadType): number => {
   const name = serviceName.toLowerCase();
+  
+  // Ecowash is strictly 5kg
   if (name.includes('ecowash')) return 5;
-  if (name.includes('handwash')) return 1; // Handwash is per kg
+  
+  // Wash only and Dry only are strictly 7kg
+  if ((name.includes('wash') || name.includes('dry')) && !name.includes('full')) return 7;
+  
+  // Handwash is per kg (base 1 for computation)
+  if (name.includes('handwash')) return 1; 
+
+  // Full services depend on load type: 8kg (Pure) or 7kg (Towel)
   return lt === 'PURE_CLOTHES' ? 8 : 7;
 };
 
