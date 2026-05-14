@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { bookings, payments } from '../services/api';
+import { computeOrderPricing } from '../utils/pricingUtils';
 import logoLaundryHubs from '../../assets/images/logo-laundryhubs.webp';
 import logoSpeedyWash from '../../assets/images/logo-speedywash.webp';
 
@@ -73,11 +74,21 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
       console.log('[PAYMENT] Step 1: Confirming price...');
       let confirmedOrder;
       try {
-        // Use fullOrderData as it's guaranteed to have the numeric DB ID
         confirmedOrder = await bookings.confirmPrice(fullOrderData || orderData);
         console.log('[PAYMENT] ✓ Price confirmed successfully');
       } catch (confirmErr) {
         console.error('[PAYMENT] ✗ confirmPrice FAILED:', confirmErr.message);
+        
+        // Specific handling for Forbidden (usually means session/CSRF issue or role mismatch)
+        if (confirmErr.message?.includes('Forbidden')) {
+          Alert.alert(
+            'Action Restricted',
+            'You do not have permission to confirm this price. Please contact support or try logging in again.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+        
         throw new Error(`Price confirmation failed: ${confirmErr.message}`);
       }
       
@@ -85,10 +96,11 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
       if (isGcash) {
         try {
           console.log('[PAYMENT] Step 2: Initiating GCash checkout...');
-          const checkoutTarget = confirmedOrder?.trackingNumber || fullOrderData?.trackingNumber || orderData;
+          // Use the latest tracking number from the confirmed order if available
+          const checkoutTarget = confirmedOrder?.trackingNumber || fullOrderData?.trackingNumber;
           
           const response = await payments.initiateGcashCheckout(checkoutTarget);
-          const checkoutUrl = response?.checkoutUrl;
+          const checkoutUrl = response?.data?.checkoutUrl || response?.checkoutUrl;
 
           if (!checkoutUrl) {
             throw new Error('PayMongo checkout URL is missing from response.');
@@ -103,13 +115,10 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
             enableBarCollapsing: true,
           });
           
-          console.log('[PAYMENT] WebBrowser result:', browserResult.type);
-          
-          // If user dismissed the browser, don't fail—payment can still be completed
           if (browserResult.type === 'cancel') {
             Alert.alert(
-              'Payment Link Available',
-              'You can pay later using the "Pay Now" button in your order details.',
+              'Payment Link Sent',
+              'We have initiated your GCash payment. You can complete it via the browser or the "Pay Now" button in your order history.',
               [{ text: 'OK', onPress: () => onConfirmed?.() }]
             );
             return;
@@ -117,18 +126,18 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
         } catch (paymentErr) {
           console.error('[PAYMENT] GCash checkout failed:', paymentErr.message);
           Alert.alert(
-            'Payment Error',
-            `Failed to open PayMongo: ${paymentErr.message}\n\nYou can still pay using the "Pay Now" button in order details.`,
-            [{ text: 'OK' }]
+            'Checkout Failed',
+            `Could not start GCash session: ${paymentErr.message}\n\nYou can still pay later via the app.`,
+            [{ text: 'OK', onPress: () => onConfirmed?.() }]
           );
+          return;
         }
       }
 
       onConfirmed && onConfirmed();
     } catch (e) {
       console.error('[PAYMENT_CONFIRM_ERROR]', e);
-      console.error('[PAYMENT_CONFIRM_ERROR] Stack:', e.stack);
-      Alert.alert('Error', e?.message || 'Failed to confirm. Please try again.');
+      Alert.alert('Unable to Proceed', e?.message || 'Something went wrong during confirmation.');
     } finally {
       setLoading(false);
     }
@@ -151,9 +160,19 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
   
   const weight        = fullOrderData.actualWeightKg ? `${fullOrderData.actualWeightKg} kg` : null;
   const serviceName   = fullOrderData.serviceName || fullOrderData.serviceType || 'Laundry Service';
-  const serviceTotal  = fullOrderData.finalPrice ?? fullOrderData.servicePrice ?? 0;
-  const deliveryFee   = fullOrderData.deliveryPrice ?? 0;
-  const grandTotal    = fullOrderData.amount || fullOrderData.totalPrice || (Number(serviceTotal) + Number(deliveryFee));
+  
+  // Recalculate breakdown for transparency sync
+  const p = computeOrderPricing(
+    fullOrderData,
+    fullOrderData.actualWeightKg || 0,
+    fullOrderData.loadKg > 7 ? 'PURE_CLOTHES' : 'WITH_TOWELS',
+    fullOrderData.deliveryPrice || 0,
+    fullOrderData.manualAdjustment || 0
+  );
+
+  const serviceTotal  = p.serviceTotal;
+  const deliveryFee   = p.deliveryFee;
+  const grandTotal    = p.grandTotal;
   const paymentMethod = String(fullOrderData.paymentMethod || 'Cash on Delivery').replace('_', ' ');
 
 
@@ -220,14 +239,34 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
 
             {/* Line items */}
             <ReceiptRow label={serviceName} value={fmt(serviceTotal)} bold />
+            
+            {p.madnessFee > 0 && (
+              <ReceiptRow 
+                label="Madness Surcharge" 
+                value={fmt(p.madnessFee)} 
+                accent 
+              />
+            )}
+
+            {p.detCost > 0 && (
+              <ReceiptRow label={`${fullOrderData.detergent || 'Detergent'}`} value={fmt(p.detCost)} />
+            )}
+            {p.conCost > 0 && (
+              <ReceiptRow label={`${fullOrderData.conditioner || 'Conditioner'}`} value={fmt(p.conCost)} />
+            )}
+
             {Number(deliveryFee) > 0 && (
               <ReceiptRow label="Logistics & Delivery" value={fmt(deliveryFee)} />
             )}
-            {fullOrderData.detergent && fullOrderData.detergent !== 'None' && (
-              <ReceiptRow label={`Detergent (${fullOrderData.detergent})`} value="Included" />
-            )}
-            {fullOrderData.conditioner && fullOrderData.conditioner !== 'None' && (
-              <ReceiptRow label={`Conditioner (${fullOrderData.conditioner})`} value="Included" />
+            
+            <ReceiptRow label="Convenience Fee" value={fmt(p.convenienceFee)} />
+
+            {p.manualAdjustment !== 0 && (
+              <ReceiptRow 
+                label="Staff Adjustment" 
+                value={fmt(p.manualAdjustment)} 
+                accent={p.manualAdjustment > 0} 
+              />
             )}
 
             {/* Total box */}
