@@ -165,47 +165,8 @@ export default function BookingScreen({ route, navigation }) {
   useEffect(()=>{
     if(!branch||!schDate){ setSlots([]); setSchTime(null); return; }
     (async()=>{
-      try{ 
-        setSlotsLoad(true); 
-        const s = await bookings.getAvailableSlots(branch.name, schDate); 
-        
-        // ── Standard Business Hours Logic (7AM - 10PM) ──
-        const now = new Date();
-        const isToday = schDate.toDateString() === now.toDateString();
-        
-        const filtered = s.map(slot => {
-          // Parse slot label (e.g. "8:00 AM - 9:30 AM")
-          const timePart = slot.label.split('-')[0].trim();
-          const [time, period] = timePart.split(' ');
-          let [h, m] = time.split(':').map(Number);
-          if (period === 'PM' && h !== 12) h += 12;
-          if (period === 'AM' && h === 12) h = 0;
-          
-          const slotTime = new Date(schDate);
-          slotTime.setHours(h, m, 0, 0);
-
-          // Business Hour Check (7AM - 10PM)
-          const isWithinHours = h >= 7 && h < 22;
-          
-          // Past Time Check (if today)
-          const isPast = isToday && slotTime < now;
-          
-          return {
-            ...slot,
-            available: slot.available && isWithinHours && !isPast
-          };
-        });
-
-        setSlots(filtered); 
-        const f = filtered.find(x => x.available); 
-        setSchTime(p => filtered.find(x => x.label === p && x.available) ? p : (f?.label || null)); 
-      }
-      catch(e){ 
-        console.error('[Booking] Slots Error:', e);
-        setSlots([]); 
-      } finally{ 
-        setSlotsLoad(false); 
-      }
+      try{ setSlotsLoad(true); const s=await bookings.getAvailableSlots(branch.name,schDate); setSlots(s); const f=s.find(x=>x.available); setSchTime(p=>s.find(x=>x.label===p&&x.available)?p:(f?.label||null)); }
+      catch{ setSlots([]); } finally{ setSlotsLoad(false); }
     })();
   },[branch,schDate]);
 

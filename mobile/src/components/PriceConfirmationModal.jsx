@@ -26,10 +26,10 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
 
   // Sync internal state with prop
   useEffect(() => {
-    setFullOrderData(orderData);
+    if (orderData) setFullOrderData(orderData);
   }, [orderData]);
 
-  // Fetch full details if only ID is provided (e.g. from notification)
+  // Fetch full details if only ID is provided
   useEffect(() => {
     if (visible && orderData && (!orderData.amount || !orderData.serviceName)) {
       (async () => {
@@ -64,26 +64,25 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
     if (!fullOrderData) return;
     setLoading(true);
     try {
-      const isGcash = String(fullOrderData.paymentMethod || '').toUpperCase() === 'GCASH';
+      const paymentMethodStr = String(fullOrderData.paymentMethod || '').toUpperCase();
+      const isGcash = paymentMethodStr.includes('GCASH');
       
-      console.log('[PAYMENT] Starting confirmation process for:', orderData.trackingNumber || orderData.id);
-      console.log('[PAYMENT] Payment method:', orderData.paymentMethod);
-      console.log('[PAYMENT] Order data:', JSON.stringify(orderData, null, 2));
+      console.log('[PAYMENT] Starting confirmation process for:', fullOrderData.trackingNumber || fullOrderData.id);
       
-      // 1. Confirm the price first (Backend sets status to PRICE_CONFIRMED)
+      // 1. Confirm the price first
       console.log('[PAYMENT] Step 1: Confirming price...');
       let confirmedOrder;
       try {
-        confirmedOrder = await bookings.confirmPrice(fullOrderData || orderData);
+        confirmedOrder = await bookings.confirmPrice(fullOrderData);
         console.log('[PAYMENT] ✓ Price confirmed successfully');
       } catch (confirmErr) {
         console.error('[PAYMENT] ✗ confirmPrice FAILED:', confirmErr.message);
         
-        // Specific handling for Forbidden (usually means session/CSRF issue or role mismatch)
+        // Handle Forbidden (CSRF or Role issue)
         if (confirmErr.message?.includes('Forbidden')) {
           Alert.alert(
             'Action Restricted',
-            'You do not have permission to confirm this price. Please contact support or try logging in again.',
+            'You do not have permission to confirm this price. Please try logging in again.',
             [{ text: 'OK' }]
           );
           return;
@@ -96,10 +95,12 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
       if (isGcash) {
         try {
           console.log('[PAYMENT] Step 2: Initiating GCash checkout...');
-          // Use the latest tracking number from the confirmed order if available
           const checkoutTarget = confirmedOrder?.trackingNumber || fullOrderData?.trackingNumber;
           
+          if (!checkoutTarget) throw new Error('Tracking number missing for checkout.');
+
           const response = await payments.initiateGcashCheckout(checkoutTarget);
+          // Handle both {data: {checkoutUrl}} and {checkoutUrl} structures
           const checkoutUrl = response?.data?.checkoutUrl || response?.checkoutUrl;
 
           if (!checkoutUrl) {
@@ -118,7 +119,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
           if (browserResult.type === 'cancel') {
             Alert.alert(
               'Payment Link Sent',
-              'We have initiated your GCash payment. You can complete it via the browser or the "Pay Now" button in your order history.',
+              'We have initiated your GCash payment. You can complete it via the browser or the "Pay Now" button in your history.',
               [{ text: 'OK', onPress: () => onConfirmed?.() }]
             );
             return;
@@ -126,8 +127,8 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
         } catch (paymentErr) {
           console.error('[PAYMENT] GCash checkout failed:', paymentErr.message);
           Alert.alert(
-            'Checkout Failed',
-            `Could not start GCash session: ${paymentErr.message}\n\nYou can still pay later via the app.`,
+            'Checkout Issue',
+            `Could not start GCash session: ${paymentErr.message}\n\nYou can pay later via order history.`,
             [{ text: 'OK', onPress: () => onConfirmed?.() }]
           );
           return;
@@ -137,7 +138,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
       onConfirmed && onConfirmed();
     } catch (e) {
       console.error('[PAYMENT_CONFIRM_ERROR]', e);
-      Alert.alert('Unable to Proceed', e?.message || 'Something went wrong during confirmation.');
+      Alert.alert('Unable to Proceed', e?.message || 'Failed to confirm. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -151,17 +152,9 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
 
   if (!fullOrderData) return null;
 
-  const logo = fullOrderData.branchName?.toLowerCase().includes('makati') ? logoLaundryHubs : logoSpeedyWash;
+  const logo = String(fullOrderData.branchName || '').toLowerCase().includes('makati') ? logoLaundryHubs : logoSpeedyWash;
 
-  // Use trackingNumber for display, dbId/id for API calls
-  const displayTrackingNumber = fullOrderData.trackingNumber 
-    ? String(fullOrderData.trackingNumber).replace(/^WA-/, '')
-    : String(fullOrderData.id || '');
-  
-  const weight        = fullOrderData.actualWeightKg ? `${fullOrderData.actualWeightKg} kg` : null;
-  const serviceName   = fullOrderData.serviceName || fullOrderData.serviceType || 'Laundry Service';
-  
-  // Recalculate breakdown for transparency sync
+  // Recalculate breakdown using the same engine as Web
   const p = computeOrderPricing(
     fullOrderData,
     fullOrderData.actualWeightKg || 0,
@@ -170,11 +163,13 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
     fullOrderData.manualAdjustment || 0
   );
 
-  const serviceTotal  = p.serviceTotal;
-  const deliveryFee   = p.deliveryFee;
-  const grandTotal    = p.grandTotal;
+  const displayTrackingNumber = fullOrderData.trackingNumber 
+    ? String(fullOrderData.trackingNumber).replace(/^WA-/, '')
+    : String(fullOrderData.id || '');
+  
+  const weight = fullOrderData.actualWeightKg ? `${fullOrderData.actualWeightKg} kg` : null;
+  const serviceName = fullOrderData.serviceName || fullOrderData.serviceType || 'Laundry Service';
   const paymentMethod = String(fullOrderData.paymentMethod || 'Cash on Delivery').replace('_', ' ');
-
 
   const dateStr = new Date().toLocaleDateString('en-PH', {
     month: 'short', day: 'numeric', year: 'numeric',
@@ -184,7 +179,6 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
     <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={onDismiss}>
       <View style={S.overlay}>
         <Animated.View style={[S.card, { transform: [{ translateY: slideAnim }] }]}>
-          {/* Header Controls */}
           <View style={S.headerControls}>
             <View style={S.notchBar} />
             <TouchableOpacity style={S.closeBtn} onPress={onDismiss} activeOpacity={0.7}>
@@ -194,12 +188,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
 
           <View style={S.receiptTop} />
 
-          <ScrollView
-            style={S.scroll}
-            contentContainerStyle={S.scrollContent}
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-          >
+          <ScrollView style={S.scroll} contentContainerStyle={S.scrollContent} showsVerticalScrollIndicator={false} bounces={false}>
             {/* Header */}
             <View style={S.receiptHeader}>
               <View style={S.logoWrapper}>
@@ -226,7 +215,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
               </View>
             </View>
 
-            {/* Weight badge (only when set) */}
+            {/* Weight badge */}
             {weight ? (
               <View style={S.weightBadge}>
                 <Ionicons name="scale-outline" size={15} color="#16A34A" />
@@ -234,18 +223,13 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
               </View>
             ) : null}
 
-            {/* Dashed separator */}
             <View style={S.dashedSep} />
 
-            {/* Line items */}
-            <ReceiptRow label={serviceName} value={fmt(serviceTotal)} bold />
+            {/* DETAILED LINE ITEMS */}
+            <ReceiptRow label={serviceName} value={fmt(p.serviceTotal)} bold />
             
             {p.madnessFee > 0 && (
-              <ReceiptRow 
-                label="Madness Surcharge" 
-                value={fmt(p.madnessFee)} 
-                accent 
-              />
+              <ReceiptRow label="Madness Surcharge" value={fmt(p.madnessFee)} accent />
             )}
 
             {p.detCost > 0 && (
@@ -255,8 +239,8 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
               <ReceiptRow label={`${fullOrderData.conditioner || 'Conditioner'}`} value={fmt(p.conCost)} />
             )}
 
-            {Number(deliveryFee) > 0 && (
-              <ReceiptRow label="Logistics & Delivery" value={fmt(deliveryFee)} />
+            {Number(p.deliveryFee) > 0 && (
+              <ReceiptRow label="Logistics & Delivery" value={fmt(p.deliveryFee)} />
             )}
             
             <ReceiptRow label="Convenience Fee" value={fmt(p.convenienceFee)} />
@@ -273,7 +257,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
             <View style={S.totalBox}>
               <View>
                 <Text style={S.totalLabel}>TOTAL AMOUNT DUE</Text>
-                <Text style={S.totalAmount}>{fmt(grandTotal)}</Text>
+                <Text style={S.totalAmount}>{fmt(p.grandTotal)}</Text>
               </View>
               <View style={S.payBox}>
                 <Text style={S.payLabel}>PAYMENT</Text>
@@ -281,17 +265,11 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
               </View>
             </View>
 
-            {/* Confirm button */}
-            <TouchableOpacity
-              style={[S.confirmBtn, loading && { opacity: 0.6 }]}
-              onPress={handleConfirm}
-              disabled={loading}
-              activeOpacity={0.88}
-            >
+            <TouchableOpacity style={[S.confirmBtn, loading && { opacity: 0.6 }]} onPress={handleConfirm} disabled={loading} activeOpacity={0.88}>
               {loading
                 ? <ActivityIndicator color="#fff" />
                 : <Text style={S.confirmBtnTxt}>
-                    {String(fullOrderData.paymentMethod || '').toUpperCase() === 'GCASH' 
+                    {String(fullOrderData.paymentMethod || '').toUpperCase().includes('GCASH') 
                       ? 'Confirm & Pay with GCash' 
                       : 'Confirm & start washing'}
                   </Text>
@@ -299,7 +277,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
             </TouchableOpacity>
 
             <Text style={S.legalTxt}>
-              By confirming, you agree to the total above. Washing begins only after your confirmation.
+              By confirming, you agree to the total above. Washing begins only pagkatapos ng iyong confirmation.
             </Text>
 
             <TouchableOpacity style={S.contactLink} onPress={handleCallBranch}>
@@ -314,112 +292,42 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
 }
 
 const S = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15,23,42,0.88)',
-    justifyContent: 'flex-end',
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    maxHeight: '92%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 24,
-  },
-  headerControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 12,
-    paddingBottom: 4,
-    position: 'relative',
-  },
-  closeBtn: {
-    position: 'absolute',
-    right: 16,
-    top: 12,
-  },
-  notchBar: {
-    width: 40, height: 4, borderRadius: 2,
-    backgroundColor: '#CBD5E1',
-  },
+  overlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.88)', justifyContent: 'flex-end' },
+  card: { backgroundColor: '#fff', borderTopLeftRadius: 32, borderTopRightRadius: 32, maxHeight: '92%', elevation: 24 },
+  headerControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingTop: 12, paddingBottom: 4, position: 'relative' },
+  closeBtn: { position: 'absolute', right: 16, top: 12 },
+  notchBar: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#CBD5E1' },
   receiptTop: { height: 4, backgroundColor: '#1E293B', marginBottom: 0 },
   scroll: { flexGrow: 0 },
   scrollContent: { padding: 24, paddingBottom: 40 },
-
   receiptHeader: { alignItems: 'center', marginBottom: 16 },
-  logoWrapper: {
-    width: 56, height: 56, borderRadius: 16,
-    backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 10,
-  },
+  logoWrapper: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 10 },
   logoImg: { width: 40, height: 40 },
   brandName: { fontSize: 20, fontWeight: '900', color: '#1E293B', letterSpacing: -0.3 },
   branchName: { fontSize: 10, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 2 },
-
   trackingBox: { alignItems: 'center', marginBottom: 16 },
   trackingLabel: { fontSize: 28, fontWeight: '900', color: '#2563EB', letterSpacing: -1.5 },
   dateLabel: { fontSize: 12, color: '#94A3B8', fontWeight: '600', marginTop: 2 },
-
-  customerRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 14, paddingBottom: 14,
-    borderBottomWidth: 1, borderBottomColor: '#F1F5F9',
-  },
+  customerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
   custName: { fontSize: 15, fontWeight: '800', color: '#1E293B' },
   custPhone: { fontSize: 12, color: '#94A3B8', marginTop: 1 },
-  serviceChip: {
-    backgroundColor: '#EFF6FF', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
-  },
+  serviceChip: { backgroundColor: '#EFF6FF', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },
   serviceChipTxt: { fontSize: 10, fontWeight: '800', color: '#2563EB', textTransform: 'uppercase' },
-
-  weightBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 7,
-    backgroundColor: '#F0FDF4', borderRadius: 12,
-    paddingVertical: 10, paddingHorizontal: 14,
-    borderWidth: 1, borderColor: '#DCFCE7', marginBottom: 14,
-  },
+  weightBadge: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: '#F0FDF4', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14, borderWidth: 1, borderColor: '#DCFCE7', marginBottom: 14 },
   weightTxt: { fontSize: 13, color: '#15803D', fontWeight: '600' },
-
-  dashedSep: {
-    borderStyle: 'dashed', borderWidth: 1, borderColor: '#E2E8F0',
-    marginBottom: 14, height: 0,
-  },
-
+  dashedSep: { borderStyle: 'dashed', borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 14, height: 0 },
   receiptRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   receiptRowLabel: { fontSize: 13, color: '#64748B', fontWeight: '500', flex: 1, paddingRight: 8 },
   receiptRowValue: { fontSize: 13, fontWeight: '700', color: '#1E293B' },
-
-  totalBox: {
-    backgroundColor: '#1E293B', borderRadius: 18, padding: 18,
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    marginTop: 14, marginBottom: 20,
-  },
+  totalBox: { backgroundColor: '#1E293B', borderRadius: 18, padding: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, marginBottom: 20 },
   totalLabel: { fontSize: 10, color: '#94A3B8', fontWeight: '700', letterSpacing: 0.5 },
   totalAmount: { fontSize: 26, fontWeight: '900', color: '#fff', marginTop: 2 },
   payBox: { alignItems: 'flex-end' },
   payLabel: { fontSize: 10, color: '#94A3B8', fontWeight: '700', letterSpacing: 0.5 },
   payMethod: { fontSize: 12, fontWeight: '800', color: '#FBBF24', marginTop: 2 },
-
-  confirmBtn: {
-    backgroundColor: '#2563EB', borderRadius: 16, height: 58,
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#2563EB', shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28, shadowRadius: 10,
-  },
+  confirmBtn: { backgroundColor: '#2563EB', borderRadius: 16, height: 58, alignItems: 'center', justifyContent: 'center' },
   confirmBtnTxt: { color: '#fff', fontSize: 17, fontWeight: '800' },
-
-  legalTxt: {
-    fontSize: 11, color: '#94A3B8', textAlign: 'center',
-    lineHeight: 16, marginTop: 14, paddingHorizontal: 8,
-  },
-  contactLink: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    alignSelf: 'center', marginTop: 12, paddingVertical: 6,
-  },
+  legalTxt: { fontSize: 11, color: '#94A3B8', textAlign: 'center', lineHeight: 16, marginTop: 14, paddingHorizontal: 8 },
+  contactLink: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'center', marginTop: 12, paddingVertical: 6 },
   contactLinkTxt: { fontSize: 13, fontWeight: '700', color: '#2563EB', textDecorationLine: 'underline' },
 });

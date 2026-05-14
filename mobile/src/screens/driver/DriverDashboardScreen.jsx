@@ -1,304 +1,464 @@
 import React, { useCallback, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Dimensions,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
+  Image,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { driverOrders } from '../../services/api';
 
-const { width: SW } = Dimensions.get('window');
-const NAV_BG = '#0F2044';
-
+// ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CONFIG = {
-  ASSIGNED_FOR_DELIVERY: { label:'Assigned for Delivery', color:'#3B82F6', bg:'#EFF6FF', icon:'package-variant' },
-  EN_ROUTE_TO_BRANCH:    { label:'En Route to Branch',   color:'#F59E0B', bg:'#FFFBEB', icon:'truck-delivery'   },
-  PICKED_UP_FROM_BRANCH: { label:'Out for Delivery',     color:'#10B981', bg:'#F0FDF4', icon:'truck-fast'        },
-  OUT_FOR_DELIVERY:      { label:'Out for Delivery',     color:'#10B981', bg:'#F0FDF4', icon:'truck-fast'        },
-  DELIVERED:             { label:'Completed',            color:'#10B981', bg:'#F0FDF4', icon:'check-decagram'    },
-  COLLECTION_FAILED:     { label:'Failed',               color:'#EF4444', bg:'#FEF2F2', icon:'alert-circle'      },
+  ASSIGNED_FOR_DELIVERY: { label: 'Assigned',          color: '#3B82F6', bg: 'hsla(214,88%,57%,0.12)' },
+  EN_ROUTE_TO_BRANCH:    { label: 'Heading to Branch', color: '#F59E0B', bg: 'hsla(38,96%,58%,0.12)'  },
+  PICKED_UP_FROM_BRANCH: { label: 'Out for Delivery',  color: '#10B981', bg: 'hsla(160,71%,39%,0.12)' },
+  OUT_FOR_DELIVERY:      { label: 'Out for Delivery',  color: '#10B981', bg: 'hsla(160,71%,39%,0.12)' },
+  DELIVERED:             { label: 'Completed',         color: '#10B981', bg: 'hsla(160,71%,39%,0.12)' },
+  COLLECTION_FAILED:     { label: 'Failed',            color: '#EF4444', bg: 'hsla(0,86%,60%,0.12)'   },
 };
-const getStatusCfg = s => STATUS_CONFIG[s] || { label:s, color:'#64748B', bg:'#F8FAFC', icon:'help-circle' };
-const ACTIVE_STATUSES = ['ASSIGNED_FOR_DELIVERY','EN_ROUTE_TO_BRANCH','PICKED_UP_FROM_BRANCH','OUT_FOR_DELIVERY'];
+const getStatusCfg = (s) =>
+  STATUS_CONFIG[s] || { label: s, color: colors.textSecondary, bg: colors.surfaceVariant };
 
-export default function DriverDashboardScreen({ navigation }) {
+const ACTIVE_STATUSES = [
+  'ASSIGNED_FOR_DELIVERY', 'EN_ROUTE_TO_BRANCH', 'PICKED_UP_FROM_BRANCH', 'OUT_FOR_DELIVERY'
+];
+
+// ─── Component ────────────────────────────────────────────────────────────────
+const DriverDashboardScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const [tasks, setTasks]         = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError]         = useState('');
+  const [tasks, setTasks]                 = useState([]);
+  const [loading, setLoading]             = useState(true);
+  const [refreshing, setRefreshing]       = useState(false);
+  const [error, setError]                 = useState('');
+  const [visibleDeliveries, setVisibleDeliveries] = useState(4);
 
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const hour     = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   const firstName = user?.fullName?.split(' ')[0] || 'Driver';
 
   const loadData = useCallback(async () => {
     try {
       setError('');
-      const res = await driverOrders.getTasks(0, 100);
-      const sorted = (res.content || []).sort((a,b) => new Date(b.updatedAt||0) - new Date(a.updatedAt||0));
+      const response = await driverOrders.getTasks(0, 50);
+      const sorted = (response.content || []).sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
       setTasks(sorted);
+      setVisibleDeliveries(4);
     } catch (e) {
-      setError(e?.message || 'Unable to load tasks.');
       setTasks([]);
-    } finally { setLoading(false); setRefreshing(false); }
+      setError(e?.message || 'Unable to load driver tasks.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
-  useFocusEffect(useCallback(() => {
-    setLoading(true); loadData();
-    const poll = setInterval(loadData, 30000);
-    return () => clearInterval(poll);
-  }, [loadData]));
-
-  const onRefresh = () => { setRefreshing(true); loadData(); };
-
-  const completed = tasks.filter(t => t.status === 'DELIVERED').length;
-  const pending   = tasks.filter(t => t.status === 'ASSIGNED_FOR_DELIVERY').length;
-  const active    = tasks.find(t => ACTIVE_STATUSES.includes(t.status));
-  const activeTasks = tasks.filter(t => ACTIVE_STATUSES.includes(t.status));
-  const recentCompleted = tasks.filter(t => t.status === 'DELIVERED').slice(0, 3);
-
-  if (loading) return (
-    <View style={s.loadScreen}>
-      <ActivityIndicator size="large" color="#60A5FA" />
-      <Text style={s.loadTxt}>Loading dashboard…</Text>
-    </View>
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      loadData();
+      const poll = setInterval(loadData, 30000);
+      return () => clearInterval(poll);
+    }, [loadData])
   );
 
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setVisibleDeliveries(4);
+    loadData();
+  }, [loadData]);
+
+  const completed = tasks.filter((d) => d.status === 'DELIVERED').length;
+  const active    = tasks.find((d) => ACTIVE_STATUSES.includes(d.status));
+  const pending   = tasks.filter((d) => d.status === 'ASSIGNED_FOR_DELIVERY').length;
+
+  if (loading) {
+    return (
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color="#fff" />
+        <Text style={styles.loadingText}>Loading dashboard…</Text>
+      </View>
+    );
+  }
+
   return (
-    <View style={s.root}>
-      {/* Header */}
-      <View style={[s.header, { paddingTop: insets.top + 8 }]}>
-        <View style={s.headerTop}>
-          <View style={s.brandRow}>
-            <View style={s.logoBox}>
-              <MaterialCommunityIcons name="washing-machine" size={22} color="#fff" />
-            </View>
-            <View>
-              <Text style={s.brandName}>WashAlert</Text>
-              <Text style={s.brandSub}>Driver Portal</Text>
-            </View>
+    <View style={styles.root}>
+      {/* ── Dark navy header ─────────────────────────────────────────── */}
+      <View style={[styles.navBar, { paddingTop: insets.top + 4 }]}>
+        {/* Logo + Brand */}
+        <View style={styles.brandRow}>
+          <View style={styles.logoBox}>
+            <MaterialCommunityIcons name="washing-machine" size={22} color="#fff" />
           </View>
-          <View style={s.headerActions}>
-            <TouchableOpacity style={s.iconBtn}>
-              <Ionicons name="notifications-outline" size={20} color="rgba(255,255,255,0.85)" />
-              {pending > 0 && <View style={s.notifDot} />}
-            </TouchableOpacity>
-          </View>
+          <Text style={styles.brandName}>WashAlert</Text>
         </View>
-
-        <View style={s.greetRow}>
-          <Text style={s.greetText}>{greeting},</Text>
-          <Text style={s.greetName}>{firstName} 👋</Text>
-          {error ? <Text style={s.errTxt}>{error}</Text> : null}
-        </View>
-
-        {/* Stats Row */}
-        <View style={s.statsRow}>
-          <View style={s.statTile}>
-            <Text style={s.statVal}>{tasks.length}</Text>
-            <Text style={s.statLabel}>Total</Text>
-          </View>
-          <View style={s.statDivider} />
-          <TouchableOpacity style={s.statTile} onPress={() => navigation.navigate('DriverActivityHistory')}>
-            <Text style={[s.statVal, { color:'#4ADE80' }]}>{completed}</Text>
-            <Text style={s.statLabel}>✅ Done</Text>
+        {/* Actions */}
+        <View style={styles.navActions}>
+          <TouchableOpacity style={styles.navBtn}>
+            <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.85)" />
           </TouchableOpacity>
-          <View style={s.statDivider} />
-          <View style={s.statTile}>
-            <Text style={[s.statVal, { color:'#FCD34D' }]}>{pending}</Text>
-            <Text style={s.statLabel}>🕐 Assigned</Text>
+          <TouchableOpacity style={styles.navBtn}>
+            <Ionicons name="notifications-outline" size={20} color="rgba(255,255,255,0.85)" />
+            {/* Notification dot */}
+            {pending > 0 && <View style={styles.notifDot} />}
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* ── Hero greeting inside nav (still dark) ────────────────────── */}
+      <View style={styles.heroSection}>
+        <Text style={styles.heroGreeting}>{greeting}, <Text style={styles.heroName}>{firstName} 👋</Text></Text>
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+        {/* Stat tiles */}
+        <View style={styles.tilesRow}>
+          <View style={styles.tile}>
+            <MaterialCommunityIcons name="package-variant-closed" size={20} color="rgba(255,255,255,0.7)" />
+            <Text style={styles.tileValue}>{tasks.length}</Text>
+            <Text style={styles.tileLabel}>Total</Text>
           </View>
-          <View style={s.statDivider} />
-          <View style={s.statTile}>
-            <Text style={[s.statVal, { color:'#60A5FA' }]}>{activeTasks.length}</Text>
-            <Text style={s.statLabel}>🚛 Active</Text>
+          <View style={styles.tile}>
+            <MaterialCommunityIcons name="check-circle-outline" size={20} color="#4ADE80" />
+            <Text style={[styles.tileValue, { color: '#4ADE80' }]}>{completed}</Text>
+            <Text style={styles.tileLabel}>Done</Text>
+          </View>
+          <View style={styles.tile}>
+            <MaterialCommunityIcons name="clock-outline" size={20} color="#FCD34D" />
+            <Text style={[styles.tileValue, { color: '#FCD34D' }]}>{pending}</Text>
+            <Text style={styles.tileLabel}>Assigned</Text>
           </View>
         </View>
       </View>
 
-      {/* Body */}
+      {/* ── White card body ──────────────────────────────────────────── */}
       <ScrollView
-        style={s.body}
-        contentContainerStyle={[s.bodyContent, { paddingBottom: 130 + insets.bottom }]}
+        style={styles.body}
+        contentContainerStyle={[styles.bodyContent, { paddingBottom: 120 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
+        }
       >
-        {/* Active Task Banner */}
-        {active && (
+        {/* Active banner */}
+        {active ? (
           <TouchableOpacity
-            style={s.activeBanner}
+            style={styles.activeBanner}
             onPress={() => navigation.navigate('DeliveryDetail', { deliveryId: active.id })}
-            activeOpacity={0.88}
+            activeOpacity={0.85}
           >
-            <View style={s.bannerPulseRow}>
-              <View style={s.pulseDot} />
-              <Text style={s.bannerLiveLabel}>ACTIVE TASK</Text>
-            </View>
-            <Text style={s.bannerCustomer}>{active.contactName || active.customerName}</Text>
-            <View style={s.bannerMeta}>
-              <Ionicons name="location-sharp" size={14} color={colors.accent} />
-              <Text style={s.bannerAddr} numberOfLines={1}>{active.deliveryAddress || 'Branch pickup'}</Text>
-            </View>
-            <View style={s.bannerFooter}>
-              <View style={[s.bannerBadge, { backgroundColor: getStatusCfg(active.status).bg }]}>
-                <Text style={[s.bannerBadgeTxt, { color: getStatusCfg(active.status).color }]}>
-                  {getStatusCfg(active.status).label}
-                </Text>
+            <View style={styles.bannerRow}>
+              <View style={styles.bannerMainInfo}>
+                <View style={styles.activeLabelRow}>
+                   <View style={styles.pulseDot} />
+                   <Text style={styles.activeLabelText}>ACTIVE TASK</Text>
+                </View>
+                <Text style={styles.bannerSubLabel}>PERSON TO MEET</Text>
+                <Text style={styles.bannerCustomer}>{active.contactName || active.customerName}</Text>
+                <View style={styles.bannerStatusBadge}>
+                   <Text style={styles.bannerStatusText}>{getStatusCfg(active.status).label}</Text>
+                </View>
               </View>
-              <View style={s.resumeBtn}>
-                <Ionicons name="play" size={14} color="#fff" />
-                <Text style={s.resumeTxt}>Resume</Text>
+              <View style={styles.bannerAction}>
+                 <View style={styles.resumeCircle}>
+                    <Ionicons name="play" size={20} color="#FFF" />
+                 </View>
+                 <Text style={styles.resumeLabel}>Resume</Text>
               </View>
+            </View>
+            <View style={styles.bannerDivider} />
+            <View style={styles.bannerFooter}>
+               <Ionicons name="location-sharp" size={14} color={colors.accent} />
+               <Text style={styles.bannerAddress} numberOfLines={1}>{active.deliveryAddress || 'Branch'}</Text>
             </View>
           </TouchableOpacity>
-        )}
+        ) : null}
 
-        {/* Active Tasks Section */}
-        <View style={s.sectionHeader}>
-          <Text style={s.sectionTitle}>Active Tasks ({activeTasks.length})</Text>
+        {/* Today's Deliveries */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Active Tasks</Text>
           <TouchableOpacity onPress={() => navigation.navigate('Deliveries')}>
-            <Text style={s.seeAll}>See All</Text>
+            <Text style={styles.seeAll}>See All</Text>
           </TouchableOpacity>
         </View>
 
-        {activeTasks.length === 0 ? (
-          <View style={s.emptyCard}>
-            <MaterialCommunityIcons name="truck-check-outline" size={48} color="#CBD5E1" />
-            <Text style={s.emptyTitle}>No Active Tasks</Text>
-            <Text style={s.emptyMsg}>You have no ongoing deliveries right now.</Text>
+        {!tasks.length ? (
+          <View style={styles.emptyCard}>
+            <MaterialCommunityIcons name="truck-check-outline" size={42} color={colors.border} />
+            <Text style={styles.emptyTitle}>All clear!</Text>
+            <Text style={styles.emptyMsg}>No delivery tasks assigned to you yet.</Text>
           </View>
         ) : (
-          activeTasks.map(item => {
-            const cfg = getStatusCfg(item.status);
-            return (
-              <TouchableOpacity
-                key={item.id}
-                style={s.taskCard}
-                onPress={() => navigation.navigate('DeliveryDetail', { deliveryId: item.id })}
-                activeOpacity={0.8}
-              >
-                <View style={[s.taskIconBox, { backgroundColor: cfg.bg }]}>
-                  <MaterialCommunityIcons name={cfg.icon} size={24} color={cfg.color} />
-                </View>
-                <View style={s.taskInfo}>
-                  <Text style={s.taskCustomer}>{item.contactName || item.customerName}</Text>
-                  <Text style={s.taskAddr} numberOfLines={1}>{item.deliveryAddress || 'Branch'}</Text>
-                  <View style={[s.taskBadge, { backgroundColor: cfg.bg }]}>
-                    <Text style={[s.taskBadgeTxt, { color: cfg.color }]}>{cfg.label}</Text>
-                  </View>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color="#CBD5E1" />
-              </TouchableOpacity>
-            );
-          })
-        )}
-
-        {/* Recent Completed */}
-        {recentCompleted.length > 0 && (
           <>
-            <View style={s.sectionHeader}>
-              <Text style={s.sectionTitle}>Recently Completed</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('DriverActivityHistory')}>
-                <Text style={s.seeAll}>View History →</Text>
+            {tasks.slice(0, visibleDeliveries).map((item) => {
+              const cfg = getStatusCfg(item.status);
+              const isCompleted = item.status === 'DELIVERED';
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.taskCard}
+                  onPress={() => item?.id && navigation.navigate('DeliveryDetail', { deliveryId: item.id })}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.taskCardTop}>
+                    <View style={styles.taskIconBox}>
+                       <MaterialCommunityIcons 
+                         name={isCompleted ? "check-circle" : "package-variant"} 
+                         size={22} 
+                         color={isCompleted ? "#4ADE80" : colors.primary} 
+                       />
+                    </View>
+                    <View style={styles.taskMeta}>
+                       <Text style={styles.taskCustomer}>{item.contactName || item.customerName}</Text>
+                       <Text style={styles.taskStatus}>{cfg.label}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color="#D1D5DB" />
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+            {tasks.length > visibleDeliveries && (
+              <TouchableOpacity
+                style={styles.loadMoreBtn}
+                onPress={() => setVisibleDeliveries((p) => p + 4)}
+              >
+                <Text style={styles.loadMoreText}>Load More Tasks</Text>
               </TouchableOpacity>
-            </View>
-            {recentCompleted.map(item => (
-              <View key={item.id} style={s.completedCard}>
-                <View style={s.completedIconBox}>
-                  <MaterialCommunityIcons name="check-decagram" size={22} color="#16A34A" />
-                </View>
-                <View style={s.taskInfo}>
-                  <Text style={s.taskCustomer}>{item.contactName || item.customerName}</Text>
-                  <Text style={s.taskAddr}>{item.deliveryAddress || 'Branch'}</Text>
-                </View>
-                <View style={s.doneBadge}>
-                  <Text style={s.doneBadgeTxt}>DONE</Text>
-                </View>
-              </View>
-            ))}
+            )}
           </>
         )}
-
-        {/* Quick Actions */}
-        <Text style={[s.sectionTitle, { marginTop: 20, marginBottom: 14 }]}>Quick Access</Text>
-        <View style={s.quickGrid}>
-          <TouchableOpacity style={s.quickCard} onPress={() => navigation.navigate('Deliveries')}>
-            <MaterialCommunityIcons name="truck-delivery" size={28} color={colors.primary} />
-            <Text style={s.quickLabel}>All Tasks</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={s.quickCard} onPress={() => navigation.navigate('DriverActivityHistory')}>
-            <MaterialCommunityIcons name="history" size={28} color="#059669" />
-            <Text style={s.quickLabel}>Activity{'\n'}History</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={s.quickCard} onPress={() => navigation.navigate('DriverProfile')}>
-            <MaterialCommunityIcons name="account-circle" size={28} color="#7C3AED" />
-            <Text style={s.quickLabel}>My Profile</Text>
-          </TouchableOpacity>
-        </View>
       </ScrollView>
     </View>
   );
-}
+};
 
-const s = StyleSheet.create({
-  root:        { flex:1, backgroundColor: NAV_BG },
-  loadScreen:  { flex:1, backgroundColor:NAV_BG, alignItems:'center', justifyContent:'center', gap:12 },
-  loadTxt:     { color:'rgba(255,255,255,0.7)', fontSize:14 },
-  header:      { backgroundColor:NAV_BG, paddingHorizontal:20, paddingBottom:24 },
-  headerTop:   { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:20 },
-  brandRow:    { flexDirection:'row', alignItems:'center', gap:12 },
-  logoBox:     { width:40, height:40, borderRadius:12, backgroundColor:'rgba(255,255,255,0.12)', alignItems:'center', justifyContent:'center' },
-  brandName:   { fontSize:17, fontWeight:'800', color:'#fff' },
-  brandSub:    { fontSize:11, color:'rgba(255,255,255,0.5)', marginTop:1 },
-  headerActions:{ flexDirection:'row', gap:8 },
-  iconBtn:     { width:38, height:38, borderRadius:10, backgroundColor:'rgba(255,255,255,0.1)', alignItems:'center', justifyContent:'center', position:'relative' },
-  notifDot:    { width:8, height:8, borderRadius:4, backgroundColor:'#FBBF24', position:'absolute', top:6, right:6, borderWidth:2, borderColor:NAV_BG },
-  greetRow:    { marginBottom:24 },
-  greetText:   { fontSize:13, color:'rgba(255,255,255,0.55)' },
-  greetName:   { fontSize:22, fontWeight:'900', color:'#fff', letterSpacing:-0.5 },
-  errTxt:      { fontSize:12, color:'#F87171', marginTop:4 },
-  statsRow:    { flexDirection:'row', backgroundColor:'rgba(255,255,255,0.07)', borderRadius:18, padding:16, borderWidth:1, borderColor:'rgba(255,255,255,0.08)' },
-  statTile:    { flex:1, alignItems:'center', gap:4 },
-  statDivider: { width:1, backgroundColor:'rgba(255,255,255,0.1)' },
-  statVal:     { fontSize:26, fontWeight:'900', color:'#fff' },
-  statLabel:   { fontSize:10, color:'rgba(255,255,255,0.5)', fontWeight:'600' },
-  body:        { flex:1, backgroundColor:'#F8FAFC', borderTopLeftRadius:28, borderTopRightRadius:28, marginTop:-16 },
-  bodyContent: { paddingTop:28, paddingHorizontal:20 },
-  activeBanner:{ backgroundColor:'#fff', borderRadius:22, padding:20, marginBottom:24, borderWidth:2, borderColor:colors.primary, shadowColor:colors.primary, shadowOffset:{width:0,height:6}, shadowOpacity:0.12, shadowRadius:16, elevation:6 },
-  bannerPulseRow:{ flexDirection:'row', alignItems:'center', gap:8, marginBottom:8 },
-  pulseDot:    { width:8, height:8, borderRadius:4, backgroundColor:colors.accent },
-  bannerLiveLabel:{ fontSize:10, fontWeight:'900', color:colors.accent, letterSpacing:1.5 },
-  bannerCustomer:{ fontSize:22, fontWeight:'900', color:colors.text, marginBottom:8 },
-  bannerMeta:  { flexDirection:'row', alignItems:'center', gap:6, marginBottom:14 },
-  bannerAddr:  { fontSize:13, color:'#64748B', flex:1 },
-  bannerFooter:{ flexDirection:'row', alignItems:'center', justifyContent:'space-between' },
-  bannerBadge: { paddingHorizontal:12, paddingVertical:6, borderRadius:10 },
-  bannerBadgeTxt:{ fontSize:12, fontWeight:'800' },
-  resumeBtn:   { flexDirection:'row', alignItems:'center', gap:6, backgroundColor:colors.accent, paddingHorizontal:16, paddingVertical:10, borderRadius:50 },
-  resumeTxt:   { fontSize:13, fontWeight:'800', color:'#fff' },
-  sectionHeader:{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:14 },
-  sectionTitle:{ fontSize:17, fontWeight:'800', color:colors.text },
-  seeAll:      { fontSize:13, fontWeight:'700', color:colors.accent },
-  emptyCard:   { backgroundColor:'#fff', borderRadius:18, padding:32, alignItems:'center', gap:10, borderWidth:1, borderColor:'#E2E8F0', marginBottom:24 },
-  emptyTitle:  { fontSize:16, fontWeight:'700', color:colors.text },
-  emptyMsg:    { fontSize:13, color:colors.textSecondary, textAlign:'center' },
-  taskCard:    { flexDirection:'row', alignItems:'center', backgroundColor:'#fff', borderRadius:18, padding:16, marginBottom:10, borderWidth:1, borderColor:'#E2E8F0', gap:14 },
-  taskIconBox: { width:52, height:52, borderRadius:14, alignItems:'center', justifyContent:'center' },
-  taskInfo:    { flex:1, gap:4 },
-  taskCustomer:{ fontSize:15, fontWeight:'800', color:colors.text },
-  taskAddr:    { fontSize:12, color:'#64748B' },
-  taskBadge:   { alignSelf:'flex-start', paddingHorizontal:10, paddingVertical:4, borderRadius:8 },
-  taskBadgeTxt:{ fontSize:11, fontWeight:'700' },
-  completedCard:{ flexDirection:'row', alignItems:'center', backgroundColor:'#fff', borderRadius:18, padding:16, marginBottom:10, borderWidth:1, borderColor:'#E2E8F0', gap:14 },
-  completedIconBox:{ width:48, height:48, borderRadius:14, backgroundColor:'#F0FDF4', alignItems:'center', justifyContent:'center' },
-  doneBadge:   { backgroundColor:'#DCFCE7', paddingHorizontal:10, paddingVertical:5, borderRadius:8 },
-  doneBadgeTxt:{ fontSize:11, fontWeight:'900', color:'#16A34A' },
-  quickGrid:   { flexDirection:'row', gap:12, marginBottom:20 },
-  quickCard:   { flex:1, backgroundColor:'#fff', borderRadius:18, padding:18, alignItems:'center', gap:10, borderWidth:1, borderColor:'#E2E8F0' },
-  quickLabel:  { fontSize:12, fontWeight:'700', color:colors.text, textAlign:'center' },
+// ─── Styles ───────────────────────────────────────────────────────────────────
+const NAV_BG = '#0F2044'; // deep navy — matches customer home header
+
+const styles = StyleSheet.create({
+  root:         { flex: 1, backgroundColor: NAV_BG },
+  loadingScreen:{ flex: 1, backgroundColor: NAV_BG, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  loadingText:  { fontSize: 14, color: 'rgba(255,255,255,0.7)' },
+
+  // ── Nav bar ──────────────────────────────────────────────────────────────
+  navBar:{
+    flexDirection:'row', alignItems:'center', justifyContent:'space-between',
+    paddingHorizontal:20, paddingBottom:8,
+    backgroundColor: NAV_BG,
+  },
+  brandRow:   { flexDirection:'row', alignItems:'center', gap:10 },
+  logoBox:{
+    width:36, height:36, borderRadius:10,
+    backgroundColor:'rgba(255,255,255,0.12)',
+    alignItems:'center', justifyContent:'center',
+  },
+  brandName:  { fontSize:18, fontWeight:'800', color:'#fff', letterSpacing:0.2 },
+  navActions: { flexDirection:'row', alignItems:'center', gap:6 },
+  navBtn:{
+    width:36, height:36, borderRadius:10,
+    backgroundColor:'rgba(255,255,255,0.1)',
+    alignItems:'center', justifyContent:'center',
+    position:'relative',
+  },
+  notifDot:{
+    width:7, height:7, borderRadius:4,
+    backgroundColor:'#FBBF24',
+    position:'absolute', top:6, right:6,
+    borderWidth:1.5, borderColor:NAV_BG,
+  },
+
+  // ── Hero greeting + tiles ─────────────────────────────────────────────────
+  heroSection:{
+    backgroundColor: NAV_BG,
+    paddingHorizontal:20, paddingBottom:32, paddingTop:12,
+  },
+  heroGreeting:{ fontSize:14, color:'rgba(255,255,255,0.6)', marginBottom:2 },
+  heroName:   { fontSize:14, fontWeight:'700', color:'#fff' },
+  errorText:  { fontSize:12, color:'#F87171', marginTop:4 },
+
+  tilesRow:{ flexDirection:'row', gap:10, marginTop:18 },
+  tile:{
+    flex:1, backgroundColor:'rgba(255,255,255,0.08)',
+    borderRadius:16, paddingVertical:16,
+    alignItems:'center', gap:6,
+    borderWidth:1, borderColor:'rgba(255,255,255,0.1)',
+  },
+  tileValue:{ fontSize:24, fontWeight:'900', color:'#fff' },
+  tileLabel:{ fontSize:10, fontWeight:'600', color:'rgba(255,255,255,0.5)', letterSpacing:0.3 },
+
+  // ── White body ────────────────────────────────────────────────────────────
+  body:{ flex:1, backgroundColor:'#F5F7FA', borderTopLeftRadius:28, borderTopRightRadius:28, marginTop:-20 },
+  bodyContent:{ paddingTop:24, paddingHorizontal:20 },
+
+  // Available / active banner
+  // Active Task Banner
+  activeBanner: {
+    backgroundColor: '#FFF',
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 24,
+    elevation: 8,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.03)',
+  },
+  bannerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  bannerMainInfo: { flex: 1 },
+  activeLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  pulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.accent,
+  },
+  activeLabelText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: colors.accent,
+    letterSpacing: 1.2,
+  },
+  bannerSubLabel: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  bannerCustomer: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: colors.text,
+    marginBottom: 6,
+  },
+  bannerStatusBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.accentLight,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  bannerStatusText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.accent,
+  },
+  bannerAction: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  resumeCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: colors.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  resumeLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.accent,
+  },
+  bannerDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 16,
+  },
+  bannerFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  bannerAddress: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '500',
+    flex: 1,
+  },
+
+  // Section
+  sectionHeader:{
+    flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:12,
+  },
+  sectionTitle:{ fontSize:18, fontWeight:'800', color: colors.text },
+  seeAll:{ fontSize:13, fontWeight:'600', color: colors.accent },
+
+  // Empty
+  emptyCard:{
+    backgroundColor:'#fff', borderRadius:16, padding:32,
+    alignItems:'center', borderWidth:1, borderColor:'rgba(0,0,0,0.06)', gap:8,
+  },
+  emptyTitle:{ fontSize:15, fontWeight:'700', color: colors.text },
+  emptyMsg:{ fontSize:13, color: colors.textSecondary, textAlign:'center' },
+
+  // Task Card
+  taskCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.04)',
+  },
+  taskCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  taskIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taskMeta: { flex: 1 },
+  taskCustomer: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  taskStatus: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+
+  // Load more
+  loadMoreBtn:{
+    borderRadius:12, borderWidth:1, borderColor:'rgba(0,0,0,0.08)',
+    backgroundColor:'#fff', paddingVertical:13, alignItems:'center', marginTop:2,
+  },
+  loadMoreText:{ fontSize:13, fontWeight:'700', color: colors.primary },
 });
+
+export default DriverDashboardScreen;

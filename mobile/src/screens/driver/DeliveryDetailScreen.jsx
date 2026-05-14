@@ -759,54 +759,6 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             <Text style={styles.codAmountText}>PHP {delivery.finalPrice?.toLocaleString() || delivery.amount?.toLocaleString()}</Text>
           </View>
         )}
-
-        {/* Detailed Order Breakdown for Driver */}
-        <View style={styles.orderSummaryCard}>
-          <View style={styles.summaryHeader}>
-             <Ionicons name="receipt-outline" size={16} color={colors.primary} />
-             <Text style={styles.summaryTitle}>ORDER SUMMARY</Text>
-          </View>
-          
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryKey}>Service</Text>
-            <Text style={styles.summaryVal}>{delivery.serviceName || delivery.serviceType}</Text>
-          </View>
-          
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryKey}>Actual Weight</Text>
-            <Text style={[styles.summaryVal, {fontWeight:'900', color:colors.primary}]}>
-              {delivery.actualWeightKg ? `${delivery.actualWeightKg} kg` : (delivery.estimatedWeightKg ? `~${delivery.estimatedWeightKg} kg (Est)` : 'TBD')}
-            </Text>
-          </View>
-
-          {delivery.detergent && delivery.detergent !== 'None' && (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryKey}>Detergent</Text>
-              <Text style={styles.summaryVal}>{delivery.detergent} (x{delivery.detergentQuantity || 1})</Text>
-            </View>
-          )}
-
-          {delivery.conditioner && delivery.conditioner !== 'None' && (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryKey}>Fabcon</Text>
-              <Text style={styles.summaryVal}>{delivery.conditioner} (x{delivery.conditionerQuantity || 1})</Text>
-            </View>
-          )}
-
-          <View style={styles.summaryDivider} />
-          
-          <View style={styles.summaryTotalRow}>
-             <Text style={styles.summaryTotalKey}>GRAND TOTAL</Text>
-             <View style={{alignItems:'flex-end'}}>
-                <Text style={styles.summaryTotalVal}>₱{(delivery.finalPrice || delivery.amount || 0).toFixed(2)}</Text>
-                <View style={[styles.payStatusBadge, { backgroundColor: delivery.isPaid ? '#DCFCE7' : '#FEE2E2' }]}>
-                   <Text style={[styles.payStatusTxt, { color: delivery.isPaid ? '#16A34A' : '#EF4444' }]}>
-                      {delivery.isPaid ? 'PAID / GCASH' : 'UNPAID / COLLECT CASH'}
-                   </Text>
-                </View>
-             </View>
-          </View>
-        </View>
       </View>
     );
   };
@@ -2356,18 +2308,6 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '900',
   },
-  summaryHeader: { flexDirection:'row', alignItems:'center', gap:8, marginBottom:12 },
-  summaryTitle: { fontSize:12, fontWeight:'900', color:colors.primary, letterSpacing:1 },
-  orderSummaryCard: { backgroundColor:'#F8FAFC', borderRadius:20, padding:16, marginTop:16, borderWidth:1, borderColor:'#E2E8F0' },
-  summaryRow: { flexDirection:'row', justifyContent:'space-between', marginBottom:8 },
-  summaryKey: { fontSize:13, color:'#64748B', fontWeight:'500' },
-  summaryVal: { fontSize:13, color:colors.text, fontWeight:'700', textAlign:'right', flex:1, marginLeft:12 },
-  summaryDivider: { height:1, backgroundColor:'#E2E8F0', marginVertical:12 },
-  summaryTotalRow: { flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
-  summaryTotalKey: { fontSize:14, fontWeight:'900', color:colors.text },
-  summaryTotalVal: { fontSize:22, fontWeight:'900', color:colors.primary },
-  payStatusBadge: { paddingHorizontal:8, paddingVertical:4, borderRadius:6, marginTop:4 },
-  payStatusTxt: { fontSize:10, fontWeight:'900', letterSpacing:0.5 },
 });
 
 export default DeliveryDetailScreen;

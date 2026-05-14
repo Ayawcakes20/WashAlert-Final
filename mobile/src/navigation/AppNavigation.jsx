@@ -45,7 +45,6 @@ import DriverDashboardScreen from '../screens/driver/DriverDashboardScreen';
 import DriverDeliveriesScreen from '../screens/driver/DriverDeliveriesScreen';
 import DeliveryDetailScreen from '../screens/driver/DeliveryDetailScreen';
 import DriverProfileScreen from '../screens/driver/DriverProfileScreen';
-import DriverActivityHistoryScreen from '../screens/driver/DriverActivityHistoryScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -338,7 +337,6 @@ const DriverStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="DriverTabs"     component={DriverTabs} />
     <Stack.Screen name="DeliveryDetail" component={DeliveryDetailScreen} options={{ headerShown: false }} />
-    <Stack.Screen name="DriverActivityHistory" component={DriverActivityHistoryScreen} options={{ headerShown: false }} />
     <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={stackHeader('Change Password')} />
     <Stack.Screen name="Chat"           component={ChatScreen}           options={{ headerShown: false }} />
     <Stack.Screen name="TermsAndConditions" component={TermsAndConditionsScreen} options={stackHeader('Terms & Conditions')} />
