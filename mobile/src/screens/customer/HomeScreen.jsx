@@ -356,7 +356,6 @@ export default function HomeScreen({ navigation }) {
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
-import { StyleSheet } from 'react-native';
 const NAV = '#0F2044';
 const cs = StyleSheet.create({
   root:   { flex:1, backgroundColor: NAV },
