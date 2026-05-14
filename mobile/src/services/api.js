@@ -219,12 +219,12 @@ export const SERVICE_CATALOG = [
   },
 ];
 
-const DETERGENT_OPTIONS = [
+export const DETERGENT_OPTIONS = [
   { name: 'Surf detergent', price: 25 },
   { name: 'Ariel detergent', price: 30 },
   { name: 'None', price: 0 }
 ];
-const CONDITIONER_OPTIONS = [
+export const CONDITIONER_OPTIONS = [
   { name: 'Charm fabcon', price: 15 },
   { name: 'Downy fabcon', price: 25 },
   { name: 'None', price: 0 }
