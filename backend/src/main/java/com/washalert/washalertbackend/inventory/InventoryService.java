@@ -39,6 +39,22 @@ public class InventoryService {
     private static final BigDecimal FORECAST_CONDITIONER_PER_KG = new BigDecimal("0.02");
     private static final BigDecimal DEFAULT_ORDER_WEIGHT_KG = new BigDecimal("5.00");
 
+    private static final java.util.Map<String, String> CANONICAL_ITEM_NAMES = new java.util.LinkedHashMap<>() {{
+        put("surf", "Surf Detergent");
+        put("ariel", "Ariel Detergent");
+        put("charm", "Charm Fabric Conditioner");
+        put("downy", "Downy Fabric Conditioner");
+    }};
+
+    private String normalizeItemName(String rawName) {
+        if (rawName == null) return rawName;
+        String lower = rawName.trim().toLowerCase(java.util.Locale.ROOT);
+        for (java.util.Map.Entry<String, String> entry : CANONICAL_ITEM_NAMES.entrySet()) {
+            if (lower.contains(entry.getKey())) return entry.getValue();
+        }
+        return rawName.trim();
+    }
+
     private final InventoryItemRepository itemRepository;
     private final InventoryMovementRepository movementRepository;
     private final JobOrderRepository jobOrderRepository;
@@ -96,7 +112,7 @@ public class InventoryService {
 
             InventoryItem item = InventoryItem.builder()
                     .branch(req.branch().trim())
-                    .itemName(req.itemName().trim())
+                    .itemName(normalizeItemName(req.itemName()))
                     .category(req.category().trim())
                     .unit(req.unit().trim())
                     .currentStock(req.currentStock())
@@ -131,7 +147,7 @@ public class InventoryService {
                 .orElseThrow(() -> new IllegalArgumentException("Inventory item not found."));
 
         String branch = req.branch().trim();
-        String itemName = req.itemName().trim();
+        String itemName = normalizeItemName(req.itemName());
 
         itemRepository.findByBranchIgnoreCaseAndItemNameIgnoreCase(branch, itemName)
                 .ifPresent(existing -> {
@@ -225,8 +241,10 @@ public class InventoryService {
         String branch = order.getBranch().trim();
         String actor = "system";
 
-        deductConsumable(branch, order.getDetergentPreference(), order.getTrackingNumber(), actor);
-        deductConsumable(branch, order.getFabricConditionerPreference(), order.getTrackingNumber(), actor);
+        int detQty = (order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0) ? order.getDetergentQuantity() : 1;
+        int conQty = (order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0) ? order.getConditionerQuantity() : 1;
+        deductConsumable(branch, order.getDetergentPreference(), detQty, order.getTrackingNumber(), actor);
+        deductConsumable(branch, order.getFabricConditionerPreference(), conQty, order.getTrackingNumber(), actor);
     }
 
     private String resolveInventoryItemName(String preference) {
@@ -239,7 +257,7 @@ public class InventoryService {
         return preference.trim();
     }
 
-    private void deductConsumable(String branch, String itemName, String trackingNumber, String actor) {
+    private void deductConsumable(String branch, String itemName, int qty, String trackingNumber, String actor) {
         if (itemName == null || itemName.isBlank()) return;
         try {
             String resolvedName = resolveInventoryItemName(itemName);
@@ -250,7 +268,8 @@ public class InventoryService {
                 log.warn("[INVENTORY] Deduct skipped — item '{}' (resolved: '{}') not found in branch '{}'", itemName, resolvedName, branch);
                 return;
             }
-            BigDecimal next = item.getCurrentStock().subtract(BigDecimal.ONE);
+            BigDecimal deductAmount = BigDecimal.valueOf(qty);
+            BigDecimal next = item.getCurrentStock().subtract(deductAmount);
             if (next.compareTo(BigDecimal.ZERO) < 0) {
                 log.warn("[INVENTORY] Deduct skipped — negative stock would result for '{}' in '{}'", itemName, branch);
                 return;
@@ -260,7 +279,7 @@ public class InventoryService {
             InventoryItem saved = itemRepository.save(item);
             InventoryMovement movement = InventoryMovement.builder()
                     .inventoryItem(saved)
-                    .quantityDelta(BigDecimal.ONE.negate())
+                    .quantityDelta(deductAmount.negate())
                     .reason("Order: " + trackingNumber)
                     .performedBy(actor)
                     .build();
@@ -303,6 +322,8 @@ public class InventoryService {
                 daysUntilStockout = item.currentStock().divide(dailyUsage, 2, RoundingMode.HALF_UP);
             }
 
+            String narrative = buildForecastNarrative(item.itemName(), item.branch(), item.currentStock(),
+                    item.reorderLevel(), dailyUsage, daysUntilStockout, horizonDays);
             return new InventoryForecastResponse(
                     item.id(),
                     item.branch(),
@@ -310,9 +331,37 @@ public class InventoryService {
                     item.currentStock(),
                     dailyUsage,
                     projected,
-                    daysUntilStockout
+                    daysUntilStockout,
+                    narrative
             );
         }).toList();
+    }
+
+    private String buildForecastNarrative(
+            String itemName, String branch, BigDecimal currentStock,
+            BigDecimal reorderLevel, BigDecimal dailyUsage,
+            BigDecimal daysUntilStockout, int horizonDays) {
+        if (dailyUsage == null || dailyUsage.compareTo(BigDecimal.ZERO) == 0) {
+            return itemName + " at " + branch + " shows no recent usage. No restock action needed.";
+        }
+        if (daysUntilStockout == null) {
+            return itemName + " at " + branch + " has sufficient stock for the foreseeable future.";
+        }
+        int daysLeft = daysUntilStockout.intValue();
+        if (currentStock != null && reorderLevel != null && currentStock.compareTo(reorderLevel) <= 0) {
+            long restockQty = Math.max(10, reorderLevel.multiply(new BigDecimal("2")).longValue() - currentStock.longValue());
+            return itemName + " at " + branch + " has ALREADY reached the reorder level (" + currentStock.stripTrailingZeros().toPlainString() + " remaining). " +
+                   "Recommended immediate restock: " + restockQty + " units.";
+        }
+        if (daysLeft <= horizonDays) {
+            long restockQty = Math.max(10, reorderLevel != null
+                    ? reorderLevel.multiply(new BigDecimal("2")).longValue()
+                    : 20L);
+            return itemName + " at " + branch + " is projected to reach critical level in " + daysLeft + " day(s). " +
+                   "Estimated daily usage: " + dailyUsage.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString() + " units/day. " +
+                   "Recommended restock: " + restockQty + " units.";
+        }
+        return itemName + " at " + branch + " is sufficient for the next " + daysLeft + " day(s). Monitor regularly.";
     }
 
     private Map<String, BranchConsumableUsage> buildBranchConsumableUsage(List<JobOrder> orders) {

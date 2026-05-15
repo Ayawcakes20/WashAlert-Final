@@ -9,6 +9,7 @@ public record InventoryForecastResponse(
         BigDecimal currentStock,
         BigDecimal estimatedDailyUsage,
         BigDecimal projectedStockAfterDays,
-        BigDecimal estimatedDaysUntilStockout
+        BigDecimal estimatedDaysUntilStockout,
+        String narrative
 ) {
 }
