@@ -81,6 +81,49 @@ public class InventoryService {
         this.notificationService = notificationService;
     }
 
+    /**
+     * Validates that sufficient stock exists for a single consumable at the given branch.
+     * Does NOT deduct stock — validation only.
+     *
+     * @throws IllegalArgumentException with a clear user-facing message if stock is insufficient
+     */
+    public void validateConsumableAvailability(String branch, String rawItemName, int requiredQty) {
+        if (rawItemName == null || rawItemName.isBlank()) return;
+        String lower = rawItemName.trim().toLowerCase(Locale.ROOT);
+        if (lower.equals("none") || lower.equals("no detergent") || lower.equals("no fabric conditioner")) return;
+        if (requiredQty <= 0) return;
+
+        String resolvedName = resolveInventoryItemName(rawItemName);
+        InventoryItem item = itemRepository
+                .findByBranchIgnoreCaseAndItemNameIgnoreCase(branch.trim(), resolvedName)
+                .orElse(null);
+
+        BigDecimal required = BigDecimal.valueOf(requiredQty);
+        BigDecimal available = (item != null && item.getCurrentStock() != null)
+                ? item.getCurrentStock() : BigDecimal.ZERO;
+
+        if (available.compareTo(required) < 0) {
+            String availableStr = available.stripTrailingZeros().toPlainString();
+            throw new IllegalArgumentException(
+                    "Insufficient inventory at this branch. " + resolvedName +
+                    " requires " + requiredQty + " pack(s) but only " +
+                    availableStr + " are available. Please contact the branch or choose a different product.");
+        }
+    }
+
+    /**
+     * Validates both detergent and fabric conditioner availability before a booking or status change.
+     * Does NOT deduct stock — validation only.
+     *
+     * @throws IllegalArgumentException if either consumable has insufficient stock
+     */
+    public void validateSuppliesForBooking(String branch, String detergent, String conditioner,
+                                           int detQty, int conQty) {
+        if (branch == null || branch.isBlank()) return;
+        validateConsumableAvailability(branch, detergent, detQty);
+        validateConsumableAvailability(branch, conditioner, conQty);
+    }
+
     public List<InventoryItemResponse> list(String branch, AuthUserDetails principal) {
         User actor = principal.getUser();
         String effectiveBranch = resolveEffectiveBranch(branch, actor);

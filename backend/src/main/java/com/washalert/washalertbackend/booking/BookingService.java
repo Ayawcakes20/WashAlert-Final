@@ -12,6 +12,7 @@ import com.washalert.washalertbackend.orders.JobOrderStatus;
 import com.washalert.washalertbackend.orders.JobOrderTimelineService;
 import com.washalert.washalertbackend.orders.ServiceType;
 import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
+import com.washalert.washalertbackend.inventory.InventoryService;
 import com.washalert.washalertbackend.notification.NotificationService;
 import com.washalert.washalertbackend.payment.PaymentStatus;
 import com.washalert.washalertbackend.user.Role;
@@ -44,6 +45,7 @@ public class BookingService {
     private final JobOrderTimelineService timelineService;
     private final NotificationService notificationService;
     private final PricingService pricingService;
+    private final InventoryService inventoryService;
 
     public BookingService(
             JobOrderRepository jobOrderRepository,
@@ -52,7 +54,8 @@ public class BookingService {
             DeliveryOrderRepository deliveryOrderRepository,
             JobOrderTimelineService timelineService,
             NotificationService notificationService,
-            PricingService pricingService
+            PricingService pricingService,
+            InventoryService inventoryService
     ) {
         this.jobOrderRepository = jobOrderRepository;
         this.machineRepository = machineRepository;
@@ -61,6 +64,7 @@ public class BookingService {
         this.timelineService = timelineService;
         this.notificationService = notificationService;
         this.pricingService = pricingService;
+        this.inventoryService = inventoryService;
     }
 
     public List<BookingSlotResponse> getAvailableSlots(String branch, LocalDate date) {
@@ -148,6 +152,16 @@ public class BookingService {
                 ? req.detergentQuantity() : computedLoads;
         int conQty = (req.conditionerQuantity() != null && req.conditionerQuantity() > 0)
                 ? req.conditionerQuantity() : computedLoads;
+
+        // Validate inventory availability before committing the booking.
+        // Does NOT deduct stock — deduction happens when order reaches WASHING.
+        inventoryService.validateSuppliesForBooking(
+                cleanBranch,
+                req.detergentPreference(),
+                req.fabricConditionerPreference(),
+                detQty,
+                conQty
+        );
 
         JobOrder order = JobOrder.builder()
                 .trackingNumber("TMP-" + UUID.randomUUID())

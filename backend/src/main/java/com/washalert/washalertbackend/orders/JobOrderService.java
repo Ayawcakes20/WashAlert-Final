@@ -357,6 +357,18 @@ public class JobOrderService {
             }
             jo.setStatus(req.status());
             if (req.status() == JobOrderStatus.WASHING) {
+                // Re-validate availability in case stock changed since booking was created.
+                int detQty = (jo.getDetergentQuantity() != null && jo.getDetergentQuantity() > 0)
+                        ? jo.getDetergentQuantity() : 1;
+                int conQty = (jo.getConditionerQuantity() != null && jo.getConditionerQuantity() > 0)
+                        ? jo.getConditionerQuantity() : 1;
+                inventoryService.validateSuppliesForBooking(
+                        jo.getBranch(),
+                        jo.getDetergentPreference(),
+                        jo.getFabricConditionerPreference(),
+                        detQty,
+                        conQty
+                );
                 inventoryService.deductForOrder(jo);
             }
             timelineService.log(jo, jo.getStatus(), actor.getEmail(), "Status updated by staff/admin");
