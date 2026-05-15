@@ -99,6 +99,8 @@ public class SecurityConfig {
                                 "/api/bookings",
                                 "/api/payments/checkout/**",
                                 "/api/support/chat",
+                                "/api/orders/**",
+                                "/api/deliveries/**",
                                 "/oauth2/**",
                                 "/login/oauth2/**"
                         )

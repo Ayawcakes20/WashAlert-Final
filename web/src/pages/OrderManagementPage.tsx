@@ -13,14 +13,11 @@ import {
   Pencil,
   Phone,
   Plus,
-  Receipt,
   RefreshCw,
   Scale,
   Search,
-  Send,
   Trash2,
   User,
-  Zap,
 } from "lucide-react";
 
 import {
@@ -32,6 +29,7 @@ import {
   type UpdateOrderPayload,
   type UserAdminRecord,
 } from "@/lib/api";
+import { FinalizeWeightModal, type FinalizeOrderData } from "@/components/FinalizeWeightModal";
 import logoLaundryHubs from "@/assets/logo-laundryhubs.webp";
 import logoSpeedyWash from "@/assets/logo-speedywash.webp";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -180,7 +178,7 @@ const statusBadgeVariant = (status: ApiOrderStatus): "default" | "secondary" | "
 
 const renderStatusBadge = (status: ApiOrderStatus) => {
   const label = statusLabel[status] || status;
-  
+
   if (status === "WASHING" || status === "DRYING") {
     return (
       <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 border border-blue-100 w-fit">
@@ -189,7 +187,7 @@ const renderStatusBadge = (status: ApiOrderStatus) => {
       </div>
     );
   }
-  
+
   if (status === "PRICE_CONFIRMED") {
     return (
       <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 text-amber-700 border border-amber-100 w-fit">
@@ -311,12 +309,12 @@ const mapOrder = (order: JobOrderResponse): Order => ({
 const formatDateTime = (timestamp?: string) =>
   timestamp
     ? new Date(timestamp).toLocaleString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "2-digit",
-        hour: "numeric",
-        minute: "2-digit",
-      })
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "numeric",
+      minute: "2-digit",
+    })
     : "-";
 
 const normalizePaymentMethod = (value?: string | null) => (value || "").trim().toUpperCase();
@@ -401,9 +399,7 @@ export default function OrderManagementPage() {
   const [setPriceOpen, setSetPriceOpen] = useState(false);
   const [setPriceOrderId, setSetPriceOrderId] = useState<number | null>(null);
   const [setPriceSubmitting, setSetPriceSubmitting] = useState(false);
-  const [setPriceForm, setSetPriceForm] = useState({ actualWeightKg: "", finalPrice: "", deliveryFee: "" });
   const [showReceiptPreview, setShowReceiptPreview] = useState(false);
-  const [loadType, setLoadType] = useState<'PURE_CLOTHES' | 'WITH_TOWELS'>('PURE_CLOTHES');
 
   // Rider Assignment state
   const [assignRiderOpen, setAssignRiderOpen] = useState(false);
@@ -447,7 +443,7 @@ export default function OrderManagementPage() {
       setAssignRiderOpen(false);
       setSelectedDriverId("");
       await loadOrders(Math.max(0, ordersPage - 1), true);
-      
+
       // Update side panel if needed
       if (selectedOrder && selectedOrder.id === assignRiderOrderId) {
         const refreshed = await ordersApi.getById(assignRiderOrderId);
@@ -460,126 +456,25 @@ export default function OrderManagementPage() {
     }
   };
 
-  // ── Pricing helpers ──────────────────────────────────────────────
-  const getMaxKgPerLoad = (lt: 'PURE_CLOTHES' | 'WITH_TOWELS') => lt === 'PURE_CLOTHES' ? 8 : 7;
-
-  const getDetergentPricePerPack = (name?: string) => {
-    if (!name || name.toLowerCase() === 'none') return 0;
-    return name.toLowerCase().includes('ariel') ? 30 : 25;
-  };
-
-  const getConditionerPricePerPack = (name?: string) => {
-    if (!name || name.toLowerCase() === 'none') return 0;
-    return name.toLowerCase().includes('downy') ? 25 : 15;
-  };
-
-  const computeOrderPricing = (
-    order: Order,
-    actualKg: number,
-    lt: 'PURE_CLOTHES' | 'WITH_TOWELS',
-    deliveryFee: number
-  ) => {
-    const name = order.serviceName?.toLowerCase() || '';
-    const maxKgPerLoad = getMaxKgPerLoad(lt);
-    const isHandwash = name.includes('handwash');
-    let numberOfLoads = 1;
-    let pricePerLoad = 0;
-    let serviceTotal = 0;
-
-    if (isHandwash) {
-      pricePerLoad = actualKg <= 3 ? 150 : 90;
-      serviceTotal = pricePerLoad * actualKg;
-      numberOfLoads = 1;
-    } else {
-      // Machine absolute limit is 9kg
-      const absoluteMaxPerLoad = 9;
-      numberOfLoads = Math.ceil(actualKg / absoluteMaxPerLoad);
-      
-      if (name.includes('ecowash')) pricePerLoad = 220;
-      else if (name.includes('dry') && !name.includes('full')) pricePerLoad = 90;
-      else if (name.includes('wash') && !name.includes('full') && !name.includes('eco')) pricePerLoad = 80;
-      else if (name.includes('basic full')) pricePerLoad = lt === 'PURE_CLOTHES' ? 245 : 240;
-      else if (name.includes('premium full')) pricePerLoad = lt === 'PURE_CLOTHES' ? 275 : 270;
-      else pricePerLoad = lt === 'PURE_CLOTHES' ? 245 : 240;
-      
-      serviceTotal = pricePerLoad * numberOfLoads;
-    }
-
-    // Madness: Charge ₱50 per kg for weight exceeding the base service limit (7kg or 8kg)
-    const baseTotalCapacity = numberOfLoads * maxKgPerLoad;
-    const madnessKg = Math.max(0, actualKg - baseTotalCapacity);
-    const madnessFee = Math.round(madnessKg * 50);
-
-    const detPPP = getDetergentPricePerPack(order.detergent);
-    const detQty = order.detergentQuantity || 0;
-    const detCost = detPPP * detQty;
-
-    const conPPP = getConditionerPricePerPack(order.conditioner);
-    const conQty = order.conditionerQuantity || 0;
-    const conCost = conPPP * conQty;
-
-    const isRush = (order.rushPrice || 0) > 0;
-    const rushFee = isRush ? 150 * numberOfLoads : 0;
-    
-    // Panel Requirement: Transparency for fees
-    const pickupFee = (order.serviceType === 'PICKUP_DELIVERY' && !name.includes('full')) ? 25 : 0;
-    const convenienceFee = 20; // Online booking fee
-    
-    // System Fee: usually 2% or a flat rate. I'll use 2% of subtotal as a placeholder or a flat ₱10
-    const subtotal = serviceTotal + madnessFee + detCost + conCost + rushFee + deliveryFee + pickupFee + convenienceFee;
-    const systemFee = Math.round(subtotal * 0.02); 
-    
-    const grandTotal = subtotal + systemFee;
-
-    return { 
-      numberOfLoads, 
-      pricePerLoad, 
-      serviceTotal, 
-      madnessFee, 
-      madnessKg, 
-      detPPP, 
-      detQty, 
-      detCost, 
-      conPPP, 
-      conQty, 
-      conCost, 
-      rushFee, 
-      deliveryFee,
-      pickupFee,
-      convenienceFee,
-      systemFee,
-      grandTotal, 
-      maxKgPerLoad, 
-      isHandwash, 
-      isRush 
-    };
-  };
+  // Pricing helpers moved to @/lib/pricingUtils — computeOrderPricing is imported via FinalizeWeightModal
 
   const openSetPriceModal = (order: Order) => {
     setSetPriceOrderId(order.id);
-    setSetPriceForm({
-      actualWeightKg: order.actualWeightKg?.toString() || "",
-      finalPrice: "",
-      deliveryFee: order.serviceType === 'PICKUP_DELIVERY' ? "50" : "0",
-    });
-    setLoadType('PURE_CLOTHES');
     setSetPriceOpen(true);
   };
 
-  const submitSetPrice = async () => {
+  const submitSetPrice = async (params: {
+    actualWeightKg: number;
+    finalPrice: number;
+    deliveryFee: number;
+  }) => {
     if (!setPriceOrderId) return;
-    const kg = parseFloat(setPriceForm.actualWeightKg);
-    const delFee = parseFloat(setPriceForm.deliveryFee || "0");
-    if (!kg || kg < 5) { toast.error("Minimum order weight is 5 kg."); return; }
-    const o = orders.find(x => x.id === setPriceOrderId);
-    if (!o) return;
-    const pricing = computeOrderPricing(o, kg, loadType, delFee);
     setSetPriceSubmitting(true);
     try {
       await ordersApi.setActualWeight(setPriceOrderId, {
-        actualWeightKg: kg,
-        finalPrice: pricing.grandTotal,
-        deliveryFee: delFee,
+        actualWeightKg: params.actualWeightKg,
+        finalPrice: params.finalPrice,
+        deliveryFee: params.deliveryFee,
       });
       toast.success("✓ Receipt sent to customer");
       setSetPriceOpen(false);
@@ -837,7 +732,10 @@ export default function OrderManagementPage() {
 
   useEffect(() => {
     let active = true;
-    const pickupDeliveryOrders = orders.filter((order) => order.serviceType === "PICKUP_DELIVERY");
+    const pickupDeliveryOrders = orders.filter((order) => 
+      order.serviceType === "PICKUP_DELIVERY" && 
+      !["PENDING", "ORDER_RECEIVED", "WASHING", "DRYING"].includes(order.status)
+    );
     if (pickupDeliveryOrders.length === 0) {
       setDeliveryMetaByTracking({});
       return () => {
@@ -1095,9 +993,8 @@ export default function OrderManagementPage() {
                   : "-";
                 const nextStatuses = getAllowedStatusTransitions(order.status);
                 return (
-                  <tr key={order.id} className={`group hover:bg-slate-50/80 transition-all duration-200 ${
-                    isEscalated(order) ? "bg-red-50/50" : ""
-                  }`}>
+                  <tr key={order.id} className={`group hover:bg-slate-50/80 transition-all duration-200 ${isEscalated(order) ? "bg-red-50/50" : ""
+                    }`}>
                     <td className="p-5">
                       <div className="font-black text-brand-navy tabular-nums mb-0.5">{order.orderId}</div>
                       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{formatDateTime(order.createdAt)}</div>
@@ -1148,26 +1045,26 @@ export default function OrderManagementPage() {
                         )}
                         <div className="flex items-center gap-1.5">
                           {(order.paymentMethod?.toUpperCase().includes('GCASH')) ? (
-                             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-blue-50 border border-blue-100 shadow-sm">
-                               <div className="h-1.5 w-1.5 rounded-full bg-blue-500 shadow-[0_0_5px_rgba(59,130,246,0.5)]" />
-                               <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest">GCash</span>
-                             </div>
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-blue-50 border border-blue-100 shadow-sm">
+                              <div className="h-1.5 w-1.5 rounded-full bg-blue-500 shadow-[0_0_5px_rgba(59,130,246,0.5)]" />
+                              <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest">GCash</span>
+                            </div>
                           ) : (
-                             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-50 border border-slate-100">
-                               <div className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-                               <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                                 {order.paymentMethod || 'COD'}
-                               </span>
-                             </div>
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-50 border border-slate-100">
+                              <div className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                                {order.paymentMethod || 'COD'}
+                              </span>
+                            </div>
                           )}
-                          
+
                           {order.isPaid ? (
                             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-100">
-                               <span className="text-[8px] font-black uppercase">Paid</span>
+                              <span className="text-[8px] font-black uppercase">Paid</span>
                             </div>
                           ) : (
                             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-500 border border-rose-100">
-                               <span className="text-[8px] font-black uppercase">Unpaid</span>
+                              <span className="text-[8px] font-black uppercase">Unpaid</span>
                             </div>
                           )}
                         </div>
@@ -1190,9 +1087,8 @@ export default function OrderManagementPage() {
                     <td className="p-5">
                       <div className="space-y-2.5">
                         {renderStatusBadge(order.status)}
-                        <div className={`px-2 py-1 rounded-lg w-fit text-[9px] font-black uppercase tracking-[0.1em] flex items-center gap-2 ${
-                          order.isPaid ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-amber-50 text-amber-600 border border-amber-100"
-                        }`}>
+                        <div className={`px-2 py-1 rounded-lg w-fit text-[9px] font-black uppercase tracking-[0.1em] flex items-center gap-2 ${order.isPaid ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-amber-50 text-amber-600 border border-amber-100"
+                          }`}>
                           <div className={`h-1.5 w-1.5 rounded-full ${order.isPaid ? "bg-emerald-500 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.5)]" : "bg-amber-400"}`} />
                           {order.isPaid ? "Verified Paid" : "Awaiting Payment"}
                         </div>
@@ -1212,7 +1108,7 @@ export default function OrderManagementPage() {
                         </div>
                       ) : order.status === "COLLECTION_FAILED" ? (
                         <div className="flex flex-col gap-1">
-                           <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-100 w-fit">
+                          <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-100 w-fit">
                             <span className="text-[9px] font-black uppercase tracking-widest">Failed</span>
                           </div>
                           <span className="text-[10px] text-rose-400 font-bold max-w-[120px] truncate">{order.deliveryFailedReason}</span>
@@ -1244,7 +1140,7 @@ export default function OrderManagementPage() {
                             <span className="text-[11px] font-black text-slate-700 truncate max-w-[100px]">{order.assignedDriverName}</span>
                           </div>
                           {order.status === "ASSIGNED_FOR_DELIVERY" && (
-                             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Awaiting Pickup</span>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Awaiting Pickup</span>
                           )}
                         </div>
                       ) : (
@@ -1263,7 +1159,7 @@ export default function OrderManagementPage() {
                         >
                           Details
                         </Button>
-                        
+
                         {order.status === "ORDER_RECEIVED" && (
                           <Button
                             size="sm"
@@ -1273,18 +1169,17 @@ export default function OrderManagementPage() {
                             {order.serviceName?.toLowerCase().includes("dry") ? "Set Quote" : "Set Weight"}
                           </Button>
                         )}
-                        
+
                         {(order.status === "PENDING" || (nextStatuses.length && order.status !== "ORDER_RECEIVED")) ? (
                           <Button
                             size="sm"
-                            className={`h-9 px-4 rounded-xl font-black text-xs text-white shadow-lg transition-all ${
-                              order.status === "PENDING" 
-                                ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20" 
+                            className={`h-9 px-4 rounded-xl font-black text-xs text-white shadow-lg transition-all ${order.status === "PENDING"
+                                ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20"
                                 : "bg-slate-900 hover:bg-black shadow-slate-900/20"
-                            }`}
+                              }`}
                             onClick={() => void applyStatusUpdate(order)}
                             disabled={
-                              statusUpdatingId === order.id || 
+                              statusUpdatingId === order.id ||
                               (order.status === "PRICE_CONFIRMED" && !order.priceConfirmedByCustomer)
                             }
                           >
@@ -1350,401 +1245,42 @@ export default function OrderManagementPage() {
         </div>
       </motion.div>
 
-      <Dialog open={setPriceOpen} onOpenChange={setSetPriceOpen}>
-        <DialogContent className="sm:max-w-[1100px] max-h-[92vh] border-0 rounded-3xl p-0 overflow-hidden shadow-2xl flex flex-col bg-white">
-          {/* HEADER */}
-          {(() => {
-            const hOrder = orders.find(o => o.id === setPriceOrderId);
-            return (
-              <div className="bg-slate-900 px-8 py-5 flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-2xl bg-blue-600 flex items-center justify-center">
-                    <Scale className="h-6 w-6 text-white" />
-                  </div>
-                  <div>
-                    <DialogTitle className="text-xl font-black text-white leading-none mb-1">Finalize Weight &amp; Receipt</DialogTitle>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">{hOrder?.orderId}</span>
-                      <span className="text-slate-600">·</span>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">{hOrder?.customerName}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="text-right bg-white/5 border border-white/10 rounded-xl px-4 py-2">
-                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Estimated</p>
-                    <p className="text-lg font-black text-slate-300 tabular-nums">{hOrder?.estimatedWeightKg ?? "—"} kg</p>
-                  </div>
-                  <div className="text-right bg-blue-600/20 border border-blue-500/30 rounded-xl px-4 py-2">
-                    <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest">Actual</p>
-                    <p className="text-lg font-black text-white tabular-nums">{setPriceForm.actualWeightKg || "—"} kg</p>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* BODY */}
-          <div className="flex flex-1 overflow-hidden">
-
-            {/* LEFT PANEL — STAFF ACTIONS */}
-            <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-slate-50">
-              {(() => {
-                const o = orders.find(x => x.id === setPriceOrderId);
-                if (!o) return null;
-                const kg = parseFloat(setPriceForm.actualWeightKg) || 0;
-                const p = kg >= 5 ? computeOrderPricing(o, kg, loadType, parseFloat(setPriceForm.deliveryFee || '0')) : null;
-                return (
-                  <>
-                    {/* Info Banner */}
-                    <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4">
-                      <Info className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
-                      <p className="text-xs font-bold text-amber-800 leading-relaxed">
-                        Customer&apos;s estimated weight was <strong>{o.estimatedWeightKg} kg</strong>. Staff must weigh the actual laundry before finalizing. This determines the number of loads and final price.
-                      </p>
-                    </div>
-
-                    {/* STEP 1 */}
-                    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                      <div className="px-6 py-4 border-b border-slate-100">
-                        <p className="text-xs font-black text-slate-800 uppercase tracking-wider">Step 1 — Actual Weight &amp; Load Type</p>
-                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">Enter the weighed result and select the load composition</p>
-                      </div>
-                      <div className="p-6 space-y-5">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Actual weight (kg) *</label>
-                            <input
-                              type="number" min="5" step="0.1"
-                              value={setPriceForm.actualWeightKg}
-                              placeholder="0.0"
-                              onChange={e => setSetPriceForm(prev => ({ ...prev, actualWeightKg: e.target.value }))}
-                              className={`w-full h-14 text-center text-3xl font-black border-2 rounded-xl bg-white focus:outline-none [appearance:textfield] transition-all ${
-                                kg > 0 && kg < 5 ? 'border-red-400 focus:border-red-500' : 'border-slate-200 focus:border-blue-500'
-                              }`}
-                            />
-                            {kg > 0 && kg < 5 && (
-                              <p className="text-[10px] font-black text-red-500 flex items-center gap-1">
-                                <AlertCircle className="h-3 w-3" /> Minimum 5 kg per order
-                              </p>
-                            )}
-                            <p className="text-[10px] text-slate-400">Minimum 5 kg per order</p>
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Load type *</label>
-                            <select
-                              value={loadType}
-                              onChange={e => setLoadType(e.target.value as 'PURE_CLOTHES' | 'WITH_TOWELS')}
-                              className="w-full h-14 border-2 border-slate-200 rounded-xl bg-white focus:outline-none focus:border-blue-500 px-4 font-bold text-sm text-slate-800"
-                            >
-                              <option value="PURE_CLOTHES">Pure clothes (max 8 kg/load)</option>
-                              <option value="WITH_TOWELS">With towels/beddings (max 7 kg/load)</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        {/* METRIC CARDS */}
-                        <div className="grid grid-cols-3 gap-3">
-                          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Actual weight</p>
-                            <p className="text-2xl font-black text-slate-900 tabular-nums">{kg > 0 ? `${kg} kg` : "— kg"}</p>
-                            <p className="text-[9px] text-slate-400 mt-0.5">weighed by staff</p>
-                          </div>
-                          <div className={`border-2 rounded-xl p-4 ${ p ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200' }`}>
-                            <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-1">Number of loads</p>
-                            <p className="text-2xl font-black text-blue-700 tabular-nums">{p ? p.numberOfLoads : "—"}</p>
-                            <p className="text-[9px] text-slate-400 mt-0.5">{p ? `${kg} ÷ ${p.maxKgPerLoad} kg max` : "enter weight"}</p>
-                          </div>
-                          <div className={`border rounded-xl p-4 ${ p && p.madnessFee > 0 ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-200' }`}>
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Madness extra kg</p>
-                            <p className="text-2xl font-black text-slate-900 tabular-nums">{p ? `${p.madnessKg.toFixed(1)} kg` : "— kg"}</p>
-                            <p className="text-[9px] text-slate-400 mt-0.5">over base × ₱50</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* STEP 2 — READ ONLY */}
-                    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                      <div className="px-6 py-4 border-b border-slate-100">
-                        <p className="text-xs font-black text-slate-800 uppercase tracking-wider">Step 2 — Service &amp; Add-ons</p>
-                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">Service type selected at booking. Detergent &amp; conditioner chosen by customer.</p>
-                      </div>
-                      <div className="p-6 space-y-4">
-                        <div className="space-y-1">
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Service type</p>
-                          <p className="text-sm font-black text-slate-900">{o.serviceName}</p>
-                          {p && <p className="text-[10px] text-slate-400 font-mono">₱{p.pricePerLoad}/load · {p.numberOfLoads} load{p.numberOfLoads !== 1 ? 's' : ''}</p>}
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-1">
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Detergent</p>
-                            <p className="text-sm font-bold text-slate-800">{o.detergent && o.detergent.toLowerCase() !== 'none' ? `${o.detergent} × ${o.detergentQuantity || 1} pack` : 'None'}</p>
-                          </div>
-                          <div className="space-y-1">
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Conditioner</p>
-                            <p className="text-sm font-bold text-slate-800">{o.conditioner && o.conditioner.toLowerCase() !== 'none' ? `${o.conditioner} × ${o.conditionerQuantity || 1} pack` : 'None'}</p>
-                          </div>
-                        </div>
-                        {(o.rushPrice ?? 0) > 0 && (
-                          <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-                            <Zap className="h-4 w-4 text-amber-600" />
-                            <p className="text-xs font-black text-amber-700">Rush Order — ₱150 per load will be added</p>
-                          </div>
-                        )}
-                        {o.serviceType === 'PICKUP_DELIVERY' && (
-                          <div className="space-y-2">
-                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Delivery fee (₱)</label>
-                            <div className="relative">
-                              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-black">₱</span>
-                              <input type="number" min="0"
-                                value={setPriceForm.deliveryFee} placeholder="0"
-                                onChange={e => setSetPriceForm(prev => ({ ...prev, deliveryFee: e.target.value }))}
-                                className="w-full h-11 pl-8 border-2 border-slate-200 rounded-xl bg-white focus:outline-none focus:border-blue-500 font-bold [appearance:textfield]" />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* STEP 3: BREAKDOWN TABLE */}
-                    {(() => {
-                      const o3 = orders.find(x => x.id === setPriceOrderId);
-                      const kg3 = parseFloat(setPriceForm.actualWeightKg) || 0;
-                      const del3 = parseFloat(setPriceForm.deliveryFee || '0');
-                      const p3 = o3 && kg3 >= 5 ? computeOrderPricing(o3, kg3, loadType, del3) : null;
-                      if (!o3 || !p3) return null;
-                      return (
-                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                          <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center"><Receipt className="h-4 w-4 text-blue-600" /></div>
-                            <div>
-                              <p className="text-sm font-semibold text-slate-800">Step 3 — Full price breakdown</p>
-                              <p className="text-xs text-slate-400">All charges visible — required for receipt</p>
-                            </div>
-                          </div>
-                          <div className="p-5">
-                            <table className="w-full">
-                              <tbody className="divide-y divide-slate-50">
-                                <tr>
-                                  <td className="py-2.5"><p className="text-sm font-medium text-slate-800">{o3.serviceName}</p><p className="text-[10px] text-slate-400 font-mono mt-0.5">₱{p3.pricePerLoad} × {p3.isHandwash ? `${kg3}kg` : `${p3.numberOfLoads} load${p3.numberOfLoads!==1?'s':''}`}</p></td>
-                                  <td className="py-2.5 text-right font-mono text-sm font-semibold text-slate-800">₱{p3.serviceTotal.toFixed(0)}</td>
-                                </tr>
-                                {p3.madnessFee > 0 && <tr><td className="py-2.5"><p className="text-sm font-medium text-red-600">Madness limit surcharge</p><p className="text-[10px] text-slate-400 font-mono mt-0.5">+{p3.madnessKg.toFixed(1)} kg × ₱50</p></td><td className="py-2.5 text-right font-mono text-sm font-semibold text-red-600">₱{p3.madnessFee.toFixed(0)}</td></tr>}
-                                {p3.detCost > 0 && <tr><td className="py-2.5"><p className="text-sm font-medium text-slate-800">{o3.detergent} detergent</p><p className="text-[10px] text-slate-400 font-mono mt-0.5">₱{p3.detPPP} × {p3.detQty} pack{p3.detQty!==1?'s':''}</p></td><td className="py-2.5 text-right font-mono text-sm font-semibold text-slate-800">₱{p3.detCost.toFixed(0)}</td></tr>}
-                                {p3.conCost > 0 && <tr><td className="py-2.5"><p className="text-sm font-medium text-slate-800">{o3.conditioner} conditioner</p><p className="text-[10px] text-slate-400 font-mono mt-0.5">₱{p3.conPPP} × {p3.conQty} pack{p3.conQty!==1?'s':''}</p></td><td className="py-2.5 text-right font-mono text-sm font-semibold text-slate-800">₱{p3.conCost.toFixed(0)}</td></tr>}
-                                {p3.rushFee > 0 && <tr><td className="py-2.5"><p className="text-sm font-medium text-amber-600">⚡ Rush service fee</p><p className="text-[10px] text-slate-400 font-mono mt-0.5">₱150/load × {p3.numberOfLoads} load{p3.numberOfLoads!==1?'s':''}</p></td><td className="py-2.5 text-right font-mono text-sm font-semibold text-amber-600">₱{p3.rushFee.toFixed(0)}</td></tr>}
-                                {del3 > 0 && <tr><td className="py-2.5"><p className="text-sm font-medium text-slate-800">Delivery fee</p><p className="text-[10px] text-slate-400 mt-0.5">Location-based rate</p></td><td className="py-2.5 text-right font-mono text-sm font-semibold text-slate-800">₱{del3.toFixed(0)}</td></tr>}
-                                {p3.pickupFee > 0 && <tr><td className="py-2.5"><p className="text-sm font-medium text-slate-800">Pickup fee</p></td><td className="py-2.5 text-right font-mono text-sm font-semibold text-slate-800">₱{p3.pickupFee.toFixed(0)}</td></tr>}
-                                <tr><td className="py-2.5"><p className="text-sm font-medium text-slate-500">Convenience fee</p><p className="text-[10px] text-slate-400 mt-0.5">Online booking system fee</p></td><td className="py-2.5 text-right font-mono text-sm font-semibold text-slate-500">₱{p3.convenienceFee.toFixed(0)}</td></tr>
-                              </tbody>
-                            </table>
-                            <div className="flex justify-between items-center pt-4 mt-3 border-t-2 border-slate-800">
-                              <span className="text-base font-semibold text-slate-800">Total amount due</span>
-                              <span className="text-2xl font-bold text-blue-600 font-mono">₱{p3.grandTotal.toFixed(0)}</span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </>
-                );
-              })()}
-            </div>
-
-            {/* RIGHT PANEL — RECEIPT PREVIEW */}
-            <div className="w-[360px] shrink-0 flex flex-col bg-[#F8F7F5] border-l border-slate-200 overflow-hidden">
-              {(() => {
-                const o = orders.find(x => x.id === setPriceOrderId);
-                if (!o) return null;
-                const kg = parseFloat(setPriceForm.actualWeightKg) || 0;
-                const delFee = parseFloat(setPriceForm.deliveryFee || '0');
-                const p = kg >= 5 ? computeOrderPricing(o, kg, loadType, delFee) : null;
-                return (
-                  <>
-                    <div className="bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between">
-                      <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Receipt Preview</p>
-                      <div className="flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" /><span className="text-[9px] text-blue-600 font-semibold uppercase">Live</span></div>
-                    </div>
-
-                    {/* RECEIPT BODY */}
-                    <div className="flex-1 overflow-y-auto">
-                      <div className="p-6 space-y-0 font-mono">
-                        {/* Receipt Header */}
-                        <div className="text-center pb-4 border-b border-dashed border-slate-300">
-                          <h2 className="text-xl font-black text-slate-900 tracking-tight">WASHALERT</h2>
-                          <p className="text-[10px] text-slate-500">{o.branch || 'Laundry Operations'}</p>
-                          <p className="text-[10px] text-slate-400 mt-1">Open 7:00 AM – 10:00 PM daily</p>
-                        </div>
-
-                        {/* Order ID */}
-                        <div className="text-center py-4 border-b border-dashed border-slate-300">
-                          <p className="text-2xl font-black text-blue-600 tracking-tight">{o.orderId}</p>
-                          <p className="text-[10px] text-slate-400">{new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</p>
-                        </div>
-
-                        {/* Customer Info */}
-                        <div className="py-4 space-y-1.5 border-b border-dashed border-slate-300 text-[11px]">
-                          <div className="flex justify-between">
-                            <span className="text-slate-500">Customer</span>
-                            <span className="font-black text-slate-900">{o.customerName}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-slate-500">Actual weight</span>
-                            <span className="font-black text-slate-900">{kg > 0 ? `${kg} kg` : '—'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-slate-500">Load type</span>
-                            <span className="font-black text-slate-900">{loadType === 'PURE_CLOTHES' ? 'Pure clothes' : 'With towels/beddings'}</span>
-                          </div>
-                          {p && (
-                            <div className="flex justify-between">
-                              <span className="text-slate-500">No. of loads</span>
-                              <span className="font-black text-slate-900">{p.numberOfLoads} load{p.numberOfLoads !== 1 ? 's' : ''}</span>
-                            </div>
-                          )}
-                          <div className="flex justify-between">
-                            <span className="text-slate-500">Payment</span>
-                            <span className="font-black text-slate-900">{o.paymentMethod || 'Cash'}</span>
-                          </div>
-                        </div>
-
-                        {/* Service Breakdown */}
-                        {p ? (
-                          <>
-                            <div className="py-4 space-y-3 border-b border-dashed border-slate-300">
-                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Service Breakdown</p>
-                              <div className="flex justify-between text-[11px]">
-                                <div>
-                                  <p className="font-bold text-slate-800">{o.serviceName}</p>
-                                  <p className="text-slate-400">₱{p.pricePerLoad.toFixed(0)} × {p.isHandwash ? `${kg}kg` : `${p.numberOfLoads} load${p.numberOfLoads!==1?'s':''}`}</p>
-                                </div>
-                                <span className="font-black text-slate-900">₱{p.serviceTotal.toFixed(0)}</span>
-                              </div>
-                              {p.madnessFee > 0 && (
-                                <div className="flex justify-between text-[11px]">
-                                  <div>
-                                    <p className="font-bold text-orange-700">Madness surcharge</p>
-                                    <p className="text-slate-400">{p.madnessKg.toFixed(1)} kg excess × ₱50</p>
-                                  </div>
-                                  <span className="font-black text-orange-700">₱{p.madnessFee.toFixed(0)}</span>
-                                </div>
-                              )}
-                              {p.detCost > 0 && (
-                                <div className="flex justify-between text-[11px]">
-                                  <div>
-                                    <p className="font-bold text-slate-800">{o.detergent} detergent</p>
-                                    <p className="text-slate-400">₱{p.detPPP} × {p.detQty} pack{p.detQty!==1?'s':''}</p>
-                                  </div>
-                                  <span className="font-black text-slate-900">₱{p.detCost.toFixed(0)}</span>
-                                </div>
-                              )}
-                              {p.conCost > 0 && (
-                                <div className="flex justify-between text-[11px]">
-                                  <div>
-                                    <p className="font-bold text-slate-800">{o.conditioner} conditioner</p>
-                                    <p className="text-slate-400">₱{p.conPPP} × {p.conQty} pack{p.conQty!==1?'s':''}</p>
-                                  </div>
-                                  <span className="font-black text-slate-900">₱{p.conCost.toFixed(0)}</span>
-                                </div>
-                              )}
-                              {p.rushFee > 0 && (
-                                <div className="flex justify-between text-[11px]">
-                                  <div>
-                                    <p className="font-bold text-amber-700">⚡ Rush fee</p>
-                                    <p className="text-slate-400">₱150 × {p.numberOfLoads} load{p.numberOfLoads!==1?'s':''}</p>
-                                  </div>
-                                  <span className="font-black text-amber-700">₱{p.rushFee.toFixed(0)}</span>
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="py-4 space-y-3 border-b border-dashed border-slate-300">
-                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Additional Charges</p>
-                              {delFee > 0 && (
-                                <div className="flex justify-between text-[11px]">
-                                  <div>
-                                    <p className="font-bold text-slate-800">Delivery fee</p>
-                                    <p className="text-slate-400">Based on location</p>
-                                  </div>
-                                  <span className="font-black text-slate-900">₱{delFee.toFixed(0)}</span>
-                                </div>
-                              )}
-                              {p.pickupFee > 0 && (
-                                <div className="flex justify-between text-[11px]">
-                                  <div><p className="font-bold text-slate-800">Pickup fee</p></div>
-                                  <span className="font-black text-slate-900">₱{p.pickupFee.toFixed(0)}</span>
-                                </div>
-                              )}
-                              <div className="flex justify-between text-[11px]">
-                                <div>
-                                  <p className="font-bold text-slate-800">Convenience fee</p>
-                                  <p className="text-slate-400">Online booking · system fee</p>
-                                </div>
-                                <span className="font-black text-slate-900">₱{p.convenienceFee.toFixed(0)}</span>
-                              </div>
-                            </div>
-
-                            {/* TOTAL */}
-                            <div className="py-4 flex justify-between items-end">
-                              <div>
-                                <p className="text-sm font-black text-slate-900 uppercase tracking-wide">TOTAL</p>
-                                <p className="text-3xl font-black text-blue-600 tabular-nums">₱{p.grandTotal.toFixed(0)}</p>
-                              </div>
-                              <div className="text-right text-[10px] text-slate-500">
-                                <p>Payment method</p>
-                                <p className="font-black text-slate-800">{o.paymentMethod || 'Cash'}</p>
-                              </div>
-                            </div>
-
-                            {/* Footer */}
-                            <div className="border-t border-dashed border-slate-300 pt-4 text-center space-y-1">
-                              <p className="text-[9px] font-bold text-slate-400">* * * * * * * * * *</p>
-                              <p className="text-[9px] text-slate-400">{o.orderId}-{new Date().getFullYear()}</p>
-                              <p className="text-[9px] text-slate-400">Thank you for choosing WashAlert!</p>
-                              <p className="text-[9px] text-slate-400">This is your official receipt. Please keep for reference.</p>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="py-12 text-center">
-                            <Scale className="h-10 w-10 text-slate-200 mx-auto mb-3" />
-                            <p className="text-sm font-black text-slate-300">Enter weight ≥ 5 kg</p>
-                            <p className="text-[10px] text-slate-300">to see full breakdown</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* SEND BUTTON */}
-                    <div className="p-5 border-t border-slate-200 bg-white shrink-0 space-y-3">
-                      <Button
-                        onClick={() => void submitSetPrice()}
-                        disabled={setPriceSubmitting || kg < 5}
-                        className="w-full h-14 bg-slate-900 hover:bg-blue-600 text-white font-black rounded-2xl text-base transition-all flex items-center justify-center gap-3 disabled:opacity-50"
-                      >
-                        {setPriceSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
-                        {setPriceSubmitting ? 'Sending...' : 'Send Receipt to Customer'}
-                      </Button>
-                      <Button variant="outline" className="w-full h-10 rounded-xl font-bold text-slate-500" onClick={() => setSetPriceOpen(false)}>
-                        Cancel
-                      </Button>
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
+      <FinalizeWeightModal
+        open={setPriceOpen}
+        order={(() => {
+          const o = orders.find(x => x.id === setPriceOrderId);
+          if (!o) return null;
+          return {
+            id: o.id,
+            orderId: o.orderId,
+            customerName: o.customerName,
+            customerPhone: o.customerPhone,
+            branch: o.branch,
+            estimatedWeightKg: o.estimatedWeightKg,
+            actualWeightKg: o.actualWeightKg,
+            serviceType: o.serviceType,
+            serviceName: o.serviceName,
+            paymentMethod: o.paymentMethod,
+            detergent: o.detergent,
+            detergentQuantity: o.detergentQuantity,
+            conditioner: o.conditioner,
+            conditionerQuantity: o.conditionerQuantity,
+            rushPrice: o.rushPrice,
+            deliveryPrice: o.deliveryPrice,
+          } satisfies FinalizeOrderData;
+        })()}
+        submitting={setPriceSubmitting}
+        onSubmit={submitSetPrice}
+        onCancel={() => setSetPriceOpen(false)}
+      />
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-xl border-slate-200 rounded-3xl p-0 overflow-hidden bg-[#F8FAFC] shadow-2xl">
           <div className="bg-gradient-to-br from-slate-900 to-brand-navy px-8 py-10 text-white border-b border-white/5">
-             <DialogTitle className="text-3xl font-black tracking-tight flex items-center gap-3">
-               <Plus className="h-8 w-8 text-blue-400" /> New Job Order
-             </DialogTitle>
-             <DialogDescription className="text-slate-400 font-bold mt-1 uppercase tracking-widest text-[10px]">Manual Staff Intake</DialogDescription>
+            <DialogTitle className="text-3xl font-black tracking-tight flex items-center gap-3">
+              <Plus className="h-8 w-8 text-blue-400" /> New Job Order
+            </DialogTitle>
+            <DialogDescription className="text-slate-400 font-bold mt-1 uppercase tracking-widest text-[10px]">Manual Staff Intake</DialogDescription>
           </div>
 
           <div className="p-8 space-y-8">
@@ -1796,9 +1332,8 @@ export default function OrderManagementPage() {
                 value={createForm.deliveryAddress}
                 onChange={(e) => setCreateForm((prev) => ({ ...prev, deliveryAddress: e.target.value }))}
                 placeholder={createForm.serviceType === 'PICKUP_DELIVERY' ? "Enter customer's home address" : "Optional for walk-ins"}
-                className={`h-14 bg-white border-slate-200 rounded-2xl font-black text-slate-900 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all ${
-                  createForm.serviceType === 'PICKUP_DELIVERY' && !createForm.deliveryAddress ? 'border-amber-300 bg-amber-50/20' : ''
-                }`}
+                className={`h-14 bg-white border-slate-200 rounded-2xl font-black text-slate-900 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all ${createForm.serviceType === 'PICKUP_DELIVERY' && !createForm.deliveryAddress ? 'border-amber-300 bg-amber-50/20' : ''
+                  }`}
               />
             </div>
 
@@ -1864,8 +1399,8 @@ export default function OrderManagementPage() {
             <Button variant="ghost" className="font-bold text-slate-400 hover:text-slate-600" onClick={() => setCreateOpen(false)} disabled={createSubmitting}>
               Discard
             </Button>
-            <Button 
-              onClick={() => void submitCreate()} 
+            <Button
+              onClick={() => void submitCreate()}
               disabled={createSubmitting}
               className="bg-slate-900 hover:bg-black text-white font-black px-8 h-12 rounded-xl shadow-xl shadow-slate-900/10 transition-all active:scale-95"
             >
@@ -1892,16 +1427,16 @@ export default function OrderManagementPage() {
                 </DialogDescription>
               </div>
             </div>
-            
+
             {assignRiderOrderId && (
               <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
                 <div className="flex justify-between items-center text-xs">
-                   <span className="text-slate-400 font-bold uppercase tracking-wider">Customer</span>
-                   <span className="font-black text-white">{orders.find(o => o.id === assignRiderOrderId)?.customerName}</span>
+                  <span className="text-slate-400 font-bold uppercase tracking-wider">Customer</span>
+                  <span className="font-black text-white">{orders.find(o => o.id === assignRiderOrderId)?.customerName}</span>
                 </div>
                 <div className="flex justify-between items-center text-xs mt-2">
-                   <span className="text-slate-400 font-bold uppercase tracking-wider">Total Due</span>
-                   <span className="font-black text-blue-400">₱{orders.find(o => o.id === assignRiderOrderId)?.totalPrice?.toFixed(2)}</span>
+                  <span className="text-slate-400 font-bold uppercase tracking-wider">Total Due</span>
+                  <span className="font-black text-blue-400">₱{orders.find(o => o.id === assignRiderOrderId)?.totalPrice?.toFixed(2)}</span>
                 </div>
               </div>
             )}
@@ -1911,12 +1446,12 @@ export default function OrderManagementPage() {
             <div className="space-y-3">
               <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Delivery Destination</Label>
               <div className="bg-white p-4 rounded-2xl border border-slate-200 flex items-start gap-3 shadow-sm">
-                 <div className="h-8 w-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 border border-amber-100">
-                    <Search className="h-4 w-4 text-amber-600" />
-                 </div>
-                 <p className="text-xs font-bold text-slate-700 leading-relaxed">
-                   {orders.find(o => o.id === assignRiderOrderId)?.deliveryAddress || "No address provided"}
-                 </p>
+                <div className="h-8 w-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 border border-amber-100">
+                  <Search className="h-4 w-4 text-amber-600" />
+                </div>
+                <p className="text-xs font-bold text-slate-700 leading-relaxed">
+                  {orders.find(o => o.id === assignRiderOrderId)?.deliveryAddress || "No address provided"}
+                </p>
               </div>
             </div>
 
@@ -1946,7 +1481,7 @@ export default function OrderManagementPage() {
                     ))}
                   </select>
                   <div className="absolute inset-y-0 right-5 flex items-center pointer-events-none text-slate-400">
-                     <Plus className="h-5 w-5 rotate-45" />
+                    <Plus className="h-5 w-5 rotate-45" />
                   </div>
                 </div>
               )}
@@ -1954,20 +1489,20 @@ export default function OrderManagementPage() {
           </div>
 
           <DialogFooter className="bg-white p-8 border-t border-slate-100 flex items-center justify-end gap-4">
-            <Button 
-              variant="ghost" 
-              className="font-black text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl h-14 px-8" 
+            <Button
+              variant="ghost"
+              className="font-black text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl h-14 px-8"
               onClick={() => setAssignRiderOpen(false)}
             >
               Cancel
             </Button>
-            <Button 
-              onClick={() => void submitAssignRider()} 
+            <Button
+              onClick={() => void submitAssignRider()}
               disabled={assignRiderSubmitting || !selectedDriverId}
               className="bg-blue-600 hover:bg-blue-700 text-white font-black px-10 h-14 rounded-2xl shadow-xl shadow-blue-500/20 transition-all active:scale-[0.98] group flex-1 sm:flex-none"
             >
-              {assignRiderSubmitting 
-                ? <Loader2 className="h-5 w-5 animate-spin" /> 
+              {assignRiderSubmitting
+                ? <Loader2 className="h-5 w-5 animate-spin" />
                 : <><CheckCircle2 className="h-5 w-5 mr-2" /> Confirm Assignment</>
               }
             </Button>
@@ -1992,13 +1527,12 @@ export default function OrderManagementPage() {
                   <p className="text-slate-400 text-[11px] font-medium mt-0.5">{formatDateTime(selectedOrder.createdAt)}</p>
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
-                  <Badge className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide border-none whitespace-nowrap ${
-                    selectedOrder.status === 'READY' || selectedOrder.status === 'PRICE_CONFIRMED' ? 'bg-emerald-500 text-white' :
-                    selectedOrder.status === 'AWAITING_PRICE_CONFIRMATION' ? 'bg-amber-500 text-white' :
-                    selectedOrder.status === 'WASHING' || selectedOrder.status === 'DRYING' ? 'bg-blue-600 text-white' :
-                    selectedOrder.status === 'CANCELLED' ? 'bg-red-500 text-white' :
-                    'bg-slate-600 text-white'
-                  }`}>
+                  <Badge className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide border-none whitespace-nowrap ${selectedOrder.status === 'READY' || selectedOrder.status === 'PRICE_CONFIRMED' ? 'bg-emerald-500 text-white' :
+                      selectedOrder.status === 'AWAITING_PRICE_CONFIRMATION' ? 'bg-amber-500 text-white' :
+                        selectedOrder.status === 'WASHING' || selectedOrder.status === 'DRYING' ? 'bg-blue-600 text-white' :
+                          selectedOrder.status === 'CANCELLED' ? 'bg-red-500 text-white' :
+                            'bg-slate-600 text-white'
+                    }`}>
                     {statusLabel[selectedOrder.status]}
                   </Badge>
                   <span className="text-[10px] text-slate-400 font-semibold">{selectedOrder.branch}</span>
@@ -2009,20 +1543,20 @@ export default function OrderManagementPage() {
               <div className="flex-1 overflow-y-auto p-5 space-y-4">
 
                 {/* COD Warning Banner */}
-                {selectedOrder.serviceType === 'PICKUP_DELIVERY' && 
-                 (selectedOrder.paymentMethod?.toUpperCase().includes('CASH') || !selectedOrder.paymentMethod) && 
-                 selectedOrder.status === 'DELIVERED' && 
-                 !selectedOrder.codCollected && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-4 shadow-sm animate-in fade-in slide-in-from-top-2">
-                    <div className="h-10 w-10 rounded-full bg-amber-500 flex items-center justify-center shrink-0">
-                      <AlertCircle className="h-6 w-6 text-white" />
+                {selectedOrder.serviceType === 'PICKUP_DELIVERY' &&
+                  (selectedOrder.paymentMethod?.toUpperCase().includes('CASH') || !selectedOrder.paymentMethod) &&
+                  selectedOrder.status === 'DELIVERED' &&
+                  !selectedOrder.codCollected && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-4 shadow-sm animate-in fade-in slide-in-from-top-2">
+                      <div className="h-10 w-10 rounded-full bg-amber-500 flex items-center justify-center shrink-0">
+                        <AlertCircle className="h-6 w-6 text-white" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-black text-amber-900">COD Collection Required</p>
+                        <p className="text-xs font-bold text-amber-700/80">Rider has not yet confirmed cash collection.</p>
+                      </div>
                     </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-black text-amber-900">COD Collection Required</p>
-                      <p className="text-xs font-bold text-amber-700/80">Rider has not yet confirmed cash collection.</p>
-                    </div>
-                  </div>
-                )}
+                  )}
 
                 {/* COD Success Banner */}
                 {selectedOrder.codCollected && (
@@ -2083,11 +1617,10 @@ export default function OrderManagementPage() {
                   <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Delivery Details</p>
-                      <div className={`px-2 py-0.5 rounded text-[8px] font-black uppercase border ${
-                        selectedOrder.status === 'DELIVERED' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                        selectedOrder.status === 'COLLECTION_FAILED' ? 'bg-rose-50 text-rose-700 border-rose-100' :
-                        'bg-blue-50 text-blue-700 border-blue-100'
-                      }`}>
+                      <div className={`px-2 py-0.5 rounded text-[8px] font-black uppercase border ${selectedOrder.status === 'DELIVERED' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                          selectedOrder.status === 'COLLECTION_FAILED' ? 'bg-rose-50 text-rose-700 border-rose-100' :
+                            'bg-blue-50 text-blue-700 border-blue-100'
+                        }`}>
                         {statusLabel[selectedOrder.status]}
                       </div>
                     </div>
@@ -2109,7 +1642,7 @@ export default function OrderManagementPage() {
                           </div>
                         </div>
                       </div>
-                      
+
                       <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-50">
                         <div>
                           <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Assigned At</p>
@@ -2229,12 +1762,10 @@ export default function OrderManagementPage() {
                       </div>
                     )}
                     <div className="relative pl-6">
-                      <div className={`absolute -left-[9px] top-0.5 h-4 w-4 rounded-full ring-2 ring-white ${
-                        ['READY','PRICE_CONFIRMED','WASHING','DRYING'].includes(selectedOrder.status) ? 'bg-emerald-500' : 'bg-slate-200'
-                      }`} />
-                      <p className={`text-xs font-black ${
-                        ['READY','PRICE_CONFIRMED','WASHING','DRYING'].includes(selectedOrder.status) ? 'text-emerald-600' : 'text-slate-300'
-                      }`}>{statusLabel[selectedOrder.status]}</p>
+                      <div className={`absolute -left-[9px] top-0.5 h-4 w-4 rounded-full ring-2 ring-white ${['READY', 'PRICE_CONFIRMED', 'WASHING', 'DRYING'].includes(selectedOrder.status) ? 'bg-emerald-500' : 'bg-slate-200'
+                        }`} />
+                      <p className={`text-xs font-black ${['READY', 'PRICE_CONFIRMED', 'WASHING', 'DRYING'].includes(selectedOrder.status) ? 'text-emerald-600' : 'text-slate-300'
+                        }`}>{statusLabel[selectedOrder.status]}</p>
                     </div>
                   </div>
                 </div>
@@ -2247,14 +1778,14 @@ export default function OrderManagementPage() {
                   {selectedOrder.status === 'PENDING' ? (
                     <>
                       {selectedOrder.serviceType === 'PICKUP_DELIVERY' ? (
-                        <Button 
+                        <Button
                           className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14 shadow-lg shadow-blue-200"
                           onClick={() => openAssignRiderModal(selectedOrder, 'pickup')}
                         >
                           <CheckCircle2 className="mr-2 h-5 w-5" /> Assign Pickup
                         </Button>
                       ) : (
-                        <Button 
+                        <Button
                           className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14"
                           onClick={() => void applyStatusUpdate(selectedOrder)}
                         >
@@ -2262,7 +1793,7 @@ export default function OrderManagementPage() {
                           Receive Order
                         </Button>
                       )}
-                      <Button 
+                      <Button
                         variant="outline"
                         className="flex-1 border-slate-200 text-slate-600 font-black rounded-xl h-14"
                         onClick={() => setShowReceiptPreview(true)}
@@ -2271,7 +1802,7 @@ export default function OrderManagementPage() {
                       </Button>
                     </>
                   ) : selectedOrder.status === 'ORDER_RECEIVED' ? (
-                    <Button 
+                    <Button
                       className="flex-1 bg-violet-600 hover:bg-violet-700 text-white font-black rounded-xl h-14 shadow-lg shadow-violet-200"
                       onClick={() => openSetPriceModal(selectedOrder)}
                     >
@@ -2279,20 +1810,20 @@ export default function OrderManagementPage() {
                     </Button>
                   ) : selectedOrder.status === 'AWAITING_PRICE_CONFIRMATION' ? (
                     <>
-                      <Button 
+                      <Button
                         className="flex-[2] bg-slate-100 text-slate-400 font-black rounded-xl h-14 cursor-not-allowed border-2 border-dashed border-slate-200"
                         disabled
                       >
                         <RefreshCw className="mr-2 h-5 w-5 animate-spin" /> Waiting for Customer...
                       </Button>
-                      <Button 
+                      <Button
                         variant="outline"
                         className="flex-1 border-brand-navy text-brand-navy font-black rounded-xl h-14"
                         onClick={() => openSetPriceModal(selectedOrder)}
                       >
                         <Pencil className="mr-2 h-4 w-4" /> Edit
                       </Button>
-                      <Button 
+                      <Button
                         variant="outline"
                         className="flex-1 border-slate-200 text-slate-600 font-black rounded-xl h-14"
                         onClick={() => setShowReceiptPreview(true)}
@@ -2302,14 +1833,14 @@ export default function OrderManagementPage() {
                     </>
                   ) : selectedOrder.status === 'PRICE_CONFIRMED' ? (
                     <>
-                      <Button 
+                      <Button
                         className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14 shadow-lg shadow-blue-200"
                         onClick={() => void applyStatusUpdate(selectedOrder)}
                       >
                         {statusUpdatingId === selectedOrder.id ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <RefreshCw className="h-5 w-5 mr-2" />}
                         Mark as Washing
                       </Button>
-                      <Button 
+                      <Button
                         variant="outline"
                         className="flex-1 border-slate-200 text-slate-600 font-black rounded-xl h-14"
                         onClick={() => setShowReceiptPreview(true)}
@@ -2319,13 +1850,13 @@ export default function OrderManagementPage() {
                     </>
                   ) : selectedOrder.status === 'READY' && selectedOrder.serviceType === 'PICKUP_DELIVERY' ? (
                     <>
-                      <Button 
+                      <Button
                         className="flex-[2] bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl h-14 shadow-lg shadow-emerald-200"
                         onClick={() => openAssignRiderModal(selectedOrder, 'delivery')}
                       >
                         <CheckCircle2 className="mr-2 h-5 w-5" /> Assign Delivery
                       </Button>
-                      <Button 
+                      <Button
                         variant="outline"
                         className="flex-1 border-slate-200 text-slate-600 font-black rounded-xl h-14"
                         onClick={() => setShowReceiptPreview(true)}
@@ -2335,7 +1866,7 @@ export default function OrderManagementPage() {
                     </>
                   ) : (
                     <>
-                      <Button 
+                      <Button
                         className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14"
                         onClick={() => void applyStatusUpdate(selectedOrder)}
                       >
@@ -2343,7 +1874,7 @@ export default function OrderManagementPage() {
                         Mark as {statusLabel[getAllowedStatusTransitions(selectedOrder.status)[0]] || 'Next Step'}
                       </Button>
                       {(['WASHING', 'DRYING', 'READY', 'DELIVERED', 'OUT_FOR_DELIVERY'].includes(selectedOrder.status)) && (
-                        <Button 
+                        <Button
                           variant="outline"
                           className="flex-1 border-slate-200 text-slate-600 font-black rounded-xl h-14"
                           onClick={() => setShowReceiptPreview(true)}
@@ -2353,12 +1884,12 @@ export default function OrderManagementPage() {
                       )}
                     </>
                   )}
-                  
+
                   <Button variant="destructive" className="font-black rounded-xl h-14 px-8" onClick={() => void submitCancel()}>
                     Cancel Order
                   </Button>
                 </div>
-                
+
                 {selectedOrder.status === 'PRICE_CONFIRMED' && !selectedOrder.priceConfirmedByCustomer && (
                   <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
                     <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest italic">
