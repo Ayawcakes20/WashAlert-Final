@@ -1457,11 +1457,12 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0,0,0,0.03)',
   },
   profileSubLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.textSecondary,
+    fontSize: 9,
+    fontWeight: '900',
+    color: colors.primary,
     textTransform: 'uppercase',
-    letterSpacing: 0.4,
+    letterSpacing: 0.5,
+    marginBottom: 2,
   },
   profileName: {
     fontSize: 15,
@@ -2106,22 +2107,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  // Premium UI (Image 3 style)
-  premiumProfileCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF',
-    padding: 16,
-    borderRadius: 20,
-    marginTop: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.03)',
-  },
   profileAvatarLarge: {
     width: 50,
     height: 50,
@@ -2133,14 +2118,6 @@ const styles = StyleSheet.create({
   profileInfoMain: {
     flex: 1,
     marginLeft: 15,
-  },
-  profileSubLabel: {
-    fontSize: 9,
-    fontWeight: '900',
-    color: colors.primary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 2,
   },
   profileNameMain: {
     fontSize: 18,

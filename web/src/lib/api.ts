@@ -94,6 +94,8 @@ export type JobOrderResponse = {
   deliveryFailedReason?: string | null;
   driverLat?: number | null;
   driverLng?: number | null;
+  laundryType?: string;
+  numberOfLoads?: number;
 };
 
 export type CreateOrderPayload = {
@@ -618,6 +620,7 @@ export const inventoryApi = {
         estimatedDailyUsage: number;
         projectedStockAfterDays: number;
         estimatedDaysUntilStockout: number;
+        narrative?: string;
       }>
     >(`/api/inventory/forecast?days=${days}`),
 };

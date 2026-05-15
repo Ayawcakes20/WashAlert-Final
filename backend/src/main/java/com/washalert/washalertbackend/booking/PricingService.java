@@ -18,7 +18,8 @@ public class PricingService {
             BigDecimal extraWeightCost,
             String detergentBreakdown,
             String fabricConditionerBreakdown,
-            BigDecimal totalPrice
+            BigDecimal totalPrice,
+            int numberOfLoads
     ) {}
 
     public PriceEstimation estimate(
@@ -32,7 +33,8 @@ public class PricingService {
     ) {
         BigDecimal servicePrice = calculateServicePrice(serviceName, weightKg);
         BigDecimal rushPrice = isRush ? new BigDecimal("150.00") : BigDecimal.ZERO;
-        SuppliesBreakdown suppliesBreakdown = calculateSuppliesPriceWithBreakdown(detergent, fabcon);
+        int loads = computeLoadCount(serviceName, weightKg);
+        SuppliesBreakdown suppliesBreakdown = calculateSuppliesPriceWithBreakdown(detergent, fabcon, loads);
         BigDecimal deliveryPrice = calculateDeliveryPrice(distanceKm);
 
         BigDecimal subtotal = servicePrice.add(rushPrice).add(suppliesBreakdown.total()).add(deliveryPrice);
@@ -50,7 +52,8 @@ public class PricingService {
                 extraWeightCost,
                 suppliesBreakdown.detergentBreakdown(),
                 suppliesBreakdown.fabricConditionerBreakdown(),
-                total
+                total,
+                loads
         );
     }
 
@@ -59,6 +62,23 @@ public class PricingService {
             String detergentBreakdown,
             String fabricConditionerBreakdown
     ) {}
+
+    private int computeLoadCount(String serviceName, BigDecimal weightKg) {
+        if (serviceName == null) return 1;
+        String name = serviceName.toLowerCase(Locale.ROOT);
+        if (name.contains("double")) return 2;
+        if (name.contains("ecowash")) {
+            // 5kg per load
+            if (weightKg == null || weightKg.compareTo(BigDecimal.ZERO) <= 0) return 1;
+            return (int) Math.max(1, Math.ceil(weightKg.doubleValue() / 5.0));
+        }
+        if (name.contains("full") || name.contains("handwash")) {
+            // 8kg per load
+            if (weightKg == null || weightKg.compareTo(BigDecimal.ZERO) <= 0) return 1;
+            return (int) Math.max(1, Math.ceil(weightKg.doubleValue() / 8.0));
+        }
+        return 1;
+    }
 
     private BigDecimal calculateServicePrice(String serviceName, BigDecimal weight) {
         if (serviceName == null) return BigDecimal.ZERO;
@@ -108,36 +128,59 @@ public class PricingService {
         return BigDecimal.ZERO;
     }
 
-    private SuppliesBreakdown calculateSuppliesPriceWithBreakdown(String detergent, String fabcon) {
-        BigDecimal detergentPrice = BigDecimal.ZERO;
-        String detergentDesc = "";
+    private SuppliesBreakdown calculateSuppliesPriceWithBreakdown(String detergent, String fabcon, int loadCount) {
+        int effectiveLoads = loadCount <= 0 ? 1 : loadCount;
+
+        BigDecimal detergentPricePerLoad = BigDecimal.ZERO;
+        String detergentLabel = "";
 
         if (detergent != null) {
             String d = detergent.toLowerCase(Locale.ROOT);
             if (d.contains("surf")) {
-                detergentPrice = new BigDecimal("25.00");
-                detergentDesc = "Surf Detergent - ₱25.00";
+                detergentPricePerLoad = new BigDecimal("25.00");
+                detergentLabel = "Surf Detergent";
             } else if (d.contains("ariel")) {
-                detergentPrice = new BigDecimal("30.00");
-                detergentDesc = "Ariel Detergent - ₱30.00";
+                detergentPricePerLoad = new BigDecimal("30.00");
+                detergentLabel = "Ariel Detergent";
             }
         }
 
-        BigDecimal fabconPrice = BigDecimal.ZERO;
-        String fabconDesc = "";
+        BigDecimal fabconPricePerLoad = BigDecimal.ZERO;
+        String fabconLabel = "";
 
         if (fabcon != null) {
             String f = fabcon.toLowerCase(Locale.ROOT);
             if (f.contains("charm")) {
-                fabconPrice = new BigDecimal("15.00");
-                fabconDesc = "Charm Fabric Conditioner - ₱15.00";
+                fabconPricePerLoad = new BigDecimal("15.00");
+                fabconLabel = "Charm Fabric Conditioner";
             } else if (f.contains("downy")) {
-                fabconPrice = new BigDecimal("25.00");
-                fabconDesc = "Downy Fabric Conditioner - ₱25.00";
+                fabconPricePerLoad = new BigDecimal("25.00");
+                fabconLabel = "Downy Fabric Conditioner";
             }
         }
 
-        BigDecimal total = detergentPrice.add(fabconPrice);
+        BigDecimal detergentTotal = detergentPricePerLoad.multiply(BigDecimal.valueOf(effectiveLoads));
+        BigDecimal fabconTotal = fabconPricePerLoad.multiply(BigDecimal.valueOf(effectiveLoads));
+
+        String detergentDesc = "";
+        if (!detergentLabel.isEmpty()) {
+            if (effectiveLoads > 1) {
+                detergentDesc = detergentLabel + " x" + effectiveLoads + " - ₱" + detergentTotal.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+            } else {
+                detergentDesc = detergentLabel + " - ₱" + detergentTotal.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+            }
+        }
+
+        String fabconDesc = "";
+        if (!fabconLabel.isEmpty()) {
+            if (effectiveLoads > 1) {
+                fabconDesc = fabconLabel + " x" + effectiveLoads + " - ₱" + fabconTotal.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+            } else {
+                fabconDesc = fabconLabel + " - ₱" + fabconTotal.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+            }
+        }
+
+        BigDecimal total = detergentTotal.add(fabconTotal);
         return new SuppliesBreakdown(
                 total,
                 detergentDesc.isEmpty() ? "None" : detergentDesc,
@@ -146,7 +189,7 @@ public class PricingService {
     }
 
     private BigDecimal calculateSuppliesPrice(String detergent, String fabcon) {
-        return calculateSuppliesPriceWithBreakdown(detergent, fabcon).total();
+        return calculateSuppliesPriceWithBreakdown(detergent, fabcon, 1).total();
     }
 
     private BigDecimal calculateDeliveryPrice(BigDecimal distanceKm) {

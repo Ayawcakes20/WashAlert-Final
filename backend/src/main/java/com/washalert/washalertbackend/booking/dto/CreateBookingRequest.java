@@ -103,6 +103,8 @@ public record CreateBookingRequest(
 
         BigDecimal deliveryPrice,
 
-        BigDecimal total
+        BigDecimal total,
+
+        String laundryType
 ) {
 }

@@ -40,6 +40,7 @@ public class JobOrderResponse {
     private LoadSize loadSize;
     private BigDecimal estimatedWeightKg;
     private String specialInstructions;
+    private String laundryType;
     private String customerPhone;
     private String customerEmail;
     private String deliveryAddress;
@@ -115,6 +116,7 @@ public class JobOrderResponse {
         BigDecimal systemFee = jo.getServicePrice() != null
                 ? jo.getServicePrice().multiply(new BigDecimal("0.02")).setScale(2, java.math.RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
+        String laundryType = extractLaundryType(jo.getSpecialInstructions());
 
         return JobOrderResponse.builder()
                 .id(jo.getId())
@@ -136,6 +138,7 @@ public class JobOrderResponse {
                 .loadSize(jo.getLoadSize())
                 .estimatedWeightKg(jo.getEstimatedWeightKg())
                 .specialInstructions(jo.getSpecialInstructions())
+                .laundryType(laundryType)
                 .customerPhone(jo.getCustomerPhone())
                 .customerEmail(jo.getCustomerEmail())
                 .deliveryAddress(jo.getDeliveryAddress())
@@ -184,6 +187,15 @@ public class JobOrderResponse {
                 .createdByName(jo.getCreatedBy() != null ? jo.getCreatedBy().getFullName() : "System")
                 .assignedByName(jo.getAssignedDriver() != null ? "Staff" : null)
                 .build();
+    }
+
+    private static String extractLaundryType(String specialInstructions) {
+        if (specialInstructions == null) return null;
+        if (specialInstructions.startsWith("[Type:")) {
+            int end = specialInstructions.indexOf(']');
+            if (end > 6) return specialInstructions.substring(6, end).trim();
+        }
+        return null;
     }
 
     private static String getDetergentBreakdown(String detergent) {

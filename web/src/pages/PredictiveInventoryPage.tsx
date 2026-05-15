@@ -55,6 +55,7 @@ export default function PredictiveInventoryPage() {
   const isAdmin = user?.role === "ADMIN";
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [forecast, setForecast] = useState<Array<{ itemId: number; itemName: string; branch: string; narrative?: string; estimatedDaysUntilStockout?: number }>>([]);
   const [forecastData, setForecastData] = useState<Array<{ branch: string; detergent: number; conditioner: number }>>([]);
   const [consumptionForecast, setConsumptionForecast] = useState<Array<{ day: string; stock: number }>>([]);
   const [loading, setLoading] = useState(true);
@@ -95,13 +96,15 @@ export default function PredictiveInventoryPage() {
       ]);
 
       const lowStockIds = new Set((alerts || []).map((a) => a.id));
-      const forecastMap = new Map<number, { usage: number; daysLeft: number }>();
+      const forecastMap = new Map<number, { usage: number; daysLeft: number; narrative?: string }>();
       (forecast || []).forEach((f) => {
         forecastMap.set(f.itemId, {
           usage: Number(f.estimatedDailyUsage || 0),
           daysLeft: Number(f.estimatedDaysUntilStockout || 0),
+          narrative: f.narrative,
         });
       });
+      setForecast(forecast || []);
 
       const mappedInventory = (items || []).map((i) => mapInventoryRecord(i, lowStockIds, forecastMap));
 
@@ -443,6 +446,19 @@ export default function PredictiveInventoryPage() {
         </motion.div>
       </div>
 
+      {/* Predictive Narrative Section */}
+      {forecast.filter(f => f.narrative).length > 0 && (
+        <motion.div variants={item} className="mt-6 space-y-3">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Inventory Recommendations</h3>
+          {forecast.filter(f => f.narrative).map((f, idx) => (
+            <div key={idx} className="flex items-start gap-3 rounded-lg border p-4 bg-muted/30">
+              <AlertTriangle className={`mt-0.5 h-4 w-4 shrink-0 ${f.estimatedDaysUntilStockout != null && f.estimatedDaysUntilStockout <= 7 ? 'text-destructive' : 'text-amber-500'}`} />
+              <p className="text-sm text-foreground/80">{f.narrative}</p>
+            </div>
+          ))}
+        </motion.div>
+      )}
+
       {/* Stock level progress view */}
       {filteredInventory.filter((i) => i.status !== "Healthy").length > 0 && (
         <motion.div variants={item} className="glass-card rounded-2xl p-6 border-l-4 border-destructive">
@@ -629,7 +645,7 @@ export default function PredictiveInventoryPage() {
 function mapInventoryRecord(
   i: InventoryRecord,
   lowStockIds: Set<number>,
-  forecastMap: Map<number, { usage: number; daysLeft: number }>,
+  forecastMap: Map<number, { usage: number; daysLeft: number; narrative?: string }>,
 ): InventoryItem {
   const itemForecast = forecastMap.get(i.id);
   const ratio = i.reorderLevel > 0 ? i.currentStock / i.reorderLevel : 2;

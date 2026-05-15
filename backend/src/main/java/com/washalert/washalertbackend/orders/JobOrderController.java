@@ -86,6 +86,15 @@ public class JobOrderController {
         return service.cancelMyOrder(trackingNumber, principal);
     }
 
+    @PostMapping("/my/{trackingNumber}/reject-price")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public JobOrderResponse rejectPrice(
+            @PathVariable String trackingNumber,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.cancelMyOrder(trackingNumber, principal);
+    }
+
     @PutMapping("/my/{trackingNumber}/reschedule")
     @PreAuthorize("hasRole('CUSTOMER')")
     public JobOrderResponse rescheduleMyOrder(

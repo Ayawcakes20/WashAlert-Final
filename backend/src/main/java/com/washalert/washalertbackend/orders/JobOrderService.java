@@ -1142,13 +1142,16 @@ public class JobOrderService {
         if (!jo.getCustomerEmail().equalsIgnoreCase(actor.getEmail())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can only cancel your own orders.");
         }
-        if (jo.getStatus() != JobOrderStatus.PENDING) {
+        if (jo.getStatus() != JobOrderStatus.PENDING && jo.getStatus() != JobOrderStatus.AWAITING_PRICE_CONFIRMATION) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Only PENDING orders can be cancelled. Current status: " + jo.getStatus());
+                    "Orders can only be cancelled when PENDING or awaiting your price confirmation. Current status: " + jo.getStatus());
         }
 
+        String cancelReason = jo.getStatus() == JobOrderStatus.AWAITING_PRICE_CONFIRMATION
+            ? "Customer rejected final price and cancelled"
+            : "Cancelled by customer";
         jo.setStatus(JobOrderStatus.CANCELLED);
-        timelineService.log(jo, jo.getStatus(), actor.getEmail(), "Cancelled by customer");
+        timelineService.log(jo, jo.getStatus(), actor.getEmail(), cancelReason);
         notificationService.enqueuePushToRoles(
                 List.of(Role.STAFF, Role.ADMIN),
                 jo.getBranch(),

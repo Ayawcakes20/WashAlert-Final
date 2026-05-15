@@ -136,12 +136,18 @@ public class BookingService {
         var est = pricingService.estimate(
                 cleanBranch,
                 req.serviceName(),
-                BigDecimal.ONE, // Base price only (no weight multiplier at booking)
+                req.estimatedWeightKg(),
                 req.isRush(),
                 req.detergentPreference(),
                 req.fabricConditionerPreference(),
                 req.distanceKm()
         );
+
+        int computedLoads = est.numberOfLoads();
+        int detQty = (req.detergentQuantity() != null && req.detergentQuantity() > 0)
+                ? req.detergentQuantity() : computedLoads;
+        int conQty = (req.conditionerQuantity() != null && req.conditionerQuantity() > 0)
+                ? req.conditionerQuantity() : computedLoads;
 
         JobOrder order = JobOrder.builder()
                 .trackingNumber("TMP-" + UUID.randomUUID())
@@ -163,12 +169,12 @@ public class BookingService {
                 .slotStartTime(slotStart)
                 .slotEndTime(slotEnd)
                 .detergentPreference(req.detergentPreference().trim())
-                .detergentQuantity(req.detergentQuantity())
+                .detergentQuantity(detQty)
                 .fabricConditionerPreference(req.fabricConditionerPreference().trim())
-                .conditionerQuantity(req.conditionerQuantity())
+                .conditionerQuantity(conQty)
                 .loadSize(req.loadSize())
                 .estimatedWeightKg(req.estimatedWeightKg())
-                .specialInstructions(trimToNull(req.specialInstructions()))
+                .specialInstructions(buildSpecialInstructions(req.laundryType(), req.specialInstructions()))
                 .servicePrice(req.servicePrice() != null ? req.servicePrice() : est.servicePrice())
                 .suppliesPrice(req.suppliesPrice() != null ? req.suppliesPrice() : est.suppliesPrice())
                 .rushPrice(req.rushPrice() != null ? req.rushPrice() : est.rushPrice())
@@ -378,5 +384,12 @@ public class BookingService {
 
     private JobOrderResponse toResponse(JobOrder jo) {
         return JobOrderResponse.from(jo, jo.isPaid() ? PaymentStatus.PAID : null);
+    }
+
+    private String buildSpecialInstructions(String laundryType, String notes) {
+        String cleanNotes = (notes == null || notes.isBlank()) ? null : notes.trim();
+        if (laundryType == null || laundryType.isBlank()) return cleanNotes;
+        String prefix = "[Type:" + laundryType.trim() + "]";
+        return cleanNotes == null ? prefix : prefix + " " + cleanNotes;
     }
 }
