@@ -275,7 +275,7 @@ export default function BookingScreen({ route, navigation }) {
         : `Booking Successful!\n\nTracking #: ${tn}`;
 
       Alert.alert('Confirmed', successMsg, [{text:'View Order',onPress:()=>{ setStep(1); navigation.navigate('Orders'); }}]);
-    }catch{ Alert.alert('Error','Failed to place booking.'); }finally{ setSub(false); }
+    }catch(err){ Alert.alert('Booking Failed', err?.message || 'Failed to place booking. Please try again.'); }finally{ setSub(false); }
   };
 
   const vis = VIS_MAP[step]||1;
