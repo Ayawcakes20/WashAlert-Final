@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { Shield, UserCog, Search, Plus, Pencil, Loader2, Truck, Mail } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { usersApi, type UserAdminRecord } from "@/lib/api";
+import { usersApi, branchesApi, type UserAdminRecord } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,19 +40,6 @@ const roleStyle: Record<Role, string> = {
   DRIVER: "bg-secondary/20 text-secondary-foreground",
   ADMIN: "bg-mint/20 text-mint-foreground",
 };
-
-const AVAILABLE_BRANCHES = [
-  "Makati Branch",
-  "Chestnut Branch",
-  "Republic Branch",
-  "Holy Spirit Branch",
-  "Sta. Catalina Branch",
-  "Brookside Branch",
-  "JP Rizal Branch",
-  "Luzon Branch",
-  "St. Anthony Branch",
-  "UP Diliman / San Vicente Branch",
-];
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 const USERS_PAGE_SIZE = 10;
@@ -95,6 +82,8 @@ export default function UsersPage() {
   const [totalUsers, setTotalUsers] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Branch list fetched from GET /api/machines/branches (dynamic, not hardcoded).
+  const [availableBranches, setAvailableBranches] = useState<string[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createSubmitting, setCreateSubmitting] = useState(false);
@@ -172,20 +161,27 @@ export default function UsersPage() {
     setUsersPage(1);
   }, [query, roleFilter, statusFilter, branchFilter]);
 
+  // Load branch list once on mount from the backend.
+  useEffect(() => {
+    branchesApi.list()
+      .then(setAvailableBranches)
+      .catch(() => setAvailableBranches([])); // fail silently; dropdowns show "No branches available"
+  }, []);
+
   const branchOptions = useMemo(() => {
-    const unique = Array.from(new Set([...AVAILABLE_BRANCHES]));
+    const unique = Array.from(new Set([...availableBranches]));
     if (branchFilter !== "ALL") unique.push(branchFilter);
     unique.sort((a, b) => a.localeCompare(b));
     return unique;
-  }, [branchFilter]);
+  }, [availableBranches, branchFilter]);
 
   const editBranchOptions = useMemo(() => {
-    const unique = new Set(AVAILABLE_BRANCHES);
+    const unique = new Set(availableBranches);
     if (selectedUser?.branch && selectedUser.branch !== "Unassigned") {
       unique.add(selectedUser.branch);
     }
     return Array.from(unique).sort((a, b) => a.localeCompare(b));
-  }, [selectedUser]);
+  }, [selectedUser, availableBranches]);
 
   const openEdit = (user: UserRecord) => {
     setSelectedUser(user);
@@ -213,7 +209,7 @@ export default function UsersPage() {
     if (!createForm.role) {
       nextErrors.role = "Role is required.";
     }
-    if (!AVAILABLE_BRANCHES.length) {
+    if (!availableBranches.length) {
       nextErrors.branch = "No branches available.";
     } else if (!createForm.branch.trim()) {
       nextErrors.branch = "Branch is required.";
@@ -579,20 +575,20 @@ export default function UsersPage() {
                   setCreateForm((prev) => ({ ...prev, branch: e.target.value }));
                   setCreateErrors((prev) => ({ ...prev, branch: "" }));
                 }}
-                disabled={!AVAILABLE_BRANCHES.length}
+                disabled={!availableBranches.length}
                 className={`w-full h-10 rounded-md border bg-background px-3 text-sm ${createErrors.branch ? "border-destructive" : "border-input"
                   }`}
               >
                 <option value="">
-                  {AVAILABLE_BRANCHES.length ? "Select branch" : "No branches available"}
+                  {availableBranches.length ? "Select branch" : "No branches available"}
                 </option>
-                {AVAILABLE_BRANCHES.map((branch) => (
+                {availableBranches.map((branch) => (
                   <option key={branch} value={branch}>
                     {branch}
                   </option>
                 ))}
               </select>
-              {!AVAILABLE_BRANCHES.length ? <p className="text-xs text-muted-foreground">No branches available</p> : null}
+              {!availableBranches.length ? <p className="text-xs text-muted-foreground">No branches available</p> : null}
               {createErrors.branch ? <p className="text-xs text-destructive">{createErrors.branch}</p> : null}
             </div>
           </div>

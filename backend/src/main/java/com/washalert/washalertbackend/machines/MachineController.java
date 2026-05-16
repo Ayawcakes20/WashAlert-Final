@@ -29,6 +29,14 @@ public class MachineController {
         this.service = service;
     }
 
+    // Returns sorted list of distinct branch names that have active machines.
+    // Used by the admin UI to populate branch dropdowns dynamically.
+    @GetMapping("/branches")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public List<String> listBranches() {
+        return service.listBranches();
+    }
+
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public List<MachineResponse> list(

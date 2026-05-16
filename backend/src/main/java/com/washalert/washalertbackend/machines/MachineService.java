@@ -37,6 +37,11 @@ public class MachineService {
         this.dataReadProperties = dataReadProperties;
     }
 
+    // Returns distinct branch names from active (non-maintenance) machines.
+    public List<String> listBranches() {
+        return repo.findDistinctActiveBranches();
+    }
+
     public List<MachineResponse> listByBranch(String branch, AuthUserDetails principal) {
         User actor = principal.getUser();
         String effectiveBranch = resolveEffectiveBranch(branch, actor);
