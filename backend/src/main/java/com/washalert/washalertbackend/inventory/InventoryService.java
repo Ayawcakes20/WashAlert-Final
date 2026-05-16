@@ -27,6 +27,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -122,6 +123,65 @@ public class InventoryService {
         if (branch == null || branch.isBlank()) return;
         validateConsumableAvailability(branch, detergent, detQty);
         validateConsumableAvailability(branch, conditioner, conQty);
+    }
+
+    // Response types for the customer-facing supplies availability endpoint
+    public record SupplyItemAvailability(String id, String label, boolean available, int availableQty) {}
+    public record SuppliesAvailability(
+            List<SupplyItemAvailability> detergent,
+            List<SupplyItemAvailability> conditioner,
+            boolean allUnavailable,
+            String message
+    ) {}
+
+    // Returns current availability for each customer-selectable supply at the given branch.
+    // No auth required — does NOT expose stock levels for non-selectable items.
+    public SuppliesAvailability getSuppliesAvailability(String branch) {
+        record ItemDef(String id, String itemName) {}
+
+        List<ItemDef> detDefs = List.of(
+                new ItemDef("surf",  "Surf Detergent"),
+                new ItemDef("ariel", "Ariel Detergent")
+        );
+        List<ItemDef> fabDefs = List.of(
+                new ItemDef("charm", "Charm Fabric Conditioner"),
+                new ItemDef("downy", "Downy Fabric Conditioner")
+        );
+
+        var detItems = detDefs.stream().map(def -> {
+            InventoryItem item = itemRepository
+                    .findByBranchIgnoreCaseAndItemNameIgnoreCase(branch.trim(), def.itemName())
+                    .orElse(null);
+            int qty = (item != null && item.getCurrentStock() != null)
+                    ? item.getCurrentStock().intValue() : 0;
+            return new SupplyItemAvailability(def.id(), def.itemName(), qty > 0, qty);
+        }).toList();
+
+        var fabItems = fabDefs.stream().map(def -> {
+            InventoryItem item = itemRepository
+                    .findByBranchIgnoreCaseAndItemNameIgnoreCase(branch.trim(), def.itemName())
+                    .orElse(null);
+            int qty = (item != null && item.getCurrentStock() != null)
+                    ? item.getCurrentStock().intValue() : 0;
+            return new SupplyItemAvailability(def.id(), def.itemName(), qty > 0, qty);
+        }).toList();
+
+        boolean allUnavailable = detItems.stream().noneMatch(SupplyItemAvailability::available)
+                && fabItems.stream().noneMatch(SupplyItemAvailability::available);
+        boolean someUnavailable = detItems.stream().anyMatch(i -> !i.available())
+                || fabItems.stream().anyMatch(i -> !i.available());
+
+        String message = null;
+        if (allUnavailable) {
+            message = "All add-on supplies are currently unavailable at this branch. Please select None or choose another branch.";
+        } else if (someUnavailable) {
+            List<String> names = new ArrayList<>();
+            detItems.stream().filter(i -> !i.available()).forEach(i -> names.add(i.label()));
+            fabItems.stream().filter(i -> !i.available()).forEach(i -> names.add(i.label()));
+            message = "Some supplies are unavailable at this branch: " + String.join(", ", names) + ".";
+        }
+
+        return new SuppliesAvailability(detItems, fabItems, allUnavailable, message);
     }
 
     public List<InventoryItemResponse> list(String branch, AuthUserDetails principal) {

@@ -161,6 +161,7 @@ public class SecurityConfig {
                                 "/api/support/chat")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/bookings/slots").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/bookings/supplies-availability").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/orders/track/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/payments/track/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/deliveries/track/**").permitAll()

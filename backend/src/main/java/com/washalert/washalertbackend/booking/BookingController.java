@@ -48,6 +48,15 @@ public class BookingController {
 
     public record CheckSuppliesResponse(boolean available, String message) {}
 
+    // Returns per-item availability for all customer-selectable supplies at the given branch.
+    // No auth required, no stock deducted. Used to render unavailable badges on Extras page.
+    @GetMapping("/supplies-availability")
+    public InventoryService.SuppliesAvailability getSuppliesAvailability(
+            @RequestParam String branch
+    ) {
+        return inventoryService.getSuppliesAvailability(branch);
+    }
+
     @GetMapping("/slots")
     public List<BookingSlotResponse> getAvailableSlots(
             @RequestParam String branch,
