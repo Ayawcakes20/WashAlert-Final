@@ -29,4 +29,11 @@ public interface MachineRepository extends JpaRepository<Machine, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select m from Machine m where lower(m.branch) = lower(:branch)")
     List<Machine> lockByBranch(@Param("branch") String branch);
+
+    // Returns distinct branch names that have at least one non-maintenance machine.
+    // Used by GET /api/machines/branches to populate branch dropdowns in admin UI.
+    @Query("select distinct m.branch from Machine m where m.branch is not null " +
+           "and m.status <> com.washalert.washalertbackend.machines.MachineStatus.MAINTENANCE " +
+           "order by m.branch")
+    List<String> findDistinctActiveBranches();
 }

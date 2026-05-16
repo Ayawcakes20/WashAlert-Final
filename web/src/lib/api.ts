@@ -435,6 +435,12 @@ export const ordersApi = {
 };
 
 
+// Fetches sorted list of distinct branch names from GET /api/machines/branches.
+// Only branches that have at least one active (non-maintenance) machine are included.
+export const branchesApi = {
+  list: () => apiRequest<string[]>("/api/machines/branches"),
+};
+
 export const usersApi = {
   listStaff: () => apiRequest<UserAdminRecord[]>("/api/admin/users/staff"),
   listStaffPaged: (params?: {
