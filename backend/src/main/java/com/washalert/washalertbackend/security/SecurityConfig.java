@@ -97,6 +97,7 @@ public class SecurityConfig {
                                 // Mobile and auth endpoints rely on Bearer tokens, not cookies
                                 "/api/auth/**",
                                 "/api/bookings",
+                                "/api/bookings/check-supplies",
                                 "/api/payments/checkout/**",
                                 "/api/support/chat",
                                 "/api/orders/**",
@@ -153,6 +154,7 @@ public class SecurityConfig {
                                 "/api/auth/set-password",
                                 "/api/auth/otp/**",
                                 "/api/bookings",
+                                "/api/bookings/check-supplies",
                                 "/api/payments/webhook",
                                 "/api/payments/checkout/**",
                                 "/api/payments/paymongo/webhook",
