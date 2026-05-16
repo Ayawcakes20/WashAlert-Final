@@ -230,6 +230,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
                 <Image source={logo} style={S.logoImg} resizeMode="contain" />
               </View>
               <Text style={S.brandName}>WashAlert</Text>
+              <Text style={S.receiptSubtitle}>Official Receipt</Text>
               <Text style={S.branchName}>{String(fullOrderData.branchName || 'MAKATI BRANCH').toUpperCase()}</Text>
             </View>
 
@@ -250,11 +251,23 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
               </View>
             </View>
 
-            {/* Weight badge */}
+            {/* Weight + loads info */}
+            {fullOrderData.estimatedWeightKg ? (
+              <View style={[S.weightBadge, {backgroundColor:'#F8FAFC', borderColor:'#E2E8F0'}]}>
+                <Ionicons name="scale-outline" size={15} color="#64748B" />
+                <Text style={[S.weightTxt, {color:'#475569'}]}>Est. weight: <Text style={{fontWeight:'900'}}>{fullOrderData.estimatedWeightKg} kg</Text></Text>
+              </View>
+            ) : null}
             {weight ? (
               <View style={S.weightBadge}>
-                <Ionicons name="scale-outline" size={15} color="#16A34A" />
+                <Ionicons name="checkmark-circle-outline" size={15} color="#16A34A" />
                 <Text style={S.weightTxt}>Actual weight: <Text style={{fontWeight:'900'}}>{weight}</Text></Text>
+              </View>
+            ) : null}
+            {p && p.numberOfLoads > 0 ? (
+              <View style={[S.weightBadge, {backgroundColor:'#EFF6FF', borderColor:'#BFDBFE'}]}>
+                <Ionicons name="layers-outline" size={15} color="#2563EB" />
+                <Text style={[S.weightTxt, {color:'#1D4ED8'}]}>No. of loads: <Text style={{fontWeight:'900'}}>{p.numberOfLoads}</Text></Text>
               </View>
             ) : null}
 
@@ -268,10 +281,16 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
             )}
 
             {p.detCost > 0 && (
-              <ReceiptRow label={`${fullOrderData.detergent || 'Detergent'}`} value={fmt(p.detCost)} />
+              <ReceiptRow
+                label={`${fullOrderData.detergent || 'Detergent'} ×${p.detQty} pack${p.detQty !== 1 ? 's' : ''} (₱${p.detPPP}/pk)`}
+                value={fmt(p.detCost)}
+              />
             )}
             {p.conCost > 0 && (
-              <ReceiptRow label={`${fullOrderData.conditioner || 'Conditioner'}`} value={fmt(p.conCost)} />
+              <ReceiptRow
+                label={`${fullOrderData.conditioner || 'Conditioner'} ×${p.conQty} pack${p.conQty !== 1 ? 's' : ''} (₱${p.conPPP}/pk)`}
+                value={fmt(p.conCost)}
+              />
             )}
 
             {Number(p.deliveryFee) > 0 && (
@@ -297,6 +316,9 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
               <View style={S.payBox}>
                 <Text style={S.payLabel}>PAYMENT</Text>
                 <Text style={S.payMethod}>{paymentMethod}</Text>
+                {fullOrderData.paymentStatus ? (
+                  <Text style={S.payStatus}>{String(fullOrderData.paymentStatus)}</Text>
+                ) : null}
               </View>
             </View>
 
@@ -317,6 +339,8 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
                 : <Text style={S.rejectBtnTxt}>Reject Final Price</Text>
               }
             </TouchableOpacity>
+
+            <Text style={S.systemGenNote}>This receipt is system-generated.</Text>
 
             <Text style={S.legalTxt}>
               By confirming, you agree to the total above. Washing begins only pagkatapos ng iyong confirmation.
@@ -346,6 +370,7 @@ const S = StyleSheet.create({
   logoWrapper: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 10 },
   logoImg: { width: 40, height: 40 },
   brandName: { fontSize: 20, fontWeight: '900', color: '#1E293B', letterSpacing: -0.3 },
+  receiptSubtitle: { fontSize: 9, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: 1.5, marginTop: 1 },
   branchName: { fontSize: 10, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 2 },
   trackingBox: { alignItems: 'center', marginBottom: 16 },
   trackingLabel: { fontSize: 28, fontWeight: '900', color: '#2563EB', letterSpacing: -1.5 },
@@ -367,6 +392,8 @@ const S = StyleSheet.create({
   payBox: { alignItems: 'flex-end' },
   payLabel: { fontSize: 10, color: '#94A3B8', fontWeight: '700', letterSpacing: 0.5 },
   payMethod: { fontSize: 12, fontWeight: '800', color: '#FBBF24', marginTop: 2 },
+  payStatus: { fontSize: 9, color: '#94A3B8', marginTop: 1 },
+  systemGenNote: { fontSize: 10, color: '#CBD5E1', textAlign: 'center', fontStyle: 'italic', marginTop: 8, marginBottom: 4 },
   confirmBtn: { backgroundColor: '#2563EB', borderRadius: 16, height: 58, alignItems: 'center', justifyContent: 'center' },
   confirmBtnTxt: { color: '#fff', fontSize: 17, fontWeight: '800' },
   rejectBtn: { borderWidth: 1.5, borderColor: '#EF4444', borderRadius: 16, height: 52, alignItems: 'center', justifyContent: 'center', marginTop: 10 },
