@@ -742,7 +742,6 @@ export default function OrderManagementPage() {
     }
   };
 
-  // ── FEEDBACK STATE ────────────────────────────────────────────────────────
   const [feedbackData, setFeedbackData] = useState<FeedbackResponse | null>(null);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [staffNoteInput, setStaffNoteInput] = useState("");
@@ -765,9 +764,9 @@ export default function OrderManagementPage() {
     if (!selectedOrder) return;
     setStaffNoteSubmitting(true);
     try {
-      const updated = await feedbackApi.submitStaffNote(selectedOrder.orderId, staffNoteInput);
-      setFeedbackData(updated);
+      await feedbackApi.submitStaffNote(selectedOrder.orderId, staffNoteInput);
       toast.success("Staff note saved.");
+      void loadFeedback(selectedOrder.orderId);
     } catch (err: any) {
       toast.error(err?.message || "Failed to save staff note.");
     } finally {
@@ -1944,7 +1943,6 @@ export default function OrderManagementPage() {
                 )}
               </div>
 
-              {/* FEEDBACK & STAFF NOTES — shown for completed orders */}
               {(selectedOrder.status === 'DELIVERED' || selectedOrder.status === 'READY') && (
                 <div className="border-t border-slate-100 pt-4 space-y-4">
                   <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">

@@ -563,7 +563,6 @@ export default function OrderDetailScreen({ route, navigation }) {
           </View>
         )}
 
-        {/* FEEDBACK CARD — shown when order is delivered or ready */}
         {(ns === 'delivered' || ns === 'ready') && (
           <View style={styles.card}>
             <Text style={[styles.cardTitle, {marginBottom:12}]}>
@@ -609,13 +608,11 @@ export default function OrderDetailScreen({ route, navigation }) {
                 </TouchableOpacity>
               </>
             )}
-            {feedbackDone && feedbackComment ? (
-              <Text style={{fontSize:13, color:'#374151', fontStyle:'italic', lineHeight:20}}>
-                &ldquo;{feedbackComment}&rdquo;
-              </Text>
-            ) : feedbackDone ? (
-              <Text style={{fontSize:12, color:'#9CA3AF'}}>No comment added.</Text>
-            ) : null}
+            {feedbackDone && (
+              feedbackComment
+                ? <Text style={{fontSize:13, color:'#374151', fontStyle:'italic', lineHeight:20}}>&ldquo;{feedbackComment}&rdquo;</Text>
+                : <Text style={{fontSize:12, color:'#9CA3AF'}}>No comment added.</Text>
+            )}
             {feedbackDone && existingFeedback?.feedbackSubmittedAt && (
               <Text style={{fontSize:10, color:'#9CA3AF', marginTop:8}}>
                 Submitted {new Date(existingFeedback.feedbackSubmittedAt).toLocaleDateString()}
