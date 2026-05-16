@@ -13,6 +13,7 @@ import {
   Pencil,
   Phone,
   Plus,
+  Printer,
   RefreshCw,
   Scale,
   Search,
@@ -30,6 +31,7 @@ import {
   type UserAdminRecord,
 } from "@/lib/api";
 import { FinalizeWeightModal, type FinalizeOrderData } from "@/components/FinalizeWeightModal";
+import { printOrderReceipt } from "@/lib/receiptPrinter";
 import logoLaundryHubs from "@/assets/logo-laundryhubs.webp";
 import logoSpeedyWash from "@/assets/logo-speedywash.webp";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -2010,69 +2012,135 @@ export default function OrderManagementPage() {
         <Dialog open={showReceiptPreview} onOpenChange={setShowReceiptPreview}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle className="text-center text-lg font-black tracking-tight">Order Receipt</DialogTitle>
-              <DialogDescription className="text-center text-xs text-slate-400">
-                {selectedOrder.orderId}
+              <DialogTitle className="text-center">
+                <span className="text-xl font-black tracking-widest uppercase">WashAlert</span>
+                <br />
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                  Official Receipt / Transaction Record
+                </span>
+              </DialogTitle>
+              <DialogDescription className="text-center font-black text-blue-600 text-xl tracking-tight mt-1">
+                WA-{selectedOrder.orderId.replace(/^WA-/, "")}
               </DialogDescription>
             </DialogHeader>
 
             {(() => {
               const o = selectedOrder;
-              const weight = o.actualWeightKg ?? o.estimatedWeightKg ?? 0;
+              const actualKg = o.actualWeightKg ?? 0;
               const serviceBase = o.servicePrice ?? 0;
               const extraWeight = o.extraWeightCost ?? 0;
               const rush = o.rushPrice ?? 0;
-              const detergentCost = o.detergent && o.detergent.toLowerCase() !== 'none'
-                ? (o.detergent.toLowerCase().includes('ariel') ? 30 : 25) * (o.detergentQuantity || 1)
-                : 0;
-              const conditionerCost = o.conditioner && o.conditioner.toLowerCase() !== 'none'
-                ? (o.conditioner.toLowerCase().includes('downy') ? 25 : 15) * (o.conditionerQuantity || 1)
-                : 0;
+              const detPPP = o.detergent && o.detergent.toLowerCase() !== "none"
+                ? (o.detergent.toLowerCase().includes("ariel") ? 30 : 25) : 0;
+              const detCost = detPPP * (o.detergentQuantity || 1);
+              const conPPP = o.conditioner && o.conditioner.toLowerCase() !== "none"
+                ? (o.conditioner.toLowerCase().includes("downy") ? 25 : 15) : 0;
+              const conCost = conPPP * (o.conditionerQuantity || 1);
               const delivery = o.deliveryPrice ?? 0;
-              const subtotal = serviceBase + extraWeight + rush + detergentCost + conditionerCost + delivery;
+              const subtotal = serviceBase + extraWeight + rush + detCost + conCost + delivery;
               const sysFee = o.systemFee ?? Math.round(subtotal * 0.02 * 100) / 100;
               const total = o.finalPrice ?? o.totalPrice ?? (subtotal + sysFee);
 
-              const row = (label: string, value: number, muted = false) => (
-                <div className={`flex justify-between items-center py-1 ${muted ? "text-slate-400" : ""}`}>
+              const nm = (o.serviceName ?? "").toLowerCase();
+              let loadsText = "N/A";
+              if (actualKg > 0) {
+                if (nm.includes("handwash")) {
+                  loadsText = "1 load (by kg)";
+                } else {
+                  const limit = nm.includes("ecowash") ? 5 : (nm.includes("wash") && !nm.includes("full")) ? 7 : 8;
+                  const loads = Math.ceil(actualKg / limit);
+                  loadsText = `${loads} load${loads !== 1 ? "s" : ""}`;
+                }
+              }
+
+              const infoRow = (label: string, value: string) => (
+                <div key={label} className="flex justify-between py-0.5">
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{label}</span>
+                  <span className="text-[11px] font-bold text-slate-800 text-right max-w-[58%]">{value}</span>
+                </div>
+              );
+              const amtRow = (label: string, value: number, muted = false) => (
+                <div key={label} className={`flex justify-between items-center py-1 ${muted ? "text-slate-400" : ""}`}>
                   <span className={`text-xs font-semibold ${muted ? "text-slate-400" : "text-slate-600"}`}>{label}</span>
-                  <span className={`text-sm font-black tabular-nums ${muted ? "text-slate-400" : "text-slate-900"}`}>₱{value.toFixed(2)}</span>
+                  <span className={`text-sm font-black tabular-nums font-mono ${muted ? "text-slate-400" : "text-slate-900"}`}>
+                    ₱{value.toFixed(2)}
+                  </span>
                 </div>
               );
 
               return (
-                <div className="space-y-1 py-2">
-                  <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-400 pb-2 border-b border-slate-100">
-                    <span>Customer</span>
-                    <span>{o.customerName}</span>
+                <div className="space-y-3 py-1 text-sm max-h-[55vh] overflow-y-auto pr-1">
+                  {/* Date */}
+                  <div className="text-center text-[10px] text-slate-400 font-mono">
+                    {new Date(o.createdAt || Date.now()).toLocaleString("en-PH", {
+                      dateStyle: "medium", timeStyle: "short",
+                    })}
                   </div>
-                  <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-400 pb-2 border-b border-slate-100">
-                    <span>Status</span>
-                    <span>{statusLabel[o.status] || o.status}</span>
+
+                  {/* Order info */}
+                  <div className="bg-slate-50 rounded-xl px-4 py-3 space-y-0.5">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Order Information</p>
+                    {infoRow("Customer", o.customerName || "N/A")}
+                    {o.customerPhone ? infoRow("Contact", o.customerPhone) : null}
+                    {infoRow("Branch", o.branch || "N/A")}
+                    {infoRow("Service", o.serviceName || "N/A")}
+                    {infoRow("Service Type", o.serviceType === "PICKUP_DELIVERY" ? "Pickup & Delivery" : "Drop-Off")}
+                    {infoRow("Est. Weight", o.estimatedWeightKg ? `${o.estimatedWeightKg} kg` : "N/A")}
+                    {infoRow("Actual Weight", o.actualWeightKg ? `${o.actualWeightKg} kg` : "N/A")}
+                    {infoRow("No. of Loads", loadsText)}
+                    {o.detergent && o.detergent.toLowerCase() !== "none"
+                      ? infoRow("Detergent", `${o.detergent} ×${o.detergentQuantity || 1} (₱${detPPP}/pack)`)
+                      : null}
+                    {o.conditioner && o.conditioner.toLowerCase() !== "none"
+                      ? infoRow("Fabric Conditioner", `${o.conditioner} ×${o.conditionerQuantity || 1} (₱${conPPP}/pack)`)
+                      : null}
+                    {infoRow("Order Status", statusLabel[o.status] || o.status)}
                   </div>
-                  <div className="pt-2 space-y-0.5">
-                    {row(o.serviceName || "Service", serviceBase)}
-                    {extraWeight > 0 && row(`Extra Weight (${weight > 8 ? `${(weight - 8).toFixed(1)}kg × ₱50` : ""})`, extraWeight)}
-                    {rush > 0 && row("Rush Fee", rush)}
-                    {detergentCost > 0 && row(`Detergent (${o.detergent} ×${o.detergentQuantity || 1})`, detergentCost)}
-                    {conditionerCost > 0 && row(`Conditioner (${o.conditioner} ×${o.conditionerQuantity || 1})`, conditionerCost)}
-                    {delivery > 0 && row("Delivery Fee", delivery)}
-                    {row("System Fee (2%)", sysFee, true)}
+
+                  {/* Charges */}
+                  <div className="border-t border-dashed border-slate-200 pt-2 space-y-0.5">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Charges</p>
+                    {serviceBase > 0 && amtRow(o.serviceName || "Service Fee", serviceBase)}
+                    {extraWeight > 0 && amtRow(`Extra Weight${actualKg > 8 ? ` (${(actualKg - 8).toFixed(1)} kg × ₱50)` : ""}`, extraWeight)}
+                    {rush > 0 && amtRow("⚡ Rush Fee", rush)}
+                    {detCost > 0 && amtRow(`${o.detergent} Detergent ×${o.detergentQuantity || 1}`, detCost)}
+                    {conCost > 0 && amtRow(`${o.conditioner} Conditioner ×${o.conditionerQuantity || 1}`, conCost)}
+                    {delivery > 0 && amtRow("Pickup / Delivery Fee", delivery)}
+                    {amtRow("System & Convenience Fee (2%)", sysFee, true)}
                   </div>
-                  <div className="pt-3 mt-2 border-t-2 border-dashed border-slate-200 flex justify-between items-center">
-                    <span className="text-xs font-black uppercase tracking-widest text-slate-900">Total</span>
-                    <span className="text-2xl font-black text-blue-600 tabular-nums">₱{total.toFixed(2)}</span>
+
+                  {/* Total */}
+                  <div className="pt-3 border-t-2 border-dashed border-slate-200 flex justify-between items-end">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Total Amount Due</p>
+                      <p className="text-2xl font-black text-blue-600 tabular-nums font-mono">₱{total.toFixed(2)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[11px] font-black uppercase tracking-wide text-slate-800">
+                        {(o.paymentMethod || "Cash on Delivery").replace(/_/g, " ")}
+                      </p>
+                      <p className="text-[10px] text-slate-400">{resolvePaymentStatusLabel(o)}</p>
+                    </div>
                   </div>
-                  <div className="pt-2 flex justify-between text-[11px] text-slate-400">
-                    <span>Payment</span>
-                    <span className="font-bold">{o.paymentMethod || "Cash on Delivery"} · {resolvePaymentStatusLabel(o)}</span>
-                  </div>
+
+                  <p className="text-center text-[9px] text-slate-300 italic">This receipt is system-generated.</p>
                 </div>
               );
             })()}
 
-            <DialogFooter>
-              <Button variant="outline" className="w-full" onClick={() => setShowReceiptPreview(false)}>
+            <DialogFooter className="flex-row gap-2 pt-1">
+              <Button
+                variant="outline"
+                className="flex-1 font-bold"
+                onClick={() => printOrderReceipt(selectedOrder)}
+              >
+                <Printer className="h-4 w-4 mr-2" /> Print Receipt
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1 font-bold"
+                onClick={() => setShowReceiptPreview(false)}
+              >
                 Close
               </Button>
             </DialogFooter>
