@@ -74,7 +74,7 @@ export function AppSidebar() {
       [
         { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, visible: true },
         { title: "User Management", url: "/users", icon: Users, visible: isAdmin },
-        { title: "Order Management", url: "/orders", icon: ClipboardList, visible: !isAdmin },
+        { title: "Order Management", url: "/orders", icon: ClipboardList, visible: true },
         { title: "Predictive Inventory", url: "/inventory", icon: Package, visible: true },
         { title: "AI Analytics & Reports", url: "/analytics", icon: BarChart3, visible: isAdmin },
         { title: "IkotAsk", url: "/support-tickets", icon: MessageCircle, visible: true, badge: openTicketsCount > 0 ? openTicketsCount : null },
