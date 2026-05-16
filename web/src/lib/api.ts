@@ -434,6 +434,25 @@ export const ordersApi = {
     }),
 };
 
+export type FeedbackResponse = {
+  trackingNumber: string;
+  customerRating: number | null;
+  customerComment: string | null;
+  feedbackSubmittedAt: string | null;
+  staffNote: string | null;
+  staffNoteUpdatedAt: string | null;
+};
+
+export const feedbackApi = {
+  getForOrder: (trackingNumber: string) =>
+    apiRequest<FeedbackResponse>(`/api/orders/feedback/${encodeURIComponent(trackingNumber)}`),
+  submitStaffNote: (trackingNumber: string, note: string) =>
+    apiRequest<FeedbackResponse>(`/api/orders/feedback/${encodeURIComponent(trackingNumber)}/staff-note`, {
+      method: "PATCH",
+      body: { note },
+    }),
+};
+
 
 // Fetches sorted list of distinct branch names from GET /api/machines/branches.
 // Only branches that have at least one active (non-maintenance) machine are included.
