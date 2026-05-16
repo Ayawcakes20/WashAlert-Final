@@ -432,6 +432,17 @@ export const ordersApi = {
       method: "PUT",
       body: payload,
     }),
+  exportCsv: async (fromDate?: string, toDate?: string): Promise<string> => {
+    const q = new URLSearchParams();
+    if (fromDate) q.set("fromDate", fromDate);
+    if (toDate)   q.set("toDate",   toDate);
+    const suffix = q.toString() ? `?${q.toString()}` : "";
+    const response = await fetch(`${API_BASE_URL}/api/orders/export${suffix}`, {
+      credentials: "include",
+    });
+    if (!response.ok) throw new Error("Export failed.");
+    return response.text();
+  },
 };
 
 export type FeedbackResponse = {

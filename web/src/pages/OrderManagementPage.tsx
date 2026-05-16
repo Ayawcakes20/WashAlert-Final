@@ -4,6 +4,7 @@ import {
   AlertCircle,
   CheckCircle2,
   ChevronRight,
+  Download,
   Info,
   Eye,
   Filter,
@@ -35,7 +36,7 @@ import {
   type UserAdminRecord,
 } from "@/lib/api";
 import { FinalizeWeightModal, type FinalizeOrderData } from "@/components/FinalizeWeightModal";
-import { printOrderReceipt } from "@/lib/receiptPrinter";
+import { printOrderReceipt, downloadOrderReceipt } from "@/lib/receiptPrinter";
 import logoLaundryHubs from "@/assets/logo-laundryhubs.webp";
 import logoSpeedyWash from "@/assets/logo-speedywash.webp";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -556,6 +557,24 @@ export default function OrderManagementPage() {
     setRefreshing(false);
   };
 
+  const handleExportCsv = async () => {
+    try {
+      const csv = await ordersApi.exportCsv();
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `washalert-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Export failed.";
+      toast.error(msg);
+    }
+  };
+
   useEffect(() => {
     setOrdersPage(1);
     void loadOrders(0, false);
@@ -888,6 +907,14 @@ export default function OrderManagementPage() {
           >
             <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
             {refreshing ? "Refreshing..." : "Refresh"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 px-3 rounded-brand border-brand-border text-brand-text hover:bg-brand-mintSoft"
+            onClick={() => void handleExportCsv()}
+          >
+            <Download className="h-4 w-4 mr-1" /> Export CSV
           </Button>
           {isAdmin && (
             <Button className="h-10 px-5 rounded-brand bg-brand-navy text-white hover:bg-brand-navyDark" onClick={openCreateModal}>
@@ -2239,13 +2266,20 @@ export default function OrderManagementPage() {
               );
             })()}
 
-            <DialogFooter className="flex-row gap-2 pt-1">
+            <DialogFooter className="flex-row gap-2 pt-1 flex-wrap">
               <Button
                 variant="outline"
                 className="flex-1 font-bold"
-                onClick={() => printOrderReceipt({ ...selectedOrder, loadSize: selectedOrder.loadSize ?? undefined })}
+                onClick={() => printOrderReceipt({ ...selectedOrder, loadSize: selectedOrder.loadSize ?? undefined, laundryType: selectedOrder.laundryType ?? undefined })}
               >
                 <Printer className="h-4 w-4 mr-2" /> Print Receipt
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1 font-bold"
+                onClick={() => downloadOrderReceipt({ ...selectedOrder, loadSize: selectedOrder.loadSize ?? undefined, laundryType: selectedOrder.laundryType ?? undefined })}
+              >
+                <Download className="h-4 w-4 mr-2" /> Download
               </Button>
               <Button
                 variant="outline"

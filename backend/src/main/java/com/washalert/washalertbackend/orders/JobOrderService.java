@@ -1240,6 +1240,64 @@ public class JobOrderService {
         return response;
     }
 
+    // ── CSV EXPORT ────────────────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public String exportToCsv(AuthUserDetails principal, LocalDate fromDate, LocalDate toDate) {
+        List<JobOrderResponse> orders = listAll(principal);
+
+        if (fromDate != null || toDate != null) {
+            LocalDateTime from = fromDate != null ? fromDate.atStartOfDay() : LocalDateTime.MIN;
+            LocalDateTime to   = toDate   != null ? toDate.atTime(23, 59, 59) : LocalDateTime.MAX;
+            orders = orders.stream()
+                    .filter(o -> o.getCreatedAt() != null
+                            && !o.getCreatedAt().isBefore(from)
+                            && !o.getCreatedAt().isAfter(to))
+                    .toList();
+        }
+
+        StringBuilder sb = new StringBuilder(
+                "Tracking Number,Customer,Branch,Service,Service Type,Load Size,Est. Weight (kg),"
+                + "Actual Weight (kg),Detergent,Det. Qty,Fabric Conditioner,Con. Qty,"
+                + "Service Price,Delivery Price,Rush Price,Supplies Price,System Fee,Total Price,"
+                + "Payment Method,Payment Status,Order Status,Created At\n");
+
+        for (JobOrderResponse o : orders) {
+            sb.append(csvField(o.getTrackingNumber())).append(',')
+              .append(csvField(o.getCustomerName())).append(',')
+              .append(csvField(o.getBranch())).append(',')
+              .append(csvField(o.getServiceName())).append(',')
+              .append(o.getServiceType() != null ? o.getServiceType().name() : "").append(',')
+              .append(o.getLoadSize() != null ? o.getLoadSize().name() : "").append(',')
+              .append(o.getEstimatedWeightKg() != null ? o.getEstimatedWeightKg().toPlainString() : "").append(',')
+              .append(o.getActualWeightKg()    != null ? o.getActualWeightKg().toPlainString()    : "").append(',')
+              .append(csvField(o.getDetergentPreference())).append(',')
+              .append(o.getDetergentQuantity()  != null ? o.getDetergentQuantity()  : 0).append(',')
+              .append(csvField(o.getFabricConditionerPreference())).append(',')
+              .append(o.getConditionerQuantity() != null ? o.getConditionerQuantity() : 0).append(',')
+              .append(o.getServicePrice()   != null ? o.getServicePrice().toPlainString()   : "0").append(',')
+              .append(o.getDeliveryPrice()  != null ? o.getDeliveryPrice().toPlainString()  : "0").append(',')
+              .append(o.getRushPrice()      != null ? o.getRushPrice().toPlainString()      : "0").append(',')
+              .append(o.getSuppliesPrice()  != null ? o.getSuppliesPrice().toPlainString()  : "0").append(',')
+              .append(o.getSystemFee()      != null ? o.getSystemFee().toPlainString()      : "0").append(',')
+              .append(o.getTotalPrice()     != null ? o.getTotalPrice().toPlainString()     : "0").append(',')
+              .append(csvField(o.getPaymentMethod())).append(',')
+              .append(o.getPaymentStatus()  != null ? o.getPaymentStatus().name()  : "").append(',')
+              .append(o.getStatus()         != null ? o.getStatus().name()         : "").append(',')
+              .append(o.getCreatedAt()      != null ? o.getCreatedAt().toString()  : "")
+              .append('\n');
+        }
+        return sb.toString();
+    }
+
+    private static String csvField(String value) {
+        if (value == null || value.isEmpty()) return "";
+        if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
+            return "\"" + value.replace("\"", "\"\"") + "\"";
+        }
+        return value;
+    }
+
     private static final String FS_RATING        = "customerRating";
     private static final String FS_COMMENT       = "customerComment";
     private static final String FS_SUBMITTED_AT  = "feedbackSubmittedAt";
