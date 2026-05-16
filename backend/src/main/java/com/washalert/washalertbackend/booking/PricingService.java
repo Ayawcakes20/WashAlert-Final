@@ -80,6 +80,64 @@ public class PricingService {
         return 1;
     }
 
+    /**
+     * Validates add-on quantities against service-level rules.
+     * <p>
+     * Dry-only and Dry-clean services (no washing cycle) must have no add-ons.
+     * All other washing services cap add-on packs at the computed number of loads.
+     *
+     * @throws IllegalArgumentException with a user-facing message on violation
+     */
+    public void validateAddonQuantities(
+            String serviceName,
+            BigDecimal weightKg,
+            String detergent,
+            int detQty,
+            String fabcon,
+            int conQty) {
+
+        if (serviceName == null) return;
+        String name = serviceName.toLowerCase(Locale.ROOT);
+
+        if (isDryOnlyService(name)) {
+            boolean detActive = detergent != null && !detergent.isBlank()
+                    && !detergent.equalsIgnoreCase("none");
+            boolean fabActive = fabcon != null && !fabcon.isBlank()
+                    && !fabcon.equalsIgnoreCase("none");
+            if (detActive || fabActive) {
+                throw new IllegalArgumentException("Add-ons are not needed for Dry-only service.");
+            }
+            return;
+        }
+
+        int maxLoads = computeLoadCount(serviceName, weightKg);
+        if (maxLoads <= 0) return;
+
+        boolean detActive = detergent != null && !detergent.isBlank()
+                && !detergent.equalsIgnoreCase("none");
+        boolean fabActive = fabcon != null && !fabcon.isBlank()
+                && !fabcon.equalsIgnoreCase("none");
+
+        if (detActive && detQty > maxLoads) {
+            throw new IllegalArgumentException(
+                    "This booking only needs up to " + maxLoads + " pack(s) based on the number of loads.");
+        }
+        if (fabActive && conQty > maxLoads) {
+            throw new IllegalArgumentException(
+                    "This booking only needs up to " + maxLoads + " pack(s) based on the number of loads.");
+        }
+    }
+
+    // Mirrors the dry-only price branch in calculateServicePrice():
+    // a "dry" service that is not a wash, full-service, or handwash variant.
+    // Also covers "Dry Clean" (quote-based) which similarly uses no consumables.
+    private boolean isDryOnlyService(String lowerName) {
+        return lowerName.contains("dry")
+                && !lowerName.contains("wash")
+                && !lowerName.contains("full")
+                && !lowerName.contains("hand");
+    }
+
     private BigDecimal calculateServicePrice(String serviceName, BigDecimal weight) {
         if (serviceName == null) return BigDecimal.ZERO;
         String name = serviceName.toLowerCase(Locale.ROOT);

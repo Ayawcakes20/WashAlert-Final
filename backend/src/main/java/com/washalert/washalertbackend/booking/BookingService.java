@@ -147,6 +147,16 @@ public class BookingService {
                 req.distanceKm()
         );
 
+        // Reject tampered add-on quantities before any fallback logic runs.
+        pricingService.validateAddonQuantities(
+                req.serviceName(),
+                req.estimatedWeightKg(),
+                req.detergentPreference(),
+                req.detergentQuantity() != null ? req.detergentQuantity() : 0,
+                req.fabricConditionerPreference(),
+                req.conditionerQuantity() != null ? req.conditionerQuantity() : 0
+        );
+
         int computedLoads = est.numberOfLoads();
         int detQty = (req.detergentQuantity() != null && req.detergentQuantity() > 0)
                 ? req.detergentQuantity() : computedLoads;

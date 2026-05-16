@@ -5,6 +5,7 @@ import com.washalert.washalertbackend.common.dto.PagedResponse;
 import com.washalert.washalertbackend.delivery.DeliveryService;
 import com.washalert.washalertbackend.firebase.FirestoreReadService;
 import com.washalert.washalertbackend.firebase.FirestoreSyncService;
+import com.washalert.washalertbackend.booking.PricingService;
 import com.washalert.washalertbackend.inventory.InventoryService;
 import com.washalert.washalertbackend.machines.MachineRepository;
 import com.washalert.washalertbackend.machines.MachineStatus;
@@ -61,6 +62,7 @@ public class JobOrderService {
     private final UserRepository userRepository;
     private final InventoryService inventoryService;
     private final MachineRepository machineRepository;
+    private final PricingService pricingService;
 
     public JobOrderService(
             JobOrderRepository repo,
@@ -74,7 +76,8 @@ public class JobOrderService {
             DeliveryService deliveryService,
             UserRepository userRepository,
             InventoryService inventoryService,
-            MachineRepository machineRepository) {
+            MachineRepository machineRepository,
+            PricingService pricingService) {
         this.repo = repo;
         this.historyRepository = historyRepository;
         this.timelineService = timelineService;
@@ -87,6 +90,7 @@ public class JobOrderService {
         this.userRepository = userRepository;
         this.inventoryService = inventoryService;
         this.machineRepository = machineRepository;
+        this.pricingService = pricingService;
     }
 
     @Transactional(readOnly = true)
@@ -357,11 +361,20 @@ public class JobOrderService {
             }
             jo.setStatus(req.status());
             if (req.status() == JobOrderStatus.WASHING) {
-                // Re-validate availability in case stock changed since booking was created.
                 int detQty = (jo.getDetergentQuantity() != null && jo.getDetergentQuantity() > 0)
                         ? jo.getDetergentQuantity() : 1;
                 int conQty = (jo.getConditionerQuantity() != null && jo.getConditionerQuantity() > 0)
                         ? jo.getConditionerQuantity() : 1;
+                // Validate load-count and dry-only rules against what is stored on the order.
+                pricingService.validateAddonQuantities(
+                        jo.getServiceName(),
+                        jo.getEstimatedWeightKg(),
+                        jo.getDetergentPreference(),
+                        detQty,
+                        jo.getFabricConditionerPreference(),
+                        conQty
+                );
+                // Re-validate inventory availability in case stock changed since booking.
                 inventoryService.validateSuppliesForBooking(
                         jo.getBranch(),
                         jo.getDetergentPreference(),
