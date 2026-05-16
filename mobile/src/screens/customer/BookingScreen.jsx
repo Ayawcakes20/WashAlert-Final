@@ -141,6 +141,17 @@ export default function BookingScreen({ route, navigation }) {
   const mode                      = SERVICE_MODES.find(m=>m.id===svcMode)||SERVICE_MODES[0];
   const needsAddr                 = mode.needsAddress;
 
+  // Mirrors PricingService.computeLoadCount() — caps add-on qty per booking
+  const computedLoadCount = useMemo(() => {
+    if (!service) return 1;
+    const name = (service.name || '').toLowerCase();
+    const kg = loadSize === 'LARGE' ? 8 : 5;
+    if (name.includes('double')) return 2;
+    if (name.includes('ecowash')) return Math.max(1, Math.ceil(kg / 5));
+    if (name.includes('full') || name.includes('handwash')) return Math.max(1, Math.ceil(kg / 8));
+    return 1;
+  }, [service, loadSize]);
+
   // Active qty for the selected addon, always ≥ 1 when an item is selected.
   // The map may hold 0 for unselected items; we clamp so the booking payload is correct.
   const detQty = det !== 'none' ? Math.max(1, detQtyMap[det] ?? 1) : 0;
@@ -201,13 +212,14 @@ export default function BookingScreen({ route, navigation }) {
     bookings.getSuppliesAvailability(branch.name)
       .then(data=>{
         setSupplyAvail(data);
-        // Clamp any already-stored qtys to the newly-loaded caps so the UI is always honest
+        // Clamp any already-stored qtys to min(availableQty, computedLoadCount)
         if(data?.detergent){
           setDetQtyMap(m=>{
             const next={...m};
             data.detergent.forEach(item=>{
-              if(typeof item.availableQty==='number'&&(next[item.id]??0)>item.availableQty)
-                next[item.id]=item.availableQty;
+              const maxQty=Math.min(item.availableQty, computedLoadCount);
+              if(typeof item.availableQty==='number'&&(next[item.id]??0)>maxQty)
+                next[item.id]=maxQty;
             });
             return next;
           });
@@ -216,8 +228,9 @@ export default function BookingScreen({ route, navigation }) {
           setFabQtyMap(m=>{
             const next={...m};
             data.conditioner.forEach(item=>{
-              if(typeof item.availableQty==='number'&&(next[item.id]??0)>item.availableQty)
-                next[item.id]=item.availableQty;
+              const maxQty=Math.min(item.availableQty, computedLoadCount);
+              if(typeof item.availableQty==='number'&&(next[item.id]??0)>maxQty)
+                next[item.id]=maxQty;
             });
             return next;
           });
@@ -230,6 +243,27 @@ export default function BookingScreen({ route, navigation }) {
       .catch(()=>setSupplyAvail(null))
       .finally(()=>setAvailLoading(false));
   },[step,branch?.name]);
+
+  // Re-clamp stored qtys when service/loadSize changes after availability is already loaded
+  useEffect(()=>{
+    if(!supplyAvail) return;
+    setDetQtyMap(m=>{
+      const next={...m};
+      supplyAvail.detergent?.forEach(item=>{
+        const maxQty=Math.min(item.availableQty, computedLoadCount);
+        if((next[item.id]??0)>maxQty) next[item.id]=maxQty;
+      });
+      return next;
+    });
+    setFabQtyMap(m=>{
+      const next={...m};
+      supplyAvail.conditioner?.forEach(item=>{
+        const maxQty=Math.min(item.availableQty, computedLoadCount);
+        if((next[item.id]??0)>maxQty) next[item.id]=maxQty;
+      });
+      return next;
+    });
+  },[computedLoadCount, supplyAvail]);
 
   // Scroll to top ONLY when the booking step actually changes (not on addon selection,
   // quantity tweaks, or any other state change that leaves `step` the same).
@@ -575,7 +609,7 @@ export default function BookingScreen({ route, navigation }) {
                     if(isPaid&&isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                     setDet(o.id);
                     if(isPaid){
-                      const maxQty = avail?.availableQty ?? Infinity;
+                      const maxQty = Math.min(avail?.availableQty ?? Infinity, computedLoadCount);
                       setDetQtyMap(m=>({...m,[o.id]:Math.min(Math.max(1,m[o.id]??0), maxQty===Infinity?(m[o.id]??1)||1:maxQty)}));
                     }
                     setStockError(null);
@@ -604,18 +638,22 @@ export default function BookingScreen({ route, navigation }) {
                           <Text style={{color:isSel?'#fff':'#9CA3AF',fontSize:16,fontWeight:'700',lineHeight:20}}>-</Text>
                         </TouchableOpacity>
                         <Text style={{fontSize:14,fontWeight:'800',color:isSel?colors.text:'#9CA3AF',minWidth:22,textAlign:'center'}}>{displayQty}</Text>
-                        {/* + selects at 1 if not selected; increments up to availableQty cap */}
+                        {/* + selects at 1 if not selected; increments up to min(availableQty, computedLoadCount) */}
                         <TouchableOpacity
                           onPress={()=>{
                             if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
-                            const maxQty = avail?.availableQty ?? Infinity;
+                            const stockMax = avail?.availableQty ?? Infinity;
+                            const maxQty = Math.min(stockMax, computedLoadCount);
                             if(!isSel){
                               setDet(o.id);
                               setDetQtyMap(m=>({...m,[o.id]:1}));
                             } else {
                               const cur = detQtyMap[o.id]??1;
                               if(maxQty!==Infinity && cur>=maxQty){
-                                showToast(`Only ${maxQty} pack(s) of ${avail?.label||o.label} available at this branch.`);
+                                const stockLimited = stockMax <= computedLoadCount;
+                                showToast(stockLimited
+                                  ? `Only ${maxQty} pack(s) of ${avail?.label||o.label} available at this branch.`
+                                  : `This booking needs at most ${computedLoadCount} pack(s) based on the number of loads.`);
                                 return;
                               }
                               setDetQtyMap(m=>({...m,[o.id]:cur+1}));
@@ -654,7 +692,7 @@ export default function BookingScreen({ route, navigation }) {
                     if(isPaid&&isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                     setFab(o.id);
                     if(isPaid){
-                      const maxQty = avail?.availableQty ?? Infinity;
+                      const maxQty = Math.min(avail?.availableQty ?? Infinity, computedLoadCount);
                       setFabQtyMap(m=>({...m,[o.id]:Math.min(Math.max(1,m[o.id]??0), maxQty===Infinity?(m[o.id]??1)||1:maxQty)}));
                     }
                     setStockError(null);
@@ -680,18 +718,22 @@ export default function BookingScreen({ route, navigation }) {
                           <Text style={{color:isSel?'#fff':'#9CA3AF',fontSize:16,fontWeight:'700',lineHeight:20}}>-</Text>
                         </TouchableOpacity>
                         <Text style={{fontSize:14,fontWeight:'800',color:isSel?colors.text:'#9CA3AF',minWidth:22,textAlign:'center'}}>{displayQty}</Text>
-                        {/* + increments up to availableQty cap */}
+                        {/* + increments up to min(availableQty, computedLoadCount) */}
                         <TouchableOpacity
                           onPress={()=>{
                             if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
-                            const maxQty = avail?.availableQty ?? Infinity;
+                            const stockMax = avail?.availableQty ?? Infinity;
+                            const maxQty = Math.min(stockMax, computedLoadCount);
                             if(!isSel){
                               setFab(o.id);
                               setFabQtyMap(m=>({...m,[o.id]:1}));
                             } else {
                               const cur = fabQtyMap[o.id]??1;
                               if(maxQty!==Infinity && cur>=maxQty){
-                                showToast(`Only ${maxQty} pack(s) of ${avail?.label||o.label} available at this branch.`);
+                                const stockLimited = stockMax <= computedLoadCount;
+                                showToast(stockLimited
+                                  ? `Only ${maxQty} pack(s) of ${avail?.label||o.label} available at this branch.`
+                                  : `This booking needs at most ${computedLoadCount} pack(s) based on the number of loads.`);
                                 return;
                               }
                               setFabQtyMap(m=>({...m,[o.id]:cur+1}));
