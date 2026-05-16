@@ -114,6 +114,7 @@ export default function BookingScreen({ route, navigation }) {
   // Lightweight toast state — message auto-clears after 3.5 s
   const [toastMsg, setToastMsg]   = useState('');
   const scrollRef                 = useRef(null); // ref for main ScrollView — used to reset scroll on step change
+  const prevStepRef               = useRef(null); // tracks previous step so scroll only fires on a real step change
   const [branches_, setBranches]  = useState([]);
   const [services_, setServices]  = useState([]);
   const [branch, setBranch]       = useState(null);
@@ -187,9 +188,13 @@ export default function BookingScreen({ route, navigation }) {
     })();
   },[branch,schDate]);
 
-  // Scroll the main ScrollView back to the top whenever the booking step changes.
-  // Using setTimeout(0) so the effect runs after the new step's content has rendered.
+  // Scroll to top ONLY when the booking step actually changes (not on addon selection,
+  // quantity tweaks, or any other state change that leaves `step` the same).
+  // prevStepRef comparison prevents the initial-mount fire from triggering on re-renders
+  // where step hasn't moved, which was causing the "None tap scrolls to top" bug.
   useEffect(()=>{
+    if(prevStepRef.current === step) return;
+    prevStepRef.current = step;
     setTimeout(()=>{ scrollRef.current?.scrollTo({ y: 0, animated: false }); }, 0);
   },[step]);
 
@@ -456,7 +461,7 @@ export default function BookingScreen({ route, navigation }) {
             <Text style={S.q}>Any extras?</Text>
             <Text style={S.hint}>Add detergent or fabric conditioner — or bring your own.</Text>
 
-            {/* ── Inventory Stock Error (shown when booking failed due to insufficient stock) ── */}
+            {/* ── Inventory Stock Error ── shown when booking failed due to insufficient stock ── */}
             {stockError && (
               <View style={{backgroundColor:'#FEF2F2',borderRadius:12,padding:14,borderWidth:1,borderColor:'#FECACA',flexDirection:'row',alignItems:'flex-start',gap:10}}>
                 <Ionicons name="warning" size={18} color="#DC2626" style={{marginTop:1}}/>
@@ -465,14 +470,6 @@ export default function BookingScreen({ route, navigation }) {
                   <Text style={{fontSize:12,color:'#7F1D1D',lineHeight:18}}>{stockError}</Text>
                   <Text style={{fontSize:11,color:'#B91C1C',marginTop:6}}>Please adjust your selection or try a different option.</Text>
                 </View>
-              </View>
-            )}
-
-            {/* ── Availability Notice ── */}
-            {!stockError && (det !== 'none' || fab !== 'none') && (
-              <View style={{backgroundColor:'#EFF6FF',borderRadius:10,padding:10,flexDirection:'row',alignItems:'center',gap:8}}>
-                <Ionicons name="information-circle-outline" size={15} color="#3B82F6"/>
-                <Text style={{fontSize:11,color:'#1D4ED8',flex:1}}>Selected items are subject to branch stock availability.</Text>
               </View>
             )}
 
@@ -493,60 +490,126 @@ export default function BookingScreen({ route, navigation }) {
 
             {/* ── DETERGENT ── */}
             <Text style={S.sec}>Detergent</Text>
-            {DET_OPTS.map(o=>(
-              <TouchableOpacity key={o.id}
-                style={[{flexDirection:'row',alignItems:'center',justifyContent:'space-between',backgroundColor:colors.surface,borderRadius:14,padding:14,marginBottom:8,borderWidth:1.5,borderColor:det===o.id?colors.primary:colors.border},det===o.id&&{backgroundColor:colors.primaryLight}]}
-                onPress={()=>{setDet(o.id); setStockError(null);}}
-                activeOpacity={0.8}
-              >
-                <View style={{flex:1}}>
-                  <Text style={{fontSize:14,fontWeight:'700',color:det===o.id?colors.primary:colors.text}}>{o.label}</Text>
-                  {o.price>0&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per pack</Text>}
+            {DET_OPTS.map(o=>{
+              const isSel = det === o.id;
+              const hasPaid = o.id !== 'none'; // show qty controls for all priced options
+              // Non-selected items always display 0; selected item shows its stored qty
+              const displayQty = isSel ? (detQtyMap[o.id] ?? 1) : 0;
+              return (
+                <View key={o.id} style={[{flexDirection:'row',alignItems:'center',backgroundColor:colors.surface,borderRadius:14,marginBottom:8,borderWidth:1.5,borderColor:isSel?colors.primary:colors.border,overflow:'hidden'},isSel&&{backgroundColor:colors.primaryLight}]}>
+                  {/* Tap label area to select/deselect */}
+                  <TouchableOpacity
+                    style={{flex:1,padding:14}}
+                    onPress={()=>{
+                      const newId = isSel && hasPaid ? 'none' : o.id;
+                      setDet(newId);
+                      // If re-selecting a previously-zero item, restore qty to 1
+                      if(newId !== 'none') setDetQtyMap(m=>({...m,[newId]:Math.max(1,m[newId]??1)}));
+                      setStockError(null);
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={{fontSize:14,fontWeight:'700',color:isSel?colors.primary:colors.text}}>{o.label}</Text>
+                    {o.price>0&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per pack</Text>}
+                  </TouchableOpacity>
+                  {/* Qty controls — always rendered for priced options so layout height is stable */}
+                  {hasPaid&&(
+                    <View style={{flexDirection:'row',alignItems:'center',gap:8,paddingRight:12}}>
+                      {/* − : muted when non-selected (already 0); deselects when qty hits 0 */}
+                      <TouchableOpacity
+                        onPress={()=>{
+                          if(!isSel) return;
+                          const nq=(detQtyMap[o.id]??1)-1;
+                          if(nq<=0){ setDet('none'); setDetQtyMap(m=>({...m,[o.id]:0})); }
+                          else { setDetQtyMap(m=>({...m,[o.id]:nq})); }
+                          setStockError(null);
+                        }}
+                        style={{width:30,height:30,borderRadius:15,backgroundColor:isSel?colors.primary:'#D1D5DB',alignItems:'center',justifyContent:'center'}}
+                      >
+                        <Text style={{color:isSel?'#fff':'#9CA3AF',fontSize:17,fontWeight:'700',lineHeight:22}}>-</Text>
+                      </TouchableOpacity>
+                      <Text style={{fontSize:15,fontWeight:'800',color:isSel?colors.text:colors.textSecondary,minWidth:20,textAlign:'center'}}>{displayQty}</Text>
+                      {/* + : selects the item (qty→1) if not yet selected, else increments */}
+                      <TouchableOpacity
+                        onPress={()=>{
+                          if(!isSel){ setDet(o.id); setDetQtyMap(m=>({...m,[o.id]:1})); }
+                          else { setDetQtyMap(m=>({...m,[o.id]:(m[o.id]??1)+1})); }
+                          setStockError(null);
+                        }}
+                        style={{width:30,height:30,borderRadius:15,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}
+                      >
+                        <Text style={{color:'#fff',fontSize:17,fontWeight:'700',lineHeight:22}}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                  {isSel&&<Ionicons name="checkmark-circle" size={18} color={colors.primary} style={{marginRight:12}}/>}
                 </View>
-                {det===o.id && o.id!=='none' && (
-                  <View style={{flexDirection:'row',alignItems:'center',gap:10}}>
-                    {/* Each addon writes to its own key in detQtyMap — independent from other addons */}
-                    <TouchableOpacity onPress={()=>setDetQtyMap(m=>({...m,[o.id]:Math.max(1,(m[o.id]??1)-1)}))} style={{width:32,height:32,borderRadius:16,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}>
-                      <Text style={{color:'#fff',fontSize:18,fontWeight:'700',lineHeight:22}}>-</Text>
-                    </TouchableOpacity>
-                    <Text style={{fontSize:16,fontWeight:'800',color:colors.text,minWidth:24,textAlign:'center'}}>{detQtyMap[o.id]??1}</Text>
-                    <TouchableOpacity onPress={()=>setDetQtyMap(m=>({...m,[o.id]:(m[o.id]??1)+1}))} style={{width:32,height:32,borderRadius:16,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}>
-                      <Text style={{color:'#fff',fontSize:18,fontWeight:'700',lineHeight:22}}>+</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-                {det===o.id&&<Ionicons name="checkmark-circle" size={20} color={colors.primary} style={{marginLeft:8}}/>}
-              </TouchableOpacity>
-            ))}
+              );
+            })}
 
             {/* ── FABRIC CONDITIONER ── */}
             <Text style={S.sec}>Fabric Conditioner</Text>
-            {FAB_OPTS.map(o=>(
-              <TouchableOpacity key={o.id}
-                style={[{flexDirection:'row',alignItems:'center',justifyContent:'space-between',backgroundColor:colors.surface,borderRadius:14,padding:14,marginBottom:8,borderWidth:1.5,borderColor:fab===o.id?colors.primary:colors.border},fab===o.id&&{backgroundColor:colors.primaryLight}]}
-                onPress={()=>{setFab(o.id); setStockError(null);}}
-                activeOpacity={0.8}
-              >
-                <View style={{flex:1}}>
-                  <Text style={{fontSize:14,fontWeight:'700',color:fab===o.id?colors.primary:colors.text}}>{o.label}</Text>
-                  {o.price>0&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per pack</Text>}
+            {FAB_OPTS.map(o=>{
+              const isSel = fab === o.id;
+              const hasPaid = o.id !== 'none';
+              const displayQty = isSel ? (fabQtyMap[o.id] ?? 1) : 0;
+              return (
+                <View key={o.id} style={[{flexDirection:'row',alignItems:'center',backgroundColor:colors.surface,borderRadius:14,marginBottom:8,borderWidth:1.5,borderColor:isSel?colors.primary:colors.border,overflow:'hidden'},isSel&&{backgroundColor:colors.primaryLight}]}>
+                  <TouchableOpacity
+                    style={{flex:1,padding:14}}
+                    onPress={()=>{
+                      const newId = isSel && hasPaid ? 'none' : o.id;
+                      setFab(newId);
+                      if(newId !== 'none') setFabQtyMap(m=>({...m,[newId]:Math.max(1,m[newId]??1)}));
+                      setStockError(null);
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={{fontSize:14,fontWeight:'700',color:isSel?colors.primary:colors.text}}>{o.label}</Text>
+                    {o.price>0&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per pack</Text>}
+                  </TouchableOpacity>
+                  {hasPaid&&(
+                    <View style={{flexDirection:'row',alignItems:'center',gap:8,paddingRight:12}}>
+                      <TouchableOpacity
+                        onPress={()=>{
+                          if(!isSel) return;
+                          const nq=(fabQtyMap[o.id]??1)-1;
+                          if(nq<=0){ setFab('none'); setFabQtyMap(m=>({...m,[o.id]:0})); }
+                          else { setFabQtyMap(m=>({...m,[o.id]:nq})); }
+                          setStockError(null);
+                        }}
+                        style={{width:30,height:30,borderRadius:15,backgroundColor:isSel?colors.primary:'#D1D5DB',alignItems:'center',justifyContent:'center'}}
+                      >
+                        <Text style={{color:isSel?'#fff':'#9CA3AF',fontSize:17,fontWeight:'700',lineHeight:22}}>-</Text>
+                      </TouchableOpacity>
+                      <Text style={{fontSize:15,fontWeight:'800',color:isSel?colors.text:colors.textSecondary,minWidth:20,textAlign:'center'}}>{displayQty}</Text>
+                      <TouchableOpacity
+                        onPress={()=>{
+                          if(!isSel){ setFab(o.id); setFabQtyMap(m=>({...m,[o.id]:1})); }
+                          else { setFabQtyMap(m=>({...m,[o.id]:(m[o.id]??1)+1})); }
+                          setStockError(null);
+                        }}
+                        style={{width:30,height:30,borderRadius:15,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}
+                      >
+                        <Text style={{color:'#fff',fontSize:17,fontWeight:'700',lineHeight:22}}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                  {isSel&&<Ionicons name="checkmark-circle" size={18} color={colors.primary} style={{marginRight:12}}/>}
                 </View>
-                {fab===o.id && o.id!=='none' && (
-                  <View style={{flexDirection:'row',alignItems:'center',gap:10}}>
-                    {/* Each addon writes to its own key in fabQtyMap — independent from other addons */}
-                    <TouchableOpacity onPress={()=>setFabQtyMap(m=>({...m,[o.id]:Math.max(1,(m[o.id]??1)-1)}))} style={{width:32,height:32,borderRadius:16,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}>
-                      <Text style={{color:'#fff',fontSize:18,fontWeight:'700',lineHeight:22}}>-</Text>
-                    </TouchableOpacity>
-                    <Text style={{fontSize:16,fontWeight:'800',color:colors.text,minWidth:24,textAlign:'center'}}>{fabQtyMap[o.id]??1}</Text>
-                    <TouchableOpacity onPress={()=>setFabQtyMap(m=>({...m,[o.id]:(m[o.id]??1)+1}))} style={{width:32,height:32,borderRadius:16,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}>
-                      <Text style={{color:'#fff',fontSize:18,fontWeight:'700',lineHeight:22}}>+</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-                {fab===o.id&&<Ionicons name="checkmark-circle" size={20} color={colors.primary} style={{marginLeft:8}}/>}
-              </TouchableOpacity>
-            ))}
+              );
+            })}
             
+            {/* ── Availability notice ── placed here (below both card groups) so its
+                 appearance/disappearance does NOT affect the layout above the cards,
+                 which was causing the spurious "scroll to top" on None tap ── */}
+            {!stockError && (det !== 'none' || fab !== 'none') && (
+              <View style={{backgroundColor:'#EFF6FF',borderRadius:10,padding:10,flexDirection:'row',alignItems:'center',gap:8}}>
+                <Ionicons name="information-circle-outline" size={15} color="#3B82F6"/>
+                <Text style={{fontSize:11,color:'#1D4ED8',flex:1}}>Selected items are subject to branch stock availability.</Text>
+              </View>
+            )}
+
             <View style={S.rushCard}>
               <View style={{flex:1,gap:4}}>
                 <Text style={S.rushTitle}>Rush service</Text>
