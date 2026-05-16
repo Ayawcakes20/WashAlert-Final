@@ -8,7 +8,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, Area, AreaChart
 } from "recharts";
-import { inventoryApi, type InventoryRecord } from "@/lib/api";
+import { inventoryApi, branchesApi, type InventoryRecord } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,8 +21,17 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { getSessionUser } from "@/lib/session";
-import { branches as availableBranches } from "@/data/branches";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+const INVENTORY_CATALOG = [
+  { name: "Surf Detergent",            category: "Detergent",          unit: "packs" },
+  { name: "Ariel Detergent",           category: "Detergent",          unit: "packs" },
+  { name: "Charm Fabric Conditioner",  category: "Fabric Conditioner", unit: "packs" },
+  { name: "Downy Fabric Conditioner",  category: "Fabric Conditioner", unit: "packs" },
+] as const;
+
+const INVENTORY_CATEGORIES = ["Detergent", "Fabric Conditioner"] as const;
+const INVENTORY_UNITS      = ["packs", "liters", "kg", "bottles", "pieces"] as const;
 
 interface InventoryItem {
   id: number;
@@ -62,6 +71,7 @@ export default function PredictiveInventoryPage() {
   const [error, setError] = useState("");
   const [selectedTab, setSelectedTab] = useState("All");
   const [branches, setBranches] = useState<string[]>([]);
+  const [dynamicBranches, setDynamicBranches] = useState<string[]>([]);
 
   // Dialogs
   const [createOpen, setCreateOpen] = useState(false);
@@ -152,6 +162,8 @@ export default function PredictiveInventoryPage() {
       setLoading(false);
     };
     void run();
+    // Load active branches from machines API for create/edit dropdowns
+    branchesApi.list().then(setDynamicBranches).catch(() => setDynamicBranches([]));
   }, []);
 
   const criticalCount = useMemo(() => inventory.filter((i) => i.status === "Critical").length, [inventory]);
@@ -508,11 +520,11 @@ export default function PredictiveInventoryPage() {
               {isAdmin ? (
                 <Select value={createForm.branch} onValueChange={(val) => setCreateForm((p) => ({ ...p, branch: val }))}>
                   <SelectTrigger id="create-branch" className="w-full text-foreground focus:ring-blue-500 focus:border-blue-500">
-                    <SelectValue placeholder="Select a branch" />
+                    <SelectValue placeholder={dynamicBranches.length ? "Select a branch" : "No branches available"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableBranches.map((b) => (
-                      <SelectItem key={b.id} value={b.area} className="focus:bg-blue-50 focus:text-blue-700">{b.area}</SelectItem>
+                    {dynamicBranches.map((b) => (
+                      <SelectItem key={b} value={b}>{b}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -520,10 +532,57 @@ export default function PredictiveInventoryPage() {
                 <Input id="create-branch" value={createForm.branch} readOnly className="bg-muted text-muted-foreground" />
               )}
             </div>
-            <div className="space-y-2"><Label htmlFor="create-item">Item Name</Label><Input id="create-item" value={createForm.itemName} onChange={(e) => setCreateForm((p) => ({ ...p, itemName: e.target.value }))} /></div>
+            <div className="space-y-2">
+              <Label htmlFor="create-item">Item Name</Label>
+              <Select
+                value={createForm.itemName}
+                onValueChange={(val) => {
+                  const entry = INVENTORY_CATALOG.find((c) => c.name === val);
+                  setCreateForm((p) => ({
+                    ...p,
+                    itemName: val,
+                    category: entry?.category ?? p.category,
+                    unit: entry?.unit ?? p.unit,
+                  }));
+                }}
+              >
+                <SelectTrigger id="create-item" className="w-full text-foreground">
+                  <SelectValue placeholder="Select an item" />
+                </SelectTrigger>
+                <SelectContent>
+                  {INVENTORY_CATALOG.map((c) => (
+                    <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2"><Label htmlFor="create-category">Category</Label><Input id="create-category" value={createForm.category} onChange={(e) => setCreateForm((p) => ({ ...p, category: e.target.value }))} /></div>
-              <div className="space-y-2"><Label htmlFor="create-unit">Unit</Label><Input id="create-unit" value={createForm.unit} onChange={(e) => setCreateForm((p) => ({ ...p, unit: e.target.value }))} /></div>
+              <div className="space-y-2">
+                <Label htmlFor="create-category">Category</Label>
+                <Select value={createForm.category} onValueChange={(val) => setCreateForm((p) => ({ ...p, category: val }))}>
+                  <SelectTrigger id="create-category" className="w-full text-foreground">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INVENTORY_CATEGORIES.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="create-unit">Unit</Label>
+                <Select value={createForm.unit} onValueChange={(val) => setCreateForm((p) => ({ ...p, unit: val }))}>
+                  <SelectTrigger id="create-unit" className="w-full text-foreground">
+                    <SelectValue placeholder="Select unit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INVENTORY_UNITS.map((u) => (
+                      <SelectItem key={u} value={u}>{u}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2"><Label htmlFor="create-current-stock">Current Stock</Label><Input id="create-current-stock" type="number" min="0" step="0.01" value={createForm.currentStock} onChange={(e) => setCreateForm((p) => ({ ...p, currentStock: e.target.value }))} /></div>
@@ -553,11 +612,11 @@ export default function PredictiveInventoryPage() {
               {isAdmin ? (
                 <Select value={editForm.branch} onValueChange={(val) => setEditForm((p) => ({ ...p, branch: val }))}>
                   <SelectTrigger id="edit-branch" className="w-full text-foreground focus:ring-blue-500 focus:border-blue-500">
-                    <SelectValue placeholder="Select a branch" />
+                    <SelectValue placeholder={dynamicBranches.length ? "Select a branch" : "No branches available"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableBranches.map((b) => (
-                      <SelectItem key={b.id} value={b.area} className="focus:bg-blue-50 focus:text-blue-700">{b.area}</SelectItem>
+                    {dynamicBranches.map((b) => (
+                      <SelectItem key={b} value={b}>{b}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -565,10 +624,57 @@ export default function PredictiveInventoryPage() {
                 <Input id="edit-branch" value={editForm.branch} readOnly className="bg-muted text-muted-foreground" />
               )}
             </div>
-            <div className="space-y-2"><Label htmlFor="edit-item">Item Name</Label><Input id="edit-item" value={editForm.itemName} onChange={(e) => setEditForm((p) => ({ ...p, itemName: e.target.value }))} /></div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-item">Item Name</Label>
+              <Select
+                value={editForm.itemName}
+                onValueChange={(val) => {
+                  const entry = INVENTORY_CATALOG.find((c) => c.name === val);
+                  setEditForm((p) => ({
+                    ...p,
+                    itemName: val,
+                    category: entry?.category ?? p.category,
+                    unit: entry?.unit ?? p.unit,
+                  }));
+                }}
+              >
+                <SelectTrigger id="edit-item" className="w-full text-foreground">
+                  <SelectValue placeholder="Select an item" />
+                </SelectTrigger>
+                <SelectContent>
+                  {INVENTORY_CATALOG.map((c) => (
+                    <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2"><Label htmlFor="edit-category">Category</Label><Input id="edit-category" value={editForm.category} onChange={(e) => setEditForm((p) => ({ ...p, category: e.target.value }))} /></div>
-              <div className="space-y-2"><Label htmlFor="edit-unit">Unit</Label><Input id="edit-unit" value={editForm.unit} onChange={(e) => setEditForm((p) => ({ ...p, unit: e.target.value }))} /></div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-category">Category</Label>
+                <Select value={editForm.category} onValueChange={(val) => setEditForm((p) => ({ ...p, category: val }))}>
+                  <SelectTrigger id="edit-category" className="w-full text-foreground">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INVENTORY_CATEGORIES.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-unit">Unit</Label>
+                <Select value={editForm.unit} onValueChange={(val) => setEditForm((p) => ({ ...p, unit: val }))}>
+                  <SelectTrigger id="edit-unit" className="w-full text-foreground">
+                    <SelectValue placeholder="Select unit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INVENTORY_UNITS.map((u) => (
+                      <SelectItem key={u} value={u}>{u}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="space-y-2"><Label htmlFor="edit-reorder">Reorder Level</Label><Input id="edit-reorder" type="number" min="0" step="0.01" value={editForm.reorderLevel} onChange={(e) => setEditForm((p) => ({ ...p, reorderLevel: e.target.value }))} /></div>
           </div>

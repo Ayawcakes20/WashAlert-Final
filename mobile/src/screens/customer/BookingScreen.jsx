@@ -106,6 +106,7 @@ export default function BookingScreen({ route, navigation }) {
   const [step, setStep]           = useState(1);
   const [loading, setLoading]     = useState(true);
   const [submitting, setSub]      = useState(false);
+  const [stockError, setStockError] = useState(null); // inline inventory warning on step 4
   const [branches_, setBranches]  = useState([]);
   const [services_, setServices]  = useState([]);
   const [branch, setBranch]       = useState(null);
@@ -214,7 +215,7 @@ export default function BookingScreen({ route, navigation }) {
     if(step===1){ if(!branch) return; setStep(needsAddr?2:3); }
     else if(step===2){ if(!address?.address){ setAddrSheet(true); return; } setStep(3); }
     else if(step===3){ if(!service) return; setStep(4); }
-    else if(step===4) setStep(5);
+    else if(step===4){ setStockError(null); setStep(5); }
     else if(step===5){ if(!ok()) return; setStep(6); }
     else if(step===6) confirm_();
   };
@@ -275,7 +276,16 @@ export default function BookingScreen({ route, navigation }) {
         : `Booking Successful!\n\nTracking #: ${tn}`;
 
       Alert.alert('Confirmed', successMsg, [{text:'View Order',onPress:()=>{ setStep(1); navigation.navigate('Orders'); }}]);
-    }catch(err){ Alert.alert('Booking Failed', err?.message || 'Failed to place booking. Please try again.'); }finally{ setSub(false); }
+    }catch(err){
+      const msg = err?.message || 'Failed to place booking. Please try again.';
+      const isStockError = msg.toLowerCase().includes('insufficient') || msg.toLowerCase().includes('inventory') || msg.toLowerCase().includes('stock');
+      if(isStockError){
+        setStockError(msg);
+        setStep(4); // go back to Extras so the user sees the inline warning
+      } else {
+        Alert.alert('Booking Failed', msg);
+      }
+    }finally{ setSub(false); }
   };
 
   const vis = VIS_MAP[step]||1;
@@ -415,6 +425,26 @@ export default function BookingScreen({ route, navigation }) {
             <Text style={S.q}>Any extras?</Text>
             <Text style={S.hint}>Add detergent or fabric conditioner — or bring your own.</Text>
 
+            {/* ── Inventory Stock Error (shown when booking failed due to insufficient stock) ── */}
+            {stockError && (
+              <View style={{backgroundColor:'#FEF2F2',borderRadius:12,padding:14,borderWidth:1,borderColor:'#FECACA',flexDirection:'row',alignItems:'flex-start',gap:10}}>
+                <Ionicons name="warning" size={18} color="#DC2626" style={{marginTop:1}}/>
+                <View style={{flex:1}}>
+                  <Text style={{fontSize:13,fontWeight:'700',color:'#DC2626',marginBottom:3}}>Insufficient Stock</Text>
+                  <Text style={{fontSize:12,color:'#7F1D1D',lineHeight:18}}>{stockError}</Text>
+                  <Text style={{fontSize:11,color:'#B91C1C',marginTop:6}}>Please adjust your selection or try a different option.</Text>
+                </View>
+              </View>
+            )}
+
+            {/* ── Availability Notice ── */}
+            {!stockError && (det !== 'none' || fab !== 'none') && (
+              <View style={{backgroundColor:'#EFF6FF',borderRadius:10,padding:10,flexDirection:'row',alignItems:'center',gap:8}}>
+                <Ionicons name="information-circle-outline" size={15} color="#3B82F6"/>
+                <Text style={{fontSize:11,color:'#1D4ED8',flex:1}}>Selected items are subject to branch stock availability.</Text>
+              </View>
+            )}
+
             {/* ── Premium Pricing Info Card ── */}
             <View style={S.pricingInfoCard}>
               <View style={S.pricingInfoContent}>
@@ -435,7 +465,7 @@ export default function BookingScreen({ route, navigation }) {
             {DET_OPTS.map(o=>(
               <TouchableOpacity key={o.id}
                 style={[{flexDirection:'row',alignItems:'center',justifyContent:'space-between',backgroundColor:colors.surface,borderRadius:14,padding:14,marginBottom:8,borderWidth:1.5,borderColor:det===o.id?colors.primary:colors.border},det===o.id&&{backgroundColor:colors.primaryLight}]}
-                onPress={()=>{setDet(o.id); if(o.id!=='none')setDetQty(q=>q||1);}}
+                onPress={()=>{setDet(o.id); if(o.id!=='none')setDetQty(q=>q||1); setStockError(null);}}
                 activeOpacity={0.8}
               >
                 <View style={{flex:1}}>
@@ -462,7 +492,7 @@ export default function BookingScreen({ route, navigation }) {
             {FAB_OPTS.map(o=>(
               <TouchableOpacity key={o.id}
                 style={[{flexDirection:'row',alignItems:'center',justifyContent:'space-between',backgroundColor:colors.surface,borderRadius:14,padding:14,marginBottom:8,borderWidth:1.5,borderColor:fab===o.id?colors.primary:colors.border},fab===o.id&&{backgroundColor:colors.primaryLight}]}
-                onPress={()=>{setFab(o.id); if(o.id!=='none')setFabQty(q=>q||1);}}
+                onPress={()=>{setFab(o.id); if(o.id!=='none')setFabQty(q=>q||1); setStockError(null);}}
                 activeOpacity={0.8}
               >
                 <View style={{flex:1}}>
