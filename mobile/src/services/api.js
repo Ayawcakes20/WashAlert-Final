@@ -1028,6 +1028,13 @@ export const bookings = {
     if (!numericId || isNaN(numericId)) throw new Error('Cannot confirm: invalid order ID.');
     return apiRequest(`/api/orders/${numericId}/confirm-price`, { method: 'PUT' });
   },
+
+  // Reject the staff-entered final price — cancels the order via the dedicated reject-price endpoint.
+  // Uses tracking number (string) which the backend accepts on the /my/* self-service routes.
+  rejectFinalPrice: async (trackingNumber) => {
+    if (!trackingNumber) throw new Error('Cannot reject: tracking number is missing.');
+    return apiRequest(`/api/orders/my/${encodeURIComponent(trackingNumber)}/reject-price`, { method: 'POST' });
+  },
   getAvailableSlots: async (branch, dateLike) => {
     const date = formatDateForApi(dateLike);
     const path = `/api/bookings/slots?branch=${encodeURIComponent(branch)}&date=${encodeURIComponent(date)}`;

@@ -304,7 +304,7 @@ export default function OrderDetailScreen({ route, navigation }) {
           </View>
         )}
 
-        <PriceConfirmationModal 
+        <PriceConfirmationModal
           visible={showReceiptModal}
           orderData={order}
           onConfirmed={() => {
@@ -313,6 +313,10 @@ export default function OrderDetailScreen({ route, navigation }) {
             load();
           }}
           onDismiss={() => setShowReceiptModal(false)}
+          onRejected={() => {
+            setShowReceiptModal(false);
+            load();
+          }}
         />
 
         {/* HERO STATUS CARD */}
