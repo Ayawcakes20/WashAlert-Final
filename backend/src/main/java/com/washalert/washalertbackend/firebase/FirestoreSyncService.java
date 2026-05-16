@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
+import com.google.cloud.firestore.SetOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -82,6 +83,24 @@ public class FirestoreSyncService {
             log.error("Firestore blocking upsert timed out for collection={} docId={}", collection, documentId);
         } catch (Exception ex) {
             log.error("Firestore blocking upsert failed for collection={} docId={}: {}", collection, documentId, ex.getMessage());
+        }
+    }
+
+    public void mergePatchBlocking(String collection, String documentId, Map<String, Object> fields) {
+        if (!isEnabled()) return;
+        if (!StringUtils.hasText(collection) || !StringUtils.hasText(documentId) || fields == null) return;
+        try {
+            Map<String, Object> normalized = normalizeMap(fields);
+            normalized.put("_syncedAt", Instant.now().toString());
+            firestore.get()
+                    .collection(collection.trim())
+                    .document(sanitizeDocumentId(documentId))
+                    .set(normalized, SetOptions.merge())
+                    .get(5, TimeUnit.SECONDS);
+        } catch (java.util.concurrent.TimeoutException tex) {
+            log.error("Firestore merge-patch timed out for collection={} docId={}", collection, documentId);
+        } catch (Exception ex) {
+            log.error("Firestore merge-patch failed for collection={} docId={}: {}", collection, documentId, ex.getMessage());
         }
     }
 

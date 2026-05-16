@@ -339,8 +339,6 @@ public class JobOrderController {
         return service.updateDriverLocation(id, location.get("latitude"), location.get("longitude"), principal);
     }
 
-    // ── FEEDBACK / STAFF NOTES ────────────────────────────────────────────────
-
     @PostMapping("/my/{trackingNumber}/feedback")
     @PreAuthorize("hasRole('CUSTOMER')")
     public FeedbackResponse submitFeedback(

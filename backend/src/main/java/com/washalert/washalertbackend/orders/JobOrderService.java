@@ -37,6 +37,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Arrays;
@@ -1239,7 +1240,11 @@ public class JobOrderService {
         return response;
     }
 
-    // ── CUSTOMER FEEDBACK / STAFF NOTES ──────────────────────────────────────
+    private static final String FS_RATING        = "customerRating";
+    private static final String FS_COMMENT       = "customerComment";
+    private static final String FS_SUBMITTED_AT  = "feedbackSubmittedAt";
+    private static final String FS_STAFF_NOTE    = "staffNote";
+    private static final String FS_NOTE_UPDATED  = "staffNoteUpdatedAt";
 
     @Transactional(readOnly = true)
     public FeedbackResponse getFeedback(String trackingNumber, AuthUserDetails principal) {
@@ -1257,17 +1262,11 @@ public class JobOrderService {
                 .trackingNumber(jo.getTrackingNumber());
 
         data.ifPresent(d -> {
-            Object ratingObj = d.get("customerRating");
-            if (ratingObj instanceof Number n) builder.customerRating(n.intValue());
-            Object comment = d.get("customerComment");
-            if (comment instanceof String s) builder.customerComment(s);
-            Object submittedAt = d.get("feedbackSubmittedAt");
-            if (submittedAt instanceof String s) builder.feedbackSubmittedAt(s);
-
+            populateCustomerFeedbackFields(d, builder);
             if (actor.getRole() == Role.ADMIN || actor.getRole() == Role.STAFF) {
-                Object note = d.get("staffNote");
+                Object note = d.get(FS_STAFF_NOTE);
                 if (note instanceof String s) builder.staffNote(s);
-                Object noteUpdatedAt = d.get("staffNoteUpdatedAt");
+                Object noteUpdatedAt = d.get(FS_NOTE_UPDATED);
                 if (noteUpdatedAt instanceof String s) builder.staffNoteUpdatedAt(s);
             }
         });
@@ -1275,7 +1274,6 @@ public class JobOrderService {
         return builder.build();
     }
 
-    @Transactional
     public FeedbackResponse submitFeedback(String trackingNumber, FeedbackRequest req, AuthUserDetails principal) {
         User actor = principal.getUser();
         JobOrder jo = repo.findByTrackingNumber(normalizeTrackingNumber(trackingNumber))
@@ -1290,10 +1288,10 @@ public class JobOrderService {
         }
 
         String submittedAt = Instant.now().toString();
-        Map<String, Object> payload = new java.util.LinkedHashMap<>();
-        payload.put("customerRating", req.rating());
-        payload.put("customerComment", req.comment() != null ? req.comment().trim() : "");
-        payload.put("feedbackSubmittedAt", submittedAt);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put(FS_RATING, req.rating());
+        payload.put(FS_COMMENT, req.comment() != null ? req.comment().trim() : "");
+        payload.put(FS_SUBMITTED_AT, submittedAt);
         payload.put("customerEmail", actor.getEmail());
         payload.put("trackingNumber", jo.getTrackingNumber());
 
@@ -1307,37 +1305,32 @@ public class JobOrderService {
                 .build();
     }
 
-    @Transactional
     public FeedbackResponse submitStaffNote(String trackingNumber, StaffNoteRequest req, AuthUserDetails principal) {
-        User actor = principal.getUser();
         JobOrder jo = repo.findByTrackingNumber(normalizeTrackingNumber(trackingNumber))
                 .orElseThrow(() -> new OrderNotFoundException("Order not found."));
 
-        Optional<Map<String, Object>> existing = firestoreSyncService.get("feedback", jo.getTrackingNumber());
-        Map<String, Object> payload = new java.util.LinkedHashMap<>();
-        existing.ifPresent(payload::putAll);
         String updatedAt = Instant.now().toString();
-        payload.put("staffNote", req.note() != null ? req.note().trim() : "");
-        payload.put("staffNoteUpdatedAt", updatedAt);
-        payload.put("staffEmail", actor.getEmail());
-        payload.put("trackingNumber", jo.getTrackingNumber());
+        Map<String, Object> patch = new LinkedHashMap<>();
+        patch.put(FS_STAFF_NOTE, req.note() != null ? req.note().trim() : "");
+        patch.put(FS_NOTE_UPDATED, updatedAt);
+        patch.put("staffEmail", principal.getUser().getEmail());
+        patch.put("trackingNumber", jo.getTrackingNumber());
 
-        firestoreSyncService.upsertBlocking("feedback", jo.getTrackingNumber(), payload);
+        firestoreSyncService.mergePatchBlocking("feedback", jo.getTrackingNumber(), patch);
 
-        FeedbackResponse.FeedbackResponseBuilder builder = FeedbackResponse.builder()
+        return FeedbackResponse.builder()
                 .trackingNumber(jo.getTrackingNumber())
                 .staffNote(req.note())
-                .staffNoteUpdatedAt(updatedAt);
+                .staffNoteUpdatedAt(updatedAt)
+                .build();
+    }
 
-        existing.ifPresent(d -> {
-            Object ratingObj = d.get("customerRating");
-            if (ratingObj instanceof Number n) builder.customerRating(n.intValue());
-            Object comment = d.get("customerComment");
-            if (comment instanceof String s) builder.customerComment(s);
-            Object submittedAt = d.get("feedbackSubmittedAt");
-            if (submittedAt instanceof String s) builder.feedbackSubmittedAt(s);
-        });
-
-        return builder.build();
+    private static void populateCustomerFeedbackFields(Map<String, Object> d, FeedbackResponse.FeedbackResponseBuilder builder) {
+        Object ratingObj = d.get(FS_RATING);
+        if (ratingObj instanceof Number n) builder.customerRating(n.intValue());
+        Object comment = d.get(FS_COMMENT);
+        if (comment instanceof String s) builder.customerComment(s);
+        Object submittedAt = d.get(FS_SUBMITTED_AT);
+        if (submittedAt instanceof String s) builder.feedbackSubmittedAt(s);
     }
 }
