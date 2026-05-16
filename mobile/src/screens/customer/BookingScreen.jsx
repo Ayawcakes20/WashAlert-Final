@@ -106,6 +106,7 @@ export default function BookingScreen({ route, navigation }) {
   const [step, setStep]           = useState(1);
   const [loading, setLoading]     = useState(true);
   const [submitting, setSub]      = useState(false);
+  const [checking, setChecking]   = useState(false);  // true while pre-flight supply check runs
   const [stockError, setStockError] = useState(null); // inline inventory warning on step 4
   // Per-addon qty map: each option tracks its own quantity independently.
   // Fixes the bug where switching addons would carry over the previous qty.
@@ -240,15 +241,33 @@ export default function BookingScreen({ route, navigation }) {
     return true;
   };
 
-  const next = ()=>{
+  const next = async ()=>{
     if(step===1){ if(!branch) return; setStep(needsAddr?2:3); }
     else if(step===2){ if(!address?.address){ setAddrSheet(true); return; } setStep(3); }
     else if(step===3){ if(!service) return; setStep(4); }
     else if(step===4){
-      // Hard gate: if a stock error was set by a failed booking attempt, block and toast.
-      // The user must change their selection (which clears stockError) before proceeding.
+      // Hard gate: if a stock error was set by a previous attempt, block until selection changes.
       if(stockError){ showToast('Stock unavailable — please adjust your extras before continuing.'); return; }
-      setStep(5);
+      // If no extras selected, skip the network check entirely.
+      if(det==='none' && fab==='none'){ setStep(5); return; }
+      // Pre-flight supply availability check — keeps user on Extras if stock is insufficient.
+      setChecking(true);
+      try {
+        await bookings.checkSupplies(
+          branch?.name,
+          det==='none' ? 'None' : (DET_OPTS.find(o=>o.id===det)?.label || 'None'),
+          det==='none' ? 0 : detQty,
+          fab==='none' ? 'None' : (FAB_OPTS.find(o=>o.id===fab)?.label || 'None'),
+          fab==='none' ? 0 : fabQty
+        );
+        setStep(5);
+      } catch(err){
+        const msg = err?.message || 'Selected item is out of stock at this branch.';
+        setStockError(msg);
+        showToast(msg);
+      } finally {
+        setChecking(false);
+      }
     }
     else if(step===5){ if(!ok()) return; setStep(6); }
     else if(step===6) confirm_();
@@ -352,8 +371,8 @@ export default function BookingScreen({ route, navigation }) {
         <TouchableOpacity style={S.backBtn} onPress={back}>
           <Text style={S.backTxt}>Back</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[S.contBtn,!ok()&&S.contBtnOff]} onPress={next} disabled={!ok()||submitting}>
-          {submitting
+        <TouchableOpacity style={[S.contBtn,(!ok()||checking)&&S.contBtnOff]} onPress={next} disabled={!ok()||submitting||checking}>
+          {(submitting||checking)
             ?<ActivityIndicator color="#fff" size="small"/>
             :<View style={{flexDirection:'row',alignItems:'center',gap:8}}>
                 <Text style={S.contTxt}>{step===6?'Confirm Booking':'Continue'}</Text>

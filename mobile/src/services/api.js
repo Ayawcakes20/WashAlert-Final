@@ -1107,6 +1107,15 @@ export const bookings = {
     }
   },
 
+  // Lightweight pre-flight check: validates supply availability at the selected branch
+  // without deducting stock. Returns { available: true } or throws with the backend message.
+  checkSupplies: async (branch, detergent, detergentQuantity, conditioner, conditionerQuantity) => {
+    return apiRequest('/api/bookings/check-supplies', {
+      method: 'POST',
+      body: { branch, detergent, detergentQuantity, conditioner, conditionerQuantity },
+    });
+  },
+
   getTimeline: async (trackingNumber) => {
     if (!trackingNumber) return { timeline: [] };
     const tracked = await apiRequest(`/api/orders/track/${encodeURIComponent(trackingNumber)}`);

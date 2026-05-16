@@ -3,9 +3,11 @@ package com.washalert.washalertbackend.booking;
 import com.washalert.washalertbackend.booking.dto.BookingSlotResponse;
 import com.washalert.washalertbackend.booking.dto.CreateBookingRequest;
 import com.washalert.washalertbackend.booking.dto.EstimatePriceRequest;
+import com.washalert.washalertbackend.inventory.InventoryService;
 import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,11 +28,25 @@ public class BookingController {
 
     private final BookingService bookingService;
     private final PricingService pricingService;
+    private final InventoryService inventoryService;
 
-    public BookingController(BookingService bookingService, PricingService pricingService) {
+    public BookingController(BookingService bookingService, PricingService pricingService,
+                             InventoryService inventoryService) {
         this.bookingService = bookingService;
         this.pricingService = pricingService;
+        this.inventoryService = inventoryService;
     }
+
+    // Request/response records for the supply availability check endpoint
+    public record CheckSuppliesRequest(
+            String branch,
+            String detergent,
+            Integer detergentQuantity,
+            String conditioner,
+            Integer conditionerQuantity
+    ) {}
+
+    public record CheckSuppliesResponse(boolean available, String message) {}
 
     @GetMapping("/slots")
     public List<BookingSlotResponse> getAvailableSlots(
@@ -64,5 +80,25 @@ public class BookingController {
             @AuthenticationPrincipal AuthUserDetails principal
     ) {
         return bookingService.cancelBooking(id, principal);
+    }
+
+    // Safe, customer-accessible supply availability check — no auth required, no stock deducted.
+    // Returns { available: true } or HTTP 400 with { available: false, message: "..." }.
+    @PostMapping("/check-supplies")
+    public ResponseEntity<CheckSuppliesResponse> checkSupplies(
+            @RequestBody CheckSuppliesRequest req
+    ) {
+        try {
+            inventoryService.validateSuppliesForBooking(
+                    req.branch(),
+                    req.detergent(),
+                    req.conditioner(),
+                    req.detergentQuantity() != null ? req.detergentQuantity() : 0,
+                    req.conditionerQuantity() != null ? req.conditionerQuantity() : 0
+            );
+            return ResponseEntity.ok(new CheckSuppliesResponse(true, null));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(new CheckSuppliesResponse(false, e.getMessage()));
+        }
     }
 }
