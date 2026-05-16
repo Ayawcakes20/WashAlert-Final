@@ -4,6 +4,7 @@ import {
   AlertCircle,
   Info,
   Loader2,
+  Printer,
   Receipt,
   Scale,
   Send,
@@ -26,6 +27,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { printOrderReceipt } from "@/lib/receiptPrinter";
 import {
   type LoadType,
   type PricingResult,
@@ -872,6 +874,37 @@ export function FinalizeWeightModal({
                       Send Receipt to Customer
                     </>
                   )}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full h-10 rounded-xl font-bold text-slate-500 hover:text-slate-700"
+                  onClick={() => {
+                    if (pricing) {
+                      printOrderReceipt({
+                        orderId: order.orderId,
+                        customerName: order.customerName,
+                        customerPhone: order.customerPhone,
+                        branch: order.branch,
+                        serviceType: order.serviceType,
+                        serviceName: order.serviceName,
+                        estimatedWeightKg: order.estimatedWeightKg,
+                        actualWeightKg: actualKg,
+                        detergent: order.detergent,
+                        detergentQuantity: detQty,
+                        conditioner: order.conditioner,
+                        conditionerQuantity: conQty,
+                        rushPrice: order.rushPrice,
+                        deliveryPrice: deliveryFee,
+                        servicePrice: pricing.serviceTotal,
+                        systemFee: pricing.convenienceFee,
+                        finalPrice: pricing.grandTotal,
+                        paymentMethod: order.paymentMethod,
+                      });
+                    }
+                  }}
+                  disabled={!pricing}
+                >
+                  <Printer className="h-4 w-4 mr-2" /> Print Receipt
                 </Button>
                 <Button
                   variant="outline"

@@ -2085,6 +2085,7 @@ export default function OrderManagementPage() {
                     {infoRow("Branch", o.branch || "N/A")}
                     {infoRow("Service", o.serviceName || "N/A")}
                     {infoRow("Service Type", o.serviceType === "PICKUP_DELIVERY" ? "Pickup & Delivery" : "Drop-Off")}
+                    {o.loadSize ? infoRow("Load Classification", String(o.loadSize).charAt(0).toUpperCase() + String(o.loadSize).slice(1).toLowerCase()) : null}
                     {infoRow("Est. Weight", o.estimatedWeightKg ? `${o.estimatedWeightKg} kg` : "N/A")}
                     {infoRow("Actual Weight", o.actualWeightKg ? `${o.actualWeightKg} kg` : "N/A")}
                     {infoRow("No. of Loads", loadsText)}
@@ -2132,7 +2133,7 @@ export default function OrderManagementPage() {
               <Button
                 variant="outline"
                 className="flex-1 font-bold"
-                onClick={() => printOrderReceipt(selectedOrder)}
+                onClick={() => printOrderReceipt({ ...selectedOrder, loadSize: selectedOrder.loadSize ?? undefined })}
               >
                 <Printer className="h-4 w-4 mr-2" /> Print Receipt
               </Button>

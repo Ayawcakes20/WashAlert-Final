@@ -8,6 +8,7 @@ type ReceiptOrder = {
   branch?: string;
   serviceType?: string;
   serviceName?: string;
+  loadSize?: string;
   estimatedWeightKg?: number;
   actualWeightKg?: number;
   detergent?: string;
@@ -300,6 +301,10 @@ export function printOrderReceipt(order: ReceiptOrder): void {
         "Service Type",
         order.serviceType === "PICKUP_DELIVERY" ? "Pickup &amp; Delivery" : "Drop-Off"
       )}
+      ${order.loadSize ? infoRow(
+        "Load Classification",
+        String(order.loadSize).charAt(0).toUpperCase() + String(order.loadSize).slice(1).toLowerCase()
+      ) : ""}
       ${infoRow(
         "Est. Weight",
         order.estimatedWeightKg ? `${order.estimatedWeightKg} kg` : "N/A"
