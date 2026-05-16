@@ -201,6 +201,27 @@ export default function BookingScreen({ route, navigation }) {
     bookings.getSuppliesAvailability(branch.name)
       .then(data=>{
         setSupplyAvail(data);
+        // Clamp any already-stored qtys to the newly-loaded caps so the UI is always honest
+        if(data?.detergent){
+          setDetQtyMap(m=>{
+            const next={...m};
+            data.detergent.forEach(item=>{
+              if(typeof item.availableQty==='number'&&(next[item.id]??0)>item.availableQty)
+                next[item.id]=item.availableQty;
+            });
+            return next;
+          });
+        }
+        if(data?.conditioner){
+          setFabQtyMap(m=>{
+            const next={...m};
+            data.conditioner.forEach(item=>{
+              if(typeof item.availableQty==='number'&&(next[item.id]??0)>item.availableQty)
+                next[item.id]=item.availableQty;
+            });
+            return next;
+          });
+        }
         if(data?.message){
           setToastMsg(data.message);
           setTimeout(()=>setToastMsg(''),4500);
@@ -553,7 +574,10 @@ export default function BookingScreen({ route, navigation }) {
                   onPress={()=>{
                     if(isPaid&&isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                     setDet(o.id);
-                    if(isPaid) setDetQtyMap(m=>({...m,[o.id]:Math.max(1,m[o.id]??0)}));
+                    if(isPaid){
+                      const maxQty = avail?.availableQty ?? Infinity;
+                      setDetQtyMap(m=>({...m,[o.id]:Math.min(Math.max(1,m[o.id]??0), maxQty===Infinity?(m[o.id]??1)||1:maxQty)}));
+                    }
                     setStockError(null);
                   }}
                   activeOpacity={0.8}
@@ -580,12 +604,22 @@ export default function BookingScreen({ route, navigation }) {
                           <Text style={{color:isSel?'#fff':'#9CA3AF',fontSize:16,fontWeight:'700',lineHeight:20}}>-</Text>
                         </TouchableOpacity>
                         <Text style={{fontSize:14,fontWeight:'800',color:isSel?colors.text:'#9CA3AF',minWidth:22,textAlign:'center'}}>{displayQty}</Text>
-                        {/* + selects at 1 if not selected (and not out), else increments */}
+                        {/* + selects at 1 if not selected; increments up to availableQty cap */}
                         <TouchableOpacity
                           onPress={()=>{
                             if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
-                            if(!isSel){setDet(o.id);setDetQtyMap(m=>({...m,[o.id]:1}));}
-                            else{setDetQtyMap(m=>({...m,[o.id]:(m[o.id]??1)+1}));}
+                            const maxQty = avail?.availableQty ?? Infinity;
+                            if(!isSel){
+                              setDet(o.id);
+                              setDetQtyMap(m=>({...m,[o.id]:1}));
+                            } else {
+                              const cur = detQtyMap[o.id]??1;
+                              if(maxQty!==Infinity && cur>=maxQty){
+                                showToast(`Only ${maxQty} pack(s) of ${avail?.label||o.label} available at this branch.`);
+                                return;
+                              }
+                              setDetQtyMap(m=>({...m,[o.id]:cur+1}));
+                            }
                             setStockError(null);
                           }}
                           style={{width:28,height:28,borderRadius:14,backgroundColor:isOut?'#D1D5DB':colors.primary,alignItems:'center',justifyContent:'center'}}
@@ -619,7 +653,10 @@ export default function BookingScreen({ route, navigation }) {
                   onPress={()=>{
                     if(isPaid&&isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                     setFab(o.id);
-                    if(isPaid) setFabQtyMap(m=>({...m,[o.id]:Math.max(1,m[o.id]??0)}));
+                    if(isPaid){
+                      const maxQty = avail?.availableQty ?? Infinity;
+                      setFabQtyMap(m=>({...m,[o.id]:Math.min(Math.max(1,m[o.id]??0), maxQty===Infinity?(m[o.id]??1)||1:maxQty)}));
+                    }
                     setStockError(null);
                   }}
                   activeOpacity={0.8}
@@ -643,11 +680,22 @@ export default function BookingScreen({ route, navigation }) {
                           <Text style={{color:isSel?'#fff':'#9CA3AF',fontSize:16,fontWeight:'700',lineHeight:20}}>-</Text>
                         </TouchableOpacity>
                         <Text style={{fontSize:14,fontWeight:'800',color:isSel?colors.text:'#9CA3AF',minWidth:22,textAlign:'center'}}>{displayQty}</Text>
+                        {/* + increments up to availableQty cap */}
                         <TouchableOpacity
                           onPress={()=>{
                             if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
-                            if(!isSel){setFab(o.id);setFabQtyMap(m=>({...m,[o.id]:1}));}
-                            else{setFabQtyMap(m=>({...m,[o.id]:(m[o.id]??1)+1}));}
+                            const maxQty = avail?.availableQty ?? Infinity;
+                            if(!isSel){
+                              setFab(o.id);
+                              setFabQtyMap(m=>({...m,[o.id]:1}));
+                            } else {
+                              const cur = fabQtyMap[o.id]??1;
+                              if(maxQty!==Infinity && cur>=maxQty){
+                                showToast(`Only ${maxQty} pack(s) of ${avail?.label||o.label} available at this branch.`);
+                                return;
+                              }
+                              setFabQtyMap(m=>({...m,[o.id]:cur+1}));
+                            }
                             setStockError(null);
                           }}
                           style={{width:28,height:28,borderRadius:14,backgroundColor:isOut?'#D1D5DB':colors.primary,alignItems:'center',justifyContent:'center'}}
