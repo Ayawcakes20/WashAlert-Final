@@ -498,8 +498,7 @@ export default function BookingScreen({ route, navigation }) {
             {DET_OPTS.map(o=>{
               const isSel = det === o.id;
               const isPaid = o.id !== 'none';
-              // Non-selected paid items display 0; selected shows stored qty (always ≥ 1)
-              const displayQty = isSel ? (detQtyMap[o.id] ?? 1) : 0;
+              const displayQty = detQtyMap[o.id] ?? 1;
               return (
                 <TouchableOpacity
                   key={o.id}
@@ -560,7 +559,7 @@ export default function BookingScreen({ route, navigation }) {
             {FAB_OPTS.map(o=>{
               const isSel = fab === o.id;
               const isPaid = o.id !== 'none';
-              const displayQty = isSel ? (fabQtyMap[o.id] ?? 1) : 0;
+              const displayQty = fabQtyMap[o.id] ?? 1;
               return (
                 <TouchableOpacity
                   key={o.id}
