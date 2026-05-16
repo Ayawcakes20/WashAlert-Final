@@ -141,16 +141,21 @@ export default function BookingScreen({ route, navigation }) {
   const mode                      = SERVICE_MODES.find(m=>m.id===svcMode)||SERVICE_MODES[0];
   const needsAddr                 = mode.needsAddress;
 
-  // Mirrors PricingService.computeLoadCount() — caps add-on qty per booking
+  // Mirrors PricingService.computeLoadCount() — caps add-on qty per booking.
+  // Returns 0 for Dry-only because drying does not use detergent or fabric conditioner.
   const computedLoadCount = useMemo(() => {
     if (!service) return 1;
     const name = (service.name || '').toLowerCase();
+    if (name.includes('dry')) return 0;
     const kg = loadSize === 'LARGE' ? 8 : 5;
     if (name.includes('double')) return 2;
     if (name.includes('ecowash')) return Math.max(1, Math.ceil(kg / 5));
     if (name.includes('full') || name.includes('handwash')) return Math.max(1, Math.ceil(kg / 8));
     return 1;
   }, [service, loadSize]);
+
+  // True when the selected service is Dry-only (no washing cycle, add-ons not applicable).
+  const isDryOnly = computedLoadCount === 0;
 
   // Active qty for the selected addon, always ≥ 1 when an item is selected.
   // The map may hold 0 for unselected items; we clamp so the booking payload is correct.
@@ -212,14 +217,13 @@ export default function BookingScreen({ route, navigation }) {
     bookings.getSuppliesAvailability(branch.name)
       .then(data=>{
         setSupplyAvail(data);
-        // Clamp any already-stored qtys to min(availableQty, computedLoadCount)
+        // Clamp stored qtys to availableQty; the re-clamp effect below applies the load-count cap
         if(data?.detergent){
           setDetQtyMap(m=>{
             const next={...m};
             data.detergent.forEach(item=>{
-              const maxQty=Math.min(item.availableQty, computedLoadCount);
-              if(typeof item.availableQty==='number'&&(next[item.id]??0)>maxQty)
-                next[item.id]=maxQty;
+              if(typeof item.availableQty==='number'&&(next[item.id]??0)>item.availableQty)
+                next[item.id]=item.availableQty;
             });
             return next;
           });
@@ -228,9 +232,8 @@ export default function BookingScreen({ route, navigation }) {
           setFabQtyMap(m=>{
             const next={...m};
             data.conditioner.forEach(item=>{
-              const maxQty=Math.min(item.availableQty, computedLoadCount);
-              if(typeof item.availableQty==='number'&&(next[item.id]??0)>maxQty)
-                next[item.id]=maxQty;
+              if(typeof item.availableQty==='number'&&(next[item.id]??0)>item.availableQty)
+                next[item.id]=item.availableQty;
             });
             return next;
           });
@@ -243,6 +246,15 @@ export default function BookingScreen({ route, navigation }) {
       .catch(()=>setSupplyAvail(null))
       .finally(()=>setAvailLoading(false));
   },[step,branch?.name]);
+
+  // Force add-ons to None when Dry-only is selected — drying has no wash cycle
+  useEffect(()=>{
+    if(computedLoadCount !== 0) return;
+    setDet('none');
+    setFab('none');
+    setDetQtyMap({ surf: 0, ariel: 0 });
+    setFabQtyMap({ charm: 0, downy: 0 });
+  },[computedLoadCount]);
 
   // Re-clamp stored qtys when service/loadSize changes after availability is already loaded
   useEffect(()=>{
@@ -556,6 +568,16 @@ export default function BookingScreen({ route, navigation }) {
             <Text style={S.q}>Any extras?</Text>
             <Text style={S.hint}>Add detergent or fabric conditioner — or bring your own.</Text>
 
+            {/* ── Dry-only notice ── add-ons are not applicable for drying-only orders ── */}
+            {isDryOnly && (
+              <View style={{backgroundColor:'#FEF9C3',borderRadius:12,padding:14,borderWidth:1,borderColor:'#FDE047',flexDirection:'row',alignItems:'flex-start',gap:10}}>
+                <Ionicons name="information-circle" size={18} color="#CA8A04" style={{marginTop:1}}/>
+                <Text style={{flex:1,fontSize:13,color:'#78350F',lineHeight:18}}>
+                  Add-ons are not needed for Dry-only service. Detergent and fabric conditioner have been cleared.
+                </Text>
+              </View>
+            )}
+
             {/* ── Inventory Stock Error ── shown when booking failed due to insufficient stock ── */}
             {stockError && (
               <View style={{backgroundColor:'#FEF2F2',borderRadius:12,padding:14,borderWidth:1,borderColor:'#FECACA',flexDirection:'row',alignItems:'flex-start',gap:10}}>
@@ -604,8 +626,10 @@ export default function BookingScreen({ route, navigation }) {
                   key={o.id}
                   style={[{flexDirection:'row',alignItems:'center',minHeight:66,backgroundColor:colors.surface,borderRadius:14,marginBottom:8,borderWidth:1.5,borderColor:isSel?colors.primary:colors.border},
                     isSel&&{backgroundColor:colors.primaryLight},
-                    isOut&&{opacity:0.6}]}
+                    isOut&&{opacity:0.6},
+                    (isDryOnly&&isPaid)&&{opacity:0.4}]}
                   onPress={()=>{
+                    if(isPaid&&isDryOnly){ showToast('Add-ons are not needed for Dry-only service.'); return; }
                     if(isPaid&&isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                     setDet(o.id);
                     if(isPaid){
@@ -641,6 +665,7 @@ export default function BookingScreen({ route, navigation }) {
                         {/* + selects at 1 if not selected; increments up to min(availableQty, computedLoadCount) */}
                         <TouchableOpacity
                           onPress={()=>{
+                            if(isDryOnly){ showToast('Add-ons are not needed for Dry-only service.'); return; }
                             if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                             const stockMax = avail?.availableQty ?? Infinity;
                             const maxQty = Math.min(stockMax, computedLoadCount);
@@ -687,8 +712,10 @@ export default function BookingScreen({ route, navigation }) {
                   key={o.id}
                   style={[{flexDirection:'row',alignItems:'center',minHeight:66,backgroundColor:colors.surface,borderRadius:14,marginBottom:8,borderWidth:1.5,borderColor:isSel?colors.primary:colors.border},
                     isSel&&{backgroundColor:colors.primaryLight},
-                    isOut&&{opacity:0.6}]}
+                    isOut&&{opacity:0.6},
+                    (isDryOnly&&isPaid)&&{opacity:0.4}]}
                   onPress={()=>{
+                    if(isPaid&&isDryOnly){ showToast('Add-ons are not needed for Dry-only service.'); return; }
                     if(isPaid&&isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                     setFab(o.id);
                     if(isPaid){
@@ -721,6 +748,7 @@ export default function BookingScreen({ route, navigation }) {
                         {/* + increments up to min(availableQty, computedLoadCount) */}
                         <TouchableOpacity
                           onPress={()=>{
+                            if(isDryOnly){ showToast('Add-ons are not needed for Dry-only service.'); return; }
                             if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                             const stockMax = avail?.availableQty ?? Infinity;
                             const maxQty = Math.min(stockMax, computedLoadCount);
