@@ -67,18 +67,12 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
     try {
       const paymentMethodStr = String(fullOrderData.paymentMethod || '').toUpperCase();
       const isGcash = paymentMethodStr.includes('GCASH');
-      
-      console.log('[PAYMENT] Starting confirmation process for:', fullOrderData.trackingNumber || fullOrderData.id);
-      
+
       // 1. Confirm the price first
-      console.log('[PAYMENT] Step 1: Confirming price...');
       let confirmedOrder;
       try {
         confirmedOrder = await bookings.confirmPrice(fullOrderData);
-        console.log('[PAYMENT] ✓ Price confirmed successfully');
       } catch (confirmErr) {
-        console.error('[PAYMENT] ✗ confirmPrice FAILED:', confirmErr.message);
-        
         // Handle Forbidden (CSRF or Role issue)
         if (confirmErr.message?.includes('Forbidden')) {
           Alert.alert(
@@ -88,16 +82,15 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
           );
           return;
         }
-        
+
         throw new Error(`Price confirmation failed: ${confirmErr.message}`);
       }
-      
+
       // 2. If GCash, trigger PayMongo Checkout
       if (isGcash) {
         try {
-          console.log('[PAYMENT] Step 2: Initiating GCash checkout...');
           const checkoutTarget = confirmedOrder?.trackingNumber || fullOrderData?.trackingNumber;
-          
+
           if (!checkoutTarget) throw new Error('Tracking number missing for checkout.');
 
           const response = await payments.initiateGcashCheckout(checkoutTarget);
@@ -108,15 +101,13 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
             throw new Error('PayMongo checkout URL is missing from response.');
           }
 
-          console.log('[PAYMENT] Opening PayMongo URL:', checkoutUrl);
-          
           const browserResult = await WebBrowser.openBrowserAsync(checkoutUrl, {
             showTitle: true,
             toolbarColor: '#2563EB',
             controlsColor: '#ffffff',
             enableBarCollapsing: true,
           });
-          
+
           if (browserResult.type === 'cancel') {
             Alert.alert(
               'Payment Link Sent',
@@ -126,7 +117,6 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
             return;
           }
         } catch (paymentErr) {
-          console.error('[PAYMENT] GCash checkout failed:', paymentErr.message);
           Alert.alert(
             'Checkout Issue',
             `Could not start GCash session: ${paymentErr.message}\n\nYou can pay later via order history.`,
@@ -138,7 +128,6 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
 
       onConfirmed && onConfirmed();
     } catch (e) {
-      console.error('[PAYMENT_CONFIRM_ERROR]', e);
       Alert.alert('Unable to Proceed', e?.message || 'Failed to confirm. Please try again.');
     } finally {
       setLoading(false);

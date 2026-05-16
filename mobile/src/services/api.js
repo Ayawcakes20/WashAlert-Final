@@ -555,9 +555,7 @@ const mapJobOrderToMobile = (jobOrder, previous = {}) => ({
 const refreshOrderStatus = async (order) => {
   if (!order?.trackingNumber) return order;
   try {
-    console.log('[Orders] Refreshing order status tracking=', order.trackingNumber);
     const tracked = await apiRequest(`/api/orders/track/${encodeURIComponent(order.trackingNumber)}`);
-    console.log('[Orders] Backend order status tracking=', order.trackingNumber, 'status=', tracked?.currentStatus);
     const updated = mapJobOrderToMobile(
       {
         id: order.id,
@@ -655,7 +653,6 @@ const refreshOrderStatus = async (order) => {
         `/api/payments/track/${encodeURIComponent(order.trackingNumber)}`
       );
       if (payment) {
-        console.log('[Orders] Payment status tracking=', order.trackingNumber, 'status=', payment.status);
         updated.paymentMethod = payment.method || updated.paymentMethod;
         updated.paymentStatus = toMobilePaymentStatus(
           { paymentStatus: payment.status, isPaid: payment.status === 'PAID' || payment.status === 'VERIFIED' },
