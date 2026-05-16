@@ -21,6 +21,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.data.domain.Sort;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -375,5 +377,19 @@ public class JobOrderController {
             @AuthenticationPrincipal AuthUserDetails principal
     ) {
         return service.submitStaffNote(trackingNumber, req, principal);
+    }
+
+    @GetMapping("/export")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public ResponseEntity<String> exportCsv(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate toDate,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        String csv = service.exportToCsv(principal, fromDate, toDate);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, "text/csv; charset=UTF-8")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"washalert-orders.csv\"")
+                .body(csv);
     }
 }

@@ -9,6 +9,7 @@ type ReceiptOrder = {
   serviceType?: string;
   serviceName?: string;
   loadSize?: string;
+  laundryType?: string;
   estimatedWeightKg?: number;
   actualWeightKg?: number;
   detergent?: string;
@@ -98,7 +99,7 @@ function computeLoadsDisplay(order: ReceiptOrder): string {
   return `${loads} load${loads !== 1 ? "s" : ""}`;
 }
 
-export function printOrderReceipt(order: ReceiptOrder): void {
+function buildReceiptHtml(order: ReceiptOrder, autoPrint = true): { html: string; trackingDisplay: string } {
   const trackingDisplay = String(order.orderId || "").replace(/^WA-/, "");
 
   const detPPP =
@@ -305,6 +306,7 @@ export function printOrderReceipt(order: ReceiptOrder): void {
         "Load Classification",
         String(order.loadSize).charAt(0).toUpperCase() + String(order.loadSize).slice(1).toLowerCase()
       ) : ""}
+      ${order.laundryType ? infoRow("Laundry Type", order.laundryType) : ""}
       ${infoRow(
         "Est. Weight",
         order.estimatedWeightKg ? `${order.estimatedWeightKg} kg` : "N/A"
@@ -386,22 +388,39 @@ export function printOrderReceipt(order: ReceiptOrder): void {
   </div>
 
 </div>
-<script>
+${autoPrint ? `<script>
   window.onload = function () {
     window.print();
     setTimeout(function () { window.close(); }, 600);
   };
-</script>
+</script>` : ""}
 </body>
 </html>`;
 
+  return { html, trackingDisplay };
+}
+
+export function printOrderReceipt(order: ReceiptOrder): void {
+  const { html } = buildReceiptHtml(order);
   const win = window.open("", "_blank", "width=440,height=680,toolbar=0,menubar=0");
   if (!win) {
-    // Pop-up blocked — fall back to alert
     alert("Please allow pop-ups for this site to print receipts, then try again.");
     return;
   }
   win.document.open();
   win.document.write(html);
   win.document.close();
+}
+
+export function downloadOrderReceipt(order: ReceiptOrder): void {
+  const { html, trackingDisplay } = buildReceiptHtml(order, false);
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `WashAlert-Receipt-WA-${trackingDisplay}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }

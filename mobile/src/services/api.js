@@ -1486,20 +1486,16 @@ export const payments = {
     };
 
     const trackingNumber = await resolveTrackingNumber();
-    console.log('[Payments] Requesting GCash checkout URL for tracking=', trackingNumber);
 
     const payload = await apiRequest(`/api/payments/checkout/gcash/${encodeURIComponent(trackingNumber)}`, {
       method: 'POST',
     });
-    
-    console.log('[Payments] Raw checkout response=', payload);
-    
+
     // Handle both snake_case and camelCase from backend
     const checkoutUrl = payload?.checkout_url || payload?.checkoutUrl || payload?.url;
-    
+
     if (!checkoutUrl) {
-      console.error('[Payments] No checkout URL in response:', payload);
-      throw new Error('PayMongo did not return a valid checkout link. Response: ' + JSON.stringify(payload));
+      throw new Error('PayMongo did not return a valid checkout link. Please try again or contact support.');
     }
     
     return { checkoutUrl, trackingNumber };
