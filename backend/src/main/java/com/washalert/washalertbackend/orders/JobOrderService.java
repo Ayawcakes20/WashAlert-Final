@@ -35,6 +35,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -1236,5 +1237,107 @@ public class JobOrderService {
         JobOrderResponse response = toResponse(saved);
         firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
         return response;
+    }
+
+    // ── CUSTOMER FEEDBACK / STAFF NOTES ──────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public FeedbackResponse getFeedback(String trackingNumber, AuthUserDetails principal) {
+        User actor = principal.getUser();
+        JobOrder jo = repo.findByTrackingNumber(normalizeTrackingNumber(trackingNumber))
+                .orElseThrow(() -> new OrderNotFoundException("Order not found."));
+
+        if (actor.getRole() == Role.CUSTOMER && !jo.getCustomerEmail().equalsIgnoreCase(actor.getEmail())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied.");
+        }
+
+        Optional<Map<String, Object>> data = firestoreSyncService.get("feedback", jo.getTrackingNumber());
+
+        FeedbackResponse.FeedbackResponseBuilder builder = FeedbackResponse.builder()
+                .trackingNumber(jo.getTrackingNumber());
+
+        data.ifPresent(d -> {
+            Object ratingObj = d.get("customerRating");
+            if (ratingObj instanceof Number n) builder.customerRating(n.intValue());
+            Object comment = d.get("customerComment");
+            if (comment instanceof String s) builder.customerComment(s);
+            Object submittedAt = d.get("feedbackSubmittedAt");
+            if (submittedAt instanceof String s) builder.feedbackSubmittedAt(s);
+
+            if (actor.getRole() == Role.ADMIN || actor.getRole() == Role.STAFF) {
+                Object note = d.get("staffNote");
+                if (note instanceof String s) builder.staffNote(s);
+                Object noteUpdatedAt = d.get("staffNoteUpdatedAt");
+                if (noteUpdatedAt instanceof String s) builder.staffNoteUpdatedAt(s);
+            }
+        });
+
+        return builder.build();
+    }
+
+    @Transactional
+    public FeedbackResponse submitFeedback(String trackingNumber, FeedbackRequest req, AuthUserDetails principal) {
+        User actor = principal.getUser();
+        JobOrder jo = repo.findByTrackingNumber(normalizeTrackingNumber(trackingNumber))
+                .orElseThrow(() -> new OrderNotFoundException("Order not found."));
+
+        if (!jo.getCustomerEmail().equalsIgnoreCase(actor.getEmail())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can only rate your own orders.");
+        }
+        if (jo.getStatus() != JobOrderStatus.DELIVERED && jo.getStatus() != JobOrderStatus.READY) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Feedback can only be submitted for completed orders (DELIVERED or READY).");
+        }
+
+        String submittedAt = Instant.now().toString();
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("customerRating", req.rating());
+        payload.put("customerComment", req.comment() != null ? req.comment().trim() : "");
+        payload.put("feedbackSubmittedAt", submittedAt);
+        payload.put("customerEmail", actor.getEmail());
+        payload.put("trackingNumber", jo.getTrackingNumber());
+
+        firestoreSyncService.upsertBlocking("feedback", jo.getTrackingNumber(), payload);
+
+        return FeedbackResponse.builder()
+                .trackingNumber(jo.getTrackingNumber())
+                .customerRating(req.rating())
+                .customerComment(req.comment())
+                .feedbackSubmittedAt(submittedAt)
+                .build();
+    }
+
+    @Transactional
+    public FeedbackResponse submitStaffNote(String trackingNumber, StaffNoteRequest req, AuthUserDetails principal) {
+        User actor = principal.getUser();
+        JobOrder jo = repo.findByTrackingNumber(normalizeTrackingNumber(trackingNumber))
+                .orElseThrow(() -> new OrderNotFoundException("Order not found."));
+
+        Optional<Map<String, Object>> existing = firestoreSyncService.get("feedback", jo.getTrackingNumber());
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        existing.ifPresent(payload::putAll);
+        String updatedAt = Instant.now().toString();
+        payload.put("staffNote", req.note() != null ? req.note().trim() : "");
+        payload.put("staffNoteUpdatedAt", updatedAt);
+        payload.put("staffEmail", actor.getEmail());
+        payload.put("trackingNumber", jo.getTrackingNumber());
+
+        firestoreSyncService.upsertBlocking("feedback", jo.getTrackingNumber(), payload);
+
+        FeedbackResponse.FeedbackResponseBuilder builder = FeedbackResponse.builder()
+                .trackingNumber(jo.getTrackingNumber())
+                .staffNote(req.note())
+                .staffNoteUpdatedAt(updatedAt);
+
+        existing.ifPresent(d -> {
+            Object ratingObj = d.get("customerRating");
+            if (ratingObj instanceof Number n) builder.customerRating(n.intValue());
+            Object comment = d.get("customerComment");
+            if (comment instanceof String s) builder.customerComment(s);
+            Object submittedAt = d.get("feedbackSubmittedAt");
+            if (submittedAt instanceof String s) builder.feedbackSubmittedAt(s);
+        });
+
+        return builder.build();
     }
 }

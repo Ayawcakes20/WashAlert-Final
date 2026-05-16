@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, Animated, Image, Dimensions
+  ActivityIndicator, Alert, Animated, Image, Dimensions, TextInput
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
@@ -121,6 +121,11 @@ export default function OrderDetailScreen({ route, navigation }) {
   const [branchPhones, setBP]   = useState({});
   const [showFullTL, setShowTL] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [feedbackRating, setFeedbackRating]     = useState(0);
+  const [feedbackComment, setFeedbackComment]   = useState('');
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [feedbackDone, setFeedbackDone]         = useState(false);
+  const [existingFeedback, setExistingFeedback] = useState(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -168,9 +173,46 @@ export default function OrderDetailScreen({ route, navigation }) {
   }, [order?.id, order?.trackingNumber]);
 
   const load = async () => {
-    try { setLoading(true); const d = await bookingsApi.getById(orderId); setOrder(d); }
-    catch(e) { console.error(e); }
+    try {
+      setLoading(true);
+      const d = await bookingsApi.getById(orderId);
+      setOrder(d);
+      const statusNorm = normalize(d?.status || '');
+      if (statusNorm === 'delivered' || statusNorm === 'ready') {
+        const tn = d?.trackingNumber || d?.orderId;
+        if (tn) {
+          try {
+            const fb = await bookingsApi.getMyFeedback(tn);
+            if (fb?.customerRating) {
+              setExistingFeedback(fb);
+              setFeedbackRating(fb.customerRating);
+              setFeedbackComment(fb.customerComment || '');
+              setFeedbackDone(true);
+            }
+          } catch {}
+        }
+      }
+    } catch(e) { console.error(e); }
     finally { setLoading(false); }
+  };
+
+  const submitFeedback = async () => {
+    if (feedbackRating < 1) {
+      Alert.alert('Rating Required', 'Please select a star rating before submitting.');
+      return;
+    }
+    const tn = order?.trackingNumber || order?.orderId;
+    if (!tn) return;
+    setFeedbackSubmitting(true);
+    try {
+      await bookingsApi.submitFeedback(tn, feedbackRating, feedbackComment.trim());
+      setFeedbackDone(true);
+      Alert.alert('Thank You!', 'Your feedback has been submitted.');
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'Could not submit feedback. Please try again.');
+    } finally {
+      setFeedbackSubmitting(false);
+    }
   };
 
   if (loading) return (
@@ -521,6 +563,67 @@ export default function OrderDetailScreen({ route, navigation }) {
           </View>
         )}
 
+        {/* FEEDBACK CARD — shown when order is delivered or ready */}
+        {(ns === 'delivered' || ns === 'ready') && (
+          <View style={styles.card}>
+            <Text style={[styles.cardTitle, {marginBottom:12}]}>
+              {feedbackDone ? '⭐ Your Feedback' : 'Rate Your Experience'}
+            </Text>
+            {/* Star selector */}
+            <View style={{flexDirection:'row', gap:8, marginBottom:12}}>
+              {[1,2,3,4,5].map(star => (
+                <TouchableOpacity
+                  key={star}
+                  onPress={() => { if (!feedbackDone) setFeedbackRating(star); }}
+                  activeOpacity={feedbackDone ? 1 : 0.7}
+                >
+                  <Text style={{fontSize:30, color: star <= feedbackRating ? '#F59E0B' : '#D1D5DB'}}>★</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {!feedbackDone && (
+              <>
+                <TextInput
+                  style={styles.feedbackInput}
+                  placeholder="Share your experience (optional, max 200 chars)"
+                  placeholderTextColor="#9CA3AF"
+                  value={feedbackComment}
+                  onChangeText={t => setFeedbackComment(t.slice(0, 200))}
+                  multiline
+                  numberOfLines={3}
+                  maxLength={200}
+                />
+                <Text style={{fontSize:10, color:'#9CA3AF', textAlign:'right', marginBottom:10}}>
+                  {feedbackComment.length}/200
+                </Text>
+                <TouchableOpacity
+                  style={[styles.footerPrimary, {marginTop:0}]}
+                  onPress={submitFeedback}
+                  disabled={feedbackSubmitting}
+                  activeOpacity={0.8}
+                >
+                  {feedbackSubmitting
+                    ? <ActivityIndicator size="small" color="#fff"/>
+                    : <Text style={styles.footerPrimaryText}>Submit Feedback</Text>
+                  }
+                </TouchableOpacity>
+              </>
+            )}
+            {feedbackDone && feedbackComment ? (
+              <Text style={{fontSize:13, color:'#374151', fontStyle:'italic', lineHeight:20}}>
+                &ldquo;{feedbackComment}&rdquo;
+              </Text>
+            ) : feedbackDone ? (
+              <Text style={{fontSize:12, color:'#9CA3AF'}}>No comment added.</Text>
+            ) : null}
+            {feedbackDone && existingFeedback?.feedbackSubmittedAt && (
+              <Text style={{fontSize:10, color:'#9CA3AF', marginTop:8}}>
+                Submitted {new Date(existingFeedback.feedbackSubmittedAt).toLocaleDateString()}
+              </Text>
+            )}
+          </View>
+        )}
+
         <View style={{height:100}}/>
       </ScrollView>
 
@@ -672,5 +775,18 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '800',
+  },
+
+  feedbackInput: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 13,
+    color: '#374151',
+    textAlignVertical: 'top',
+    minHeight: 72,
+    marginBottom: 6,
+    backgroundColor: '#F9FAFB',
   },
 });

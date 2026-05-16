@@ -2,6 +2,7 @@ package com.washalert.washalertbackend.firebase;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -81,6 +82,22 @@ public class FirestoreSyncService {
             log.error("Firestore blocking upsert timed out for collection={} docId={}", collection, documentId);
         } catch (Exception ex) {
             log.error("Firestore blocking upsert failed for collection={} docId={}: {}", collection, documentId, ex.getMessage());
+        }
+    }
+
+    public Optional<Map<String, Object>> get(String collection, String documentId) {
+        if (!isEnabled()) return Optional.empty();
+        if (!StringUtils.hasText(collection) || !StringUtils.hasText(documentId)) return Optional.empty();
+        try {
+            DocumentSnapshot snap = firestore.get()
+                    .collection(collection.trim())
+                    .document(sanitizeDocumentId(documentId))
+                    .get()
+                    .get(5, TimeUnit.SECONDS);
+            return snap.exists() ? Optional.ofNullable(snap.getData()) : Optional.empty();
+        } catch (Exception ex) {
+            log.warn("Firestore get failed for collection={} docId={}: {}", collection, documentId, ex.getMessage());
+            return Optional.empty();
         }
     }
 

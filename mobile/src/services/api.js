@@ -1035,6 +1035,20 @@ export const bookings = {
     if (!trackingNumber) throw new Error('Cannot reject: tracking number is missing.');
     return apiRequest(`/api/orders/my/${encodeURIComponent(trackingNumber)}/reject-price`, { method: 'POST' });
   },
+
+  submitFeedback: async (trackingNumber, rating, comment) => {
+    if (!trackingNumber) throw new Error('Cannot submit feedback: tracking number is missing.');
+    return apiRequest(`/api/orders/my/${encodeURIComponent(trackingNumber)}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rating, comment: comment || '' }),
+    });
+  },
+
+  getMyFeedback: async (trackingNumber) => {
+    if (!trackingNumber) return null;
+    return apiRequest(`/api/orders/my/${encodeURIComponent(trackingNumber)}/feedback`);
+  },
   getAvailableSlots: async (branch, dateLike) => {
     const date = formatDateForApi(dateLike);
     const path = `/api/bookings/slots?branch=${encodeURIComponent(branch)}&date=${encodeURIComponent(date)}`;

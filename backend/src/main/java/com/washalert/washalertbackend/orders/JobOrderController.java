@@ -6,10 +6,13 @@ import com.washalert.washalertbackend.orders.dto.AssignDriverRequest;
 import com.washalert.washalertbackend.orders.dto.DriverConfirmDeliveryRequest;
 import com.washalert.washalertbackend.orders.dto.DriverDeliveryFailedRequest;
 import com.washalert.washalertbackend.orders.dto.EditJobOrderRequest;
+import com.washalert.washalertbackend.orders.dto.FeedbackRequest;
+import com.washalert.washalertbackend.orders.dto.FeedbackResponse;
 import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
 import com.washalert.washalertbackend.orders.dto.OrderTrackingResponse;
 import com.washalert.washalertbackend.orders.dto.RescheduleOrderRequest;
 import com.washalert.washalertbackend.orders.dto.SetPriceRequest;
+import com.washalert.washalertbackend.orders.dto.StaffNoteRequest;
 import com.washalert.washalertbackend.orders.dto.UpdateJobOrderRequest;
 import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.common.dto.PagedResponse;
@@ -334,5 +337,45 @@ public class JobOrderController {
             @AuthenticationPrincipal AuthUserDetails principal
     ) {
         return service.updateDriverLocation(id, location.get("latitude"), location.get("longitude"), principal);
+    }
+
+    // ── FEEDBACK / STAFF NOTES ────────────────────────────────────────────────
+
+    @PostMapping("/my/{trackingNumber}/feedback")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public FeedbackResponse submitFeedback(
+            @PathVariable String trackingNumber,
+            @Valid @RequestBody FeedbackRequest req,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.submitFeedback(trackingNumber, req, principal);
+    }
+
+    @GetMapping("/my/{trackingNumber}/feedback")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public FeedbackResponse getMyFeedback(
+            @PathVariable String trackingNumber,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.getFeedback(trackingNumber, principal);
+    }
+
+    @GetMapping("/feedback/{trackingNumber}")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public FeedbackResponse getOrderFeedback(
+            @PathVariable String trackingNumber,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.getFeedback(trackingNumber, principal);
+    }
+
+    @PatchMapping("/feedback/{trackingNumber}/staff-note")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public FeedbackResponse submitStaffNote(
+            @PathVariable String trackingNumber,
+            @Valid @RequestBody StaffNoteRequest req,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return service.submitStaffNote(trackingNumber, req, principal);
     }
 }

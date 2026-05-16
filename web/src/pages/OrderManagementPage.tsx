@@ -10,6 +10,7 @@ import {
   HelpCircle,
   Loader2,
   Mail,
+  MessageSquare,
   Pencil,
   Phone,
   Plus,
@@ -17,6 +18,7 @@ import {
   RefreshCw,
   Scale,
   Search,
+  Star,
   Trash2,
   User,
 } from "lucide-react";
@@ -24,8 +26,10 @@ import {
 import {
   ordersApi,
   deliveriesApi,
+  feedbackApi,
   usersApi,
   type CreateOrderPayload,
+  type FeedbackResponse,
   type JobOrderResponse,
   type UpdateOrderPayload,
   type UserAdminRecord,
@@ -639,9 +643,15 @@ export default function OrderManagementPage() {
   const openDetails = async (orderId: number) => {
     setDetailsOpen(true);
     setDetailsLoading(true);
+    setFeedbackData(null);
+    setStaffNoteInput("");
     try {
       const detail = await ordersApi.getById(orderId);
-      setSelectedOrder(mapOrder(detail));
+      const mapped = mapOrder(detail);
+      setSelectedOrder(mapped);
+      if (mapped.status === "DELIVERED" || mapped.status === "READY") {
+        void loadFeedback(mapped.orderId);
+      }
     } catch (err: any) {
       const fallback = orders.find((o) => o.id === orderId) || null;
       setSelectedOrder(fallback);
@@ -732,10 +742,43 @@ export default function OrderManagementPage() {
     }
   };
 
+  // ── FEEDBACK STATE ────────────────────────────────────────────────────────
+  const [feedbackData, setFeedbackData] = useState<FeedbackResponse | null>(null);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [staffNoteInput, setStaffNoteInput] = useState("");
+  const [staffNoteSubmitting, setStaffNoteSubmitting] = useState(false);
+
+  const loadFeedback = useCallback(async (trackingNumber: string) => {
+    setFeedbackLoading(true);
+    try {
+      const data = await feedbackApi.getForOrder(trackingNumber);
+      setFeedbackData(data);
+      setStaffNoteInput(data.staffNote ?? "");
+    } catch {
+      setFeedbackData(null);
+    } finally {
+      setFeedbackLoading(false);
+    }
+  }, []);
+
+  const submitStaffNote = async () => {
+    if (!selectedOrder) return;
+    setStaffNoteSubmitting(true);
+    try {
+      const updated = await feedbackApi.submitStaffNote(selectedOrder.orderId, staffNoteInput);
+      setFeedbackData(updated);
+      toast.success("Staff note saved.");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to save staff note.");
+    } finally {
+      setStaffNoteSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     let active = true;
-    const pickupDeliveryOrders = orders.filter((order) => 
-      order.serviceType === "PICKUP_DELIVERY" && 
+    const pickupDeliveryOrders = orders.filter((order) =>
+      order.serviceType === "PICKUP_DELIVERY" &&
       !["PENDING", "ORDER_RECEIVED", "WASHING", "DRYING"].includes(order.status)
     );
     if (pickupDeliveryOrders.length === 0) {
@@ -1900,6 +1943,75 @@ export default function OrderManagementPage() {
                   </div>
                 )}
               </div>
+
+              {/* FEEDBACK & STAFF NOTES — shown for completed orders */}
+              {(selectedOrder.status === 'DELIVERED' || selectedOrder.status === 'READY') && (
+                <div className="border-t border-slate-100 pt-4 space-y-4">
+                  <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                    <MessageSquare className="h-3.5 w-3.5" /> Customer Feedback
+                  </h3>
+
+                  {feedbackLoading ? (
+                    <div className="flex justify-center py-4">
+                      <Loader2 className="h-5 w-5 animate-spin text-slate-300" />
+                    </div>
+                  ) : feedbackData?.customerRating ? (
+                    <div className="bg-slate-50 rounded-xl p-4 space-y-2">
+                      <div className="flex items-center gap-1">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <Star
+                            key={star}
+                            className={`h-5 w-5 ${star <= (feedbackData.customerRating ?? 0) ? "fill-amber-400 text-amber-400" : "text-slate-200"}`}
+                          />
+                        ))}
+                        <span className="ml-2 text-sm font-black text-slate-600">{feedbackData.customerRating}/5</span>
+                      </div>
+                      {feedbackData.customerComment && (
+                        <p className="text-sm text-slate-600 italic leading-relaxed">
+                          &ldquo;{feedbackData.customerComment}&rdquo;
+                        </p>
+                      )}
+                      {feedbackData.feedbackSubmittedAt && (
+                        <p className="text-[10px] text-slate-300">
+                          Submitted {new Date(feedbackData.feedbackSubmittedAt).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 italic">No customer rating yet.</p>
+                  )}
+
+                  {/* Staff Note */}
+                  <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                    <Pencil className="h-3.5 w-3.5" /> Staff Note
+                  </h3>
+                  <textarea
+                    className="w-full text-sm border border-slate-200 rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 text-slate-700 placeholder:text-slate-300"
+                    rows={3}
+                    maxLength={300}
+                    placeholder="Add an internal note about this order…"
+                    value={staffNoteInput}
+                    onChange={(e) => setStaffNoteInput(e.target.value)}
+                  />
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] text-slate-300">{staffNoteInput.length}/300</span>
+                    <Button
+                      size="sm"
+                      className="font-bold rounded-lg"
+                      disabled={staffNoteSubmitting}
+                      onClick={() => void submitStaffNote()}
+                    >
+                      {staffNoteSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                      Save Note
+                    </Button>
+                  </div>
+                  {feedbackData?.staffNoteUpdatedAt && (
+                    <p className="text-[10px] text-slate-300">
+                      Last updated {new Date(feedbackData.staffNoteUpdatedAt).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <p className="p-20 text-center text-slate-400 font-bold uppercase tracking-widest">No order selected.</p>
