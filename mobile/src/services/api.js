@@ -1116,6 +1116,12 @@ export const bookings = {
     });
   },
 
+  // Returns per-item availability for each customer-selectable supply at the branch.
+  // Used to show unavailable badges on the Extras page before the user selects.
+  getSuppliesAvailability: async (branch) => {
+    return apiRequest(`/api/bookings/supplies-availability?branch=${encodeURIComponent(branch)}`);
+  },
+
   getTimeline: async (trackingNumber) => {
     if (!trackingNumber) return { timeline: [] };
     const tracked = await apiRequest(`/api/orders/track/${encodeURIComponent(trackingNumber)}`);

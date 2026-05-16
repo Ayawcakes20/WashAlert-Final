@@ -108,10 +108,13 @@ export default function BookingScreen({ route, navigation }) {
   const [submitting, setSub]      = useState(false);
   const [checking, setChecking]   = useState(false);  // true while pre-flight supply check runs
   const [stockError, setStockError] = useState(null); // inline inventory warning on step 4
-  // Per-addon qty map: each option tracks its own quantity independently.
-  // Fixes the bug where switching addons would carry over the previous qty.
-  const [detQtyMap, setDetQtyMap] = useState({ surf: 1, ariel: 1 });
-  const [fabQtyMap, setFabQtyMap] = useState({ charm: 1, downy: 1 });
+  // Per-addon qty map — initialised to 0 so unselected items display 0 until the
+  // customer explicitly selects or taps +. Switches between items do not cross-copy.
+  const [detQtyMap, setDetQtyMap] = useState({ surf: 0, ariel: 0 });
+  const [fabQtyMap, setFabQtyMap] = useState({ charm: 0, downy: 0 });
+  // Supply availability fetched when entering step 4. null = not yet loaded.
+  const [supplyAvail, setSupplyAvail] = useState(null);
+  const [availLoading, setAvailLoading] = useState(false);
   // Lightweight toast state — message auto-clears after 3.5 s
   const [toastMsg, setToastMsg]   = useState('');
   const scrollRef                 = useRef(null); // ref for main ScrollView — used to reset scroll on step change
@@ -138,10 +141,10 @@ export default function BookingScreen({ route, navigation }) {
   const mode                      = SERVICE_MODES.find(m=>m.id===svcMode)||SERVICE_MODES[0];
   const needsAddr                 = mode.needsAddress;
 
-  // Derived qty for the currently-selected addon — falls back to 1 if not yet in map.
-  // Downstream code (cost calc, booking payload) uses these without change.
-  const detQty = det !== 'none' ? (detQtyMap[det] ?? 1) : 0;
-  const fabQty = fab !== 'none' ? (fabQtyMap[fab] ?? 1) : 0;
+  // Active qty for the selected addon, always ≥ 1 when an item is selected.
+  // The map may hold 0 for unselected items; we clamp so the booking payload is correct.
+  const detQty = det !== 'none' ? Math.max(1, detQtyMap[det] ?? 1) : 0;
+  const fabQty = fab !== 'none' ? Math.max(1, fabQtyMap[fab] ?? 1) : 0;
 
   // Show a floating toast for 3.5 s — clears automatically
   const showToast = (msg) => {
@@ -188,6 +191,24 @@ export default function BookingScreen({ route, navigation }) {
       catch{ setSlots([]); } finally{ setSlotsLoad(false); }
     })();
   },[branch,schDate]);
+
+  // Load per-item supply availability when entering step 4, and clear when leaving.
+  // Shows an immediate toast if some or all supplies are out of stock.
+  useEffect(()=>{
+    if(step!==4){ setSupplyAvail(null); return; }
+    if(!branch?.name) return;
+    setAvailLoading(true);
+    bookings.getSuppliesAvailability(branch.name)
+      .then(data=>{
+        setSupplyAvail(data);
+        if(data?.message){
+          setToastMsg(data.message);
+          setTimeout(()=>setToastMsg(''),4500);
+        }
+      })
+      .catch(()=>setSupplyAvail(null))
+      .finally(()=>setAvailLoading(false));
+  },[step,branch?.name]);
 
   // Scroll to top ONLY when the booking step actually changes (not on addon selection,
   // quantity tweaks, or any other state change that leaves `step` the same).
@@ -508,40 +529,49 @@ export default function BookingScreen({ route, navigation }) {
             </View>
 
             {/* ── DETERGENT ──
-                 Layout rules:
-                 • All cards have fixed minHeight so they never resize on selection.
-                 • Checkmark uses opacity (always rendered) so it doesn't shift width.
-                 • None card has a fixed-width spacer matching the paid-card control area.
-                 • − is clamped to min 1; tap None to clear the selection entirely.    */}
+                 Layout rules (stable across all states):
+                 • Fixed minHeight — cards never resize on selection/deselection.
+                 • Checkmark uses opacity so it never adds/removes space.
+                 • None card has a 90px spacer matching paid-card control width.
+                 • Qty starts at 0; selecting bumps it to 1. − clamps at 1.
+                 • Unavailable items show "Out of stock" badge and block + / card-tap. */}
             <Text style={S.sec}>Detergent</Text>
+            {availLoading&&<ActivityIndicator size="small" color={colors.primary} style={{alignSelf:'flex-start',marginBottom:8}}/>}
             {DET_OPTS.map(o=>{
-              const isSel = det === o.id;
+              const isSel  = det === o.id;
               const isPaid = o.id !== 'none';
-              const displayQty = detQtyMap[o.id] ?? 1;
+              const avail  = isPaid ? supplyAvail?.detergent?.find(d=>d.id===o.id) : null;
+              // null avail = not loaded yet = optimistically allow; false = confirmed out
+              const isOut  = avail !== null && avail !== undefined && !avail.available;
+              const displayQty = detQtyMap[o.id] ?? 0;
               return (
                 <TouchableOpacity
                   key={o.id}
-                  style={[{flexDirection:'row',alignItems:'center',minHeight:66,backgroundColor:colors.surface,borderRadius:14,marginBottom:8,borderWidth:1.5,borderColor:isSel?colors.primary:colors.border},isSel&&{backgroundColor:colors.primaryLight}]}
+                  style={[{flexDirection:'row',alignItems:'center',minHeight:66,backgroundColor:colors.surface,borderRadius:14,marginBottom:8,borderWidth:1.5,borderColor:isSel?colors.primary:colors.border},
+                    isSel&&{backgroundColor:colors.primaryLight},
+                    isOut&&{opacity:0.6}]}
                   onPress={()=>{
+                    if(isPaid&&isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                     setDet(o.id);
-                    if(isPaid) setDetQtyMap(m=>({...m,[o.id]:Math.max(1,m[o.id]??1)}));
+                    if(isPaid) setDetQtyMap(m=>({...m,[o.id]:Math.max(1,m[o.id]??0)}));
                     setStockError(null);
                   }}
                   activeOpacity={0.8}
                 >
-                  {/* Label */}
+                  {/* Left — label + price + optional out-of-stock badge */}
                   <View style={{flex:1,paddingVertical:14,paddingLeft:14}}>
                     <Text style={{fontSize:14,fontWeight:'700',color:isSel?colors.primary:colors.text}}>{o.label}</Text>
-                    {o.price>0&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per pack</Text>}
+                    {o.price>0&&!isOut&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per pack</Text>}
+                    {isOut&&<Text style={{fontSize:11,fontWeight:'700',color:'#DC2626',marginTop:2}}>Out of stock</Text>}
                   </View>
-                  {/* Right area — always same width so card never resizes */}
+                  {/* Right — fixed structure: [controls | spacer] + checkmark (opacity) */}
                   <View style={{flexDirection:'row',alignItems:'center',paddingRight:12,gap:6}}>
                     {isPaid ? (
                       <>
-                        {/* − clamped to 1; tap None to deselect */}
+                        {/* − clamped to 1 while selected; no-op when unselected */}
                         <TouchableOpacity
                           onPress={()=>{
-                            if(!isSel){setDet(o.id);setDetQtyMap(m=>({...m,[o.id]:1}));setStockError(null);return;}
+                            if(!isSel){ if(!isOut){setDet(o.id);setDetQtyMap(m=>({...m,[o.id]:1}));setStockError(null);} return; }
                             setDetQtyMap(m=>({...m,[o.id]:Math.max(1,(m[o.id]??1)-1)}));
                             setStockError(null);
                           }}
@@ -550,56 +580,61 @@ export default function BookingScreen({ route, navigation }) {
                           <Text style={{color:isSel?'#fff':'#9CA3AF',fontSize:16,fontWeight:'700',lineHeight:20}}>-</Text>
                         </TouchableOpacity>
                         <Text style={{fontSize:14,fontWeight:'800',color:isSel?colors.text:'#9CA3AF',minWidth:22,textAlign:'center'}}>{displayQty}</Text>
-                        {/* + selects if not selected, else increments */}
+                        {/* + selects at 1 if not selected (and not out), else increments */}
                         <TouchableOpacity
                           onPress={()=>{
+                            if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                             if(!isSel){setDet(o.id);setDetQtyMap(m=>({...m,[o.id]:1}));}
                             else{setDetQtyMap(m=>({...m,[o.id]:(m[o.id]??1)+1}));}
                             setStockError(null);
                           }}
-                          style={{width:28,height:28,borderRadius:14,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}
+                          style={{width:28,height:28,borderRadius:14,backgroundColor:isOut?'#D1D5DB':colors.primary,alignItems:'center',justifyContent:'center'}}
                         >
-                          <Text style={{color:'#fff',fontSize:16,fontWeight:'700',lineHeight:20}}>+</Text>
+                          <Text style={{color:isOut?'#9CA3AF':'#fff',fontSize:16,fontWeight:'700',lineHeight:20}}>+</Text>
                         </TouchableOpacity>
                       </>
                     ) : (
-                      // Spacer for None card: width = btn(28)+gap(6)+qty(22)+gap(6)+btn(28) = 90
                       <View style={{width:90}}/>
                     )}
-                    {/* Checkmark always rendered — opacity avoids layout shift on select */}
                     <Ionicons name="checkmark-circle" size={20} color={colors.primary} style={{opacity:isSel?1:0,marginLeft:4}}/>
                   </View>
                 </TouchableOpacity>
               );
             })}
 
-            {/* ── FABRIC CONDITIONER ── same stable layout pattern as detergent ── */}
+            {/* ── FABRIC CONDITIONER ── identical stable-layout pattern ── */}
             <Text style={S.sec}>Fabric Conditioner</Text>
             {FAB_OPTS.map(o=>{
-              const isSel = fab === o.id;
+              const isSel  = fab === o.id;
               const isPaid = o.id !== 'none';
-              const displayQty = fabQtyMap[o.id] ?? 1;
+              const avail  = isPaid ? supplyAvail?.conditioner?.find(c=>c.id===o.id) : null;
+              const isOut  = avail !== null && avail !== undefined && !avail.available;
+              const displayQty = fabQtyMap[o.id] ?? 0;
               return (
                 <TouchableOpacity
                   key={o.id}
-                  style={[{flexDirection:'row',alignItems:'center',minHeight:66,backgroundColor:colors.surface,borderRadius:14,marginBottom:8,borderWidth:1.5,borderColor:isSel?colors.primary:colors.border},isSel&&{backgroundColor:colors.primaryLight}]}
+                  style={[{flexDirection:'row',alignItems:'center',minHeight:66,backgroundColor:colors.surface,borderRadius:14,marginBottom:8,borderWidth:1.5,borderColor:isSel?colors.primary:colors.border},
+                    isSel&&{backgroundColor:colors.primaryLight},
+                    isOut&&{opacity:0.6}]}
                   onPress={()=>{
+                    if(isPaid&&isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                     setFab(o.id);
-                    if(isPaid) setFabQtyMap(m=>({...m,[o.id]:Math.max(1,m[o.id]??1)}));
+                    if(isPaid) setFabQtyMap(m=>({...m,[o.id]:Math.max(1,m[o.id]??0)}));
                     setStockError(null);
                   }}
                   activeOpacity={0.8}
                 >
                   <View style={{flex:1,paddingVertical:14,paddingLeft:14}}>
                     <Text style={{fontSize:14,fontWeight:'700',color:isSel?colors.primary:colors.text}}>{o.label}</Text>
-                    {o.price>0&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per pack</Text>}
+                    {o.price>0&&!isOut&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per pack</Text>}
+                    {isOut&&<Text style={{fontSize:11,fontWeight:'700',color:'#DC2626',marginTop:2}}>Out of stock</Text>}
                   </View>
                   <View style={{flexDirection:'row',alignItems:'center',paddingRight:12,gap:6}}>
                     {isPaid ? (
                       <>
                         <TouchableOpacity
                           onPress={()=>{
-                            if(!isSel){setFab(o.id);setFabQtyMap(m=>({...m,[o.id]:1}));setStockError(null);return;}
+                            if(!isSel){ if(!isOut){setFab(o.id);setFabQtyMap(m=>({...m,[o.id]:1}));setStockError(null);} return; }
                             setFabQtyMap(m=>({...m,[o.id]:Math.max(1,(m[o.id]??1)-1)}));
                             setStockError(null);
                           }}
@@ -610,13 +645,14 @@ export default function BookingScreen({ route, navigation }) {
                         <Text style={{fontSize:14,fontWeight:'800',color:isSel?colors.text:'#9CA3AF',minWidth:22,textAlign:'center'}}>{displayQty}</Text>
                         <TouchableOpacity
                           onPress={()=>{
+                            if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                             if(!isSel){setFab(o.id);setFabQtyMap(m=>({...m,[o.id]:1}));}
                             else{setFabQtyMap(m=>({...m,[o.id]:(m[o.id]??1)+1}));}
                             setStockError(null);
                           }}
-                          style={{width:28,height:28,borderRadius:14,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}
+                          style={{width:28,height:28,borderRadius:14,backgroundColor:isOut?'#D1D5DB':colors.primary,alignItems:'center',justifyContent:'center'}}
                         >
-                          <Text style={{color:'#fff',fontSize:16,fontWeight:'700',lineHeight:20}}>+</Text>
+                          <Text style={{color:isOut?'#9CA3AF':'#fff',fontSize:16,fontWeight:'700',lineHeight:20}}>+</Text>
                         </TouchableOpacity>
                       </>
                     ) : (
@@ -627,10 +663,8 @@ export default function BookingScreen({ route, navigation }) {
                 </TouchableOpacity>
               );
             })}
-            
-            {/* ── Availability notice ── placed here (below both card groups) so its
-                 appearance/disappearance does NOT affect the layout above the cards,
-                 which was causing the spurious "scroll to top" on None tap ── */}
+
+            {/* Availability notice — below both card groups so it never shifts card layout */}
             {!stockError && (det !== 'none' || fab !== 'none') && (
               <View style={{backgroundColor:'#EFF6FF',borderRadius:10,padding:10,flexDirection:'row',alignItems:'center',gap:8}}>
                 <Ionicons name="information-circle-outline" size={15} color="#3B82F6"/>
