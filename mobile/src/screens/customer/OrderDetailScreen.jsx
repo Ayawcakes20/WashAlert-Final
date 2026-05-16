@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, Animated, Image, Dimensions, TextInput
+  ActivityIndicator, Alert, Animated, Image, Dimensions, TextInput, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
@@ -284,6 +284,56 @@ export default function OrderDetailScreen({ route, navigation }) {
     ]);
   };
 
+  const handleShareReceipt = async () => {
+    try {
+      const tracking = order.trackingNumber ? `WA-${String(order.trackingNumber).replace(/^WA-/, '')}` : `#${order.id}`;
+      const branch = order.branchName || order.branch || 'WashAlert Branch';
+      const customer = order.customerName || 'Customer';
+      const date = order.dateBooked
+        ? new Date(order.dateBooked).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+        : new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+      const service = order.serviceName || order.serviceType || 'Laundry Service';
+      const fmt = (n) => `PHP ${Number(n || 0).toFixed(2)}`;
+
+      const lines = [
+        '━━━━━━━━━━━━━━━━━━━━━━━',
+        '       WashAlert Receipt',
+        '━━━━━━━━━━━━━━━━━━━━━━━',
+        `Branch:   ${branch}`,
+        `Order:    ${tracking}`,
+        `Date:     ${date}`,
+        '─────────────────────────',
+        `Customer: ${customer}`,
+        order.customerPhone ? `Phone:    ${order.customerPhone}` : null,
+        `Service:  ${service}`,
+        order.serviceType === 'PICKUP_DELIVERY' ? 'Type:     Pickup & Delivery' : 'Type:     Drop-Off',
+        order.loadSize ? `Load:     ${String(order.loadSize).charAt(0) + String(order.loadSize).slice(1).toLowerCase()}` : null,
+        order.laundryType ? `Laundry:  ${order.laundryType}` : null,
+        order.estimatedWeightKg ? `Est. Wt:  ${order.estimatedWeightKg} kg` : null,
+        order.actualWeightKg ? `Act. Wt:  ${order.actualWeightKg} kg` : null,
+        '─────────────────────────',
+        order.servicePrice > 0 ? `${service.padEnd(20)} ${fmt(order.servicePrice)}` : null,
+        order.rushPrice > 0 ? `Rush Fee                 ${fmt(order.rushPrice)}` : null,
+        order.detergent && order.detergent !== 'None' ? `Detergent (×${order.detergentQty || 1})           ${fmt((order.detergent.toLowerCase().includes('ariel') ? 30 : 25) * (order.detergentQty || 1))}` : null,
+        order.conditioner && order.conditioner !== 'None' ? `Conditioner (×${order.conditionerQty || 1})         ${fmt((order.conditioner.toLowerCase().includes('downy') ? 25 : 15) * (order.conditionerQty || 1))}` : null,
+        order.deliveryPrice > 0 ? `Delivery Fee             ${fmt(order.deliveryPrice)}` : null,
+        '─────────────────────────',
+        `TOTAL DUE:               ${fmt(order.totalPrice || order.amount || 0)}`,
+        '━━━━━━━━━━━━━━━━━━━━━━━',
+        `Payment:  ${(order.paymentMethod || 'Cash on Delivery').replace(/_/g, ' ')}`,
+        order.paymentStatus ? `Status:   ${order.paymentStatus}` : null,
+        '─────────────────────────',
+        'Thank you for choosing WashAlert!',
+        'This receipt is system-generated.',
+        '━━━━━━━━━━━━━━━━━━━━━━━',
+      ].filter(Boolean).join('\n');
+
+      await Share.share({ message: lines, title: `WashAlert Receipt — ${tracking}` });
+    } catch {
+      Alert.alert('Share Failed', 'Unable to share receipt. Please try again.');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
       {/* HEADER */}
@@ -528,16 +578,23 @@ export default function OrderDetailScreen({ route, navigation }) {
           <Row label="Payment" value={order.paymentMethod || '—'}/>
 
           {/* ADDED: Pay Now button for GCash */}
-          {String(order.paymentMethod || '').toLowerCase() === 'gcash' && 
-           String(order.paymentStatus || '').toLowerCase() !== 'paid' && 
+          {String(order.paymentMethod || '').toLowerCase() === 'gcash' &&
+           String(order.paymentStatus || '').toLowerCase() !== 'paid' &&
            ['price_approved', 'washing', 'ready_for_delivery', 'delivering'].includes(ns) && (
-            <TouchableOpacity 
-              style={styles.payNowBtn} 
+            <TouchableOpacity
+              style={styles.payNowBtn}
               onPress={payNow}
               activeOpacity={0.8}
             >
               <MaterialCommunityIcons name="cellphone-wireless" size={18} color="#fff" />
               <Text style={styles.payNowTxt}>Pay via GCash Now</Text>
+            </TouchableOpacity>
+          )}
+
+          {(order.totalPrice > 0 || order.amount > 0) && (
+            <TouchableOpacity style={styles.shareReceiptBtn} onPress={handleShareReceipt} activeOpacity={0.8}>
+              <Ionicons name="share-outline" size={16} color={colors.primary} />
+              <Text style={styles.shareReceiptTxt}>Share Receipt</Text>
             </TouchableOpacity>
           )}
         </Accordion>
@@ -772,6 +829,22 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '800',
+  },
+  shareReceiptBtn: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+  shareReceiptTxt: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
   },
 
   feedbackInput: {
