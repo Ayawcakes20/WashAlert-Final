@@ -270,6 +270,16 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
                 <Text style={[S.weightTxt, {color:'#1D4ED8'}]}>No. of loads: <Text style={{fontWeight:'900'}}>{p.numberOfLoads}</Text></Text>
               </View>
             ) : null}
+            {fullOrderData.loadSize ? (
+              <View style={[S.weightBadge, {backgroundColor:'#F5F3FF', borderColor:'#DDD6FE'}]}>
+                <Ionicons name="shirt-outline" size={15} color="#7C3AED" />
+                <Text style={[S.weightTxt, {color:'#6D28D9'}]}>
+                  Load classification: <Text style={{fontWeight:'900'}}>
+                    {String(fullOrderData.loadSize).charAt(0).toUpperCase() + String(fullOrderData.loadSize).slice(1).toLowerCase()}
+                  </Text>
+                </Text>
+              </View>
+            ) : null}
 
             <View style={S.dashedSep} />
 
