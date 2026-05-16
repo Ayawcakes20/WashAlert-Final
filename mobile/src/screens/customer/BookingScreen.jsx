@@ -107,6 +107,12 @@ export default function BookingScreen({ route, navigation }) {
   const [loading, setLoading]     = useState(true);
   const [submitting, setSub]      = useState(false);
   const [stockError, setStockError] = useState(null); // inline inventory warning on step 4
+  // Per-addon qty map: each option tracks its own quantity independently.
+  // Fixes the bug where switching addons would carry over the previous qty.
+  const [detQtyMap, setDetQtyMap] = useState({ surf: 1, ariel: 1 });
+  const [fabQtyMap, setFabQtyMap] = useState({ charm: 1, downy: 1 });
+  // Lightweight toast state — message auto-clears after 3.5 s
+  const [toastMsg, setToastMsg]   = useState('');
   const [branches_, setBranches]  = useState([]);
   const [services_, setServices]  = useState([]);
   const [branch, setBranch]       = useState(null);
@@ -116,9 +122,7 @@ export default function BookingScreen({ route, navigation }) {
   const [defAddr, setDefAddr]     = useState(null);
   const [service, setService]     = useState(null);
   const [det, setDet]             = useState('none');   // detergent option id
-  const [detQty, setDetQty]       = useState(1);        // number of packs
   const [fab, setFab]             = useState('none');   // fabcon option id
-  const [fabQty, setFabQty]       = useState(1);        // number of packs
   const [schDate, setSchDate]     = useState(()=>{ const d=new Date(); d.setHours(0,0,0,0); return d; });
   const [schTime, setSchTime]     = useState(null);
   const [slots, setSlots]         = useState([]);
@@ -130,6 +134,17 @@ export default function BookingScreen({ route, navigation }) {
   const dates                     = useMemo(() => mkDates(14), []);
   const mode                      = SERVICE_MODES.find(m=>m.id===svcMode)||SERVICE_MODES[0];
   const needsAddr                 = mode.needsAddress;
+
+  // Derived qty for the currently-selected addon — falls back to 1 if not yet in map.
+  // Downstream code (cost calc, booking payload) uses these without change.
+  const detQty = det !== 'none' ? (detQtyMap[det] ?? 1) : 0;
+  const fabQty = fab !== 'none' ? (fabQtyMap[fab] ?? 1) : 0;
+
+  // Show a floating toast for 3.5 s — clears automatically
+  const showToast = (msg) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(''), 3500);
+  };
 
 
   const deliveryFee = useMemo(()=>{
@@ -207,6 +222,8 @@ export default function BookingScreen({ route, navigation }) {
     if(step===1) return !!branch;
     if(step===2) return !!address?.address;
     if(step===3) return !!service;
+    // Block Continue while there is a confirmed inventory error from a previous attempt.
+    if(step===4) return !stockError;
     if(step===5) return !!schTime&&!!slots.find(s=>s.label===schTime&&s.available);
     return true;
   };
@@ -215,7 +232,12 @@ export default function BookingScreen({ route, navigation }) {
     if(step===1){ if(!branch) return; setStep(needsAddr?2:3); }
     else if(step===2){ if(!address?.address){ setAddrSheet(true); return; } setStep(3); }
     else if(step===3){ if(!service) return; setStep(4); }
-    else if(step===4){ setStockError(null); setStep(5); }
+    else if(step===4){
+      // Hard gate: if a stock error was set by a failed booking attempt, block and toast.
+      // The user must change their selection (which clears stockError) before proceeding.
+      if(stockError){ showToast('Stock unavailable — please adjust your extras before continuing.'); return; }
+      setStep(5);
+    }
     else if(step===5){ if(!ok()) return; setStep(6); }
     else if(step===6) confirm_();
   };
@@ -280,8 +302,10 @@ export default function BookingScreen({ route, navigation }) {
       const msg = err?.message || 'Failed to place booking. Please try again.';
       const isStockError = msg.toLowerCase().includes('insufficient') || msg.toLowerCase().includes('inventory') || msg.toLowerCase().includes('stock');
       if(isStockError){
+        // Set inline banner AND show toast so the user gets immediate feedback
         setStockError(msg);
-        setStep(4); // go back to Extras so the user sees the inline warning
+        showToast(msg); // toast tells the user which item failed
+        setStep(4); // return to Extras — ok() now blocks Continue until selection changes
       } else {
         Alert.alert('Booking Failed', msg);
       }
@@ -465,7 +489,7 @@ export default function BookingScreen({ route, navigation }) {
             {DET_OPTS.map(o=>(
               <TouchableOpacity key={o.id}
                 style={[{flexDirection:'row',alignItems:'center',justifyContent:'space-between',backgroundColor:colors.surface,borderRadius:14,padding:14,marginBottom:8,borderWidth:1.5,borderColor:det===o.id?colors.primary:colors.border},det===o.id&&{backgroundColor:colors.primaryLight}]}
-                onPress={()=>{setDet(o.id); if(o.id!=='none')setDetQty(q=>q||1); setStockError(null);}}
+                onPress={()=>{setDet(o.id); setStockError(null);}}
                 activeOpacity={0.8}
               >
                 <View style={{flex:1}}>
@@ -474,11 +498,12 @@ export default function BookingScreen({ route, navigation }) {
                 </View>
                 {det===o.id && o.id!=='none' && (
                   <View style={{flexDirection:'row',alignItems:'center',gap:10}}>
-                    <TouchableOpacity onPress={()=>setDetQty(q=>Math.max(1,q-1))} style={{width:32,height:32,borderRadius:16,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}>
+                    {/* Each addon writes to its own key in detQtyMap — independent from other addons */}
+                    <TouchableOpacity onPress={()=>setDetQtyMap(m=>({...m,[o.id]:Math.max(1,(m[o.id]??1)-1)}))} style={{width:32,height:32,borderRadius:16,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}>
                       <Text style={{color:'#fff',fontSize:18,fontWeight:'700',lineHeight:22}}>-</Text>
                     </TouchableOpacity>
-                    <Text style={{fontSize:16,fontWeight:'800',color:colors.text,minWidth:24,textAlign:'center'}}>{detQty}</Text>
-                    <TouchableOpacity onPress={()=>setDetQty(q=>q+1)} style={{width:32,height:32,borderRadius:16,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}>
+                    <Text style={{fontSize:16,fontWeight:'800',color:colors.text,minWidth:24,textAlign:'center'}}>{detQtyMap[o.id]??1}</Text>
+                    <TouchableOpacity onPress={()=>setDetQtyMap(m=>({...m,[o.id]:(m[o.id]??1)+1}))} style={{width:32,height:32,borderRadius:16,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}>
                       <Text style={{color:'#fff',fontSize:18,fontWeight:'700',lineHeight:22}}>+</Text>
                     </TouchableOpacity>
                   </View>
@@ -492,7 +517,7 @@ export default function BookingScreen({ route, navigation }) {
             {FAB_OPTS.map(o=>(
               <TouchableOpacity key={o.id}
                 style={[{flexDirection:'row',alignItems:'center',justifyContent:'space-between',backgroundColor:colors.surface,borderRadius:14,padding:14,marginBottom:8,borderWidth:1.5,borderColor:fab===o.id?colors.primary:colors.border},fab===o.id&&{backgroundColor:colors.primaryLight}]}
-                onPress={()=>{setFab(o.id); if(o.id!=='none')setFabQty(q=>q||1); setStockError(null);}}
+                onPress={()=>{setFab(o.id); setStockError(null);}}
                 activeOpacity={0.8}
               >
                 <View style={{flex:1}}>
@@ -501,11 +526,12 @@ export default function BookingScreen({ route, navigation }) {
                 </View>
                 {fab===o.id && o.id!=='none' && (
                   <View style={{flexDirection:'row',alignItems:'center',gap:10}}>
-                    <TouchableOpacity onPress={()=>setFabQty(q=>Math.max(1,q-1))} style={{width:32,height:32,borderRadius:16,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}>
+                    {/* Each addon writes to its own key in fabQtyMap — independent from other addons */}
+                    <TouchableOpacity onPress={()=>setFabQtyMap(m=>({...m,[o.id]:Math.max(1,(m[o.id]??1)-1)}))} style={{width:32,height:32,borderRadius:16,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}>
                       <Text style={{color:'#fff',fontSize:18,fontWeight:'700',lineHeight:22}}>-</Text>
                     </TouchableOpacity>
-                    <Text style={{fontSize:16,fontWeight:'800',color:colors.text,minWidth:24,textAlign:'center'}}>{fabQty}</Text>
-                    <TouchableOpacity onPress={()=>setFabQty(q=>q+1)} style={{width:32,height:32,borderRadius:16,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}>
+                    <Text style={{fontSize:16,fontWeight:'800',color:colors.text,minWidth:24,textAlign:'center'}}>{fabQtyMap[o.id]??1}</Text>
+                    <TouchableOpacity onPress={()=>setFabQtyMap(m=>({...m,[o.id]:(m[o.id]??1)+1}))} style={{width:32,height:32,borderRadius:16,backgroundColor:colors.primary,alignItems:'center',justifyContent:'center'}}>
                       <Text style={{color:'#fff',fontSize:18,fontWeight:'700',lineHeight:22}}>+</Text>
                     </TouchableOpacity>
                   </View>
@@ -648,6 +674,14 @@ export default function BookingScreen({ route, navigation }) {
         )}
 
       </ScrollView>
+
+      {/* Floating toast — auto-dismisses after 3.5 s; shown for stock errors and gate blocks */}
+      {!!toastMsg && (
+        <View pointerEvents="none" style={{position:'absolute',bottom:120,left:20,right:20,zIndex:999,backgroundColor:'rgba(20,20,20,0.88)',borderRadius:14,paddingHorizontal:18,paddingVertical:14,shadowColor:'#000',shadowOpacity:0.25,shadowRadius:8,elevation:8}}>
+          <Text style={{color:'#fff',fontSize:13,fontWeight:'600',textAlign:'center',lineHeight:20}}>{toastMsg}</Text>
+        </View>
+      )}
+
       <Footer/>
     </SafeAreaView>
   );
