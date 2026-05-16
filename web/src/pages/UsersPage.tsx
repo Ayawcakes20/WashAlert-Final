@@ -251,7 +251,7 @@ export default function UsersPage() {
       toast.error("Name and email are required.");
       return;
     }
-    if (!editForm.branch.trim()) {
+    if (["STAFF", "DRIVER"].includes(selectedUser?.role ?? "") && !editForm.branch.trim()) {
       toast.error("Branch is required.");
       return;
     }
@@ -261,7 +261,7 @@ export default function UsersPage() {
       await usersApi.updateStaff(selectedUser.id, {
         fullName: editForm.fullName.trim(),
         email: editForm.email.trim(),
-        branch: selectedUser.role === "STAFF" ? editForm.branch.trim() || undefined : undefined,
+        branch: ["STAFF", "DRIVER"].includes(selectedUser?.role ?? "") ? editForm.branch.trim() || undefined : undefined,
         enabled: editForm.enabled,
       });
       toast.success("User updated successfully.");
@@ -634,7 +634,7 @@ export default function UsersPage() {
                 id="edit-branch"
                 value={editForm.branch}
                 onChange={(e) => setEditForm((prev) => ({ ...prev, branch: e.target.value }))}
-                disabled={selectedUser?.role !== "STAFF" || !editBranchOptions.length}
+                disabled={!["STAFF", "DRIVER"].includes(selectedUser?.role ?? "") || !editBranchOptions.length}
                 className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="">{editBranchOptions.length ? "Select branch" : "No branches available"}</option>
