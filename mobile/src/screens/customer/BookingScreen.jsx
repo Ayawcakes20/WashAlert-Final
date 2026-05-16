@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StyleSheet, Dimensions } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
@@ -113,6 +113,7 @@ export default function BookingScreen({ route, navigation }) {
   const [fabQtyMap, setFabQtyMap] = useState({ charm: 1, downy: 1 });
   // Lightweight toast state — message auto-clears after 3.5 s
   const [toastMsg, setToastMsg]   = useState('');
+  const scrollRef                 = useRef(null); // ref for main ScrollView — used to reset scroll on step change
   const [branches_, setBranches]  = useState([]);
   const [services_, setServices]  = useState([]);
   const [branch, setBranch]       = useState(null);
@@ -185,6 +186,12 @@ export default function BookingScreen({ route, navigation }) {
       catch{ setSlots([]); } finally{ setSlotsLoad(false); }
     })();
   },[branch,schDate]);
+
+  // Scroll the main ScrollView back to the top whenever the booking step changes.
+  // Using setTimeout(0) so the effect runs after the new step's content has rendered.
+  useEffect(()=>{
+    setTimeout(()=>{ scrollRef.current?.scrollTo({ y: 0, animated: false }); }, 0);
+  },[step]);
 
   const load = async()=>{
     try{ 
@@ -359,7 +366,7 @@ export default function BookingScreen({ route, navigation }) {
       <AddressPickerSheet visible={addrSheet} title={svcMode==='PICKUP_ONLY'?'Pickup Address':'Pickup & Delivery Address'} onConfirm={a=>{setAddrSheet(false);setAddress(a);if(step===2)setStep(3);}} onClose={()=>setAddrSheet(false)} initialValue={address} fallbackCoordinate={branch?.latitude?{latitude:Number(branch.latitude),longitude:Number(branch.longitude)}:null}/>
       <View style={S.hdr}><Text style={S.hdrTitle}>New Booking</Text><Text style={S.hdrSub}>Step {vis} of {VIS_STEPS.length}</Text></View>
       <Stepper/>
-      <ScrollView style={{flex:1}} contentContainerStyle={S.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollRef} style={{flex:1}} contentContainerStyle={S.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
         {step===1&&(
           <View>
