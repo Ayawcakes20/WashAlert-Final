@@ -370,6 +370,20 @@ public class JobOrderService {
                             "Payment must be verified before marking this order as delivered. "
                             + "Ask the customer to complete their GCash payment first.");
                 }
+                // If staff confirms COD collection at delivery time, mark the order as paid.
+                if (Boolean.TRUE.equals(req.codCollected()) && !jo.isPaid()) {
+                    jo.setPaid(true);
+                    jo.setCodCollected(true);
+                    jo.setCodCollectedAt(java.time.LocalDateTime.now());
+                    paymentRepository.findByJobOrder_TrackingNumber(jo.getTrackingNumber())
+                            .filter(pr -> pr.getStatus() != com.washalert.washalertbackend.payment.PaymentStatus.PAID)
+                            .ifPresent(pr -> {
+                                pr.setStatus(com.washalert.washalertbackend.payment.PaymentStatus.PAID);
+                                pr.setVerifiedAt(java.time.LocalDateTime.now());
+                                pr.setVerifiedBy("Staff — COD collected");
+                                paymentRepository.save(pr);
+                            });
+                }
             }
             jo.setStatus(req.status());
             if (req.status() == JobOrderStatus.WASHING) {
@@ -1085,6 +1099,15 @@ public class JobOrderService {
             order.setPaid(true);
             order.setCodCollected(true);
             order.setCodCollectedAt(LocalDateTime.now());
+            // Also update the PaymentRecord so paymentStatus = PAID for all consumers.
+            paymentRepository.findByJobOrder_TrackingNumber(order.getTrackingNumber())
+                    .filter(pr -> pr.getStatus() != com.washalert.washalertbackend.payment.PaymentStatus.PAID)
+                    .ifPresent(pr -> {
+                        pr.setStatus(com.washalert.washalertbackend.payment.PaymentStatus.PAID);
+                        pr.setVerifiedAt(LocalDateTime.now());
+                        pr.setVerifiedBy("Driver — COD collected");
+                        paymentRepository.save(pr);
+                    });
         }
         JobOrder saved = repo.save(order);
 
@@ -1098,7 +1121,7 @@ public class JobOrderService {
                 "ORDER", saved.getId().toString());
 
         JobOrderResponse response = toResponse(saved);
-        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        firestoreSyncService.upsertBlocking("orders", saved.getTrackingNumber(), response);
         return response;
     }
 

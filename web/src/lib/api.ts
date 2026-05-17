@@ -391,10 +391,10 @@ export const ordersApi = {
     apiRequest<void>(`/api/orders/${id}`, {
       method: "DELETE",
     }),
-  updateStatus: (id: number, status: JobOrderResponse["status"]) =>
+  updateStatus: (id: number, status: JobOrderResponse["status"], codCollected?: boolean) =>
     apiRequest<JobOrderResponse>(`/api/orders/${id}/status`, {
       method: "PATCH",
-      body: { status },
+      body: { status, ...(codCollected !== undefined && { codCollected }) },
     }),
   markAsPaid: (id: number) =>
     apiRequest<JobOrderResponse>(`/api/orders/${id}/pay`, {

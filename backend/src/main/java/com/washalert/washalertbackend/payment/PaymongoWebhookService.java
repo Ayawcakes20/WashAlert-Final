@@ -84,9 +84,9 @@ public class PaymongoWebhookService {
                     
                     jobOrderRepository.save(jobOrder);
                     
-                    // Sync to Firestore for real-time dashboard updates
+                    // Sync to Firestore for real-time dashboard updates — blocking so customers see PAID immediately.
                     JobOrderResponse response = JobOrderResponse.from(jobOrder, PaymentStatus.PAID);
-                    firestoreSyncService.upsert("orders", jobOrder.getTrackingNumber(), response);
+                    firestoreSyncService.upsertBlocking("orders", jobOrder.getTrackingNumber(), response);
 
                     notificationService.enqueueEmail(
                             jobOrder.getCustomerEmail(),

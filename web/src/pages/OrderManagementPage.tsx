@@ -593,7 +593,7 @@ export default function OrderManagementPage() {
     };
   }, [loadOrders, ordersPage]);
 
-  const applyStatusUpdate = async (order: Order) => {
+  const applyStatusUpdate = async (order: Order, codCollected?: boolean) => {
     const allowed = getAllowedStatusTransitions(order.status);
     const fallbackStatus = allowed[0];
     const nextStatus = fallbackStatus || order.status;
@@ -604,7 +604,7 @@ export default function OrderManagementPage() {
     }
     setStatusUpdatingId(order.id);
     try {
-      const updated = await ordersApi.updateStatus(order.id, nextStatus);
+      const updated = await ordersApi.updateStatus(order.id, nextStatus, codCollected);
       const mapped = mapOrder(updated);
       setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
       toast.success(`Order ${updated.trackingNumber} moved to ${statusLabel[mapped.status]}.`);
@@ -1942,12 +1942,25 @@ export default function OrderManagementPage() {
                       {(() => {
                         const nextStatus = getAllowedStatusTransitions(selectedOrder.status)[0];
                         const isGcash = selectedOrder.paymentMethod?.toUpperCase().includes("GCASH");
+                        const isCash = isCashPaymentMethod(selectedOrder.paymentMethod);
                         const deliveryPaymentBlocked = nextStatus === "DELIVERED" && isGcash && !selectedOrder.isPaid;
+                        const needsCodConfirm = nextStatus === "DELIVERED" && isCash && !selectedOrder.isPaid;
+                        const handleMarkNextStep = () => {
+                          if (needsCodConfirm) {
+                            if (window.confirm(`Confirm COD collection for order ${selectedOrder.trackingNumber}?\n\nDid the customer pay with cash?\n\nClick OK to mark as Delivered + Payment Collected, or Cancel to mark Delivered without payment.`)) {
+                              void applyStatusUpdate(selectedOrder, true);
+                            } else {
+                              void applyStatusUpdate(selectedOrder, false);
+                            }
+                          } else {
+                            void applyStatusUpdate(selectedOrder);
+                          }
+                        };
                         return (
                           <>
                             <Button
                               className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14 disabled:opacity-50"
-                              onClick={() => void applyStatusUpdate(selectedOrder)}
+                              onClick={handleMarkNextStep}
                               disabled={!!deliveryPaymentBlocked}
                             >
                               {statusUpdatingId === selectedOrder.id ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}

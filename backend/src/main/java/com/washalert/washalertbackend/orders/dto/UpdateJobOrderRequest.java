@@ -5,5 +5,6 @@ import jakarta.validation.constraints.NotNull;
 
 public record UpdateJobOrderRequest(
         @NotNull(message = "Status is required.")
-        JobOrderStatus status
+        JobOrderStatus status,
+        Boolean codCollected
 ) {}

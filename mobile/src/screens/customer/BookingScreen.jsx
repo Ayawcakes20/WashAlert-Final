@@ -368,14 +368,45 @@ export default function BookingScreen({ route, navigation }) {
 
   const confirm_ = async()=>{
     if(needsAddr&&!address?.address){ Alert.alert('Address Required','Please set an address.',[{text:'Set',onPress:()=>{setStep(2);setAddrSheet(true);}},{text:'Cancel',style:'cancel'}]); return; }
+    // Check if any selected supply is out of stock; ask user to confirm or cancel.
+    let submitDet = det, submitFab = fab;
+    if(branch?.name && (det!=='none' || fab!=='none')){
+      try{
+        const avail = await bookings.getSuppliesAvailability(branch.name);
+        const unavailable=[];
+        if(det!=='none' && avail?.detergent?.find(d=>d.id===det)?.availableQty===0)
+          unavailable.push(DET_OPTS.find(o=>o.id===det)?.label||'Detergent');
+        if(fab!=='none' && avail?.conditioner?.find(c=>c.id===fab)?.availableQty===0)
+          unavailable.push(FAB_OPTS.find(o=>o.id===fab)?.label||'Fabric Conditioner');
+        if(unavailable.length>0){
+          const choice = await new Promise(resolve=>{
+            Alert.alert(
+              'Supply Unavailable',
+              `${unavailable.join(' and ')} is out of stock at this branch.\n\nProceed without it?`,
+              [
+                {text:'Cancel',style:'cancel',onPress:()=>resolve('cancel')},
+                {text:'Proceed Without',style:'default',onPress:()=>resolve('proceed')},
+              ],
+              {cancelable:false}
+            );
+          });
+          if(choice==='cancel') return; // Stay on review screen.
+          // Override unavailable supplies to 'none' for this submission only.
+          if(avail?.detergent?.find(d=>d.id===det)?.availableQty===0) submitDet='none';
+          if(avail?.conditioner?.find(c=>c.id===fab)?.availableQty===0) submitFab='none';
+        }
+      } catch{
+        // Non-fatal: proceed with original selections if check fails
+      }
+    }
     setSub(true);
     try{
       const dk=needsAddr&&address?.latitude&&branch?.latitude?distKm(branch.latitude,branch.longitude,address.latitude,address.longitude):0;
       const _svcPrice  = getServiceBasePrice(service, loadSize === 'LARGE' ? 8 : 5);
-      const _supPrice  = ((DET_OPTS.find(o=>o.id===det)?.price||0) * (det==='none'?0:detQty)) + ((FAB_OPTS.find(o=>o.id===fab)?.price||0) * (fab==='none'?0:fabQty));
+      const _supPrice  = ((DET_OPTS.find(o=>o.id===submitDet)?.price||0) * (submitDet==='none'?0:detQty)) + ((FAB_OPTS.find(o=>o.id===submitFab)?.price||0) * (submitFab==='none'?0:fabQty));
       const _rushPrice = rush ? 150 : 0;
       const _delPrice  = needsAddr ? deliveryFee : 0;
-      const r=await createOrder({ 
+      const r=await createOrder({
         branchId:branch.id,
         serviceId:service.id,
         serviceType:service.name,
@@ -384,10 +415,10 @@ export default function BookingScreen({ route, navigation }) {
         serviceTypeBackend:mode.backendServiceType,
         scheduleDate:schDate,
         scheduleTime:schTime,
-        detergent:DET_OPTS.find(o=>o.id===det)?.label||'None',
-        detergentQuantity: det === 'none' ? 0 : detQty,
-        conditioner:FAB_OPTS.find(o=>o.id===fab)?.label||'None',
-        conditionerQuantity: fab === 'none' ? 0 : fabQty,
+        detergent:DET_OPTS.find(o=>o.id===submitDet)?.label||'None',
+        detergentQuantity: submitDet === 'none' ? 0 : detQty,
+        conditioner:FAB_OPTS.find(o=>o.id===submitFab)?.label||'None',
+        conditionerQuantity: submitFab === 'none' ? 0 : fabQty,
         estimatedWeightKg: loadSize === 'LARGE' ? 8 : 5,
         delivery: needsAddr,
         isRush:rush,
