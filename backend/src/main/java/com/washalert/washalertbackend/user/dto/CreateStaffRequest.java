@@ -19,6 +19,9 @@ public record CreateStaffRequest(
         // optional — required for STAFF
         String branch,
 
+        // optional contact number saved to user profile on creation
+        String mobileNumber,
+
         // optional — when set, Firebase account is immediately activated with this password
         // Used for DRIVER accounts so they can log in right away without clicking an invitation link
         @Size(min = 8, max = 64, message = "Initial password must be 8-64 characters.")

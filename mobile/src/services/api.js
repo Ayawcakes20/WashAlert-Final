@@ -975,7 +975,7 @@ export const laundry = {
 };
 
 export const bookings = {
-  cancel: async (id) => await apiRequest(`/api/bookings/${id}/cancel`, { method: 'PATCH' }),
+  cancel: async (trackingNumber) => await apiRequest(`/api/orders/my/${encodeURIComponent(trackingNumber)}/cancel`, { method: 'POST' }),
   getById: async (id) => {
     try {
       // Always try the authenticated customer endpoint first — it returns actualWeightKg, finalPrice, etc.

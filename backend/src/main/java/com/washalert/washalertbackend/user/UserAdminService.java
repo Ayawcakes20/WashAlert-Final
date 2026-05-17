@@ -152,6 +152,7 @@ public class UserAdminService {
                 .lastLoginAt(null)
                 .mustChangePassword(false)
                 .provider(AuthProvider.LOCAL)
+                .mobileNumber(blankToNull(req.mobileNumber()))
                 .build();
 
         User saved = userRepository.save(internalUser);

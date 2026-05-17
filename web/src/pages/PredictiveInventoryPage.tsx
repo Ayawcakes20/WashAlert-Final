@@ -67,6 +67,7 @@ export default function PredictiveInventoryPage() {
   const [forecast, setForecast] = useState<Array<{ itemId: number; itemName: string; branch: string; narrative?: string; estimatedDaysUntilStockout?: number }>>([]);
   const [forecastData, setForecastData] = useState<Array<{ branch: string; detergent: number; conditioner: number }>>([]);
   const [consumptionForecast, setConsumptionForecast] = useState<Array<{ day: string; stock: number }>>([]);
+  const [pendingConsumption, setPendingConsumption] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedTab, setSelectedTab] = useState("All");
@@ -99,11 +100,13 @@ export default function PredictiveInventoryPage() {
   const loadInventory = async () => {
     try {
       setError("");
-      const [items, alerts, forecast] = await Promise.all([
+      const [items, alerts, forecast, pending] = await Promise.all([
         inventoryApi.list(),
         inventoryApi.alerts(),
         inventoryApi.forecast(7),
+        inventoryApi.pendingConsumption().catch(() => ({})),
       ]);
+      setPendingConsumption(pending || {});
 
       const lowStockIds = new Set((alerts || []).map((a) => a.id));
       const forecastMap = new Map<number, { usage: number; daysLeft: number; narrative?: string }>();
@@ -373,7 +376,7 @@ export default function PredictiveInventoryPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/30">
-                {["Item", "Category", "Current Stock", "Unit", "Proj. Use 7d", "After 7d", "Reorder Level", "Status", "Actions"].map((h) => (
+                {["Item", "Category", "Current Stock", "Reserved", "Unit", "Proj. Use 7d", "After 7d", "Reorder Level", "Status", "Actions"].map((h) => (
                   <th key={h} className="text-left p-4 font-medium text-muted-foreground whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -392,6 +395,14 @@ export default function PredictiveInventoryPage() {
                     </td>
                     <td className="p-4 text-muted-foreground">{inv.category}</td>
                     <td className="p-4 font-medium text-foreground">{inv.currentStock}</td>
+                    <td className="p-4">
+                      {(() => {
+                        const reserved = pendingConsumption[inv.product] ?? 0;
+                        return reserved > 0
+                          ? <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">{reserved} reserved</span>
+                          : <span className="text-xs text-muted-foreground">—</span>;
+                      })()}
+                    </td>
                     <td className="p-4 text-muted-foreground">{inv.unit}</td>
                     <td className="p-4 text-muted-foreground">{(inv.forecastedUsage * 7).toFixed(1)}</td>
                     <td className={`p-4 font-medium ${after7 < 0 ? "text-destructive" : "text-foreground"}`}>{after7.toFixed(1)}</td>
@@ -411,7 +422,7 @@ export default function PredictiveInventoryPage() {
                 );
               })}
               {!filteredInventory.length && !loading && (
-                <tr><td colSpan={9} className="p-8 text-center text-sm text-muted-foreground">No inventory items found.</td></tr>
+                <tr><td colSpan={10} className="p-8 text-center text-sm text-muted-foreground">No inventory items found.</td></tr>
               )}
             </tbody>
           </table>

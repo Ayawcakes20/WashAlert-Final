@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/inventory")
@@ -105,6 +106,15 @@ public class InventoryController {
         } catch (NumberFormatException ignored) {
             return null;
         }
+    }
+
+    @GetMapping("/pending-consumption")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public Map<String, Long> pendingConsumption(
+            @RequestParam(required = false) String branch,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return inventoryService.getPendingConsumption(branch, principal);
     }
 
     @DeleteMapping("/items/{itemId}")

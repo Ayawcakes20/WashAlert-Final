@@ -92,6 +92,7 @@ export default function UsersPage() {
     email: "",
     role: "STAFF" as "STAFF" | "DRIVER",
     branch: "",
+    mobileNumber: "",
   });
   const [createErrors, setCreateErrors] = useState<
     Partial<Record<"fullName" | "email" | "role" | "branch", string>>
@@ -228,10 +229,11 @@ export default function UsersPage() {
         email: createForm.email.trim(),
         role: createForm.role,
         branch: createForm.branch.trim() || undefined,
+        mobileNumber: createForm.mobileNumber.trim() || undefined,
       });
       toast.success("Invite sent. User must set password through email.");
       setCreateOpen(false);
-      setCreateForm({ fullName: "", email: "", role: "STAFF", branch: "" });
+      setCreateForm({ fullName: "", email: "", role: "STAFF", branch: "", mobileNumber: "" });
       setCreateErrors({});
       await loadUsers(Math.max(0, usersPage - 1));
     } catch (err: any) {
@@ -590,6 +592,16 @@ export default function UsersPage() {
               </select>
               {!availableBranches.length ? <p className="text-xs text-muted-foreground">No branches available</p> : null}
               {createErrors.branch ? <p className="text-xs text-destructive">{createErrors.branch}</p> : null}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-phone">Contact Number <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input
+                id="create-phone"
+                type="tel"
+                placeholder="e.g. 09171234567"
+                value={createForm.mobileNumber}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, mobileNumber: e.target.value }))}
+              />
             </div>
           </div>
           <DialogFooter>

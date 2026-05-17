@@ -17,7 +17,7 @@ const MENU_GROUPS = [
   {
     title: 'Settings',
     items: [
-      { label: 'Account Info', icon: 'person-circle-outline', color: colors.textSecondary },
+      { label: 'Account Info', icon: 'person-circle-outline', color: colors.textSecondary, screen: 'EditProfile' },
       { label: 'Change Password', icon: 'lock-closed-outline', color: colors.primary, screen: 'ChangePassword' },
       { label: 'Notification Settings', icon: 'notifications-outline', color: colors.warning, screen: 'DriverNotifications' },
       { label: 'Terms & Conditions', icon: 'document-text-outline', color: colors.textSecondary, screen: 'TermsAndConditions' },
@@ -156,13 +156,6 @@ const DriverProfileScreen = ({ navigation }) => {
                       navigation.navigate(item.screen);
                       return;
                     }
-                    if (item.label === 'Account Info') {
-                      Alert.alert(
-                        'Account Info',
-                        `Name: ${user?.fullName || '-'}\nEmail: ${user?.email || '-'}\nBranch: ${user?.branch || '-'}`
-                      );
-                      return;
-                    }
                     Alert.alert('Coming Soon', `${item.label} is not yet available in this build.`);
                   }}
                 >
@@ -190,7 +183,7 @@ const DriverProfileScreen = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
-  container: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24 },
+  container: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 120 },
   pageTitle: { fontSize: 26, fontWeight: '800', color: colors.text, marginBottom: 20 },
   identityCard: {
     flexDirection: 'row',

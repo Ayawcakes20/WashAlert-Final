@@ -86,6 +86,7 @@ export type JobOrderResponse = {
   priceConfirmedByCustomer?: boolean;
   assignedDriverId?: number | null;
   assignedDriverName?: string | null;
+  assignedDriverPhone?: string | null;
   assignedAt?: string | null;
   pickupConfirmedAt?: string | null;
   deliveredAt?: string | null;
@@ -496,7 +497,7 @@ export const usersApi = {
   },
   listDrivers: (branch?: string) =>
     apiRequest<UserAdminRecord[]>(`/api/admin/users/drivers${branch ? `?branch=${encodeURIComponent(branch)}` : ""}`),
-  createStaff: (payload: { fullName: string; email: string; role?: "STAFF" | "DRIVER"; branch?: string }) =>
+  createStaff: (payload: { fullName: string; email: string; role?: "STAFF" | "DRIVER"; branch?: string; mobileNumber?: string }) =>
     apiRequest<UserAdminRecord>("/api/admin/users/staff", {
       method: "POST",
       body: payload,
@@ -659,6 +660,10 @@ export const inventoryApi = {
         narrative?: string;
       }>
     >(`/api/inventory/forecast?days=${days}`),
+  pendingConsumption: (branch?: string) => {
+    const query = branch ? `?branch=${encodeURIComponent(branch)}` : "";
+    return apiRequest<Record<string, number>>(`/api/inventory/pending-consumption${query}`);
+  },
 };
 
 export const notificationsApi = {

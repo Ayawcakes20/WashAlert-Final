@@ -203,7 +203,7 @@ export default function BookingScreen({ route, navigation }) {
   useEffect(()=>{
     if(!branch||!schDate){ setSlots([]); setSchTime(null); return; }
     (async()=>{
-      try{ setSlotsLoad(true); const s=await bookings.getAvailableSlots(branch.name,schDate); setSlots(s); const f=s.find(x=>x.available); setSchTime(p=>s.find(x=>x.label===p&&x.available)?p:(f?.label||null)); }
+      try{ setSlotsLoad(true); const raw=await bookings.getAvailableSlots(branch.name,schDate); const now=new Date(); const isToday=schDate.toDateString()===now.toDateString(); const s=isToday?raw.map(sl=>{ if(!sl.available) return sl; const parts=(sl.label||'').split(':'); const h=parseInt(parts[0],10); const m=parseInt(parts[1]??'0',10); const slotTime=new Date(); slotTime.setHours(h,m,0,0); return slotTime<=now?{...sl,available:false,pastSlot:true}:sl; }):raw; setSlots(s); const f=s.find(x=>x.available); setSchTime(p=>s.find(x=>x.label===p&&x.available)?p:(f?.label||null)); }
       catch{ setSlots([]); } finally{ setSlotsLoad(false); }
     })();
   },[branch,schDate]);
@@ -845,7 +845,7 @@ export default function BookingScreen({ route, navigation }) {
                     return(
                       <TouchableOpacity key={sl.label} style={[S.timeItem,sel&&S.timeItemOn,!sl.available&&S.timeItemOff]} onPress={()=>sl.available&&setSchTime(sl.label)} disabled={!sl.available} activeOpacity={0.8}>
                         <Text style={[S.timeItemTime,sel&&S.timeItemTimeOn,!sl.available&&S.timeItemTextOff]}>{fmtSlot(sl.label)}</Text>
-                        {!sl.available&&<Text style={[S.timeItemPeriod,S.timeItemTextOff]}>Full</Text>}
+                        {!sl.available&&<Text style={[S.timeItemPeriod,S.timeItemTextOff]}>{sl.pastSlot?'Past':'Full'}</Text>}
                       </TouchableOpacity>
                     );
                   })}

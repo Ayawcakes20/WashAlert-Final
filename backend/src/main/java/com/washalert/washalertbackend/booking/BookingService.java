@@ -123,6 +123,12 @@ public class BookingService {
         LocalTime slotEnd = slotStart.plusMinutes(bookingProperties.getSlotMinutes());
         validateSlotTime(slotStart, slotEnd);
 
+        // Reject if the selected slot has already passed for today's date.
+        if (req.preferredDate().isEqual(LocalDate.now()) && slotStart.isBefore(LocalTime.now())) {
+            throw new IllegalArgumentException(
+                    "This time slot has already passed. Please choose another schedule.");
+        }
+
         // Lock branch machines to serialize booking writes and prevent slot overbooking races.
         var lockedMachines = machineRepository.lockByBranch(cleanBranch);
         long capacity = lockedMachines.stream()

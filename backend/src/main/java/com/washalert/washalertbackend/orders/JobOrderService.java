@@ -361,6 +361,16 @@ public class JobOrderService {
                 throw new IllegalStateException(
                         "Invalid job order status transition from " + jo.getStatus() + " to " + req.status() + ".");
             }
+            // Block DELIVERED for online (GCash) orders that have not been paid yet.
+            if (req.status() == JobOrderStatus.DELIVERED) {
+                String pm = jo.getPaymentMethod();
+                boolean isOnlinePayment = pm != null && pm.toUpperCase().contains("GCASH");
+                if (isOnlinePayment && !jo.isPaid()) {
+                    throw new IllegalStateException(
+                            "Payment must be verified before marking this order as delivered. "
+                            + "Ask the customer to complete their GCash payment first.");
+                }
+            }
             jo.setStatus(req.status());
             if (req.status() == JobOrderStatus.WASHING) {
                 int detQty = (jo.getDetergentQuantity() != null && jo.getDetergentQuantity() > 0)
