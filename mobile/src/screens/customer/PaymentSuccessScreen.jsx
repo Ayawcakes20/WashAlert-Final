@@ -30,7 +30,7 @@ const PaymentSuccessScreen = ({ navigation, route }) => {
     };
   }, [tracking]);
 
-  const goToOrders = () => navigation.navigate('Orders');
+  const goToOrders = () => navigation.navigate('CustomerTabs', { screen: 'Orders' });
 
   return (
     <View style={styles.container}>
