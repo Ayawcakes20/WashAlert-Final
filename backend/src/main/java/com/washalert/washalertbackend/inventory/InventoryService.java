@@ -204,6 +204,36 @@ public class InventoryService {
         return firestoreRows;
     }
 
+    /** Returns a map of canonical supply name → number of pending orders that will consume it. */
+    public java.util.Map<String, Long> getPendingConsumption(String branch, AuthUserDetails principal) {
+        User actor = principal.getUser();
+        String effectiveBranch = resolveEffectiveBranch(branch, actor);
+        java.util.List<com.washalert.washalertbackend.orders.JobOrderStatus> prewashStatuses = java.util.List.of(
+                com.washalert.washalertbackend.orders.JobOrderStatus.PENDING,
+                com.washalert.washalertbackend.orders.JobOrderStatus.ASSIGNED_FOR_PICKUP,
+                com.washalert.washalertbackend.orders.JobOrderStatus.ORDER_RECEIVED
+        );
+        java.util.List<com.washalert.washalertbackend.orders.JobOrder> orders =
+                effectiveBranch == null
+                        ? jobOrderRepository.findByStatusInAndCreatedAtAfter(
+                                prewashStatuses, java.time.LocalDateTime.now().minusDays(30))
+                        : jobOrderRepository.findByBranchIgnoreCaseAndStatusIn(effectiveBranch, prewashStatuses);
+        java.util.Map<String, Long> result = new java.util.LinkedHashMap<>();
+        for (com.washalert.washalertbackend.orders.JobOrder jo : orders) {
+            String det = jo.getDetergentPreference();
+            String fab = jo.getFabricConditionerPreference();
+            if (det != null && !det.isBlank()) {
+                String key = normalizeItemName(det);
+                result.merge(key, 1L, Long::sum);
+            }
+            if (fab != null && !fab.isBlank()) {
+                String key = normalizeItemName(fab);
+                result.merge(key, 1L, Long::sum);
+            }
+        }
+        return result;
+    }
+
     @Transactional
     public InventoryItemResponse create(CreateInventoryItemRequest req) {
         log.info("[INVENTORY] Attempting to create item: {} in branch: {}", req.itemName(), req.branch());

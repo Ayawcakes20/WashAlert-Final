@@ -278,8 +278,19 @@ export default function OrderDetailScreen({ route, navigation }) {
     Alert.alert('Cancel Order','Are you sure you want to cancel this booking?',[
       {text:'No', style:'cancel'},
       {text:'Yes, Cancel', style:'destructive', onPress: async () => {
-        try { await bookingsApi.cancel(order.id); Alert.alert('Cancelled','Your booking has been cancelled.'); navigation.goBack(); }
-        catch(e) { Alert.alert('Error', e.message||'Failed to cancel.'); }
+        try {
+          await bookingsApi.cancel(order.trackingNumber || String(order.id));
+          Alert.alert('Cancelled','Your booking has been cancelled.');
+          navigation.goBack();
+        } catch(e) {
+          const msg = e?.message || 'Failed to cancel.';
+          const friendly = msg.includes('Forbidden') || msg.includes('403')
+            ? 'You can only cancel your own orders. If the order is already being processed, it can no longer be cancelled.'
+            : msg.includes('no longer') || msg.includes('cannot') || msg.includes('only')
+            ? msg
+            : 'Unable to cancel this order. It may already be in progress.';
+          Alert.alert('Cannot Cancel', friendly);
+        }
       }}
     ]);
   };
@@ -683,6 +694,21 @@ export default function OrderDetailScreen({ route, navigation }) {
 
       {/* STICKY FOOTER */}
       <View style={styles.stickyFooter}>
+        {/* Driver call button — shown when driver is en route */}
+        {driverVisible && order.delivery?.driverPhone ? (
+          <TouchableOpacity
+            style={[styles.footerOutline, { marginBottom: 8, borderColor: colors.success }]}
+            onPress={() => {
+              const phone = order.delivery.driverPhone;
+              if (!phone) { Alert.alert('No Contact', 'Driver contact number is not available.'); return; }
+              Linking.openURL(`tel:${phone}`).catch(() => Alert.alert('Error', 'Cannot open dialer.'));
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="call" size={18} color={colors.success}/>
+            <Text style={[styles.footerOutlineText, { color: colors.success }]}>Call Driver</Text>
+          </TouchableOpacity>
+        ) : null}
         <View style={styles.footerRow}>
           <TouchableOpacity style={styles.footerOutline} onPress={() => call(branchPhone)}>
             <Ionicons name="call-outline" size={18} color={colors.primary}/>

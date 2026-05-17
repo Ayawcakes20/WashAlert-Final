@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertCircle,
@@ -302,6 +302,29 @@ export function FinalizeWeightModal({
   const [staffNotes, setStaffNotes] = useState("");
   const weightInputRef = useRef<HTMLInputElement>(null);
 
+  // Stock availability for the order's branch (keyed by item name, lowercase)
+  const [availStock, setAvailStock] = useState<Record<string, number>>({});
+  const fetchAvailability = useCallback(async (branch: string) => {
+    try {
+      const res = await fetch(
+        `/api/bookings/supplies-availability?branch=${encodeURIComponent(branch)}`,
+        { credentials: "include" },
+      );
+      if (!res.ok) return;
+      const data: { detergent?: { label: string; availableQty: number }[]; conditioner?: { label: string; availableQty: number }[] } = await res.json();
+      const map: Record<string, number> = {};
+      [...(data.detergent ?? []), ...(data.conditioner ?? [])].forEach((item) => {
+        map[item.label.toLowerCase()] = item.availableQty;
+      });
+      setAvailStock(map);
+    } catch { /* ignore – UI falls back to no cap */ }
+  }, []);
+
+  const getAvailQty = (itemName: string | undefined): number => {
+    if (!itemName || itemName.toLowerCase() === "none") return 0;
+    return availStock[itemName.toLowerCase()] ?? 999;
+  };
+
   // Reset form when a new order is opened
   useEffect(() => {
     if (open && order) {
@@ -316,10 +339,12 @@ export function FinalizeWeightModal({
       setConQty(order.conditionerQuantity ?? 0);
       setManualAdjustmentRaw("0");
       setStaffNotes("");
+      setAvailStock({});
+      if (order.branch) void fetchAvailability(order.branch);
       // Auto-focus weight input
       setTimeout(() => weightInputRef.current?.focus(), 80);
     }
-  }, [open, order?.id]);
+  }, [open, order?.id, fetchAvailability]);
 
   if (!order) return null;
 
@@ -547,44 +572,52 @@ export function FinalizeWeightModal({
 
                   {/* Supplies Adjustment */}
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                        Detergent Quantity ({order.detergent || "None"})
-                      </label>
-                      <div className="flex items-center gap-2">
-                         <Button 
-                           variant="outline" size="sm" className="h-10 w-10 rounded-lg font-black"
-                           onClick={() => setDetQty(Math.max(0, detQty - 1))}
-                         >–</Button>
-                         <Input 
-                           type="number" value={detQty} readOnly
-                           className="h-10 text-center font-bold border-2 border-slate-100 rounded-lg pointer-events-none"
-                         />
-                         <Button 
-                           variant="outline" size="sm" className="h-10 w-10 rounded-lg font-black"
-                           onClick={() => setDetQty(detQty + 1)}
-                         >+</Button>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                        Fabcon Quantity ({order.conditioner || "None"})
-                      </label>
-                      <div className="flex items-center gap-2">
-                         <Button 
-                           variant="outline" size="sm" className="h-10 w-10 rounded-lg font-black"
-                           onClick={() => setConQty(Math.max(0, conQty - 1))}
-                         >–</Button>
-                         <Input 
-                           type="number" value={conQty} readOnly
-                           className="h-10 text-center font-bold border-2 border-slate-100 rounded-lg pointer-events-none"
-                         />
-                         <Button 
-                           variant="outline" size="sm" className="h-10 w-10 rounded-lg font-black"
-                           onClick={() => setConQty(conQty + 1)}
-                         >+</Button>
-                      </div>
-                    </div>
+                    {(() => {
+                      const detMax = getAvailQty(order.detergent);
+                      const conMax = getAvailQty(order.conditioner);
+                      const detAtMax = detQty >= detMax;
+                      const conAtMax = conQty >= conMax;
+                      return (
+                        <>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                              Detergent Qty ({order.detergent || "None"})
+                              {order.detergent && order.detergent.toLowerCase() !== "none" && detMax < 999 && (
+                                <span className="ml-1 font-normal text-slate-400 normal-case tracking-normal">— {detMax} in stock</span>
+                              )}
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <Button variant="outline" size="sm" className="h-10 w-10 rounded-lg font-black"
+                                onClick={() => setDetQty(Math.max(0, detQty - 1))}>–</Button>
+                              <Input type="number" value={detQty} readOnly
+                                className="h-10 text-center font-bold border-2 border-slate-100 rounded-lg pointer-events-none" />
+                              <Button variant="outline" size="sm" className="h-10 w-10 rounded-lg font-black"
+                                onClick={() => setDetQty(Math.min(detMax, detQty + 1))}
+                                disabled={detAtMax} title={detAtMax ? `Max stock: ${detMax}` : undefined}>+</Button>
+                            </div>
+                            {detAtMax && detMax < 999 && <p className="text-[10px] text-rose-500 font-bold">Maximum available stock reached.</p>}
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                              Fabcon Qty ({order.conditioner || "None"})
+                              {order.conditioner && order.conditioner.toLowerCase() !== "none" && conMax < 999 && (
+                                <span className="ml-1 font-normal text-slate-400 normal-case tracking-normal">— {conMax} in stock</span>
+                              )}
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <Button variant="outline" size="sm" className="h-10 w-10 rounded-lg font-black"
+                                onClick={() => setConQty(Math.max(0, conQty - 1))}>–</Button>
+                              <Input type="number" value={conQty} readOnly
+                                className="h-10 text-center font-bold border-2 border-slate-100 rounded-lg pointer-events-none" />
+                              <Button variant="outline" size="sm" className="h-10 w-10 rounded-lg font-black"
+                                onClick={() => setConQty(Math.min(conMax, conQty + 1))}
+                                disabled={conAtMax} title={conAtMax ? `Max stock: ${conMax}` : undefined}>+</Button>
+                            </div>
+                            {conAtMax && conMax < 999 && <p className="text-[10px] text-rose-500 font-bold">Maximum available stock reached.</p>}
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                   {pricing && pricing.numberOfLoads > detQty && (
                     <p className="text-[10px] font-bold text-amber-600 bg-amber-50 p-2 rounded-lg flex items-center gap-2">

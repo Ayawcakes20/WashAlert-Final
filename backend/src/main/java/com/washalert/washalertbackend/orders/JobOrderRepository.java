@@ -53,6 +53,8 @@ public interface JobOrderRepository extends JpaRepository<JobOrder, Long> {
 
     long countByStatusAndBranchIgnoreCase(JobOrderStatus status, String branch);
 
+    List<JobOrder> findByBranchIgnoreCaseAndStatusIn(String branch, Collection<JobOrderStatus> statuses);
+
     long countByBranchIgnoreCaseAndBookingDateAndSlotStartTime(String branch, LocalDate bookingDate, LocalTime slotStartTime);
 
     List<JobOrder> findByStatusAndServiceTypeOrderByCreatedAtDesc(JobOrderStatus status, ServiceType serviceType);

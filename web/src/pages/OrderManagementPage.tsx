@@ -107,6 +107,7 @@ type Order = {
   conditionerQuantity?: number;
   assignedDriverId?: number | null;
   assignedDriverName?: string | null;
+  assignedDriverPhone?: string | null;
   assignedAt?: string | null;
   pickupConfirmedAt?: string | null;
   deliveredAt?: string | null;
@@ -303,6 +304,7 @@ const mapOrder = (order: JobOrderResponse): Order => ({
   serviceName: order.serviceName,
   assignedDriverId: order.assignedDriverId,
   assignedDriverName: order.assignedDriverName,
+  assignedDriverPhone: order.assignedDriverPhone,
   assignedAt: order.assignedAt,
   pickupConfirmedAt: order.pickupConfirmedAt,
   deliveredAt: order.deliveredAt,
@@ -591,7 +593,7 @@ export default function OrderManagementPage() {
     };
   }, [loadOrders, ordersPage]);
 
-  const applyStatusUpdate = async (order: Order) => {
+  const applyStatusUpdate = async (order: Order, codCollected?: boolean) => {
     const allowed = getAllowedStatusTransitions(order.status);
     const fallbackStatus = allowed[0];
     const nextStatus = fallbackStatus || order.status;
@@ -602,7 +604,7 @@ export default function OrderManagementPage() {
     }
     setStatusUpdatingId(order.id);
     try {
-      const updated = await ordersApi.updateStatus(order.id, nextStatus);
+      const updated = await ordersApi.updateStatus(order.id, nextStatus, codCollected);
       const mapped = mapOrder(updated);
       setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
       toast.success(`Order ${updated.trackingNumber} moved to ${statusLabel[mapped.status]}.`);
@@ -1709,7 +1711,7 @@ export default function OrderManagementPage() {
                         <div>
                           <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Rider Contact</p>
                           <div className="font-black text-slate-700 text-sm flex items-center gap-1.5">
-                            <Phone className="h-3 w-3" /> {selectedOrder.customerPhone || '—'}
+                            <Phone className="h-3 w-3" /> {selectedOrder.assignedDriverPhone || 'No driver contact on file'}
                           </div>
                         </div>
                       </div>
@@ -1937,22 +1939,52 @@ export default function OrderManagementPage() {
                     </>
                   ) : (
                     <>
-                      <Button
-                        className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14"
-                        onClick={() => void applyStatusUpdate(selectedOrder)}
-                      >
-                        {statusUpdatingId === selectedOrder.id ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
-                        Mark as {statusLabel[getAllowedStatusTransitions(selectedOrder.status)[0]] || 'Next Step'}
-                      </Button>
-                      {(['WASHING', 'DRYING', 'READY', 'DELIVERED', 'OUT_FOR_DELIVERY'].includes(selectedOrder.status)) && (
-                        <Button
-                          variant="outline"
-                          className="flex-1 border-slate-200 text-slate-600 font-black rounded-xl h-14"
-                          onClick={() => setShowReceiptPreview(true)}
-                        >
-                          <Eye className="mr-2 h-4 w-4" /> Receipt
-                        </Button>
-                      )}
+                      {(() => {
+                        const nextStatus = getAllowedStatusTransitions(selectedOrder.status)[0];
+                        const isGcash = selectedOrder.paymentMethod?.toUpperCase().includes("GCASH");
+                        const isCash = isCashPaymentMethod(selectedOrder.paymentMethod);
+                        const deliveryPaymentBlocked = nextStatus === "DELIVERED" && isGcash && !selectedOrder.isPaid;
+                        const needsCodConfirm = nextStatus === "DELIVERED" && isCash && !selectedOrder.isPaid;
+                        const handleMarkNextStep = () => {
+                          if (needsCodConfirm) {
+                            if (window.confirm(`Confirm COD collection for order ${selectedOrder.trackingNumber}?\n\nDid the customer pay with cash?\n\nClick OK to mark as Delivered + Payment Collected, or Cancel to mark Delivered without payment.`)) {
+                              void applyStatusUpdate(selectedOrder, true);
+                            } else {
+                              void applyStatusUpdate(selectedOrder, false);
+                            }
+                          } else {
+                            void applyStatusUpdate(selectedOrder);
+                          }
+                        };
+                        return (
+                          <>
+                            <Button
+                              className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14 disabled:opacity-50"
+                              onClick={handleMarkNextStep}
+                              disabled={!!deliveryPaymentBlocked}
+                            >
+                              {statusUpdatingId === selectedOrder.id ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
+                              Mark as {statusLabel[nextStatus] || 'Next Step'}
+                            </Button>
+                            {(['WASHING', 'DRYING', 'READY', 'DELIVERED', 'OUT_FOR_DELIVERY'].includes(selectedOrder.status)) && (
+                              <Button
+                                variant="outline"
+                                className="flex-1 border-slate-200 text-slate-600 font-black rounded-xl h-14"
+                                onClick={() => setShowReceiptPreview(true)}
+                              >
+                                <Eye className="mr-2 h-4 w-4" /> Receipt
+                              </Button>
+                            )}
+                            {deliveryPaymentBlocked && (
+                              <div className="w-full bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
+                                <p className="text-[11px] font-bold text-amber-600 uppercase tracking-widest italic">
+                                  Payment must be confirmed before marking this order as delivered.
+                                </p>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </>
                   )}
 

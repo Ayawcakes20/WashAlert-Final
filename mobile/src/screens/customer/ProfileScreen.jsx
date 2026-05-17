@@ -6,7 +6,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadImageAsync } from '../../services/storageService';
-import { profileApi } from '../../services/api';
+import { profileApi, bookings as bookingsApi } from '../../services/api';
 
 const MENU_GROUPS = [
   {
@@ -38,12 +38,28 @@ const ProfileScreen = ({ navigation }) => {
   const { user, logout, firebaseIdToken, updateUserProfile } = useAuth();
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [avatarUri, setAvatarUri] = useState(user?.profileImageUrl || '');
+  const [profileStats, setProfileStats] = useState({ totalBookings: 0, totalSpent: 0 });
   const userName = user?.fullName || "User";
   const userEmail = user?.email || "No email on profile";
 
   useEffect(() => {
     setAvatarUri(user?.profileImageUrl || '');
   }, [user?.profileImageUrl]);
+
+  useEffect(() => {
+    bookingsApi.getMyBookings('all', 100)
+      .then(result => {
+        const orders = result?.orders || [];
+        const totalBookings = orders.length;
+        const totalSpent = orders.reduce((sum, o) => {
+          const price = parseFloat(o.finalPrice ?? o.totalPrice ?? 0);
+          const isCompleted = ['DELIVERED', 'COMPLETED'].includes(String(o.status || '').toUpperCase());
+          return sum + (isCompleted && !isNaN(price) ? price : 0);
+        }, 0);
+        setProfileStats({ totalBookings, totalSpent });
+      })
+      .catch(() => {}); // Non-fatal: keep defaults at 0
+  }, []);
 
   const handleAvatarUpload = async () => {
     try {
@@ -134,12 +150,16 @@ const ProfileScreen = ({ navigation }) => {
         {/* Stats Grid */}
         <View style={styles.statsGrid}>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>12</Text>
+            <Text style={styles.statValue}>{profileStats.totalBookings}</Text>
             <Text style={styles.statLabel}>Total Bookings</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>₱4.5k</Text>
+            <Text style={styles.statValue}>
+              {profileStats.totalSpent >= 1000
+                ? `₱${(profileStats.totalSpent / 1000).toFixed(1)}k`
+                : `₱${profileStats.totalSpent.toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+            </Text>
             <Text style={styles.statLabel}>Total Spent</Text>
           </View>
         </View>
