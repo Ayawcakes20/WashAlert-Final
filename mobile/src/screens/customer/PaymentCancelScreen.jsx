@@ -16,13 +16,13 @@ const PaymentCancelScreen = ({ navigation }) => {
       <View style={styles.buttonContainer}>
         <TouchableOpacity
           style={[styles.button, styles.primaryButton]}
-          onPress={() => navigation.navigate('Orders')}
+          onPress={() => navigation.navigate('CustomerTabs', { screen: 'Orders' })}
         >
           <Text style={styles.buttonText}>My Orders</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.button, styles.secondaryButton]}
-          onPress={() => navigation.navigate('Home')}
+          onPress={() => navigation.navigate('CustomerTabs', { screen: 'Home' })}
         >
           <Text style={[styles.buttonText, { color: colors.primary }]}>Go to Home</Text>
         </TouchableOpacity>

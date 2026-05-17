@@ -15,7 +15,7 @@ const PaymentSuccessScreen = ({ navigation }) => {
       </Text>
       <TouchableOpacity
         style={styles.button}
-        onPress={() => navigation.navigate('Orders')}
+        onPress={() => navigation.navigate('CustomerTabs', { screen: 'Orders' })}
       >
         <Text style={styles.buttonText}>Go to Orders</Text>
       </TouchableOpacity>
