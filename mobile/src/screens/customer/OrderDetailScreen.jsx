@@ -16,6 +16,9 @@ import PriceConfirmationModal from '../../components/PriceConfirmationModal';
 
 const { width: SW } = Dimensions.get('window');
 
+// Returns the best available final total: staff-confirmed finalPrice wins over estimated amount.
+const resolveTotal = (order) => order?.finalPrice ?? order?.amount ?? 0;
+
 const STEPS = [
   { key: 'pending',        label: 'Booking Placed',                  icon: 'checkmark-circle-outline' },
   { key: 'received',       label: 'Order Received',                  icon: 'cube-outline' },
@@ -354,11 +357,11 @@ export default function OrderDetailScreen({ route, navigation }) {
         '─────────────────────────',
         order.servicePrice > 0 ? `${service.padEnd(20)} ${fmt(order.servicePrice)}` : null,
         order.rushPrice > 0 ? `Rush Fee                 ${fmt(order.rushPrice)}` : null,
-        order.detergent && order.detergent !== 'None' ? `Detergent (×${order.detergentQty || 1})           ${fmt((order.detergent.toLowerCase().includes('ariel') ? 30 : 25) * (order.detergentQty || 1))}` : null,
-        order.conditioner && order.conditioner !== 'None' ? `Conditioner (×${order.conditionerQty || 1})         ${fmt((order.conditioner.toLowerCase().includes('downy') ? 25 : 15) * (order.conditionerQty || 1))}` : null,
+        order.detergent && order.detergent !== 'None' && order.detergent !== 'Customer Provided' ? `Detergent (×${order.detergentQty || 1})           ${fmt((order.detergent.toLowerCase().includes('ariel') ? 30 : 25) * (order.detergentQty || 1))}` : null,
+        order.conditioner && order.conditioner !== 'None' && order.conditioner !== 'Customer Provided' ? `Conditioner (×${order.conditionerQty || 1})         ${fmt((order.conditioner.toLowerCase().includes('downy') ? 25 : 15) * (order.conditionerQty || 1))}` : null,
         order.deliveryPrice > 0 ? `Delivery Fee             ${fmt(order.deliveryPrice)}` : null,
         '─────────────────────────',
-        `TOTAL DUE:               ${fmt(order.totalPrice || order.amount || 0)}`,
+        `TOTAL DUE:               ${fmt(resolveTotal(order))}`,
         '━━━━━━━━━━━━━━━━━━━━━━━',
         `Payment:  ${(order.paymentMethod || 'Cash on Delivery').replace(/_/g, ' ')}`,
         order.paymentStatus ? `Status:   ${order.paymentStatus}` : null,
@@ -413,7 +416,7 @@ export default function OrderDetailScreen({ route, navigation }) {
             
             <View style={styles.receiptTeaser}>
               <Text style={styles.teaserLabel}>Total Amount Due</Text>
-              <Text style={styles.teaserAmount}>₱{(order.amount||0).toLocaleString()}</Text>
+              <Text style={styles.teaserAmount}>₱{resolveTotal(order).toLocaleString()}</Text>
               <View style={styles.teaserAction}>
                 <Text style={styles.teaserActionTxt}>Tap to view your receipt</Text>
                 <Ionicons name="arrow-forward-circle" size={14} color="#EA580C" />
@@ -462,7 +465,7 @@ export default function OrderDetailScreen({ route, navigation }) {
             <Text style={styles.heroDate}>{order.date}</Text>
             {/* Hide price when awaiting_price — it's already shown in the orange card above */}
             {ns !== 'awaiting_price' && (
-              <Text style={styles.heroAmount}>₱{(order.amount||0).toFixed(2)}</Text>
+              <Text style={styles.heroAmount}>₱{resolveTotal(order).toFixed(2)}</Text>
             )}
           </View>
         </View>
@@ -564,8 +567,8 @@ export default function OrderDetailScreen({ route, navigation }) {
         <Accordion title="Laundry Services" icon="shirt-outline" defaultOpen={true}>
           <Row label="Package"     value={order.serviceName || order.serviceType || order.service}/>
           <Row label="Actual Weight" value={order.actualWeightKg ? `${order.actualWeightKg} kg` : (order.loadKg ? `~${order.loadKg} kg (Est.)` : 'TBD')}/>
-          <Row label="Detergent"   value={order.detergent||'None'}/>
-          <Row label="Conditioner" value={order.conditioner||'None'}/>
+          <Row label="Detergent"   value={order.detergent||'Customer Provided'}/>
+          <Row label="Conditioner" value={order.conditioner||'Customer Provided'}/>
           {order.instructions&&<Row label="Instructions" value={order.instructions}/>}
         </Accordion>
 
@@ -585,14 +588,14 @@ export default function OrderDetailScreen({ route, navigation }) {
           )}
           
           {/* Itemized Supplies Breakdown */}
-          {order.detergent && order.detergent !== 'None' && (
+          {order.detergent && order.detergent !== 'None' && order.detergent !== 'Customer Provided' && (
             <Row 
               label={`Detergent: ${order.detergent}`} 
               value={`x${order.detergentQty || 1}  (₱${((order.detergent.toLowerCase().includes('premium') || order.detergent.toLowerCase().includes('ariel') ? 30 : 25) * (order.detergentQty || 1)).toFixed(2)})`} 
               valueStyle={{fontWeight:'600'}}
             />
           )}
-          {order.conditioner && order.conditioner !== 'None' && (
+          {order.conditioner && order.conditioner !== 'None' && order.conditioner !== 'Customer Provided' && (
             <Row 
               label={`Fabcon: ${order.conditioner}`} 
               value={`x${order.conditionerQty || 1}  (₱${((order.conditioner.toLowerCase().includes('premium') || order.conditioner.toLowerCase().includes('downy') ? 25 : 15) * (order.conditionerQty || 1)).toFixed(2)})`} 
@@ -610,9 +613,9 @@ export default function OrderDetailScreen({ route, navigation }) {
             <Row label="Rush Service" value={`₱${order.rushPrice.toFixed(2)}`}/>
           )}
           <View style={styles.divider}/>
-          <Row 
-            label="Total Due" 
-            value={`₱${(order.totalPrice || order.amount || 0).toFixed(2)}`} 
+          <Row
+            label="Total Due"
+            value={`₱${resolveTotal(order).toFixed(2)}`}
             valueStyle={{fontWeight:'900', color:colors.primary, fontSize:18}}
           />
           <Row label="Payment" value={order.paymentMethod || '—'}/>
@@ -632,7 +635,7 @@ export default function OrderDetailScreen({ route, navigation }) {
             </TouchableOpacity>
           )}
 
-          {(order.totalPrice > 0 || order.amount > 0) && (
+          {resolveTotal(order) > 0 && (
             <TouchableOpacity style={styles.shareReceiptBtn} onPress={handleShareReceipt} activeOpacity={0.8}>
               <Ionicons name="share-outline" size={16} color={colors.primary} />
               <Text style={styles.shareReceiptTxt}>Share Receipt</Text>
