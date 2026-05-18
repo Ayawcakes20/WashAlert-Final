@@ -125,10 +125,15 @@ public class PricingService {
     }
 
     /** Returns true when the supply value means "no supply selected". Handles null, blank, "none", and "customer provided". */
-    private static boolean isNoSupply(String s) {
+    static boolean isNoSupply(String s) {
         if (s == null || s.isBlank()) return true;
         String lower = s.trim().toLowerCase(Locale.ROOT);
         return lower.equals("none") || lower.equals("customer provided");
+    }
+
+    /** Returns true when the supply is a real shop-provided item (not "none" or "customer provided"). */
+    public boolean isShopSupply(String s) {
+        return !isNoSupply(s);
     }
 
     // Mirrors the dry-only price branch in calculateServicePrice():

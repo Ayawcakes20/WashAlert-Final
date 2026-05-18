@@ -2307,11 +2307,13 @@ export default function OrderManagementPage() {
               const serviceBase = o.servicePrice ?? 0;
               const extraWeight = o.extraWeightCost ?? 0;
               const rush = o.rushPrice ?? 0;
-              const detPPP = o.detergent && o.detergent.toLowerCase() !== "none"
-                ? (o.detergent.toLowerCase().includes("ariel") ? 30 : 25) : 0;
+              const isShopSupply = (s?: string | null) =>
+                !!s && s.toLowerCase() !== "none" && s.toLowerCase() !== "customer provided";
+              const detPPP = isShopSupply(o.detergent)
+                ? (o.detergent!.toLowerCase().includes("ariel") ? 30 : 25) : 0;
               const detCost = detPPP * (o.detergentQuantity || 1);
-              const conPPP = o.conditioner && o.conditioner.toLowerCase() !== "none"
-                ? (o.conditioner.toLowerCase().includes("downy") ? 25 : 15) : 0;
+              const conPPP = isShopSupply(o.conditioner)
+                ? (o.conditioner!.toLowerCase().includes("downy") ? 25 : 15) : 0;
               const conCost = conPPP * (o.conditionerQuantity || 1);
               const delivery = o.deliveryPrice ?? 0;
               const subtotal = serviceBase + extraWeight + rush + detCost + conCost + delivery;
@@ -2366,12 +2368,12 @@ export default function OrderManagementPage() {
                     {infoRow("Est. Weight", o.estimatedWeightKg ? `${o.estimatedWeightKg} kg` : "N/A")}
                     {infoRow("Actual Weight", o.actualWeightKg ? `${o.actualWeightKg} kg` : "N/A")}
                     {infoRow("No. of Loads", loadsText)}
-                    {o.detergent && o.detergent.toLowerCase() !== "none"
+                    {isShopSupply(o.detergent)
                       ? infoRow("Detergent", `${o.detergent} ×${o.detergentQuantity || 1} (₱${detPPP}/pack)`)
-                      : null}
-                    {o.conditioner && o.conditioner.toLowerCase() !== "none"
+                      : infoRow("Detergent", o.detergent || "Customer Provided")}
+                    {isShopSupply(o.conditioner)
                       ? infoRow("Fabric Conditioner", `${o.conditioner} ×${o.conditionerQuantity || 1} (₱${conPPP}/pack)`)
-                      : null}
+                      : infoRow("Fabric Conditioner", o.conditioner || "Customer Provided")}
                     {infoRow("Order Status", statusLabel[o.status] || o.status)}
                   </div>
 
