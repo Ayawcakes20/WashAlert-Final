@@ -509,7 +509,7 @@ const mapJobOrderToMobile = (jobOrder, previous = {}) => ({
         unitFloor: jobOrder.deliveryUnitFloor || previous.delivery?.unitFloor || null,
         contactName: jobOrder.deliveryContactName || jobOrder.customerName || previous.delivery?.contactName || null,
         phone: jobOrder.deliveryContactPhone || jobOrder.customerPhone || previous.delivery?.phone || null,
-        driver: jobOrder.assignedDriverName || previous.delivery?.driver || 'Assigned Driver',
+        driver: jobOrder.assignedDriverName || previous.delivery?.driver || null,
         driverPhone: jobOrder.assignedDriverPhone || previous.delivery?.driverPhone || '',
         driverPhotoUrl: jobOrder.assignedDriverPhotoUrl || previous.delivery?.driverPhotoUrl || null,
         driverVehicle: previous.delivery?.driverVehicle || null,
@@ -602,7 +602,7 @@ const refreshOrderStatus = async (order) => {
           address: delivery.deliveryAddress || updated.delivery?.address || '',
           contactName: delivery.deliveryContactName || delivery.customerName || updated.delivery?.contactName || null,
           phone: delivery.deliveryContactPhone || delivery.customerPhone || updated.delivery?.phone || null,
-          driver: delivery.driverName || 'Assigned Driver',
+          driver: delivery.driverName || null,
           driverPhone: delivery.driverPhone || '',
           driverPhotoUrl: delivery.driverPhotoUrl || null,
           driverVehicle: delivery.driverVehicle || null,
@@ -897,6 +897,16 @@ export const createOrder = async (orderData) => {
   const user = userRaw ? JSON.parse(userRaw) : null;
   const branch = BRANCH_CATALOG.find((item) => item.id === orderData.branchId);
 
+  if (!user?.fullName?.trim()) {
+    throw new Error('Your name is not available. Please update your profile before placing a booking.');
+  }
+  if (!branch?.name?.trim()) {
+    throw new Error('Selected branch not found. Please go back and select a branch.');
+  }
+  if (orderData.delivery && !orderData.deliveryAddress?.trim()) {
+    throw new Error('A delivery address is required for pickup and delivery orders.');
+  }
+
   const serviceTypeBackend =
     orderData.serviceTypeBackend || (orderData.delivery ? 'PICKUP_DELIVERY' : 'DROP_OFF');
   const serviceModeLabel = orderData.serviceModeLabel || 'Full Service';
@@ -907,8 +917,8 @@ export const createOrder = async (orderData) => {
     : bookingModeNote;
 
   const payload = {
-    customerName: user?.fullName || 'Mobile Customer',
-    branch: branch?.name || 'Makati Branch',
+    customerName: user.fullName,
+    branch: branch.name,
     branchId: Number(orderData.branchId || branch?.id || 0) || null,
     customerPhone: user?.phone || '',
     customerEmail: user?.email || '',
@@ -921,7 +931,7 @@ export const createOrder = async (orderData) => {
     estimatedWeightKg: Number(orderData.loadKg || (orderData.loadSize === 'LARGE' ? 8 : 5)),
     containsBulkyItems: Boolean(orderData.containsBulkyItems),
     specialInstructions: mergedInstructions,
-    deliveryAddress: orderData.delivery ? orderData.deliveryAddress || 'To be provided' : null,
+    deliveryAddress: orderData.delivery ? orderData.deliveryAddress : null,
     serviceName: orderData.serviceName || 'Wash & Dry',
     isRush: !!orderData.isRush,
     distanceKm: Number(orderData.distanceKm || 0),
@@ -953,7 +963,7 @@ export const createOrder = async (orderData) => {
     instructions: mergedInstructions,
     serviceMode: orderData.serviceMode || 'FULL_SERVICE',
     delivery: orderData.delivery
-      ? { address: orderData.deliveryAddress || 'To be provided', driver: 'Assigned Driver' }
+      ? { address: orderData.deliveryAddress || '', driver: null }
       : null,
   });
 
