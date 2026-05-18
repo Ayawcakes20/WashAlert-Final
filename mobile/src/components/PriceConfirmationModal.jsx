@@ -21,7 +21,6 @@ const ReceiptRow = ({ label, value, bold, accent }) => (
 
 export default function PriceConfirmationModal({ visible, orderData, onConfirmed, onDismiss, onRejected }) {
   const [loading, setLoading] = useState(false);
-  const [rejecting, setRejecting] = useState(false);
   const [fullOrderData, setFullOrderData] = useState(orderData);
   const slideAnim = useRef(new Animated.Value(400)).current;
 
@@ -67,6 +66,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
     try {
       const paymentMethodStr = String(fullOrderData.paymentMethod || '').toUpperCase();
       const isGcash = paymentMethodStr.includes('GCASH');
+      const isPaid = ['paid', 'verified'].includes(String(fullOrderData.paymentStatus || '').toLowerCase());
 
       // 1. Confirm the price first
       let confirmedOrder;
@@ -74,7 +74,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
         confirmedOrder = await bookings.confirmPrice(fullOrderData);
       } catch (confirmErr) {
         // Handle Forbidden (CSRF or Role issue)
-        if (confirmErr.message?.includes('Forbidden')) {
+        if (confirmErr.message?.includes('Forbidden') || confirmErr.message?.includes('Unauthorized')) {
           Alert.alert(
             'Action Restricted',
             'You do not have permission to confirm this price. Please try logging in again.',
@@ -86,8 +86,8 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
         throw new Error(`Price confirmation failed: ${confirmErr.message}`);
       }
 
-      // 2. If GCash, trigger PayMongo Checkout
-      if (isGcash) {
+      // 2. If GCash and not yet paid, trigger PayMongo Checkout
+      if (isGcash && !isPaid) {
         try {
           const checkoutTarget = confirmedOrder?.trackingNumber || fullOrderData?.trackingNumber;
 
@@ -133,40 +133,6 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleReject = () => {
-    if (!fullOrderData) return;
-    const isPaid = String(fullOrderData.paymentStatus || '').toLowerCase() === 'paid';
-    const message = isPaid
-      ? 'Are you sure you want to reject the final price?\n\nFor paid orders, branch staff will review payment/refund handling.'
-      : 'Are you sure you want to reject the final price? This will cancel your order.';
-    Alert.alert(
-      'Reject Final Price',
-      message,
-      [
-        { text: 'Keep Order', style: 'cancel' },
-        {
-          text: 'Reject & Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            setRejecting(true);
-            try {
-              await bookings.rejectFinalPrice(fullOrderData.trackingNumber);
-              Alert.alert(
-                'Price Rejected',
-                'Final price rejected. Your order has been cancelled.',
-                [{ text: 'OK', onPress: () => onRejected?.() }]
-              );
-            } catch (e) {
-              Alert.alert('Error', e?.message || 'Failed to reject. Please try again.');
-            } finally {
-              setRejecting(false);
-            }
-          },
-        },
-      ]
-    );
   };
 
   const handleCallBranch = () => {
@@ -320,21 +286,17 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
               </View>
             </View>
 
-            <TouchableOpacity style={[S.confirmBtn, (loading || rejecting) && { opacity: 0.6 }]} onPress={handleConfirm} disabled={loading || rejecting} activeOpacity={0.88}>
+            <TouchableOpacity style={[S.confirmBtn, loading && { opacity: 0.6 }]} onPress={handleConfirm} disabled={loading} activeOpacity={0.88}>
               {loading
                 ? <ActivityIndicator color="#fff" />
                 : <Text style={S.confirmBtnTxt}>
-                    {String(fullOrderData.paymentMethod || '').toUpperCase().includes('GCASH')
-                      ? 'Confirm & Pay with GCash'
-                      : 'Confirm & start washing'}
+                    {(() => {
+                      const isGcash = String(fullOrderData.paymentMethod || '').toUpperCase().includes('GCASH');
+                      const isPaid = ['paid', 'verified'].includes(String(fullOrderData.paymentStatus || '').toLowerCase());
+                      if (isGcash && !isPaid) return 'Confirm & Pay with GCash';
+                      return 'Confirm & start washing';
+                    })()}
                   </Text>
-              }
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[S.rejectBtn, (loading || rejecting) && { opacity: 0.5 }]} onPress={handleReject} disabled={loading || rejecting} activeOpacity={0.88}>
-              {rejecting
-                ? <ActivityIndicator color="#EF4444" />
-                : <Text style={S.rejectBtnTxt}>Reject Final Price</Text>
               }
             </TouchableOpacity>
 
@@ -394,8 +356,6 @@ const S = StyleSheet.create({
   systemGenNote: { fontSize: 10, color: '#CBD5E1', textAlign: 'center', fontStyle: 'italic', marginTop: 8, marginBottom: 4 },
   confirmBtn: { backgroundColor: '#2563EB', borderRadius: 16, height: 58, alignItems: 'center', justifyContent: 'center' },
   confirmBtnTxt: { color: '#fff', fontSize: 17, fontWeight: '800' },
-  rejectBtn: { borderWidth: 1.5, borderColor: '#EF4444', borderRadius: 16, height: 52, alignItems: 'center', justifyContent: 'center', marginTop: 10 },
-  rejectBtnTxt: { color: '#EF4444', fontSize: 15, fontWeight: '700' },
   legalTxt: { fontSize: 11, color: '#94A3B8', textAlign: 'center', lineHeight: 16, marginTop: 14, paddingHorizontal: 8 },
   contactLink: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'center', marginTop: 12, paddingVertical: 6 },
   contactLinkTxt: { fontSize: 13, fontWeight: '700', color: '#2563EB', textDecorationLine: 'underline' },
