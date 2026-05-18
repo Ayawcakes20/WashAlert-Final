@@ -349,7 +349,7 @@ public class DeliveryService {
                         order.getCustomerPhone(),
                         order.getDeliveryAddress(),
                         order.getPaymentMethod(),
-                        order.getTotalPrice(),
+                        resolveOrderAmount(order),
                         order.getCreatedAt()
                 ))
                 .limit(50)
@@ -839,7 +839,7 @@ public class DeliveryService {
         PaymentRecord payment = existingPayment
                 .orElseGet(() -> PaymentRecord.builder().jobOrder(order).build());
         payment.setMethod(PaymentMethod.CASH);
-        payment.setAmount(order.getTotalPrice());
+        payment.setAmount(resolveOrderAmount(order));
         payment.setStatus(PaymentStatus.PAID);
         payment.setVerifiedAt(LocalDateTime.now());
         payment.setVerifiedBy(actor.getEmail());
@@ -1050,7 +1050,7 @@ public class DeliveryService {
                 order.getPaymentMethod(),
                 paymentStatus,
                 order.isPaid(),
-                order.getTotalPrice(),
+                resolveOrderAmount(order),
                 order.getEstimatedWeightKg(),
                 resolvedLoadCount,
                 deriveWorkflowStatus(order, d),
@@ -1413,5 +1413,13 @@ public class DeliveryService {
         if (method == null) return false;
         String normalized = method.toUpperCase();
         return normalized.contains("CASH") || normalized.contains("COD");
+    }
+
+    /** Resolves the authoritative order amount: finalPrice → totalPrice → servicePrice. */
+    private java.math.BigDecimal resolveOrderAmount(JobOrder order) {
+        java.math.BigDecimal amount = order.getFinalPrice();
+        if (amount == null || amount.compareTo(java.math.BigDecimal.ZERO) <= 0) amount = order.getTotalPrice();
+        if (amount == null || amount.compareTo(java.math.BigDecimal.ZERO) <= 0) amount = order.getServicePrice();
+        return amount;
     }
 }
