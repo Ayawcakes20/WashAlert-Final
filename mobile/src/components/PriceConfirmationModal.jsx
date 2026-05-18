@@ -12,16 +12,18 @@ import logoSpeedyWash from '../../assets/images/logo-speedywash.webp';
 
 const fmt = (n) => `\u20b1${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const ReceiptRow = ({ label, value, bold, accent }) => (
+const ReceiptRow = ({ label, value, bold, accent, sub }) => (
   <View style={S.receiptRow}>
-    <Text style={[S.receiptRowLabel, bold && { fontWeight: '700', color: '#1E293B' }]}>{label}</Text>
+    <View style={S.receiptRowLeft}>
+      <Text style={[S.receiptRowLabel, bold && { fontWeight: '700', color: '#1E293B' }]}>{label}</Text>
+      {sub ? <Text style={S.receiptRowSub}>{sub}</Text> : null}
+    </View>
     <Text style={[S.receiptRowValue, accent && { color: '#2563EB', fontSize: 15, fontWeight: '900' }]}>{value}</Text>
   </View>
 );
 
 export default function PriceConfirmationModal({ visible, orderData, onConfirmed, onDismiss, onRejected }) {
   const [loading, setLoading] = useState(false);
-  const [rejecting, setRejecting] = useState(false);
   const [fullOrderData, setFullOrderData] = useState(orderData);
   const slideAnim = useRef(new Animated.Value(400)).current;
 
@@ -67,6 +69,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
     try {
       const paymentMethodStr = String(fullOrderData.paymentMethod || '').toUpperCase();
       const isGcash = paymentMethodStr.includes('GCASH');
+      const isPaid = ['paid', 'verified'].includes(String(fullOrderData.paymentStatus || '').toLowerCase());
 
       // 1. Confirm the price first
       let confirmedOrder;
@@ -74,7 +77,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
         confirmedOrder = await bookings.confirmPrice(fullOrderData);
       } catch (confirmErr) {
         // Handle Forbidden (CSRF or Role issue)
-        if (confirmErr.message?.includes('Forbidden')) {
+        if (confirmErr.message?.includes('Forbidden') || confirmErr.message?.includes('Unauthorized')) {
           Alert.alert(
             'Action Restricted',
             'You do not have permission to confirm this price. Please try logging in again.',
@@ -86,8 +89,8 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
         throw new Error(`Price confirmation failed: ${confirmErr.message}`);
       }
 
-      // 2. If GCash, trigger PayMongo Checkout
-      if (isGcash) {
+      // 2. If GCash and not yet paid, trigger PayMongo Checkout
+      if (isGcash && !isPaid) {
         try {
           const checkoutTarget = confirmedOrder?.trackingNumber || fullOrderData?.trackingNumber;
 
@@ -135,40 +138,6 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
     }
   };
 
-  const handleReject = () => {
-    if (!fullOrderData) return;
-    const isPaid = String(fullOrderData.paymentStatus || '').toLowerCase() === 'paid';
-    const message = isPaid
-      ? 'Are you sure you want to reject the final price?\n\nFor paid orders, branch staff will review payment/refund handling.'
-      : 'Are you sure you want to reject the final price? This will cancel your order.';
-    Alert.alert(
-      'Reject Final Price',
-      message,
-      [
-        { text: 'Keep Order', style: 'cancel' },
-        {
-          text: 'Reject & Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            setRejecting(true);
-            try {
-              await bookings.rejectFinalPrice(fullOrderData.trackingNumber);
-              Alert.alert(
-                'Price Rejected',
-                'Final price rejected. Your order has been cancelled.',
-                [{ text: 'OK', onPress: () => onRejected?.() }]
-              );
-            } catch (e) {
-              Alert.alert('Error', e?.message || 'Failed to reject. Please try again.');
-            } finally {
-              setRejecting(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
   const handleCallBranch = () => {
     Alert.alert('Contact Branch', 'No contact number on file. Please use the in-app chat to reach the branch.');
   };
@@ -177,22 +146,40 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
 
   const logo = String(fullOrderData.branchName || '').toLowerCase().includes('makati') ? logoLaundryHubs : logoSpeedyWash;
 
-  // Recalculate breakdown using the same engine as Web
+  // mapJobOrderToMobile uses detergentQty/conditionerQty; pricingUtils expects
+  // detergentQuantity/conditionerQuantity — bridge the mismatch here.
   const p = computeOrderPricing(
-    fullOrderData,
+    {
+      ...fullOrderData,
+      detergentQuantity: fullOrderData.detergentQty ?? fullOrderData.detergentQuantity ?? 0,
+      conditionerQuantity: fullOrderData.conditionerQty ?? fullOrderData.conditionerQuantity ?? 0,
+    },
     fullOrderData.actualWeightKg || 0,
     fullOrderData.loadKg > 7 ? 'PURE_CLOTHES' : 'WITH_TOWELS',
     fullOrderData.deliveryPrice || 0,
     fullOrderData.manualAdjustment || 0
   );
 
-  const displayTrackingNumber = fullOrderData.trackingNumber 
+  // Prefer backend-confirmed total (set by staff) to guard against load-type heuristic mismatch.
+  // GCash checkout uses the same totalPrice/finalPrice from the backend.
+  const backendTotal = Number(fullOrderData.finalPrice || fullOrderData.amount || 0);
+  const confirmedTotal = backendTotal > 0 ? backendTotal : p.grandTotal;
+
+  const displayTrackingNumber = fullOrderData.trackingNumber
     ? String(fullOrderData.trackingNumber).replace(/^WA-/, '')
     : String(fullOrderData.id || '');
-  
+
   const weight = fullOrderData.actualWeightKg ? `${fullOrderData.actualWeightKg} kg` : null;
   const serviceName = fullOrderData.serviceName || fullOrderData.serviceType || 'Laundry Service';
   const paymentMethod = String(fullOrderData.paymentMethod || 'Cash on Delivery').replace('_', ' ');
+
+  // Service breakdown sub-text: formula shown below the service name
+  const isHandwash = String(serviceName).toLowerCase().includes('handwash');
+  const serviceSubText = p && p.pricePerLoad > 0
+    ? (isHandwash
+        ? `₱${p.pricePerLoad}/kg × ${fullOrderData.actualWeightKg} kg`
+        : `₱${p.pricePerLoad}/load × ${p.numberOfLoads} load${p.numberOfLoads !== 1 ? 's' : ''}`)
+    : null;
 
   const dateStr = new Date().toLocaleDateString('en-PH', {
     month: 'short', day: 'numeric', year: 'numeric',
@@ -271,45 +258,72 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
 
             <View style={S.dashedSep} />
 
-            {/* DETAILED LINE ITEMS */}
-            <ReceiptRow label={serviceName} value={fmt(p.serviceTotal)} bold />
-            
+            {/* CHARGES */}
+            <Text style={S.chargesSectionLabel}>CHARGES</Text>
+
+            {/* Service fee */}
+            <ReceiptRow label={serviceName} value={fmt(p.serviceTotal)} bold sub={serviceSubText} />
+
+            {/* Madness surcharge (excess weight) */}
             {p.madnessFee > 0 && (
-              <ReceiptRow label="Madness Surcharge" value={fmt(p.madnessFee)} accent />
+              <ReceiptRow
+                label="Madness Surcharge"
+                value={fmt(p.madnessFee)}
+                accent
+                sub={`${p.madnessKg != null ? Number(p.madnessKg).toFixed(1) : '?'} kg over capacity × ₱50`}
+              />
             )}
 
+            {/* Rush fee */}
+            {p.rushFee > 0 && (
+              <ReceiptRow
+                label="Rush Service Fee"
+                value={fmt(p.rushFee)}
+                accent
+                sub={`₱150/load × ${p.numberOfLoads} load${p.numberOfLoads !== 1 ? 's' : ''}`}
+              />
+            )}
+
+            {/* Detergent */}
             {p.detCost > 0 && (
               <ReceiptRow
-                label={`${fullOrderData.detergent || 'Detergent'} ×${p.detQty} pack${p.detQty !== 1 ? 's' : ''} (₱${p.detPPP}/pk)`}
+                label={fullOrderData.detergent || 'Detergent'}
                 value={fmt(p.detCost)}
+                sub={`₱${p.detPPP}/pack × ${p.detQty} pack${p.detQty !== 1 ? 's' : ''}`}
               />
             )}
+
+            {/* Fabric conditioner */}
             {p.conCost > 0 && (
               <ReceiptRow
-                label={`${fullOrderData.conditioner || 'Conditioner'} ×${p.conQty} pack${p.conQty !== 1 ? 's' : ''} (₱${p.conPPP}/pk)`}
+                label={fullOrderData.conditioner || 'Fabric Conditioner'}
                 value={fmt(p.conCost)}
+                sub={`₱${p.conPPP}/pack × ${p.conQty} pack${p.conQty !== 1 ? 's' : ''}`}
               />
             )}
 
+            {/* Delivery */}
             {Number(p.deliveryFee) > 0 && (
-              <ReceiptRow label="Logistics & Delivery" value={fmt(p.deliveryFee)} />
+              <ReceiptRow label="Logistics & Delivery" value={fmt(p.deliveryFee)} sub="Location-based rate" />
             )}
-            
-            <ReceiptRow label="Convenience Fee" value={fmt(p.convenienceFee)} />
 
+            {/* Convenience fee */}
+            <ReceiptRow label="Convenience Fee" value={fmt(p.convenienceFee)} sub="Online booking fee" />
+
+            {/* Staff adjustment (if any survived into the backend total) */}
             {p.manualAdjustment !== 0 && (
-              <ReceiptRow 
-                label="Staff Adjustment" 
-                value={fmt(p.manualAdjustment)} 
-                accent={p.manualAdjustment > 0} 
+              <ReceiptRow
+                label="Staff Adjustment"
+                value={fmt(p.manualAdjustment)}
+                accent={p.manualAdjustment > 0}
               />
             )}
 
-            {/* Total box */}
+            {/* Total box — uses backend-confirmed value so it matches GCash checkout */}
             <View style={S.totalBox}>
               <View>
                 <Text style={S.totalLabel}>TOTAL AMOUNT DUE</Text>
-                <Text style={S.totalAmount}>{fmt(p.grandTotal)}</Text>
+                <Text style={S.totalAmount}>{fmt(confirmedTotal)}</Text>
               </View>
               <View style={S.payBox}>
                 <Text style={S.payLabel}>PAYMENT</Text>
@@ -320,21 +334,17 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
               </View>
             </View>
 
-            <TouchableOpacity style={[S.confirmBtn, (loading || rejecting) && { opacity: 0.6 }]} onPress={handleConfirm} disabled={loading || rejecting} activeOpacity={0.88}>
+            <TouchableOpacity style={[S.confirmBtn, loading && { opacity: 0.6 }]} onPress={handleConfirm} disabled={loading} activeOpacity={0.88}>
               {loading
                 ? <ActivityIndicator color="#fff" />
                 : <Text style={S.confirmBtnTxt}>
-                    {String(fullOrderData.paymentMethod || '').toUpperCase().includes('GCASH')
-                      ? 'Confirm & Pay with GCash'
-                      : 'Confirm & start washing'}
+                    {(() => {
+                      const isGcash = String(fullOrderData.paymentMethod || '').toUpperCase().includes('GCASH');
+                      const isPaid = ['paid', 'verified'].includes(String(fullOrderData.paymentStatus || '').toLowerCase());
+                      if (isGcash && !isPaid) return 'Confirm & Pay with GCash';
+                      return 'Confirm & start washing';
+                    })()}
                   </Text>
-              }
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[S.rejectBtn, (loading || rejecting) && { opacity: 0.5 }]} onPress={handleReject} disabled={loading || rejecting} activeOpacity={0.88}>
-              {rejecting
-                ? <ActivityIndicator color="#EF4444" />
-                : <Text style={S.rejectBtnTxt}>Reject Final Price</Text>
               }
             </TouchableOpacity>
 
@@ -380,9 +390,12 @@ const S = StyleSheet.create({
   serviceChipTxt: { fontSize: 10, fontWeight: '800', color: '#2563EB', textTransform: 'uppercase' },
   weightBadge: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: '#F0FDF4', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14, borderWidth: 1, borderColor: '#DCFCE7', marginBottom: 14 },
   weightTxt: { fontSize: 13, color: '#15803D', fontWeight: '600' },
-  dashedSep: { borderStyle: 'dashed', borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 14, height: 0 },
-  receiptRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  receiptRowLabel: { fontSize: 13, color: '#64748B', fontWeight: '500', flex: 1, paddingRight: 8 },
+  dashedSep: { borderStyle: 'dashed', borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 8, height: 0 },
+  chargesSectionLabel: { fontSize: 9, fontWeight: '700', color: '#94A3B8', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 12, marginTop: 4 },
+  receiptRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12, alignItems: 'flex-start' },
+  receiptRowLeft: { flex: 1, paddingRight: 10 },
+  receiptRowLabel: { fontSize: 13, color: '#64748B', fontWeight: '500' },
+  receiptRowSub: { fontSize: 11, color: '#94A3B8', marginTop: 2, fontVariant: ['tabular-nums'] },
   receiptRowValue: { fontSize: 13, fontWeight: '700', color: '#1E293B' },
   totalBox: { backgroundColor: '#1E293B', borderRadius: 18, padding: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, marginBottom: 20 },
   totalLabel: { fontSize: 10, color: '#94A3B8', fontWeight: '700', letterSpacing: 0.5 },
@@ -394,8 +407,6 @@ const S = StyleSheet.create({
   systemGenNote: { fontSize: 10, color: '#CBD5E1', textAlign: 'center', fontStyle: 'italic', marginTop: 8, marginBottom: 4 },
   confirmBtn: { backgroundColor: '#2563EB', borderRadius: 16, height: 58, alignItems: 'center', justifyContent: 'center' },
   confirmBtnTxt: { color: '#fff', fontSize: 17, fontWeight: '800' },
-  rejectBtn: { borderWidth: 1.5, borderColor: '#EF4444', borderRadius: 16, height: 52, alignItems: 'center', justifyContent: 'center', marginTop: 10 },
-  rejectBtnTxt: { color: '#EF4444', fontSize: 15, fontWeight: '700' },
   legalTxt: { fontSize: 11, color: '#94A3B8', textAlign: 'center', lineHeight: 16, marginTop: 14, paddingHorizontal: 8 },
   contactLink: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'center', marginTop: 12, paddingVertical: 6 },
   contactLinkTxt: { fontSize: 13, fontWeight: '700', color: '#2563EB', textDecorationLine: 'underline' },
