@@ -392,7 +392,7 @@ public class InventoryService {
     }
 
     private void deductConsumable(String branch, String itemName, int qty, String trackingNumber, String actor) {
-        if (itemName == null || itemName.isBlank()) return;
+        if (!hasConsumableSelection(itemName) || qty <= 0) return;
         try {
             String resolvedName = resolveInventoryItemName(itemName);
             InventoryItem item = itemRepository
