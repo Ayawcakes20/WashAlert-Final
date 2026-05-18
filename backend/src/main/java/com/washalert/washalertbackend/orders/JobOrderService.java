@@ -995,13 +995,25 @@ public class JobOrderService {
         order.setStatus(JobOrderStatus.EN_ROUTE_TO_CUSTOMER);
         JobOrder saved = repo.save(order);
 
-        notificationService.enqueuePushToRoles(List.of(Role.STAFF, Role.ADMIN), saved.getBranch(),
-                "Driver started pickup",
-                String.format("%s heading to customer for %s", driver.getFullName(), saved.getTrackingNumber()),
-                "ORDER", saved.getId().toString());
+        try {
+            notificationService.enqueuePushToRoles(List.of(Role.STAFF, Role.ADMIN), saved.getBranch(),
+                    "Driver started pickup",
+                    String.format("%s heading to customer for %s", driver.getFullName(), saved.getTrackingNumber()),
+                    "ORDER", saved.getId().toString());
+        } catch (Exception e) {
+            log.warn("Failed to enqueue notification for order {}: {}", saved.getId(), e.getMessage());
+            // Continue — notifications are not critical
+        }
 
         JobOrderResponse response = toResponse(saved);
-        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        
+        try {
+            firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        } catch (Exception e) {
+            log.warn("Failed to sync order {} to Firestore: {}", saved.getId(), e.getMessage());
+            // Continue — Firestore sync is not critical for API response
+        }
+        
         return response;
     }
 
@@ -1021,17 +1033,27 @@ public class JobOrderService {
         order.setLaundryCollectedAt(LocalDateTime.now());
         JobOrder saved = repo.save(order);
 
-        notificationService.enqueuePushToUserEmail(saved.getCustomerEmail(), "Laundry collected",
-                "Laundry collected — heading to branch",
-                "ORDER", saved.getId().toString());
+        try {
+            notificationService.enqueuePushToUserEmail(saved.getCustomerEmail(), "Laundry collected",
+                    "Laundry collected — heading to branch",
+                    "ORDER", saved.getId().toString());
 
-        notificationService.enqueuePushToRoles(List.of(Role.STAFF, Role.ADMIN), saved.getBranch(),
-                "Laundry collected",
-                String.format("%s laundry collected, driver en route to branch", saved.getTrackingNumber()),
-                "ORDER", saved.getId().toString());
+            notificationService.enqueuePushToRoles(List.of(Role.STAFF, Role.ADMIN), saved.getBranch(),
+                    "Laundry collected",
+                    String.format("%s laundry collected, driver en route to branch", saved.getTrackingNumber()),
+                    "ORDER", saved.getId().toString());
+        } catch (Exception e) {
+            log.warn("Failed to send notifications for order {}: {}", saved.getId(), e.getMessage());
+        }
 
         JobOrderResponse response = toResponse(saved);
-        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        
+        try {
+            firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        } catch (Exception e) {
+            log.warn("Failed to sync order {} to Firestore: {}", saved.getId(), e.getMessage());
+        }
+        
         return response;
     }
 
@@ -1051,19 +1073,29 @@ public class JobOrderService {
         order.setArrivedAtBranchAt(LocalDateTime.now());
         JobOrder saved = repo.save(order);
 
-        notificationService.enqueuePushToRoles(List.of(Role.STAFF, Role.ADMIN), saved.getBranch(),
-                "Laundry arrived at branch",
-                String.format("%s laundry arrived at branch. Weigh and set price to proceed.",
-                        saved.getTrackingNumber()),
-                "ORDER", saved.getId().toString());
+        try {
+            notificationService.enqueuePushToRoles(List.of(Role.STAFF, Role.ADMIN), saved.getBranch(),
+                    "Laundry arrived at branch",
+                    String.format("%s laundry arrived at branch. Weigh and set price to proceed.",
+                            saved.getTrackingNumber()),
+                    "ORDER", saved.getId().toString());
 
-        notificationService.enqueuePushToUserEmail(saved.getCustomerEmail(), "Arrived at branch",
-                String.format("Your laundry is now at %s. Staff will send you the final price shortly.",
-                        saved.getBranch()),
-                "ORDER", saved.getId().toString());
+            notificationService.enqueuePushToUserEmail(saved.getCustomerEmail(), "Arrived at branch",
+                    String.format("Your laundry is now at %s. Staff will send you the final price shortly.",
+                            saved.getBranch()),
+                    "ORDER", saved.getId().toString());
+        } catch (Exception e) {
+            log.warn("Failed to send notifications for order {}: {}", saved.getId(), e.getMessage());
+        }
 
         JobOrderResponse response = toResponse(saved);
-        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        
+        try {
+            firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        } catch (Exception e) {
+            log.warn("Failed to sync order {} to Firestore: {}", saved.getId(), e.getMessage());
+        }
+        
         return response;
     }
 
@@ -1122,7 +1154,13 @@ public class JobOrderService {
         JobOrder saved = repo.save(order);
 
         JobOrderResponse response = toResponse(saved);
-        firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        
+        try {
+            firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
+        } catch (Exception e) {
+            log.warn("Failed to sync order {} to Firestore: {}", saved.getId(), e.getMessage());
+        }
+        
         return response;
     }
 
@@ -1142,28 +1180,42 @@ public class JobOrderService {
             order.setCodCollected(true);
             order.setCodCollectedAt(LocalDateTime.now());
             // Also update the PaymentRecord so paymentStatus = PAID for all consumers.
-            paymentRepository.findByJobOrder_TrackingNumber(order.getTrackingNumber())
-                    .filter(pr -> pr.getStatus() != com.washalert.washalertbackend.payment.PaymentStatus.PAID)
-                    .ifPresent(pr -> {
-                        pr.setStatus(com.washalert.washalertbackend.payment.PaymentStatus.PAID);
-                        pr.setVerifiedAt(LocalDateTime.now());
-                        pr.setVerifiedBy("Driver — COD collected");
-                        paymentRepository.save(pr);
-                    });
+            try {
+                paymentRepository.findByJobOrder_TrackingNumber(order.getTrackingNumber())
+                        .filter(pr -> pr.getStatus() != com.washalert.washalertbackend.payment.PaymentStatus.PAID)
+                        .ifPresent(pr -> {
+                            pr.setStatus(com.washalert.washalertbackend.payment.PaymentStatus.PAID);
+                            pr.setVerifiedAt(LocalDateTime.now());
+                            pr.setVerifiedBy("Driver — COD collected");
+                            paymentRepository.save(pr);
+                        });
+            } catch (Exception e) {
+                log.warn("Failed to update payment record for order {}: {}", order.getId(), e.getMessage());
+            }
         }
         JobOrder saved = repo.save(order);
 
-        notificationService.enqueuePushToUserEmail(saved.getCustomerEmail(), "Laundry delivered",
-                "Delivered — thank you!",
-                "ORDER", saved.getId().toString());
+        try {
+            notificationService.enqueuePushToUserEmail(saved.getCustomerEmail(), "Laundry delivered",
+                    "Delivered — thank you!",
+                    "ORDER", saved.getId().toString());
 
-        notificationService.enqueuePushToRoles(List.of(Role.STAFF, Role.ADMIN), saved.getBranch(),
-                "Order delivered",
-                String.format("%s delivered. COD: %s", saved.getTrackingNumber(), codCollected ? "Yes" : "No"),
-                "ORDER", saved.getId().toString());
+            notificationService.enqueuePushToRoles(List.of(Role.STAFF, Role.ADMIN), saved.getBranch(),
+                    "Order delivered",
+                    String.format("%s delivered. COD: %s", saved.getTrackingNumber(), codCollected ? "Yes" : "No"),
+                    "ORDER", saved.getId().toString());
+        } catch (Exception e) {
+            log.warn("Failed to send delivery notifications for order {}: {}", saved.getId(), e.getMessage());
+        }
 
         JobOrderResponse response = toResponse(saved);
-        firestoreSyncService.upsertBlocking("orders", saved.getTrackingNumber(), response);
+        
+        try {
+            firestoreSyncService.upsertBlocking("orders", saved.getTrackingNumber(), response);
+        } catch (Exception e) {
+            log.warn("Failed to sync order {} to Firestore: {}", saved.getId(), e.getMessage());
+        }
+        
         return response;
     }
 

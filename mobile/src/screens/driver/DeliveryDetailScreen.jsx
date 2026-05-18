@@ -562,21 +562,55 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
     });
   };
 
-  const normalizePhone = (value) => String(value || '').replace(/[^0-9+]/g, '');
+  const normalizePhone = (value) => {
+    // Keep numbers and + sign, but remove other characters
+    const raw = String(value || '').replace(/[^0-9+]/g, '');
+    // Ensure it starts with + or 0, or has digits
+    return raw && /^\d|^\+/.test(raw) ? raw : '';
+  };
 
   const callCustomer = async () => {
-    const phone = normalizePhone(delivery?.contactPhone || delivery?.customerPhone);
-    if (!phone) {
+    const rawPhone = delivery?.contactPhone || delivery?.customerPhone;
+    if (!rawPhone) {
       Alert.alert('No phone number available.', 'Customer contact number is not provided.');
       return;
     }
+    
     try {
-      const url = `tel:${phone}`;
-      const canOpen = await Linking.canOpenURL(url);
-      if (!canOpen) throw new Error('dialer unavailable');
-      await Linking.openURL(url);
-    } catch {
-      Alert.alert('Unable to open phone dialer.', 'Please try again later.');
+      const phone = normalizePhone(rawPhone);
+      if (!phone) {
+        Alert.alert('Invalid phone number', 'The phone number format is invalid.');
+        return;
+      }
+
+      // Format for tel: URL — handle both +63 and 0 prefixes
+      let formattedPhone = phone;
+      if (formattedPhone.startsWith('0')) {
+        // Convert 0 prefix to +63 for international format
+        formattedPhone = '+63' + formattedPhone.slice(1);
+      } else if (!formattedPhone.startsWith('+')) {
+        // If neither + nor 0, assume it's missing country code
+        formattedPhone = '+63' + formattedPhone;
+      }
+
+      const telUrl = `tel:${formattedPhone}`;
+      const canOpen = await Linking.canOpenURL(telUrl);
+      
+      if (!canOpen) {
+        // Try with plain number as fallback
+        const fallbackUrl = `tel:${phone}`;
+        const canOpenFallback = await Linking.canOpenURL(fallbackUrl);
+        if (!canOpenFallback) {
+          Alert.alert('Dialer Not Available', 'Your device cannot open the phone dialer. Phone: ' + phone);
+          return;
+        }
+        await Linking.openURL(fallbackUrl);
+      } else {
+        await Linking.openURL(telUrl);
+      }
+    } catch (error) {
+      console.error('[callCustomer] Error:', error);
+      Alert.alert('Unable to open phone dialer.', 'Please try again or contact the customer manually.');
     }
   };
 
