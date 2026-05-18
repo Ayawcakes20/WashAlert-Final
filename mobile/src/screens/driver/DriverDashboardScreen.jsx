@@ -218,7 +218,8 @@ const DriverDashboardScreen = ({ navigation }) => {
                     </View>
                     <View style={styles.taskMeta}>
                        <Text style={styles.taskCustomer}>{item.contactName || item.customerName}</Text>
-                       <Text style={styles.taskStatus}>{cfg.label}</Text>
+                       <Text style={styles.taskOrderNum}>#{item.trackingNumber || item.id}</Text>
+                       <Text style={styles.taskStatus}>{cfg.label}{item.bookingDate ? ` · ${new Date(item.bookingDate).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}` : ''}</Text>
                     </View>
                     <Ionicons name="chevron-forward" size={18} color="#D1D5DB" />
                   </View>
@@ -446,8 +447,14 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.text,
   },
+  taskOrderNum: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.primary,
+    marginTop: 1,
+  },
   taskStatus: {
-    fontSize: 12,
+    fontSize: 11,
     color: colors.textTertiary,
     fontWeight: '600',
     marginTop: 1,

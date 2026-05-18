@@ -407,6 +407,7 @@ export default function OrderManagementPage() {
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [statusUpdatingId, setStatusUpdatingId] = useState<number | null>(null);
+  const [codCollecting, setCodCollecting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearchQuery = useDebouncedValue(searchQuery, 400);
   const [filterBranch, setFilterBranch] = useState(isAdmin ? "" : staffBranch);
@@ -648,6 +649,21 @@ export default function OrderManagementPage() {
       await loadOrders(Math.max(0, ordersPage - 1), true);
     } finally {
       setStatusUpdatingId(null);
+    }
+  };
+
+  const handleCollectCod = async (order: Order) => {
+    if (codCollecting) return;
+    setCodCollecting(true);
+    try {
+      const delivery = await deliveriesApi.track(order.trackingNumber);
+      await deliveriesApi.collectCod(delivery.id);
+      await loadOrders(Math.max(0, ordersPage - 1), true);
+      toast.success(`Cash collected for order ${order.trackingNumber}.`);
+    } catch (err: any) {
+      toast.error(err?.message || "Unable to record COD collection.");
+    } finally {
+      setCodCollecting(false);
     }
   };
 
@@ -1378,7 +1394,7 @@ export default function OrderManagementPage() {
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-xl border-slate-200 rounded-3xl p-0 overflow-hidden bg-[#F8FAFC] shadow-2xl [&>button:last-child]:text-white [&>button:last-child]:opacity-80 [&>button:last-child]:hover:opacity-100">
-          <div className="bg-gradient-to-br from-slate-900 to-brand-navy px-8 py-10 text-white border-b border-white/5">
+          <div className="bg-gradient-to-br from-slate-900 to-brand-navy px-8 py-10 pr-16 text-white border-b border-white/5">
             <DialogTitle className="text-3xl font-black tracking-tight flex items-center gap-3">
               <Plus className="h-8 w-8 text-blue-400" /> New Job Order
             </DialogTitle>
@@ -1516,7 +1532,7 @@ export default function OrderManagementPage() {
       <Dialog open={assignRiderOpen} onOpenChange={setAssignRiderOpen}>
         <DialogContent className="sm:max-w-md border-slate-200 rounded-3xl p-0 overflow-hidden bg-[#F8FAFC] shadow-2xl [&>button:last-child]:text-white [&>button:last-child]:opacity-80 [&>button:last-child]:hover:opacity-100">
           <div className="bg-gradient-to-br from-slate-900 to-brand-navy px-8 py-8 text-white border-b border-white/5">
-            <div className="flex items-center gap-4 mb-4">
+            <div className="flex items-center gap-4 mb-4 pr-10">
               <div className="h-12 w-12 rounded-2xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center shrink-0">
                 <User className="h-6 w-6 text-blue-400" />
               </div>
@@ -1543,7 +1559,7 @@ export default function OrderManagementPage() {
                   </div>
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-slate-400 font-bold uppercase tracking-wider">Total Due</span>
-                    <span className="font-black text-white">₱{riderOrder?.totalPrice?.toFixed(2)}</span>
+                    <span className="font-black text-white">₱{(riderOrder?.finalPrice ?? riderOrder?.totalPrice)?.toFixed(2) ?? '—'}</span>
                   </div>
                   {bookDate && (
                     <div className="flex justify-between items-center text-xs">
@@ -1680,6 +1696,13 @@ export default function OrderManagementPage() {
                         <p className="text-sm font-black text-amber-900">COD Collection Required</p>
                         <p className="text-xs font-bold text-amber-700/80">Rider has not yet confirmed cash collection.</p>
                       </div>
+                      <button
+                        className="shrink-0 text-xs font-black text-amber-900 bg-amber-200 hover:bg-amber-300 px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+                        disabled={codCollecting}
+                        onClick={() => void handleCollectCod(selectedOrder)}
+                      >
+                        {codCollecting ? "Recording…" : "Mark Collected"}
+                      </button>
                     </div>
                   )}
 
@@ -1880,7 +1903,7 @@ export default function OrderManagementPage() {
                       <div>
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total Amount Due</p>
                         <p className="text-2xl font-black text-white mt-1">
-                          ₱{selectedOrder.totalPrice != null ? Number(selectedOrder.totalPrice).toFixed(2) : (selectedOrder.confirmedPrice != null ? Number(selectedOrder.confirmedPrice).toFixed(2) : '—')}
+                          ₱{selectedOrder.finalPrice != null ? Number(selectedOrder.finalPrice).toFixed(2) : (selectedOrder.totalPrice != null ? Number(selectedOrder.totalPrice).toFixed(2) : (selectedOrder.confirmedPrice != null ? Number(selectedOrder.confirmedPrice).toFixed(2) : '—'))}
                         </p>
                       </div>
                       {selectedOrder.actualWeightKg != null && (
