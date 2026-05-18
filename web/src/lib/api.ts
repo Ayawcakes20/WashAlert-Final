@@ -603,6 +603,10 @@ export const deliveriesApi = {
       method: "PUT",
       body: payload,
     }),
+  collectCod: (id: number) =>
+    apiRequest<DeliveryRecord>(`/api/deliveries/${id}/collect-cod`, {
+      method: "PATCH",
+    }),
 };
 
 export const inventoryApi = {

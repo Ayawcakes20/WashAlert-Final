@@ -387,6 +387,14 @@ public class JobOrderService {
             }
             jo.setStatus(req.status());
             if (req.status() == JobOrderStatus.WASHING) {
+                // Block WASHING for GCash orders that have not paid yet.
+                // COD orders may proceed to washing before collection.
+                String pmCheck = jo.getPaymentMethod();
+                if (pmCheck != null && pmCheck.toUpperCase().contains("GCASH") && !jo.isPaid()) {
+                    throw new IllegalStateException(
+                            "GCash payment must be confirmed before washing can start. "
+                            + "Please wait for the customer's GCash payment to be verified.");
+                }
                 int detQty = (jo.getDetergentQuantity() != null && jo.getDetergentQuantity() > 0)
                         ? jo.getDetergentQuantity() : 1;
                 int conQty = (jo.getConditionerQuantity() != null && jo.getConditionerQuantity() > 0)

@@ -111,6 +111,32 @@ const ChangePasswordScreen = ({ navigation, route }) => {
               <Ionicons name={showNewPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.textTertiary} />
             </TouchableOpacity>
           </View>
+          <View style={styles.checklist}>
+            <View style={styles.checklistRow}>
+              <Ionicons
+                name={newPassword.length >= 8 ? 'checkmark-circle' : 'ellipse-outline'}
+                size={13}
+                color={newPassword.length >= 8 ? colors.success || '#10B981' : colors.textTertiary}
+              />
+              <Text style={[styles.checklistText, newPassword.length >= 8 && styles.checklistTextMet]}>At least 8 characters</Text>
+            </View>
+            <View style={styles.checklistRow}>
+              <Ionicons
+                name={/[A-Za-z]/.test(newPassword) ? 'checkmark-circle' : 'ellipse-outline'}
+                size={13}
+                color={/[A-Za-z]/.test(newPassword) ? colors.success || '#10B981' : colors.textTertiary}
+              />
+              <Text style={[styles.checklistText, /[A-Za-z]/.test(newPassword) && styles.checklistTextMet]}>Contains a letter</Text>
+            </View>
+            <View style={styles.checklistRow}>
+              <Ionicons
+                name={/\d/.test(newPassword) ? 'checkmark-circle' : 'ellipse-outline'}
+                size={13}
+                color={/\d/.test(newPassword) ? colors.success || '#10B981' : colors.textTertiary}
+              />
+              <Text style={[styles.checklistText, /\d/.test(newPassword) && styles.checklistTextMet]}>Contains a number</Text>
+            </View>
+          </View>
         </View>
 
         <View style={styles.field}>
@@ -164,6 +190,10 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   error: { marginTop: 6, color: colors.error, fontSize: 12 },
+  checklist: { marginTop: 8, gap: 4 },
+  checklistRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  checklistText: { fontSize: 12, color: colors.textTertiary },
+  checklistTextMet: { color: colors.success || '#10B981' },
   button: {
     marginTop: 18,
     height: 50,

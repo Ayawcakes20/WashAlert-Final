@@ -525,6 +525,7 @@ const AddressPickerSheet = ({
               <GooglePlacesAutocomplete
                 ref={autocompleteRef}
                 placeholder="Search street, neighborhood, landmark…"
+                textInputProps={{ placeholderTextColor: colors.textTertiary }}
                 onPress={handlePlaceSelect}
                 query={{
                   key: GOOGLE_MAPS_API_KEY,

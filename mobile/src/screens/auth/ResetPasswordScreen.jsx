@@ -19,6 +19,7 @@ const ResetPasswordScreen = ({ navigation, route }) => {
   const [pw, setPw] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPw, setShowPw] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -133,9 +134,16 @@ const ResetPasswordScreen = ({ navigation, route }) => {
                 placeholderTextColor={colors.textSecondary}
                 value={confirm}
                 onChangeText={(val) => { setConfirm(val); setErrors(p => ({ ...p, confirm: '' })); }}
-                secureTextEntry
+                secureTextEntry={!showConfirm}
                 autoCapitalize="none"
               />
+              <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)}>
+                <Ionicons
+                  name={showConfirm ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
             </View>
             {errors.confirm ? <Text style={styles.errorText}>{errors.confirm}</Text> : null}
           </View>

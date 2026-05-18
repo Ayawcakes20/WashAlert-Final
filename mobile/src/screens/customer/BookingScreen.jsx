@@ -18,12 +18,12 @@ const SERVICE_MODES = [
   { id: 'PICKUP_ONLY',   label: 'Pickup Only',   hint: 'We pick up — you get at branch',icon: 'truck-outline',   backendServiceType: 'PICKUP_DELIVERY', needsAddress: true  },
 ];
 const DET_OPTS = [
-  { id: 'none',  label: 'None',                       price: 0  },
+  { id: 'none',  label: 'Customer Provided',           price: 0  },
   { id: 'surf',  label: 'Surf (Basic Det.)',            price: 25 },
   { id: 'ariel', label: 'Ariel (Premium Det.)',         price: 30 },
 ];
 const FAB_OPTS = [
-  { id: 'none',  label: 'None',                        price: 0  },
+  { id: 'none',  label: 'Customer Provided',           price: 0  },
   { id: 'charm', label: 'Charm Fabcon (Basic)',         price: 15 },
   { id: 'downy', label: 'Downy (Premium)',              price: 25 },
 ];
@@ -119,6 +119,7 @@ export default function BookingScreen({ route, navigation }) {
   const [toastMsg, setToastMsg]   = useState('');
   const scrollRef                 = useRef(null); // ref for main ScrollView — used to reset scroll on step change
   const prevStepRef               = useRef(null); // tracks previous step so scroll only fires on a real step change
+  const submittingRef             = useRef(false); // sync guard — prevents duplicate submissions even if setSub hasn't re-rendered yet
   const [branches_, setBranches]  = useState([]);
   const [services_, setServices]  = useState([]);
   const [branch, setBranch]       = useState(null);
@@ -367,6 +368,7 @@ export default function BookingScreen({ route, navigation }) {
   };
 
   const confirm_ = async()=>{
+    if(submittingRef.current) return;
     if(needsAddr&&!address?.address){ Alert.alert('Address Required','Please set an address.',[{text:'Set',onPress:()=>{setStep(2);setAddrSheet(true);}},{text:'Cancel',style:'cancel'}]); return; }
     // Check if any selected supply is out of stock; ask user to confirm or cancel.
     let submitDet = det, submitFab = fab;
@@ -399,6 +401,7 @@ export default function BookingScreen({ route, navigation }) {
         // Non-fatal: proceed with original selections if check fails
       }
     }
+    submittingRef.current = true;
     setSub(true);
     try{
       const dk=needsAddr&&address?.latitude&&branch?.latitude?distKm(branch.latitude,branch.longitude,address.latitude,address.longitude):0;
@@ -459,7 +462,7 @@ export default function BookingScreen({ route, navigation }) {
       } else {
         Alert.alert('Booking Failed', msg);
       }
-    }finally{ setSub(false); }
+    }finally{ submittingRef.current = false; setSub(false); }
   };
 
   const vis = VIS_MAP[step]||1;

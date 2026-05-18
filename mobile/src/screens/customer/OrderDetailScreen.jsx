@@ -644,6 +644,9 @@ export default function OrderDetailScreen({ route, navigation }) {
         {order.delivery&&(
           <Accordion title="Delivery Information" icon="location-outline">
             <Row label="Address" value={order.delivery.address}/>
+            {order.deliveryUnitFloor ? <Row label="Unit / Floor" value={order.deliveryUnitFloor}/> : null}
+            {order.deliveryContactName ? <Row label="Contact Name" value={order.deliveryContactName}/> : null}
+            {order.deliveryContactPhone ? <Row label="Contact Phone" value={order.deliveryContactPhone}/> : null}
             <Row label="ETA" value={order.delivery.eta ? new Date(order.delivery.eta).toLocaleString() : 'Calculating'}/>
           </Accordion>
         )}

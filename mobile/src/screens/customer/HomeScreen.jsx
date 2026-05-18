@@ -208,7 +208,7 @@ export default function HomeScreen({ navigation }) {
       const res = await bookingsApi.getMyBookings('all');
       const all = res.bookings || [];
       const active = all.filter(o => ACTIVE_STATUSES.includes(normalize(o.status)));
-      setActive(active);
+      setActive(active.slice(0, 3));
     } catch (e) {
       console.error(e);
     } finally {
