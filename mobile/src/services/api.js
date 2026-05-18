@@ -1451,6 +1451,23 @@ export const notifications = {
 };
 
 export const payments = {
+  /**
+   * Fetch the latest payment status for a given tracking number from the backend.
+   * Returns { status, method, amount } or null if no payment record exists yet.
+   * Used by PaymentSuccessScreen to confirm payment before showing the final state.
+   */
+  trackPayment: async (trackingNumber) => {
+    if (!trackingNumber) return null;
+    try {
+      const result = await apiRequest(
+        `/api/payments/track/${encodeURIComponent(String(trackingNumber).trim().toUpperCase())}`
+      );
+      return result || null;
+    } catch {
+      return null;
+    }
+  },
+
   initiateGcashCheckout: async (orderRef) => {
     const resolveTrackingNumber = async () => {
       const normalizeTracking = (value) => {

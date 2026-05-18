@@ -962,6 +962,14 @@ public class JobOrderService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not the assigned pickup rider.");
         }
 
+        // Schedule guard: driver cannot start pickup before the booking date.
+        LocalDate bookingDate = order.getBookingDate();
+        if (bookingDate != null && bookingDate.isAfter(LocalDate.now())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "This pickup is scheduled for " + bookingDate
+                    + ". You can only start pickup on or after the day of the booking.");
+        }
+
         order.setStatus(JobOrderStatus.EN_ROUTE_TO_CUSTOMER);
         JobOrder saved = repo.save(order);
 
@@ -1074,6 +1082,14 @@ public class JobOrderService {
         if (order.getAssignedDeliveryDriver() == null
                 || !order.getAssignedDeliveryDriver().getId().equals(driver.getId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not the assigned delivery rider.");
+        }
+
+        // Schedule guard: driver cannot start delivery before the booking date.
+        LocalDate bookingDate = order.getBookingDate();
+        if (bookingDate != null && bookingDate.isAfter(LocalDate.now())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "This delivery is scheduled for " + bookingDate
+                    + ". You can only start delivery on or after the day of the booking.");
         }
 
         order.setStatus(JobOrderStatus.OUT_FOR_DELIVERY);

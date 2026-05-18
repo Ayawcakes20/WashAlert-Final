@@ -11,6 +11,7 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../services/firebase';
+import { useFocusEffect } from '@react-navigation/native';
 import PriceConfirmationModal from '../../components/PriceConfirmationModal';
 
 const { width: SW } = Dimensions.get('window');
@@ -159,10 +160,22 @@ export default function OrderDetailScreen({ route, navigation }) {
     try {
       const unsub = onSnapshot(doc(db, 'orders', String(tn)), snap => {
         if (snap.exists()) {
-          const raw = (snap.data().status || '').toLowerCase();
+          const data = snap.data();
+          const raw = (data.status || '').toLowerCase();
           const mapped = normalize(raw);
-          if (mapped && mapped !== order?.status)
-            setOrder(prev => prev ? { ...prev, status: mapped } : prev);
+          setOrder(prev => {
+            if (!prev) return prev;
+            const updates = {};
+            if (mapped && mapped !== prev.status) updates.status = mapped;
+            // Sync isPaid from Firestore so Pay Now button hides immediately
+            // after the webhook fires without needing a full reload.
+            const firestoreIsPaid = data.isPaid === true || data.paymentStatus === 'PAID' || data.paymentStatus === 'VERIFIED';
+            if (firestoreIsPaid && !prev.isPaid) {
+              updates.isPaid = true;
+              updates.paymentStatus = 'Paid';
+            }
+            return Object.keys(updates).length > 0 ? { ...prev, ...updates } : prev;
+          });
         }
       }, err => console.warn('[OrderDetail] Firestore listener failed:', err?.message || err));
       return () => unsub();
@@ -171,6 +184,14 @@ export default function OrderDetailScreen({ route, navigation }) {
       return undefined;
     }
   }, [order?.id, order?.trackingNumber]);
+
+  // Re-fetch the order whenever the screen regains focus (e.g., returning from
+  // the GCash browser). This ensures payment status is fresh from the backend.
+  useFocusEffect(
+    React.useCallback(() => {
+      if (orderId) load();
+    }, [orderId])
+  );
 
   const load = async () => {
     try {
@@ -266,11 +287,19 @@ export default function OrderDetailScreen({ route, navigation }) {
     try {
       const { checkoutUrl } = await payments.initiateGcashCheckout(order);
       const url = String(checkoutUrl || '').trim();
-      if (!url || !/^https?:\/\//i.test(url)) throw new Error('No checkout URL');
+      if (!url || !/^https?:\/\//i.test(url)) throw new Error('No checkout URL returned.');
       try { await WebBrowser.openBrowserAsync(url); }
       catch { if (await Linking.canOpenURL(url)) await Linking.openURL(url); }
     } catch (e) {
-      Alert.alert('Error', e?.message || 'Could not initiate payment.');
+      const msg = String(e?.message || '');
+      // Show a friendly message for all GCash errors — do not expose raw server messages.
+      const isUserFacing = msg.includes('already paid') || msg.includes('price has not been set') || msg.includes('tracking number');
+      Alert.alert(
+        'Checkout Issue',
+        isUserFacing
+          ? msg
+          : 'Unable to start GCash checkout right now. Please try again or choose another payment option.'
+      );
     }
   };
 
@@ -588,8 +617,9 @@ export default function OrderDetailScreen({ route, navigation }) {
           />
           <Row label="Payment" value={order.paymentMethod || '—'}/>
 
-          {/* ADDED: Pay Now button for GCash */}
+          {/* ADDED: Pay Now button for GCash — hidden if already paid (by paymentStatus OR isPaid flag) */}
           {String(order.paymentMethod || '').toLowerCase() === 'gcash' &&
+           !order.isPaid &&
            String(order.paymentStatus || '').toLowerCase() !== 'paid' &&
            ['price_approved', 'washing', 'ready_for_delivery', 'delivering'].includes(ns) && (
             <TouchableOpacity
