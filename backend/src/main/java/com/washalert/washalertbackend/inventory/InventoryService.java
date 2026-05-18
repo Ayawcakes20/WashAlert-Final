@@ -32,6 +32,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @Slf4j
@@ -39,6 +40,21 @@ public class InventoryService {
     private static final BigDecimal FORECAST_DETERGENT_PER_KG = new BigDecimal("0.03");
     private static final BigDecimal FORECAST_CONDITIONER_PER_KG = new BigDecimal("0.02");
     private static final BigDecimal DEFAULT_ORDER_WEIGHT_KG = new BigDecimal("5.00");
+    private static final Set<String> NO_SUPPLY_LABELS = Set.of(
+            "none",
+            "customer provided",
+            "customer-provided",
+            "customer supplied",
+            "no detergent",
+            "no fabric conditioner",
+            "no fabcon",
+            "no conditioner",
+            "without detergent",
+            "without fabric conditioner",
+            "own detergent",
+            "own fabcon",
+            "own fabric conditioner"
+    );
 
     private static final java.util.Map<String, String> CANONICAL_ITEM_NAMES = new java.util.LinkedHashMap<>() {{
         put("surf", "Surf Detergent");
@@ -89,10 +105,7 @@ public class InventoryService {
      * @throws IllegalArgumentException with a clear user-facing message if stock is insufficient
      */
     public void validateConsumableAvailability(String branch, String rawItemName, int requiredQty) {
-        if (rawItemName == null || rawItemName.isBlank()) return;
-        String lower = rawItemName.trim().toLowerCase(Locale.ROOT);
-        if (lower.equals("none") || lower.equals("no detergent") || lower.equals("no fabric conditioner")
-                || lower.equals("customer provided")) return;
+        if (isNoSupplySelection(rawItemName)) return;
         if (requiredQty <= 0) return;
 
         String resolvedName = resolveInventoryItemName(rawItemName);
@@ -564,9 +577,14 @@ public class InventoryService {
     }
 
     private boolean hasConsumableSelection(String value) {
-        if (value == null) return false;
-        String normalized = value.trim().toLowerCase();
-        return !normalized.isBlank() && !normalized.equals("none") && !normalized.equals("customer provided");
+        return !isNoSupplySelection(value);
+    }
+
+    private boolean isNoSupplySelection(String value) {
+        if (value == null) return true;
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) return true;
+        return NO_SUPPLY_LABELS.contains(normalized);
     }
 
     private boolean isDetergentItem(InventoryItemResponse item) {
