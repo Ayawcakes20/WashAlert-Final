@@ -16,5 +16,6 @@ public record UserAdminResponse(
         LocalDateTime invitedAt,
         LocalDateTime activatedAt,
         LocalDateTime createdAt,
-        boolean mustChangePassword
+        boolean mustChangePassword,
+        String mobileNumber
 ) {}

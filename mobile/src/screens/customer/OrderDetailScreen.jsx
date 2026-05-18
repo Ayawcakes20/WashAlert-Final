@@ -43,12 +43,16 @@ const STATUS_BADGE = {
 const normalize = (s) => {
   const raw = String(s||'').trim().toLowerCase().replace(/ /g,'_');
   const map = {
-    received:'received', pending:'pending',
+    received:'received', order_received:'received', pending:'pending',
     awaiting_price:'awaiting_price', awaiting_price_confirmation:'awaiting_price',
-    price_approved:'washing',
+    price_confirmed:'awaiting_price', price_approved:'washing',
     washing:'washing', drying:'drying', ready:'ready',
+    assigned_for_pickup:'delivering', en_route_to_customer:'delivering',
+    laundry_collected:'delivering', en_route_to_branch:'delivering',
     pending_pickup:'ready', en_route_to_pickup:'delivering',
     picked_up:'delivering', in_transit:'delivering', delivering:'delivering',
+    assigned_for_delivery:'delivering', out_for_delivery:'delivering',
+    collection_failed:'delivering',
     delivered:'delivered', cancelled:'cancelled', failed:'cancelled',
   };
   return map[raw] || 'pending';
@@ -532,7 +536,7 @@ export default function OrderDetailScreen({ route, navigation }) {
         </View>
 
 
-        {/* DRIVER CARD — only when delivering */}
+        {/* DRIVER CARD — shown when driver is assigned or active */}
         {driverVisible && order.delivery && (
           <View style={styles.driverCard}>
             <View style={styles.driverTop}>

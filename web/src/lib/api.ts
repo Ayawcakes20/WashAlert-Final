@@ -135,6 +135,7 @@ export type UserAdminRecord = {
   activatedAt: string | null;
   createdAt: string;
   mustChangePassword: boolean;
+  mobileNumber?: string | null;
 };
 
 export type DeliveryRecord = {

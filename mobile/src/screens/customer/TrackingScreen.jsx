@@ -105,7 +105,17 @@ export default function TrackingScreen({ route, navigation }) {
         trackingRef,
         (snap) => {
           if (!snap.exists()) {
-            setTrackingWarning('Tracking unavailable for this order right now.');
+            // Document missing = driver not yet broadcasting GPS.
+            // If the order status shows driver assigned, give a friendly message.
+            const s = String(order?.status || '').toUpperCase();
+            const driverAssigned = [
+              'ASSIGNED_FOR_PICKUP', 'ASSIGNED_FOR_DELIVERY'
+            ].includes(s);
+            setTrackingWarning(
+              driverAssigned
+                ? 'Driver assigned. Live tracking starts when pickup or delivery begins.'
+                : 'Driver location not available yet.'
+            );
             return;
           }
           const d = snap.data() || {};

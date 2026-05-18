@@ -162,7 +162,7 @@ const DriverDashboardScreen = ({ navigation }) => {
                    <Text style={styles.activeLabelText}>ACTIVE TASK</Text>
                 </View>
                 <Text style={styles.bannerSubLabel}>PERSON TO MEET</Text>
-                <Text style={styles.bannerCustomer}>{active.contactName || active.customerName}</Text>
+                <Text style={styles.bannerCustomer}>{active.customerName || active.contactName || 'Customer'}</Text>
                 <View style={styles.bannerStatusBadge}>
                    <Text style={styles.bannerStatusText}>{getStatusCfg(active.status).label}</Text>
                 </View>
@@ -217,7 +217,7 @@ const DriverDashboardScreen = ({ navigation }) => {
                        />
                     </View>
                     <View style={styles.taskMeta}>
-                       <Text style={styles.taskCustomer}>{item.contactName || item.customerName}</Text>
+                       <Text style={styles.taskCustomer}>{item.customerName || item.contactName || 'Customer'}</Text>
                        <Text style={styles.taskOrderNum}>#{item.trackingNumber || item.id}</Text>
                        <Text style={styles.taskStatus}>
                          {cfg.label}

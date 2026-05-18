@@ -902,9 +902,15 @@ export default function OrderManagementPage() {
   }, [debouncedSearchQuery, filterBranch, filterPaymentMethod, filterPaymentStatus]);
 
   const uniqueBranches = useMemo(() => {
-    const set = new Set(orders.map((o) => o.branch).filter(Boolean));
-    if (filterBranch) set.add(filterBranch);
-    return Array.from(set).sort();
+    // Dedupe by normalized (trimmed, lowercased) name so variant spellings collapse.
+    const seen = new Map<string, string>(); // normalizedKey → canonical display name
+    const allNames = orders.map((o) => o.branch).filter(Boolean) as string[];
+    if (filterBranch) allNames.push(filterBranch);
+    for (const name of allNames) {
+      const key = name.trim().toLowerCase();
+      if (!seen.has(key)) seen.set(key, name.trim());
+    }
+    return Array.from(seen.values()).sort();
   }, [orders, filterBranch]);
   const totalTablePages = Math.max(1, Math.ceil(filteredOrders.length / tablePageSize));
   const safeTablePage = Math.min(tablePage, totalTablePages);
@@ -2037,6 +2043,12 @@ export default function OrderManagementPage() {
                         <Eye className="mr-2 h-4 w-4" /> Receipt
                       </Button>
                     </>
+                  ) : ['CANCELLED', 'FAILED'].includes(selectedOrder.status) ? (
+                    <div className="w-full bg-red-50 border border-red-200 rounded-lg p-3 text-center">
+                      <p className="text-[11px] font-bold text-red-500 uppercase tracking-widest italic">
+                        This order has been {selectedOrder.status === 'CANCELLED' ? 'cancelled' : 'failed'} and cannot be modified.
+                      </p>
+                    </div>
                   ) : (
                     <>
                       {(() => {
@@ -2096,9 +2108,11 @@ export default function OrderManagementPage() {
                     </>
                   )}
 
-                  <Button variant="destructive" className="font-black rounded-xl h-14 px-8" onClick={() => void submitCancel()}>
-                    Cancel Order
-                  </Button>
+                  {!['CANCELLED', 'FAILED', 'DELIVERED'].includes(selectedOrder.status) && (
+                    <Button variant="destructive" className="font-black rounded-xl h-14 px-8" onClick={() => void submitCancel()}>
+                      Cancel Order
+                    </Button>
+                  )}
                 </div>
 
                 {selectedOrder.status === 'PRICE_CONFIRMED' && !selectedOrder.priceConfirmedByCustomer && (

@@ -108,20 +108,8 @@ public class PricingService {
             return;
         }
 
-        int maxLoads = computeLoadCount(serviceName, weightKg);
-        if (maxLoads <= 0) return;
-
-        boolean detActive = !isNoSupply(detergent);
-        boolean fabActive = !isNoSupply(fabcon);
-
-        if (detActive && detQty > maxLoads) {
-            throw new IllegalArgumentException(
-                    "This booking only needs up to " + maxLoads + " pack(s) based on the number of loads.");
-        }
-        if (fabActive && conQty > maxLoads) {
-            throw new IllegalArgumentException(
-                    "This booking only needs up to " + maxLoads + " pack(s) based on the number of loads.");
-        }
+        // No load-count cap — customers may choose their preferred quantity.
+        // Only the dry-only guard (above) is enforced server-side.
     }
 
     /** Returns true when the supply value means "no supply selected". Handles null, blank, "none", and "customer provided". */
