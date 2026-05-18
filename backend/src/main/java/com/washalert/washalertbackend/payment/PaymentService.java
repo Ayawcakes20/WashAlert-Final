@@ -204,11 +204,12 @@ public class PaymentService {
         }
 
         payment.setMethod(PaymentMethod.GCASH);
-        
-        // Resolve amount with fallback chain (totalPrice -> finalPrice -> servicePrice)
-        BigDecimal resolvedAmount = order.getTotalPrice();
+
+        // Resolve amount: finalPrice (staff-confirmed) wins over totalPrice (estimated at booking).
+        // Falls back to totalPrice if finalPrice is not yet set, then servicePrice as last resort.
+        BigDecimal resolvedAmount = order.getFinalPrice();
         if (resolvedAmount == null || resolvedAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            resolvedAmount = order.getFinalPrice();
+            resolvedAmount = order.getTotalPrice();
         }
         if (resolvedAmount == null || resolvedAmount.compareTo(BigDecimal.ZERO) <= 0) {
             resolvedAmount = order.getServicePrice();

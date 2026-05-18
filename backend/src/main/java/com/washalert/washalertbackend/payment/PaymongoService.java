@@ -38,10 +38,10 @@ public class PaymongoService {
             throw new IllegalStateException("PayMongo secret key is not configured. Set PAYMONGO_SECRET_KEY.");
         }
 
-        // Resolve amount: totalPrice → finalPrice → servicePrice (fallback chain for newly created orders)
-        java.math.BigDecimal amount = order.getTotalPrice();
+        // Resolve amount: finalPrice (staff-confirmed) wins over totalPrice (estimated at booking).
+        java.math.BigDecimal amount = order.getFinalPrice();
         if (amount == null || amount.compareTo(java.math.BigDecimal.ZERO) <= 0) {
-            amount = order.getFinalPrice();
+            amount = order.getTotalPrice();
         }
         if (amount == null || amount.compareTo(java.math.BigDecimal.ZERO) <= 0) {
             amount = order.getServicePrice();
