@@ -233,23 +233,23 @@ const CONDITIONER_OPTIONS = [
 const DEMO_DELIVERIES = [
   {
     id: '1',
-    trackingNumber: 'WA-2024-001',
-    customerName: 'John Doe',
-    deliveryAddress: '123 Main St, Brgy. Commonwealth, QC',
+    trackingNumber: 'WA-DEMO-001',
+    customerName: 'Demo Customer A',
+    deliveryAddress: '123 Sample St, Quezon City',
     branch: 'Makati Branch',
-    driverName: 'Mark Villanueva',
-    driverPhone: '09171234567',
+    driverName: 'Demo Driver A',
+    driverPhone: '',
     status: 'PENDING_PICKUP',
     estimatedArrivalAt: null,
   },
   {
     id: '2',
-    trackingNumber: 'WA-2024-002',
-    customerName: 'Jane Smith',
-    deliveryAddress: '456 Cubao Ave, QC',
-    branch: 'Triplets Cubao',
-    driverName: 'Leo Aquino',
-    driverPhone: '09181234567',
+    trackingNumber: 'WA-DEMO-002',
+    customerName: 'Demo Customer B',
+    deliveryAddress: '456 Sample Ave, Quezon City',
+    branch: 'Chestnut Branch',
+    driverName: 'Demo Driver B',
+    driverPhone: '',
     status: 'IN_TRANSIT',
     estimatedArrivalAt: null,
   },
@@ -1270,6 +1270,7 @@ export const deliveries = {
           error,
           'Delivery endpoints are restricted for this account role in the current backend policy.'
         );
+        throw error;
       }
       const fallback = DEMO_DELIVERIES.find((d) => String(d.id) === String(id));
       return fallback ? mapDelivery(fallback) : null;
