@@ -910,7 +910,7 @@ export const createOrder = async (orderData) => {
     customerName: user?.fullName || 'Mobile Customer',
     branch: branch?.name || 'Makati Branch',
     branchId: Number(orderData.branchId || branch?.id || 0) || null,
-    customerPhone: user?.phone || '09170000000',
+    customerPhone: user?.phone || '',
     customerEmail: user?.email || '',
     serviceType: serviceTypeBackend,
     preferredDate: toIsoDate(orderData.scheduleDate),

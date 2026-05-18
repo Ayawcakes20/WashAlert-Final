@@ -117,9 +117,10 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
             return;
           }
         } catch (paymentErr) {
+          console.warn('[PriceModal] GCash checkout failed:', paymentErr?.message);
           Alert.alert(
             'Checkout Issue',
-            `Could not start GCash session: ${paymentErr.message}\n\nYou can pay later via order history.`,
+            'Unable to start GCash checkout right now. Please try again or choose another payment option.\n\nYou can also pay later via your order history.',
             [{ text: 'OK', onPress: () => onConfirmed?.() }]
           );
           return;
@@ -169,9 +170,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
   };
 
   const handleCallBranch = () => {
-    Linking.openURL('tel:09691737924').catch(() =>
-      Alert.alert('Error', 'Cannot open dialer.')
-    );
+    Alert.alert('Contact Branch', 'No contact number on file. Please use the in-app chat to reach the branch.');
   };
 
   if (!fullOrderData) return null;

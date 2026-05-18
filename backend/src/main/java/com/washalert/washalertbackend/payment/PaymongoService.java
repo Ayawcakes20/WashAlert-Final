@@ -121,7 +121,7 @@ public class PaymongoService {
                     "Unable to start GCash checkout right now. Please try again or choose another payment option.");
         } catch (Exception ex) {
             log.error("[PAYMONGO] Critical failure tracking={}", order.getTrackingNumber(), ex);
-            throw new IllegalStateException("Failed to initiate GCash checkout: " + ex.getMessage());
+            throw new IllegalStateException("Unable to start GCash checkout right now. Please try again later.");
         }
     }
 }

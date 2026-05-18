@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ActivityIndicator, Linking, Animated, Dimensions,
+  ActivityIndicator, Alert, Linking, Animated, Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -186,9 +186,21 @@ export default function TrackingScreen({ route, navigation }) {
   const driverName    = delivData?.driverName || order?.delivery?.driver || order?.assignedDriverName || 'Assigned Driver';
   const driverPhoto   = delivData?.driverPhotoUrl || order?.delivery?.driverPhotoUrl || order?.assignedDriverPhotoUrl || null;
 
-  const callDriver    = () => driverPhone && Linking.openURL(`tel:${driverPhone.replace(/[^0-9+]/g, '')}`);
-  const smsDriver     = () => driverPhone && Linking.openURL(`sms:${driverPhone.replace(/[^0-9+]/g, '')}`);
-  const headline = 
+  const callDriver = async () => {
+    const p = driverPhone.replace(/[^0-9+]/g, '');
+    if (!p) { Alert.alert('No Contact', 'No contact number available.'); return; }
+    const url = `tel:${p}`;
+    if (await Linking.canOpenURL(url)) await Linking.openURL(url);
+    else Alert.alert('Error', 'Your device cannot open this action.');
+  };
+  const smsDriver = async () => {
+    const p = driverPhone.replace(/[^0-9+]/g, '');
+    if (!p) { Alert.alert('No Contact', 'No contact number available.'); return; }
+    const url = `sms:${p}`;
+    if (await Linking.canOpenURL(url)) await Linking.openURL(url);
+    else Alert.alert('Error', 'Your device cannot open this action.');
+  };
+  const headline =
     order.status === 'delivering' 
       ? (['LAUNDRY_COLLECTED', 'EN_ROUTE_TO_BRANCH'].includes(order.deliveryWorkflowStatus || '') ? 'Heading to our branch' : 'Heading to your location')
       : (STATUS_HEADLINE[statusUpper] || 'Tracking your order…');
