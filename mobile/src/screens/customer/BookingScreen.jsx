@@ -404,12 +404,17 @@ export default function BookingScreen({ route, navigation }) {
         // Non-fatal: proceed with original selections if check fails
       }
     }
+    // Source-first override: if source is not 'shop', force none regardless of stale item state.
+    if (detSource !== 'shop') submitDet = 'none';
+    if (fabSource !== 'shop') submitFab = 'none';
     submittingRef.current = true;
     setSub(true);
     try{
       const dk=needsAddr&&address?.latitude&&branch?.latitude?distKm(branch.latitude,branch.longitude,address.latitude,address.longitude):0;
       const _svcPrice  = getServiceBasePrice(service, loadSize === 'LARGE' ? 8 : 5);
-      const _supPrice  = ((DET_OPTS.find(o=>o.id===submitDet)?.price||0) * (submitDet==='none'?0:detQty)) + ((FAB_OPTS.find(o=>o.id===submitFab)?.price||0) * (submitFab==='none'?0:fabQty));
+      const _supDet = submitDet !== 'none' ? Math.max(1, detQtyMap[submitDet] ?? 1) : 0;
+      const _supFab = submitFab !== 'none' ? Math.max(1, fabQtyMap[submitFab] ?? 1) : 0;
+      const _supPrice  = ((DET_OPTS.find(o=>o.id===submitDet)?.price||0) * _supDet) + ((FAB_OPTS.find(o=>o.id===submitFab)?.price||0) * _supFab);
       const _rushPrice = rush ? 150 : 0;
       const _delPrice  = needsAddr ? deliveryFee : 0;
       const r=await createOrder({
@@ -422,9 +427,9 @@ export default function BookingScreen({ route, navigation }) {
         scheduleDate:schDate,
         scheduleTime:schTime,
         detergent:DET_OPTS.find(o=>o.id===submitDet)?.label||'Customer Provided',
-        detergentQuantity: submitDet === 'none' ? 0 : detQty,
+        detergentQuantity: _supDet,
         conditioner:FAB_OPTS.find(o=>o.id===submitFab)?.label||'Customer Provided',
-        conditionerQuantity: submitFab === 'none' ? 0 : fabQty,
+        conditionerQuantity: _supFab,
         estimatedWeightKg: loadSize === 'LARGE' ? 8 : 5,
         delivery: needsAddr,
         isRush:rush,
