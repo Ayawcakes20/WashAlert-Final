@@ -203,7 +203,7 @@ export default function BookingScreen({ route, navigation }) {
   useEffect(()=>{
     if(!branch||!schDate){ setSlots([]); setSchTime(null); return; }
     (async()=>{
-      try{ setSlotsLoad(true); const raw=await bookings.getAvailableSlots(branch.name,schDate); const now=new Date(); const isToday=schDate.toDateString()===now.toDateString(); const s=isToday?raw.map(sl=>{ if(!sl.available) return sl; const parts=(sl.label||'').split(':'); const h=parseInt(parts[0],10); const m=parseInt(parts[1]??'0',10); const slotTime=new Date(); slotTime.setHours(h,m,0,0); return slotTime<=now?{...sl,available:false,pastSlot:true}:sl; }):raw; setSlots(s); const f=s.find(x=>x.available); setSchTime(p=>s.find(x=>x.label===p&&x.available)?p:(f?.label||null)); }
+      try{ setSlotsLoad(true); const raw=await bookings.getAvailableSlots(branch.name,schDate); const now=new Date(); const isToday=schDate.toDateString()===now.toDateString(); const parseSlotStart=(label)=>{const start=(label||'').split(' - ')[0].trim();const match=start.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);if(!match)return null;let h=parseInt(match[1],10);const m=parseInt(match[2],10);const period=match[3].toUpperCase();if(period==='PM'&&h!==12)h+=12;if(period==='AM'&&h===12)h=0;return{h,m};}; const s=isToday?raw.map(sl=>{ if(!sl.available) return sl; const parsed=parseSlotStart(sl.label); if(!parsed) return sl; const slotTime=new Date(); slotTime.setHours(parsed.h,parsed.m,0,0); return slotTime<=now?{...sl,available:false,pastSlot:true}:sl; }):raw; setSlots(s); const f=s.find(x=>x.available); setSchTime(p=>s.find(x=>x.label===p&&x.available)?p:(f?.label||null)); }
       catch{ setSlots([]); } finally{ setSlotsLoad(false); }
     })();
   },[branch,schDate]);

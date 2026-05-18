@@ -233,7 +233,7 @@ export default function OrderDetailScreen({ route, navigation }) {
   const pct = Math.max(5, Math.round(((idx>=0?idx+1:1)/STEPS.length)*100));
 
   const branchKey = String(order?.branchName||order?.branch||'').trim().toLowerCase();
-  const branchPhone = branchPhones[branchKey] || '09170000000';
+  const branchPhone = branchPhones[branchKey] || '';
   const dial = v => String(v||'').replace(/[^0-9+]/g,'');
 
   const call = async phone => {

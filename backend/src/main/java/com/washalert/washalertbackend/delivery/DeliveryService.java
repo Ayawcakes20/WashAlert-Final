@@ -208,6 +208,13 @@ public class DeliveryService {
             throw new IllegalStateException("This booking belongs to a different branch.");
         }
 
+        // Block drivers from starting pickup for future-scheduled bookings
+        if (order.getStatus() == JobOrderStatus.PENDING
+                && order.getBookingDate() != null
+                && order.getBookingDate().isAfter(java.time.LocalDate.now())) {
+            throw new IllegalStateException("This pickup is scheduled for a future date and cannot be started yet.");
+        }
+
         if (order.getStatus() == JobOrderStatus.READY) {
             Optional<DeliveryOrder> existingOutbound = deliveryRepository.findByJobOrder_TrackingNumberAndLeg(
                     order.getTrackingNumber(),

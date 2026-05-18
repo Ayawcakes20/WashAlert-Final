@@ -781,7 +781,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
         {isCashCodPaymentMethod(delivery.paymentMethod) && !delivery.isPaid && (
           <View style={styles.codCard}>
             <Text style={styles.inputLabel}>CASH COLLECTION REQUIRED</Text>
-            <Text style={styles.codAmountText}>PHP {delivery.finalPrice?.toLocaleString() || delivery.amount?.toLocaleString()}</Text>
+            <Text style={styles.codAmountText}>PHP {(delivery.amountToCollect ?? delivery.finalPrice ?? delivery.amount)?.toLocaleString()}</Text>
           </View>
         )}
       </View>

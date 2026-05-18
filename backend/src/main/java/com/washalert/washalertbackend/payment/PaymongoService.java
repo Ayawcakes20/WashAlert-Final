@@ -113,13 +113,12 @@ public class PaymongoService {
         } catch (IllegalStateException ex) {
             throw ex;
         } catch (org.springframework.web.client.HttpStatusCodeException ex) {
-            String errorBody = ex.getResponseBodyAsString();
-            log.error("[PAYMONGO] API Error tracking={} status={} body={}", 
-                    order.getTrackingNumber(), ex.getStatusCode(), errorBody);
-            throw new IllegalStateException("PayMongo Error: " + errorBody);
+            log.error("[PAYMONGO] API Error tracking={} status={}",
+                    order.getTrackingNumber(), ex.getStatusCode());
+            throw new IllegalStateException("Unable to start GCash checkout right now. Please try again later.");
         } catch (Exception ex) {
             log.error("[PAYMONGO] Critical failure tracking={}", order.getTrackingNumber(), ex);
-            throw new IllegalStateException("Failed to initiate GCash checkout: " + ex.getMessage());
+            throw new IllegalStateException("Unable to start GCash checkout right now. Please try again later.");
         }
     }
 }
