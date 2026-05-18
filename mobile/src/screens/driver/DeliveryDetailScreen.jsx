@@ -753,6 +753,31 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
 
         <LogisticsLegs />
 
+        {/* Order Info Section */}
+        <View style={styles.orderInfoCard}>
+          <Text style={styles.orderInfoTitle}>ORDER INFO</Text>
+          <View style={styles.orderInfoRow}>
+            <Text style={styles.orderInfoLabel}>Schedule</Text>
+            <Text style={styles.orderInfoValue}>
+              {delivery.scheduleDate || '—'}
+              {delivery.scheduleTime ? `  ${delivery.scheduleTime}` : ''}
+            </Text>
+          </View>
+          <View style={styles.orderInfoRow}>
+            <Text style={styles.orderInfoLabel}>Payment</Text>
+            <Text style={styles.orderInfoValue}>
+              {delivery.paymentMethod || '—'}
+              {delivery.paymentStatus ? `  ·  ${delivery.paymentStatus}` : ''}
+            </Text>
+          </View>
+          {!!delivery.customerPhone && (
+            <View style={styles.orderInfoRow}>
+              <Text style={styles.orderInfoLabel}>Customer Phone</Text>
+              <Text style={styles.orderInfoValue}>{delivery.customerPhone}</Text>
+            </View>
+          )}
+        </View>
+
         {isCashCodPaymentMethod(delivery.paymentMethod) && !delivery.isPaid && (
           <View style={styles.codCard}>
             <Text style={styles.inputLabel}>CASH COLLECTION REQUIRED</Text>
@@ -1420,6 +1445,40 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: colors.primary,
     marginTop: 4,
+  },
+  orderInfoCard: {
+    backgroundColor: '#F5F8FF',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F5',
+  },
+  orderInfoTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#8B9CB8',
+    letterSpacing: 0.8,
+    marginBottom: 10,
+    textTransform: 'uppercase',
+  },
+  orderInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  orderInfoLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#8B9CB8',
+  },
+  orderInfoValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1A2332',
+    maxWidth: '60%',
+    textAlign: 'right',
   },
 
   // ── Profile card ──
