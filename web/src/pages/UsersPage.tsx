@@ -26,6 +26,7 @@ interface UserRecord {
   branch: string;
   status: "Pending" | "Active" | "Suspended" | "Deactivated";
   joined: string;
+  mobileNumber?: string | null;
   raw: UserAdminRecord;
 }
 
@@ -59,6 +60,7 @@ const mapUser = (u: UserAdminRecord): UserRecord => ({
           ? "Deactivated"
           : "Active",
   joined: u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "-",
+  mobileNumber: u.mobileNumber || null,
   raw: u,
 });
 
@@ -383,6 +385,7 @@ export default function UsersPage() {
                 <th className="text-left p-4 font-medium">User</th>
                 <th className="text-left p-4 font-medium">Role</th>
                 <th className="text-left p-4 font-medium hidden md:table-cell">Branch</th>
+                <th className="text-left p-4 font-medium hidden lg:table-cell">Contact</th>
                 <th className="text-left p-4 font-medium hidden lg:table-cell">Joined</th>
                 <th className="text-center p-4 font-medium">Status</th>
                 <th className="text-right p-4 font-medium">Actions</th>
@@ -416,6 +419,7 @@ export default function UsersPage() {
                       </span>
                     </td>
                     <td className="p-4 text-muted-foreground hidden md:table-cell">{u.branch}</td>
+                    <td className="p-4 text-muted-foreground hidden lg:table-cell">{u.mobileNumber || <span className="text-slate-300 text-xs italic">—</span>}</td>
                     <td className="p-4 text-muted-foreground hidden lg:table-cell">{u.joined}</td>
                     <td className="p-4 text-center">
                       <div className="inline-flex flex-col items-center gap-1">

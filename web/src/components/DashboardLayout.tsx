@@ -1,6 +1,6 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
-import { Bell, Search } from "lucide-react";
+import { Bell } from "lucide-react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { authApi, notificationsApi, type AppNotification, type MeResponse } from "@/lib/api";
@@ -148,14 +148,7 @@ export default function DashboardLayout() {
           <header className="h-16 flex items-center justify-between border-b border-border/50 px-6 bg-card/60 backdrop-blur-md sticky top-0 z-30">
             <div className="flex items-center gap-3">
               <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
-              <div className="hidden md:flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-2 w-72">
-                <Search className="h-4 w-4 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Search orders, customers..."
-                  className="bg-transparent text-sm outline-none w-full text-foreground placeholder:text-muted-foreground"
-                />
-              </div>
+              {/* Global search removed — use per-page search filters instead */}
             </div>
             <div className="flex items-center gap-4">
               <DropdownMenu>

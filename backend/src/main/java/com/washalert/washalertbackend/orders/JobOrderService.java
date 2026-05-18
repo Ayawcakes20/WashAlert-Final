@@ -656,7 +656,21 @@ public class JobOrderService {
                 .collect(Collectors.toMap(
                         record -> record.getJobOrder().getId(),
                         PaymentRecord::getStatus,
-                        (left, right) -> right));
+                        // Prefer the most authoritative status: PAID/VERIFIED > PENDING > others
+                        (left, right) -> {
+                            int lw = statusWeight(left);
+                            int rw = statusWeight(right);
+                            return lw >= rw ? left : right;
+                        }));
+    }
+
+    private static int statusWeight(PaymentStatus s) {
+        if (s == null) return 0;
+        return switch (s) {
+            case PAID, VERIFIED -> 3;
+            case PENDING -> 1;
+            default -> 0;
+        };
     }
 
     @Transactional(readOnly = true)
@@ -1086,6 +1100,10 @@ public class JobOrderService {
     @Transactional
     public JobOrderResponse startDeliveryLeg(Long id, AuthUserDetails principal) {
         JobOrder order = findByIdOrThrow(id);
+        if (order.getStatus() != JobOrderStatus.ASSIGNED_FOR_DELIVERY) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Order is not in the correct status to start delivery. Current status: " + order.getStatus());
+        }
         User driver = principal.getUser();
         if (order.getAssignedDeliveryDriver() == null
                 || !order.getAssignedDeliveryDriver().getId().equals(driver.getId())) {

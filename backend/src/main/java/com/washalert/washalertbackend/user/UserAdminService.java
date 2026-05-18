@@ -310,7 +310,8 @@ public class UserAdminService {
                 u.getInvitedAt(),
                 u.getActivatedAt(),
                 u.getCreatedAt(),
-                u.isMustChangePassword()
+                u.isMustChangePassword(),
+                u.getMobileNumber()
         );
     }
 
@@ -328,7 +329,8 @@ public class UserAdminService {
                 null,
                 u.verifiedAt(),
                 u.createdAt(),
-                Boolean.TRUE.equals(u.mustChangePassword())
+                Boolean.TRUE.equals(u.mustChangePassword()),
+                null
         );
     }
 

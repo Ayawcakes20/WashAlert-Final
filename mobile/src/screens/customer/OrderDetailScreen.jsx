@@ -43,15 +43,27 @@ const STATUS_BADGE = {
 const normalize = (s) => {
   const raw = String(s||'').trim().toLowerCase().replace(/ /g,'_');
   const map = {
-    received:'received', pending:'pending',
+    received:'received', order_received:'received', pending:'pending',
     awaiting_price:'awaiting_price', awaiting_price_confirmation:'awaiting_price',
-    price_approved:'washing',
+    price_confirmed:'awaiting_price', price_approved:'washing',
     washing:'washing', drying:'drying', ready:'ready',
+    assigned_for_pickup:'delivering', en_route_to_customer:'delivering',
+    laundry_collected:'delivering', en_route_to_branch:'delivering',
     pending_pickup:'ready', en_route_to_pickup:'delivering',
     picked_up:'delivering', in_transit:'delivering', delivering:'delivering',
+    assigned_for_delivery:'delivering', out_for_delivery:'delivering',
+    collection_failed:'delivering',
     delivered:'delivered', cancelled:'cancelled', failed:'cancelled',
   };
   return map[raw] || 'pending';
+};
+
+// Returns true when payment is fully settled — covers all backend status aliases.
+const isPaymentSettled = (o) => {
+  if (!o) return false;
+  if (o.isPaid === true || o.paid === true) return true;
+  const s = String(o.paymentStatus || '').trim().toLowerCase().replace(/[\s_-]+/g, '_');
+  return ['paid', 'verified', 'payment_confirmed', 'confirmed', 'success', 'succeeded'].includes(s);
 };
 
 // Active step pulse ring
@@ -259,6 +271,15 @@ export default function OrderDetailScreen({ route, navigation }) {
   const branchKey = String(order?.branchName||order?.branch||'').trim().toLowerCase();
   const branchPhone = branchPhones[branchKey] || '';
   const dial = v => String(v||'').replace(/[^0-9+]/g,'');
+
+  // Robust fallback chain for assigned driver phone:
+  // delivery.driverPhone (from DeliveryResponse, prefers mobileNumber) →
+  // order.assignedDriverPhone (from JobOrderResponse) → null
+  const resolvedDriverPhone = (
+    order?.delivery?.driverPhone ||
+    order?.assignedDriverPhone ||
+    null
+  );
 
   const call = async phone => {
     const p = dial(phone);
@@ -532,7 +553,7 @@ export default function OrderDetailScreen({ route, navigation }) {
         </View>
 
 
-        {/* DRIVER CARD — only when delivering */}
+        {/* DRIVER CARD — shown when driver is assigned or active */}
         {driverVisible && order.delivery && (
           <View style={styles.driverCard}>
             <View style={styles.driverTop}>
@@ -547,10 +568,10 @@ export default function OrderDetailScreen({ route, navigation }) {
                 <Text style={styles.driverSub}>{order.delivery.driverVehicle||'Vehicle N/A'}</Text>
               </View>
               <View style={styles.driverContact}>
-                <TouchableOpacity style={styles.contactBtn} onPress={() => call(order.delivery.driverPhone)}>
+                <TouchableOpacity style={styles.contactBtn} onPress={() => call(resolvedDriverPhone)}>
                   <Ionicons name="call-outline" size={18} color={colors.primary}/>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.contactBtn} onPress={() => sms(order.delivery.driverPhone)}>
+                <TouchableOpacity style={styles.contactBtn} onPress={() => sms(resolvedDriverPhone)}>
                   <Ionicons name="chatbubble-outline" size={18} color={colors.primary}/>
                 </TouchableOpacity>
               </View>
@@ -620,10 +641,9 @@ export default function OrderDetailScreen({ route, navigation }) {
           />
           <Row label="Payment" value={order.paymentMethod || '—'}/>
 
-          {/* ADDED: Pay Now button for GCash — hidden if already paid (by paymentStatus OR isPaid flag) */}
+          {/* Pay Now button for GCash — hidden once payment is settled (PAID, VERIFIED, or isPaid) */}
           {String(order.paymentMethod || '').toLowerCase() === 'gcash' &&
-           !order.isPaid &&
-           String(order.paymentStatus || '').toLowerCase() !== 'paid' &&
+           !isPaymentSettled(order) &&
            ['price_approved', 'washing', 'ready_for_delivery', 'delivering'].includes(ns) && (
             <TouchableOpacity
               style={styles.payNowBtn}
@@ -731,10 +751,10 @@ export default function OrderDetailScreen({ route, navigation }) {
       {/* STICKY FOOTER */}
       <View style={styles.stickyFooter}>
         {/* Driver call button — shown when driver is en route */}
-        {driverVisible && order.delivery?.driverPhone ? (
+        {driverVisible && resolvedDriverPhone ? (
           <TouchableOpacity
             style={[styles.footerOutline, { marginBottom: 8, borderColor: colors.success }]}
-            onPress={() => call(order.delivery.driverPhone)}
+            onPress={() => call(resolvedDriverPhone)}
             activeOpacity={0.8}
           >
             <Ionicons name="call" size={18} color={colors.success}/>

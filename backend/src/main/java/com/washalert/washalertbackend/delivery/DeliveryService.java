@@ -824,7 +824,11 @@ public class DeliveryService {
             throw new IllegalStateException("COD collection is only available for cash/COD orders.");
         }
 
-        Optional<PaymentRecord> existingPayment = paymentRecordRepository.findByJobOrder_TrackingNumber(order.getTrackingNumber());
+        // Use ordered list + findFirst to avoid IncorrectResultSizeDataAccessException when
+        // multiple payment records exist for the same order (e.g. GCash initiation + proof).
+        Optional<PaymentRecord> existingPayment = paymentRecordRepository
+                .findByJobOrder_TrackingNumberOrderBySubmittedAtDesc(order.getTrackingNumber())
+                .stream().findFirst();
         if (order.isPaid()
                 || existingPayment
                 .map(PaymentRecord::getStatus)

@@ -108,6 +108,9 @@ export default function BookingScreen({ route, navigation }) {
   const [submitting, setSub]      = useState(false);
   const [checking, setChecking]   = useState(false);  // true while pre-flight supply check runs
   const [stockError, setStockError] = useState(null); // inline inventory warning on step 4
+  // Two-step supply source selection: null = not chosen, 'customer' = Customer Provided, 'shop' = Laundry Shop Provided
+  const [detSource, setDetSource] = useState(null); // 'customer' | 'shop' | null
+  const [fabSource, setFabSource] = useState(null); // 'customer' | 'shop' | null
   // Per-addon qty map — initialised to 0 so unselected items display 0 until the
   // customer explicitly selects or taps +. Switches between items do not cross-copy.
   const [detQtyMap, setDetQtyMap] = useState({ surf: 0, ariel: 0 });
@@ -253,30 +256,30 @@ export default function BookingScreen({ route, navigation }) {
     if(computedLoadCount !== 0) return;
     setDet('none');
     setFab('none');
+    setDetSource(null);
+    setFabSource(null);
     setDetQtyMap({ surf: 0, ariel: 0 });
     setFabQtyMap({ charm: 0, downy: 0 });
   },[computedLoadCount]);
 
-  // Re-clamp stored qtys when service/loadSize changes after availability is already loaded
+  // Re-clamp stored qtys to available stock when availability is loaded
   useEffect(()=>{
     if(!supplyAvail) return;
     setDetQtyMap(m=>{
       const next={...m};
       supplyAvail.detergent?.forEach(item=>{
-        const maxQty=Math.min(item.availableQty, computedLoadCount);
-        if((next[item.id]??0)>maxQty) next[item.id]=maxQty;
+        if((next[item.id]??0)>item.availableQty) next[item.id]=item.availableQty;
       });
       return next;
     });
     setFabQtyMap(m=>{
       const next={...m};
       supplyAvail.conditioner?.forEach(item=>{
-        const maxQty=Math.min(item.availableQty, computedLoadCount);
-        if((next[item.id]??0)>maxQty) next[item.id]=maxQty;
+        if((next[item.id]??0)>item.availableQty) next[item.id]=item.availableQty;
       });
       return next;
     });
-  },[computedLoadCount, supplyAvail]);
+  },[supplyAvail]);
 
   // Scroll to top ONLY when the booking step actually changes (not on addon selection,
   // quantity tweaks, or any other state change that leaves `step` the same).
@@ -401,12 +404,17 @@ export default function BookingScreen({ route, navigation }) {
         // Non-fatal: proceed with original selections if check fails
       }
     }
+    // Source-first override: if source is not 'shop', force none regardless of stale item state.
+    if (detSource !== 'shop') submitDet = 'none';
+    if (fabSource !== 'shop') submitFab = 'none';
     submittingRef.current = true;
     setSub(true);
     try{
       const dk=needsAddr&&address?.latitude&&branch?.latitude?distKm(branch.latitude,branch.longitude,address.latitude,address.longitude):0;
       const _svcPrice  = getServiceBasePrice(service, loadSize === 'LARGE' ? 8 : 5);
-      const _supPrice  = ((DET_OPTS.find(o=>o.id===submitDet)?.price||0) * (submitDet==='none'?0:detQty)) + ((FAB_OPTS.find(o=>o.id===submitFab)?.price||0) * (submitFab==='none'?0:fabQty));
+      const _supDet = submitDet !== 'none' ? Math.max(1, detQtyMap[submitDet] ?? 1) : 0;
+      const _supFab = submitFab !== 'none' ? Math.max(1, fabQtyMap[submitFab] ?? 1) : 0;
+      const _supPrice  = ((DET_OPTS.find(o=>o.id===submitDet)?.price||0) * _supDet) + ((FAB_OPTS.find(o=>o.id===submitFab)?.price||0) * _supFab);
       const _rushPrice = rush ? 150 : 0;
       const _delPrice  = needsAddr ? deliveryFee : 0;
       const r=await createOrder({
@@ -419,9 +427,9 @@ export default function BookingScreen({ route, navigation }) {
         scheduleDate:schDate,
         scheduleTime:schTime,
         detergent:DET_OPTS.find(o=>o.id===submitDet)?.label||'Customer Provided',
-        detergentQuantity: submitDet === 'none' ? 0 : detQty,
+        detergentQuantity: _supDet,
         conditioner:FAB_OPTS.find(o=>o.id===submitFab)?.label||'Customer Provided',
-        conditionerQuantity: submitFab === 'none' ? 0 : fabQty,
+        conditionerQuantity: _supFab,
         estimatedWeightKg: loadSize === 'LARGE' ? 8 : 5,
         delivery: needsAddr,
         isRush:rush,
@@ -633,26 +641,53 @@ export default function BookingScreen({ route, navigation }) {
                 <View style={{flex:1}}>
                   <Text style={S.pricingInfoTitle}>Transparent Pricing</Text>
                   <Text style={S.pricingInfoText}>
-                    Laundry is weighed upon arrival. {"You'll"} get a <Text style={{fontWeight:'700',color:colors.primary}}>final price for confirmation</Text> before we start washing.
+                    Laundry is weighed at the branch. You will be notified of the <Text style={{fontWeight:'700',color:colors.primary}}>final number of loads and final amount</Text> before washing begins.
                   </Text>
                 </View>
               </View>
             </View>
 
-            {/* ── DETERGENT ──
-                 Layout rules (stable across all states):
-                 • Fixed minHeight — cards never resize on selection/deselection.
-                 • Checkmark uses opacity so it never adds/removes space.
-                 • None card has a 90px spacer matching paid-card control width.
-                 • Qty starts at 0; selecting bumps it to 1. − clamps at 1.
-                 • Unavailable items show "Out of stock" badge and block + / card-tap. */}
+            {/* ── DETERGENT — Two-step: first choose source, then choose item ── */}
             <Text style={S.sec}>Detergent</Text>
             {availLoading&&<ActivityIndicator size="small" color={colors.primary} style={{alignSelf:'flex-start',marginBottom:8}}/>}
-            {DET_OPTS.map(o=>{
+
+            {/* Step 1: source selection */}
+            <View style={{flexDirection:'row',gap:10,marginBottom:8}}>
+              {[{id:'customer',label:'Customer Provided'},{id:'shop',label:'Laundry Shop Provided'}].map(src=>{
+                const isSrc = detSource===src.id;
+                return (
+                  <TouchableOpacity
+                    key={src.id}
+                    style={{flex:1,paddingVertical:14,paddingHorizontal:12,borderRadius:14,borderWidth:1.5,
+                      borderColor:isSrc?colors.primary:colors.border,
+                      backgroundColor:isSrc?colors.primaryLight:colors.surface,
+                      opacity:isDryOnly&&src.id==='shop'?0.4:1,
+                      alignItems:'center'}}
+                    onPress={()=>{
+                      if(isDryOnly&&src.id==='shop'){ showToast('Add-ons are not needed for Dry-only service.'); return; }
+                      setDetSource(src.id);
+                      if(src.id==='customer'){
+                        setDet('none');
+                        setDetQtyMap({ surf: 0, ariel: 0 });
+                      } else {
+                        // Default to first shop item if nothing shop selected yet
+                        if(det==='none') { setDet('surf'); setDetQtyMap(m=>({...m,surf:Math.max(1,m.surf??1)})); }
+                      }
+                      setStockError(null);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name={isSrc?'checkmark-circle':'radio-button-off'} size={18} color={isSrc?colors.primary:colors.textSecondary} style={{marginBottom:4}}/>
+                    <Text style={{fontSize:13,fontWeight:'700',color:isSrc?colors.primary:colors.text,textAlign:'center'}}>{src.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Step 2: shop item selection (only when source = shop) */}
+            {detSource==='shop' && DET_OPTS.filter(o=>o.id!=='none').map(o=>{
               const isSel  = det === o.id;
-              const isPaid = o.id !== 'none';
-              const avail  = isPaid ? supplyAvail?.detergent?.find(d=>d.id===o.id) : null;
-              // null avail = not loaded yet = optimistically allow; false = confirmed out
+              const avail  = supplyAvail?.detergent?.find(d=>d.id===o.id);
               const isOut  = avail !== null && avail !== undefined && !avail.available;
               const displayQty = detQtyMap[o.id] ?? 0;
               return (
@@ -660,85 +695,96 @@ export default function BookingScreen({ route, navigation }) {
                   key={o.id}
                   style={[{flexDirection:'row',alignItems:'center',minHeight:66,backgroundColor:colors.surface,borderRadius:14,marginBottom:8,borderWidth:1.5,borderColor:isSel?colors.primary:colors.border},
                     isSel&&{backgroundColor:colors.primaryLight},
-                    isOut&&{opacity:0.6},
-                    (isDryOnly&&isPaid)&&{opacity:0.4}]}
+                    isOut&&{opacity:0.6}]}
                   onPress={()=>{
-                    if(isPaid&&isDryOnly){ showToast('Add-ons are not needed for Dry-only service.'); return; }
-                    if(isPaid&&isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
+                    if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                     setDet(o.id);
-                    if(isPaid){
-                      const maxQty = Math.min(avail?.availableQty ?? Infinity, computedLoadCount);
-                      setDetQtyMap(m=>({...m,[o.id]:Math.min(Math.max(1,m[o.id]??0), maxQty===Infinity?(m[o.id]??1)||1:maxQty)}));
-                    }
+                    if(detQtyMap[o.id]<1) setDetQtyMap(m=>({...m,[o.id]:1}));
                     setStockError(null);
                   }}
                   activeOpacity={0.8}
                 >
-                  {/* Left — label + price + optional out-of-stock badge */}
                   <View style={{flex:1,paddingVertical:14,paddingLeft:14}}>
                     <Text style={{fontSize:14,fontWeight:'700',color:isSel?colors.primary:colors.text}}>{o.label}</Text>
-                    {o.price>0&&!isOut&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per pack</Text>}
+                    {!isOut&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per pack</Text>}
                     {isOut&&<Text style={{fontSize:11,fontWeight:'700',color:'#DC2626',marginTop:2}}>Out of stock</Text>}
                   </View>
-                  {/* Right — fixed structure: [controls | spacer] + checkmark (opacity) */}
                   <View style={{flexDirection:'row',alignItems:'center',paddingRight:12,gap:6}}>
-                    {isPaid ? (
-                      <>
-                        {/* − clamped to 1 while selected; no-op when unselected */}
-                        <TouchableOpacity
-                          onPress={()=>{
-                            if(!isSel){ if(!isOut){setDet(o.id);setDetQtyMap(m=>({...m,[o.id]:1}));setStockError(null);} return; }
-                            setDetQtyMap(m=>({...m,[o.id]:Math.max(1,(m[o.id]??1)-1)}));
-                            setStockError(null);
-                          }}
-                          style={{width:28,height:28,borderRadius:14,backgroundColor:isSel?colors.primary:'#D1D5DB',alignItems:'center',justifyContent:'center'}}
-                        >
-                          <Text style={{color:isSel?'#fff':'#9CA3AF',fontSize:16,fontWeight:'700',lineHeight:20}}>-</Text>
-                        </TouchableOpacity>
-                        <Text style={{fontSize:14,fontWeight:'800',color:isSel?colors.text:'#9CA3AF',minWidth:22,textAlign:'center'}}>{displayQty}</Text>
-                        {/* + selects at 1 if not selected; increments up to min(availableQty, computedLoadCount) */}
-                        <TouchableOpacity
-                          onPress={()=>{
-                            if(isDryOnly){ showToast('Add-ons are not needed for Dry-only service.'); return; }
-                            if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
-                            const stockMax = avail?.availableQty ?? Infinity;
-                            const maxQty = Math.min(stockMax, computedLoadCount);
-                            if(!isSel){
-                              setDet(o.id);
-                              setDetQtyMap(m=>({...m,[o.id]:1}));
-                            } else {
-                              const cur = detQtyMap[o.id]??1;
-                              if(maxQty!==Infinity && cur>=maxQty){
-                                const stockLimited = stockMax <= computedLoadCount;
-                                showToast(stockLimited
-                                  ? `Only ${maxQty} pack(s) of ${avail?.label||o.label} available at this branch.`
-                                  : `This booking needs at most ${computedLoadCount} pack(s) based on the number of loads.`);
-                                return;
-                              }
-                              setDetQtyMap(m=>({...m,[o.id]:cur+1}));
-                            }
-                            setStockError(null);
-                          }}
-                          style={{width:28,height:28,borderRadius:14,backgroundColor:isOut?'#D1D5DB':colors.primary,alignItems:'center',justifyContent:'center'}}
-                        >
-                          <Text style={{color:isOut?'#9CA3AF':'#fff',fontSize:16,fontWeight:'700',lineHeight:20}}>+</Text>
-                        </TouchableOpacity>
-                      </>
-                    ) : (
-                      <View style={{width:90}}/>
-                    )}
+                    <TouchableOpacity
+                      onPress={()=>{
+                        if(!isSel){ if(!isOut){setDet(o.id);setDetQtyMap(m=>({...m,[o.id]:1}));setStockError(null);} return; }
+                        setDetQtyMap(m=>({...m,[o.id]:Math.max(1,(m[o.id]??1)-1)}));
+                        setStockError(null);
+                      }}
+                      style={{width:28,height:28,borderRadius:14,backgroundColor:isSel?colors.primary:'#D1D5DB',alignItems:'center',justifyContent:'center'}}
+                    >
+                      <Text style={{color:isSel?'#fff':'#9CA3AF',fontSize:16,fontWeight:'700',lineHeight:20}}>-</Text>
+                    </TouchableOpacity>
+                    <Text style={{fontSize:14,fontWeight:'800',color:isSel?colors.text:'#9CA3AF',minWidth:22,textAlign:'center'}}>{displayQty}</Text>
+                    <TouchableOpacity
+                      onPress={()=>{
+                        if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
+                        const stockMax = avail?.availableQty ?? Infinity;
+                        if(!isSel){
+                          setDet(o.id);
+                          setDetQtyMap(m=>({...m,[o.id]:1}));
+                        } else {
+                          const cur = detQtyMap[o.id]??1;
+                          if(stockMax!==Infinity && cur>=stockMax){
+                            showToast(`Only ${stockMax} pack(s) of ${avail?.label||o.label} available at this branch.`);
+                            return;
+                          }
+                          setDetQtyMap(m=>({...m,[o.id]:cur+1}));
+                        }
+                        setStockError(null);
+                      }}
+                      style={{width:28,height:28,borderRadius:14,backgroundColor:isOut?'#D1D5DB':colors.primary,alignItems:'center',justifyContent:'center'}}
+                    >
+                      <Text style={{color:isOut?'#9CA3AF':'#fff',fontSize:16,fontWeight:'700',lineHeight:20}}>+</Text>
+                    </TouchableOpacity>
                     <Ionicons name="checkmark-circle" size={20} color={colors.primary} style={{opacity:isSel?1:0,marginLeft:4}}/>
                   </View>
                 </TouchableOpacity>
               );
             })}
 
-            {/* ── FABRIC CONDITIONER ── identical stable-layout pattern ── */}
+            {/* ── FABRIC CONDITIONER — same two-step pattern ── */}
             <Text style={S.sec}>Fabric Conditioner</Text>
-            {FAB_OPTS.map(o=>{
+
+            <View style={{flexDirection:'row',gap:10,marginBottom:8}}>
+              {[{id:'customer',label:'Customer Provided'},{id:'shop',label:'Laundry Shop Provided'}].map(src=>{
+                const isSrc = fabSource===src.id;
+                return (
+                  <TouchableOpacity
+                    key={src.id}
+                    style={{flex:1,paddingVertical:14,paddingHorizontal:12,borderRadius:14,borderWidth:1.5,
+                      borderColor:isSrc?colors.primary:colors.border,
+                      backgroundColor:isSrc?colors.primaryLight:colors.surface,
+                      opacity:isDryOnly&&src.id==='shop'?0.4:1,
+                      alignItems:'center'}}
+                    onPress={()=>{
+                      if(isDryOnly&&src.id==='shop'){ showToast('Add-ons are not needed for Dry-only service.'); return; }
+                      setFabSource(src.id);
+                      if(src.id==='customer'){
+                        setFab('none');
+                        setFabQtyMap({ charm: 0, downy: 0 });
+                      } else {
+                        if(fab==='none') { setFab('charm'); setFabQtyMap(m=>({...m,charm:Math.max(1,m.charm??1)})); }
+                      }
+                      setStockError(null);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name={isSrc?'checkmark-circle':'radio-button-off'} size={18} color={isSrc?colors.primary:colors.textSecondary} style={{marginBottom:4}}/>
+                    <Text style={{fontSize:13,fontWeight:'700',color:isSrc?colors.primary:colors.text,textAlign:'center'}}>{src.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {fabSource==='shop' && FAB_OPTS.filter(o=>o.id!=='none').map(o=>{
               const isSel  = fab === o.id;
-              const isPaid = o.id !== 'none';
-              const avail  = isPaid ? supplyAvail?.conditioner?.find(c=>c.id===o.id) : null;
+              const avail  = supplyAvail?.conditioner?.find(c=>c.id===o.id);
               const isOut  = avail !== null && avail !== undefined && !avail.available;
               const displayQty = fabQtyMap[o.id] ?? 0;
               return (
@@ -746,70 +792,53 @@ export default function BookingScreen({ route, navigation }) {
                   key={o.id}
                   style={[{flexDirection:'row',alignItems:'center',minHeight:66,backgroundColor:colors.surface,borderRadius:14,marginBottom:8,borderWidth:1.5,borderColor:isSel?colors.primary:colors.border},
                     isSel&&{backgroundColor:colors.primaryLight},
-                    isOut&&{opacity:0.6},
-                    (isDryOnly&&isPaid)&&{opacity:0.4}]}
+                    isOut&&{opacity:0.6}]}
                   onPress={()=>{
-                    if(isPaid&&isDryOnly){ showToast('Add-ons are not needed for Dry-only service.'); return; }
-                    if(isPaid&&isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
+                    if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                     setFab(o.id);
-                    if(isPaid){
-                      const maxQty = Math.min(avail?.availableQty ?? Infinity, computedLoadCount);
-                      setFabQtyMap(m=>({...m,[o.id]:Math.min(Math.max(1,m[o.id]??0), maxQty===Infinity?(m[o.id]??1)||1:maxQty)}));
-                    }
+                    if(fabQtyMap[o.id]<1) setFabQtyMap(m=>({...m,[o.id]:1}));
                     setStockError(null);
                   }}
                   activeOpacity={0.8}
                 >
                   <View style={{flex:1,paddingVertical:14,paddingLeft:14}}>
                     <Text style={{fontSize:14,fontWeight:'700',color:isSel?colors.primary:colors.text}}>{o.label}</Text>
-                    {o.price>0&&!isOut&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per pack</Text>}
+                    {!isOut&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per pack</Text>}
                     {isOut&&<Text style={{fontSize:11,fontWeight:'700',color:'#DC2626',marginTop:2}}>Out of stock</Text>}
                   </View>
                   <View style={{flexDirection:'row',alignItems:'center',paddingRight:12,gap:6}}>
-                    {isPaid ? (
-                      <>
-                        <TouchableOpacity
-                          onPress={()=>{
-                            if(!isSel){ if(!isOut){setFab(o.id);setFabQtyMap(m=>({...m,[o.id]:1}));setStockError(null);} return; }
-                            setFabQtyMap(m=>({...m,[o.id]:Math.max(1,(m[o.id]??1)-1)}));
-                            setStockError(null);
-                          }}
-                          style={{width:28,height:28,borderRadius:14,backgroundColor:isSel?colors.primary:'#D1D5DB',alignItems:'center',justifyContent:'center'}}
-                        >
-                          <Text style={{color:isSel?'#fff':'#9CA3AF',fontSize:16,fontWeight:'700',lineHeight:20}}>-</Text>
-                        </TouchableOpacity>
-                        <Text style={{fontSize:14,fontWeight:'800',color:isSel?colors.text:'#9CA3AF',minWidth:22,textAlign:'center'}}>{displayQty}</Text>
-                        {/* + increments up to min(availableQty, computedLoadCount) */}
-                        <TouchableOpacity
-                          onPress={()=>{
-                            if(isDryOnly){ showToast('Add-ons are not needed for Dry-only service.'); return; }
-                            if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
-                            const stockMax = avail?.availableQty ?? Infinity;
-                            const maxQty = Math.min(stockMax, computedLoadCount);
-                            if(!isSel){
-                              setFab(o.id);
-                              setFabQtyMap(m=>({...m,[o.id]:1}));
-                            } else {
-                              const cur = fabQtyMap[o.id]??1;
-                              if(maxQty!==Infinity && cur>=maxQty){
-                                const stockLimited = stockMax <= computedLoadCount;
-                                showToast(stockLimited
-                                  ? `Only ${maxQty} pack(s) of ${avail?.label||o.label} available at this branch.`
-                                  : `This booking needs at most ${computedLoadCount} pack(s) based on the number of loads.`);
-                                return;
-                              }
-                              setFabQtyMap(m=>({...m,[o.id]:cur+1}));
-                            }
-                            setStockError(null);
-                          }}
-                          style={{width:28,height:28,borderRadius:14,backgroundColor:isOut?'#D1D5DB':colors.primary,alignItems:'center',justifyContent:'center'}}
-                        >
-                          <Text style={{color:isOut?'#9CA3AF':'#fff',fontSize:16,fontWeight:'700',lineHeight:20}}>+</Text>
-                        </TouchableOpacity>
-                      </>
-                    ) : (
-                      <View style={{width:90}}/>
-                    )}
+                    <TouchableOpacity
+                      onPress={()=>{
+                        if(!isSel){ if(!isOut){setFab(o.id);setFabQtyMap(m=>({...m,[o.id]:1}));setStockError(null);} return; }
+                        setFabQtyMap(m=>({...m,[o.id]:Math.max(1,(m[o.id]??1)-1)}));
+                        setStockError(null);
+                      }}
+                      style={{width:28,height:28,borderRadius:14,backgroundColor:isSel?colors.primary:'#D1D5DB',alignItems:'center',justifyContent:'center'}}
+                    >
+                      <Text style={{color:isSel?'#fff':'#9CA3AF',fontSize:16,fontWeight:'700',lineHeight:20}}>-</Text>
+                    </TouchableOpacity>
+                    <Text style={{fontSize:14,fontWeight:'800',color:isSel?colors.text:'#9CA3AF',minWidth:22,textAlign:'center'}}>{displayQty}</Text>
+                    <TouchableOpacity
+                      onPress={()=>{
+                        if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
+                        const stockMax = avail?.availableQty ?? Infinity;
+                        if(!isSel){
+                          setFab(o.id);
+                          setFabQtyMap(m=>({...m,[o.id]:1}));
+                        } else {
+                          const cur = fabQtyMap[o.id]??1;
+                          if(stockMax!==Infinity && cur>=stockMax){
+                            showToast(`Only ${stockMax} pack(s) of ${avail?.label||o.label} available at this branch.`);
+                            return;
+                          }
+                          setFabQtyMap(m=>({...m,[o.id]:cur+1}));
+                        }
+                        setStockError(null);
+                      }}
+                      style={{width:28,height:28,borderRadius:14,backgroundColor:isOut?'#D1D5DB':colors.primary,alignItems:'center',justifyContent:'center'}}
+                    >
+                      <Text style={{color:isOut?'#9CA3AF':'#fff',fontSize:16,fontWeight:'700',lineHeight:20}}>+</Text>
+                    </TouchableOpacity>
                     <Ionicons name="checkmark-circle" size={20} color={colors.primary} style={{opacity:isSel?1:0,marginLeft:4}}/>
                   </View>
                 </TouchableOpacity>
