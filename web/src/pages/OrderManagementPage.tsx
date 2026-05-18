@@ -1348,7 +1348,7 @@ export default function OrderManagementPage() {
       />
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-xl border-slate-200 rounded-3xl p-0 overflow-hidden bg-[#F8FAFC] shadow-2xl">
+        <DialogContent className="sm:max-w-xl border-slate-200 rounded-3xl p-0 overflow-hidden bg-[#F8FAFC] shadow-2xl [&>button:last-child]:text-white [&>button:last-child]:opacity-80 [&>button:last-child]:hover:opacity-100">
           <div className="bg-gradient-to-br from-slate-900 to-brand-navy px-8 py-10 text-white border-b border-white/5">
             <DialogTitle className="text-3xl font-black tracking-tight flex items-center gap-3">
               <Plus className="h-8 w-8 text-blue-400" /> New Job Order
@@ -1485,7 +1485,7 @@ export default function OrderManagementPage() {
       </Dialog>
 
       <Dialog open={assignRiderOpen} onOpenChange={setAssignRiderOpen}>
-        <DialogContent className="sm:max-w-md border-slate-200 rounded-3xl p-0 overflow-hidden bg-[#F8FAFC] shadow-2xl">
+        <DialogContent className="sm:max-w-md border-slate-200 rounded-3xl p-0 overflow-hidden bg-[#F8FAFC] shadow-2xl [&>button:last-child]:text-white [&>button:last-child]:opacity-80 [&>button:last-child]:hover:opacity-100">
           <div className="bg-gradient-to-br from-slate-900 to-brand-navy px-8 py-8 text-white border-b border-white/5">
             <div className="flex items-center gap-4 mb-4">
               <div className="h-12 w-12 rounded-2xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center shrink-0">
@@ -1584,7 +1584,7 @@ export default function OrderManagementPage() {
       </Dialog>
 
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="sm:max-w-4xl border-brand-border rounded-xl p-0 overflow-hidden bg-slate-50">
+        <DialogContent className="sm:max-w-4xl border-brand-border rounded-xl p-0 overflow-hidden bg-slate-50 [&>button:last-child]:text-white [&>button:last-child]:opacity-80 [&>button:last-child]:hover:opacity-100">
           {detailsLoading ? (
             <div className="p-20 flex flex-col items-center justify-center gap-4">
               <Loader2 className="h-10 w-10 animate-spin text-brand-navy" />
@@ -1655,6 +1655,12 @@ export default function OrderManagementPage() {
                     <div>
                       <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Name</p>
                       <p className="font-black text-slate-800 text-sm">{selectedOrder.customerName}</p>
+                      {selectedOrder.customerEmail && (
+                        <div className="flex items-center gap-1 mt-1">
+                          <Mail className="h-3 w-3 text-slate-400" />
+                          <span className="text-xs text-slate-500 font-medium">{selectedOrder.customerEmail}</span>
+                        </div>
+                      )}
                     </div>
                     <div>
                       <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Phone</p>
@@ -1666,20 +1672,23 @@ export default function OrderManagementPage() {
                         {selectedOrder.deliveryAddress || (selectedOrder.serviceType === 'PICKUP_DELIVERY' ? '⚠️ Missing Delivery Address' : 'Walk-in (No Delivery)')}
                       </p>
                     </div>
-                    {(selectedOrder.customerPhone || selectedOrder.customerEmail) && (
-                      <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-2">
-                        {selectedOrder.customerPhone && (
-                          <div className="flex items-center gap-2">
-                            <Phone className="h-3 w-3 text-slate-400" />
-                            <span className="text-xs text-slate-600 font-medium">{selectedOrder.customerPhone}</span>
-                          </div>
-                        )}
-                        {selectedOrder.customerEmail && (
-                          <div className="flex items-center gap-2">
-                            <Mail className="h-3 w-3 text-slate-400" />
-                            <span className="text-xs text-slate-600 font-medium">{selectedOrder.customerEmail}</span>
-                          </div>
-                        )}
+                    {(selectedOrder.deliveryContactName || selectedOrder.deliveryContactPhone) && (
+                      <div className="col-span-3 mt-2 pt-3 border-t border-slate-100">
+                        <p className="text-[10px] text-blue-500 font-black uppercase tracking-widest mb-2">Delivery Contact</p>
+                        <div className="flex items-center gap-6">
+                          {selectedOrder.deliveryContactName && (
+                            <div className="flex items-center gap-1.5">
+                              <User className="h-3 w-3 text-slate-400" />
+                              <span className="text-xs text-slate-700 font-semibold">{selectedOrder.deliveryContactName}</span>
+                            </div>
+                          )}
+                          {selectedOrder.deliveryContactPhone && (
+                            <a href={`tel:${selectedOrder.deliveryContactPhone}`} className="flex items-center gap-1.5 hover:underline">
+                              <Phone className="h-3 w-3 text-slate-400" />
+                              <span className="text-xs text-blue-600 font-semibold">{selectedOrder.deliveryContactPhone}</span>
+                            </a>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>

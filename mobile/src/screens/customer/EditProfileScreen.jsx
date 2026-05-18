@@ -114,7 +114,9 @@ const EditProfileScreen = ({ navigation }) => {
         profileImageUrl: form.profileImageUrl || '',
       });
       console.log('[Profile][Save] Save complete userId=', user?.id);
-      Alert.alert('Profile Updated', 'Your profile details were saved successfully.');
+      Alert.alert('Profile Updated', 'Your profile details were saved successfully.', [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
     } catch (error) {
       console.error('[Profile][Save] Save failed:', error);
       Alert.alert('Save Failed', error?.message || 'Unable to save profile changes.');

@@ -698,11 +698,7 @@ export default function OrderDetailScreen({ route, navigation }) {
         {driverVisible && order.delivery?.driverPhone ? (
           <TouchableOpacity
             style={[styles.footerOutline, { marginBottom: 8, borderColor: colors.success }]}
-            onPress={() => {
-              const phone = order.delivery.driverPhone;
-              if (!phone) { Alert.alert('No Contact', 'Driver contact number is not available.'); return; }
-              Linking.openURL(`tel:${phone}`).catch(() => Alert.alert('Error', 'Cannot open dialer.'));
-            }}
+            onPress={() => call(order.delivery.driverPhone)}
             activeOpacity={0.8}
           >
             <Ionicons name="call" size={18} color={colors.success}/>

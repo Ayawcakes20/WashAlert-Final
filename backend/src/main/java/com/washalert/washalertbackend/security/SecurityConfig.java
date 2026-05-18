@@ -102,6 +102,9 @@ public class SecurityConfig {
                                 "/api/support/chat",
                                 "/api/orders/**",
                                 "/api/deliveries/**",
+                                // Mobile profile endpoints use Bearer token auth, not session cookies
+                                "/api/user/profile",
+                                "/api/user/profile/**",
                                 "/oauth2/**",
                                 "/login/oauth2/**"
                         )
