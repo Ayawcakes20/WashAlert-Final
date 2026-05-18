@@ -346,7 +346,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
 
             <TouchableOpacity style={S.contactLink} onPress={handleCallBranch}>
               <Ionicons name="call-outline" size={13} color="#2563EB" />
-              <Text style={S.contactLinkTxt}>Question about the price? Call 0969 173 7924</Text>
+              <Text style={S.contactLinkTxt}>Question about the price? Contact the branch</Text>
             </TouchableOpacity>
           </ScrollView>
         </Animated.View>
