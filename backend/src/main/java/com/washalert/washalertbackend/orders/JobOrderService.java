@@ -26,6 +26,7 @@ import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
 import com.washalert.washalertbackend.user.UserRepository;
 import com.washalert.washalertbackend.orders.dto.*;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -49,6 +50,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class JobOrderService {
 
