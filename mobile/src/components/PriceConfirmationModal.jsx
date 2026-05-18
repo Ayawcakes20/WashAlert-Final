@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, ActivityIndicator,
-  StyleSheet, Animated, Linking, Alert, BackHandler, Image, ScrollView,
+  StyleSheet, Animated, Alert, BackHandler, Image, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
@@ -138,10 +138,6 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
     }
   };
 
-  const handleCallBranch = () => {
-    Alert.alert('Contact Branch', 'No contact number on file. Please use the in-app chat to reach the branch.');
-  };
-
   if (!fullOrderData) return null;
 
   const logo = String(fullOrderData.branchName || '').toLowerCase().includes('makati') ? logoLaundryHubs : logoSpeedyWash;
@@ -196,7 +192,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
             </TouchableOpacity>
           </View>
 
-          <View style={S.receiptTop} />
+          <View style={S.receiptDivider} />
 
           <ScrollView style={S.scroll} contentContainerStyle={S.scrollContent} showsVerticalScrollIndicator={false} bounces={false}>
             {/* Header */}
@@ -354,10 +350,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
               By confirming, you agree to the total above. Washing begins only pagkatapos ng iyong confirmation.
             </Text>
 
-            <TouchableOpacity style={S.contactLink} onPress={handleCallBranch}>
-              <Ionicons name="call-outline" size={13} color="#2563EB" />
-              <Text style={S.contactLinkTxt}>Question about the price? Contact the branch</Text>
-            </TouchableOpacity>
+            <Text style={S.contactSupportTxt}>Question about the price? Contact the branch through support.</Text>
           </ScrollView>
         </Animated.View>
       </View>
@@ -371,7 +364,7 @@ const S = StyleSheet.create({
   headerControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingTop: 12, paddingBottom: 4, position: 'relative' },
   closeBtn: { position: 'absolute', right: 16, top: 12 },
   notchBar: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#CBD5E1' },
-  receiptTop: { height: 4, backgroundColor: '#1E293B', marginBottom: 0 },
+  receiptDivider: { height: 1, backgroundColor: '#E2E8F0', marginBottom: 0 },
   scroll: { flexGrow: 0 },
   scrollContent: { padding: 24, paddingBottom: 40 },
   receiptHeader: { alignItems: 'center', marginBottom: 16 },
@@ -408,6 +401,5 @@ const S = StyleSheet.create({
   confirmBtn: { backgroundColor: '#2563EB', borderRadius: 16, height: 58, alignItems: 'center', justifyContent: 'center' },
   confirmBtnTxt: { color: '#fff', fontSize: 17, fontWeight: '800' },
   legalTxt: { fontSize: 11, color: '#94A3B8', textAlign: 'center', lineHeight: 16, marginTop: 14, paddingHorizontal: 8 },
-  contactLink: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'center', marginTop: 12, paddingVertical: 6 },
-  contactLinkTxt: { fontSize: 13, fontWeight: '700', color: '#2563EB', textDecorationLine: 'underline' },
+  contactSupportTxt: { fontSize: 12, color: '#94A3B8', textAlign: 'center', marginTop: 12, paddingHorizontal: 12 },
 });

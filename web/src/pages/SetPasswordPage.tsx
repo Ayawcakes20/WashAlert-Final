@@ -205,7 +205,12 @@ export default function SetPasswordPage() {
 
           {error ? <p className="text-sm text-destructive text-center mt-4">{error}</p> : null}
 
-          <p className="text-center text-sm text-muted-foreground mt-6">
+          <div className="mt-6 rounded-xl border border-border/40 bg-muted/30 p-3 text-xs text-muted-foreground text-center leading-relaxed">
+            <strong className="font-semibold text-foreground">Driver accounts?</strong> Once your password is set, please sign in using the{" "}
+            <span className="font-semibold">WashAlert mobile app</span>. The web dashboard is for staff and admin use only.
+          </div>
+
+          <p className="text-center text-sm text-muted-foreground mt-4">
             Need help?{" "}
             <Link to="/login" className="text-primary font-semibold hover:underline">
               Contact an administrator

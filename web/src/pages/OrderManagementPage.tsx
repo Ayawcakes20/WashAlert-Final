@@ -116,6 +116,9 @@ type Order = {
   deliveryFailedReason?: string | null;
   deliveryContactName?: string;
   deliveryContactPhone?: string;
+  bookingDate?: string;
+  slotStartTime?: string;
+  slotEndTime?: string;
 };
 
 type DeliveryAssignmentMeta = {
@@ -313,6 +316,9 @@ const mapOrder = (order: JobOrderResponse): Order => ({
   deliveryFailedReason: order.deliveryFailedReason,
   deliveryContactName: order.deliveryContactName,
   deliveryContactPhone: order.deliveryContactPhone,
+  bookingDate: order.bookingDate ?? undefined,
+  slotStartTime: order.slotStartTime ?? undefined,
+  slotEndTime: order.slotEndTime ?? undefined,
 });
 
 const formatDateTime = (timestamp?: string) =>
@@ -325,6 +331,29 @@ const formatDateTime = (timestamp?: string) =>
       minute: "2-digit",
     })
     : "-";
+
+const formatBookingDate = (dateStr?: string) => {
+  if (!dateStr) return null;
+  try {
+    return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", weekday: "short" });
+  } catch { return dateStr; }
+};
+
+const formatSlotTime = (start?: string, end?: string) => {
+  if (!start) return null;
+  const to12h = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    const period = h >= 12 ? "PM" : "AM";
+    return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${period}`;
+  };
+  return end ? `${to12h(start)} – ${to12h(end)}` : to12h(start);
+};
+
+const isBookingFutureDate = (dateStr?: string) => {
+  if (!dateStr) return false;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return new Date(dateStr) > today;
+};
 
 const normalizePaymentMethod = (value?: string | null) => (value || "").trim().toUpperCase();
 
@@ -1501,18 +1530,41 @@ export default function OrderManagementPage() {
               </div>
             </div>
 
-            {assignRiderOrderId && (
-              <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-slate-400 font-bold uppercase tracking-wider">Customer</span>
-                  <span className="font-black text-white">{orders.find(o => o.id === assignRiderOrderId)?.customerName}</span>
+            {assignRiderOrderId && (() => {
+              const riderOrder = orders.find(o => o.id === assignRiderOrderId);
+              const bookDate = formatBookingDate(riderOrder?.bookingDate);
+              const bookSlot = formatSlotTime(riderOrder?.slotStartTime, riderOrder?.slotEndTime);
+              const isFuture = isBookingFutureDate(riderOrder?.bookingDate);
+              return (
+                <div className="bg-white/5 rounded-2xl p-4 border border-white/10 space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-400 font-bold uppercase tracking-wider">Customer</span>
+                    <span className="font-black text-white">{riderOrder?.customerName}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-400 font-bold uppercase tracking-wider">Total Due</span>
+                    <span className="font-black text-white">₱{riderOrder?.totalPrice?.toFixed(2)}</span>
+                  </div>
+                  {bookDate && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 font-bold uppercase tracking-wider">Booking Date</span>
+                      <span className="font-black text-white">{bookDate}</span>
+                    </div>
+                  )}
+                  {bookSlot && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 font-bold uppercase tracking-wider">Time Slot</span>
+                      <span className="font-black text-white">{bookSlot}</span>
+                    </div>
+                  )}
+                  {isFuture && (
+                    <div className="mt-1 flex items-center gap-1.5 bg-amber-500/20 border border-amber-400/30 rounded-xl px-3 py-2">
+                      <span className="text-xs font-black text-amber-200 uppercase tracking-wide">⚠ Scheduled for a future date</span>
+                    </div>
+                  )}
                 </div>
-                <div className="flex justify-between items-center text-xs mt-2">
-                  <span className="text-slate-400 font-bold uppercase tracking-wider">Total Due</span>
-                  <span className="font-black text-blue-400">₱{orders.find(o => o.id === assignRiderOrderId)?.totalPrice?.toFixed(2)}</span>
-                </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
 
           <div className="p-8 space-y-6">
@@ -1757,6 +1809,22 @@ export default function OrderManagementPage() {
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Laundry Services</p>
                   </div>
                   <div className="p-4 space-y-3">
+                    {selectedOrder.bookingDate && (
+                      <div className="flex justify-between items-center bg-slate-50 rounded-lg px-3 py-2">
+                        <div>
+                          <p className="text-[10px] text-slate-400 font-black uppercase tracking-wider">Booking Schedule</p>
+                          <p className="font-bold text-slate-700 text-[11px] mt-0.5">
+                            {formatBookingDate(selectedOrder.bookingDate)}
+                            {formatSlotTime(selectedOrder.slotStartTime, selectedOrder.slotEndTime) && (
+                              <span className="ml-2 text-slate-500">{formatSlotTime(selectedOrder.slotStartTime, selectedOrder.slotEndTime)}</span>
+                            )}
+                          </p>
+                        </div>
+                        {isBookingFutureDate(selectedOrder.bookingDate) && (
+                          <span className="text-[8px] font-black text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 uppercase tracking-wide">Future</span>
+                        )}
+                      </div>
+                    )}
                     <div className="flex justify-between items-center">
                       <p className="text-[11px] text-slate-400 font-bold uppercase">Package</p>
                       <p className="font-black text-slate-800 text-sm">{selectedOrder.serviceName || serviceTypeLabel[selectedOrder.serviceType]}</p>
@@ -1952,6 +2020,7 @@ export default function OrderManagementPage() {
                         const nextStatus = getAllowedStatusTransitions(selectedOrder.status)[0];
                         const isGcash = selectedOrder.paymentMethod?.toUpperCase().includes("GCASH");
                         const isCash = isCashPaymentMethod(selectedOrder.paymentMethod);
+                        const washingPaymentBlocked = nextStatus === "WASHING" && isGcash && !selectedOrder.isPaid;
                         const deliveryPaymentBlocked = nextStatus === "DELIVERED" && isGcash && !selectedOrder.isPaid;
                         const needsCodConfirm = nextStatus === "DELIVERED" && isCash && !selectedOrder.isPaid;
                         const handleMarkNextStep = () => {
@@ -1970,7 +2039,7 @@ export default function OrderManagementPage() {
                             <Button
                               className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14 disabled:opacity-50"
                               onClick={handleMarkNextStep}
-                              disabled={!!deliveryPaymentBlocked}
+                              disabled={!!deliveryPaymentBlocked || !!washingPaymentBlocked}
                             >
                               {statusUpdatingId === selectedOrder.id ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
                               Mark as {statusLabel[nextStatus] || 'Next Step'}
@@ -1983,6 +2052,13 @@ export default function OrderManagementPage() {
                               >
                                 <Eye className="mr-2 h-4 w-4" /> Receipt
                               </Button>
+                            )}
+                            {washingPaymentBlocked && (
+                              <div className="w-full bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
+                                <p className="text-[11px] font-bold text-amber-600 uppercase tracking-widest italic">
+                                  GCash payment must be confirmed before washing can start.
+                                </p>
+                              </div>
                             )}
                             {deliveryPaymentBlocked && (
                               <div className="w-full bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
