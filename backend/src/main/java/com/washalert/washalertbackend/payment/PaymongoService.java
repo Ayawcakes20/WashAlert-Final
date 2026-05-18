@@ -96,14 +96,14 @@ public class PaymongoService {
         Map<String, Object> response = null;
 
         try {
-            log.info("[PAYMONGO] Creating session tracking={} body={}", order.getTrackingNumber(), payload);
+            log.info("[PAYMONGO] Sending checkout session request tracking={}", order.getTrackingNumber());
             response = restTemplate.postForObject(url, request, Map.class);
             
             if (response != null && response.get("data") instanceof Map<?, ?> dataMap) {
                 if (dataMap.get("attributes") instanceof Map<?, ?> respAttrs) {
                     Object checkoutUrlObj = respAttrs.get("checkout_url");
                     if (checkoutUrlObj instanceof String checkoutUrl) {
-                        log.info("[PAYMONGO] Success: tracking={} checkoutUrl={}", order.getTrackingNumber(), checkoutUrl);
+                        log.info("[PAYMONGO] Checkout session created successfully tracking={}", order.getTrackingNumber());
                         return checkoutUrl;
                     }
                 }
@@ -113,10 +113,12 @@ public class PaymongoService {
         } catch (IllegalStateException ex) {
             throw ex;
         } catch (org.springframework.web.client.HttpStatusCodeException ex) {
-            String errorBody = ex.getResponseBodyAsString();
-            log.error("[PAYMONGO] API Error tracking={} status={} body={}", 
-                    order.getTrackingNumber(), ex.getStatusCode(), errorBody);
-            throw new IllegalStateException("PayMongo Error: " + errorBody);
+            // Log only the HTTP status code — never log raw PayMongo body which may contain
+            // payment details, tokens, or internal error messages.
+            log.error("[PAYMONGO] API error from PayMongo tracking={} httpStatus={}",
+                    order.getTrackingNumber(), ex.getStatusCode());
+            throw new IllegalStateException(
+                    "Unable to start GCash checkout right now. Please try again or choose another payment option.");
         } catch (Exception ex) {
             log.error("[PAYMONGO] Critical failure tracking={}", order.getTrackingNumber(), ex);
             throw new IllegalStateException("Failed to initiate GCash checkout: " + ex.getMessage());

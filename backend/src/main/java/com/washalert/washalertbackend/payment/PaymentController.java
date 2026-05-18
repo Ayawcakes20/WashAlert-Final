@@ -38,17 +38,14 @@ public class PaymentController {
 
     @PostMapping("/checkout/gcash/{trackingNumber}")
     public GcashCheckoutResponse initiateGcashCheckout(@PathVariable String trackingNumber) {
-        try {
-            String url = paymentService.initiateGcashCheckout(trackingNumber);
-            if (url == null || url.isEmpty()) {
-                throw new IllegalStateException("PayMongo checkout URL is null or empty for tracking: " + trackingNumber);
-            }
-            return new GcashCheckoutResponse(url);
-        } catch (ResponseStatusException ex) {
-            throw ex;
-        } catch (Exception ex) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Payment Service Error: " + ex.getMessage());
+        // ResponseStatusException from the service propagates naturally — no wrapper needed.
+        // A catch-all here would re-wrap meaningful 400/502 errors into 500.
+        String url = paymentService.initiateGcashCheckout(trackingNumber);
+        if (url == null || url.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "PayMongo returned an empty checkout URL. Please try again.");
         }
+        return new GcashCheckoutResponse(url);
     }
 
     @GetMapping("/track/{trackingNumber}")
