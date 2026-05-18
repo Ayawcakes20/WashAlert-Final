@@ -114,7 +114,7 @@ const DriverProfileScreen = ({ navigation }) => {
             <View style={styles.ratingRow}>
               <Ionicons name="star" size={13} color={colors.warning} />
               <Text style={styles.ratingVal}>{ratingText}</Text>
-              <Text style={styles.deliveriesCount}>· {stats.totalDeliveries} deliveries</Text>
+              <Text style={styles.deliveriesCount}>- {stats.totalDeliveries} deliveries</Text>
             </View>
           </View>
         </View>

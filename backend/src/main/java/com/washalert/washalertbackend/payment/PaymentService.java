@@ -227,11 +227,13 @@ public class PaymentService {
         try {
             checkoutUrl = paymongoService.createCheckoutSession(order);
         } catch (IllegalStateException ex) {
-            log.error("[PAYMENT][GCASH] PayMongo configuration or validation error tracking={}: {}", tracking, ex.getMessage());
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage());
+            log.error("[PAYMENT][GCASH] PayMongo checkout error tracking={}: {}", tracking, ex.getMessage());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Unable to start GCash checkout right now. Please try again or choose another payment option.");
         } catch (Exception ex) {
-            log.error("[PAYMENT][GCASH] Unexpected PayMongo error tracking={}: {}", tracking, ex.getMessage());
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Unable to generate GCash checkout URL. Please try again later.");
+            log.error("[PAYMENT][GCASH] Unexpected PayMongo error tracking={}", tracking, ex);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "Unable to start GCash checkout right now. Please try again or choose another payment option.");
         }
 
         if (checkoutUrl == null || checkoutUrl.isBlank()) {
