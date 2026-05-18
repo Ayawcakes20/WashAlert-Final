@@ -219,7 +219,16 @@ const DriverDashboardScreen = ({ navigation }) => {
                     <View style={styles.taskMeta}>
                        <Text style={styles.taskCustomer}>{item.contactName || item.customerName}</Text>
                        <Text style={styles.taskOrderNum}>#{item.trackingNumber || item.id}</Text>
-                       <Text style={styles.taskStatus}>{cfg.label}{item.bookingDate ? ` · ${new Date(item.bookingDate).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}` : ''}</Text>
+                       <Text style={styles.taskStatus}>
+                         {cfg.label}
+                         {item.bookingDate ? ` · ${new Date(item.bookingDate).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}` : ''}
+                         {item.scheduleTime ? ` · ${item.scheduleTime}` : ''}
+                       </Text>
+                       {(item.deliveryAddress || item.delivery?.address) ? (
+                         <Text style={styles.taskAddress} numberOfLines={1}>
+                           📍 {item.deliveryAddress || item.delivery?.address}
+                         </Text>
+                       ) : null}
                     </View>
                     <Ionicons name="chevron-forward" size={18} color="#D1D5DB" />
                   </View>
@@ -458,6 +467,12 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontWeight: '600',
     marginTop: 1,
+  },
+  taskAddress: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '500',
+    marginTop: 2,
   },
 
   // Load more

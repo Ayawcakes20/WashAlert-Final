@@ -57,6 +57,10 @@ public interface JobOrderRepository extends JpaRepository<JobOrder, Long> {
 
     long countByBranchIgnoreCaseAndBookingDateAndSlotStartTime(String branch, LocalDate bookingDate, LocalTime slotStartTime);
 
+    List<JobOrder> findByCustomerEmailIgnoreCaseAndBranchIgnoreCaseAndBookingDateAndSlotStartTimeAndStatusAndCreatedAtAfter(
+            String customerEmail, String branch, LocalDate bookingDate, LocalTime slotStartTime,
+            JobOrderStatus status, LocalDateTime createdAfter);
+
     List<JobOrder> findByStatusAndServiceTypeOrderByCreatedAtDesc(JobOrderStatus status, ServiceType serviceType);
 
     @Query(

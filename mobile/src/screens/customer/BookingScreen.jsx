@@ -344,9 +344,9 @@ export default function BookingScreen({ route, navigation }) {
       try {
         await bookings.checkSupplies(
           branch?.name,
-          det==='none' ? 'None' : (DET_OPTS.find(o=>o.id===det)?.label || 'None'),
+          det==='none' ? 'Customer Provided' : (DET_OPTS.find(o=>o.id===det)?.label || 'Customer Provided'),
           det==='none' ? 0 : detQty,
-          fab==='none' ? 'None' : (FAB_OPTS.find(o=>o.id===fab)?.label || 'None'),
+          fab==='none' ? 'Customer Provided' : (FAB_OPTS.find(o=>o.id===fab)?.label || 'Customer Provided'),
           fab==='none' ? 0 : fabQty
         );
         setStep(5);
@@ -418,9 +418,9 @@ export default function BookingScreen({ route, navigation }) {
         serviceTypeBackend:mode.backendServiceType,
         scheduleDate:schDate,
         scheduleTime:schTime,
-        detergent:DET_OPTS.find(o=>o.id===submitDet)?.label||'None',
+        detergent:DET_OPTS.find(o=>o.id===submitDet)?.label||'Customer Provided',
         detergentQuantity: submitDet === 'none' ? 0 : detQty,
-        conditioner:FAB_OPTS.find(o=>o.id===submitFab)?.label||'None',
+        conditioner:FAB_OPTS.find(o=>o.id===submitFab)?.label||'Customer Provided',
         conditionerQuantity: submitFab === 'none' ? 0 : fabQty,
         estimatedWeightKg: loadSize === 'LARGE' ? 8 : 5,
         delivery: needsAddr,
@@ -912,8 +912,8 @@ export default function BookingScreen({ route, navigation }) {
                 <Ionicons name="sparkles-outline" size={14} color={colors.primary}/>
                 <Text style={S.summaryTitle}>EXTRAS</Text>
               </View>
-              <Row label="Detergent" value={det==='none'?'None':`${detOpt?.label} x${detQty} (₱${detCost})`}/>
-              <Row label="Fabric Conditioner" value={fab==='none'?'None':`${fabOpt?.label} x${fabQty} (₱${fabCost})`}/>
+              <Row label="Detergent" value={det==='none'?'Customer Provided':`${detOpt?.label} x${detQty} (₱${detCost})`}/>
+              <Row label="Fabric Conditioner" value={fab==='none'?'Customer Provided':`${fabOpt?.label} x${fabQty} (₱${fabCost})`}/>
               {rush && <Row label="Rush Service" value="Yes (+₱150)"/>}
             </View>
 

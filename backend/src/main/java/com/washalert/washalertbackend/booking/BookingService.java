@@ -17,7 +17,9 @@ import com.washalert.washalertbackend.notification.NotificationService;
 import com.washalert.washalertbackend.payment.PaymentStatus;
 import com.washalert.washalertbackend.user.Role;
 import jakarta.transaction.Transactional;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -127,6 +129,21 @@ public class BookingService {
         if (req.preferredDate().isEqual(LocalDate.now()) && slotStart.isBefore(LocalTime.now())) {
             throw new IllegalArgumentException(
                     "This time slot has already passed. Please choose another schedule.");
+        }
+
+        // Duplicate detection: if the same customer has an identical pending booking for this
+        // branch/date/slot submitted within the last 60 seconds, return a friendly message instead
+        // of creating a duplicate.
+        String normEmail = trimToNull(req.customerEmail());
+        if (normEmail != null) {
+            LocalDateTime since = LocalDateTime.now().minusSeconds(60);
+            List<JobOrder> recentDups = jobOrderRepository
+                    .findByCustomerEmailIgnoreCaseAndBranchIgnoreCaseAndBookingDateAndSlotStartTimeAndStatusAndCreatedAtAfter(
+                            normEmail, cleanBranch, req.preferredDate(), slotStart, JobOrderStatus.PENDING, since);
+            if (!recentDups.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "A booking for this slot was just submitted. Check your Orders tab — your booking is already confirmed.");
+            }
         }
 
         // Lock branch machines to serialize booking writes and prevent slot overbooking races.

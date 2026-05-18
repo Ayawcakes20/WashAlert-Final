@@ -91,7 +91,8 @@ public class InventoryService {
     public void validateConsumableAvailability(String branch, String rawItemName, int requiredQty) {
         if (rawItemName == null || rawItemName.isBlank()) return;
         String lower = rawItemName.trim().toLowerCase(Locale.ROOT);
-        if (lower.equals("none") || lower.equals("no detergent") || lower.equals("no fabric conditioner")) return;
+        if (lower.equals("none") || lower.equals("no detergent") || lower.equals("no fabric conditioner")
+                || lower.equals("customer provided")) return;
         if (requiredQty <= 0) return;
 
         String resolvedName = resolveInventoryItemName(rawItemName);
@@ -565,7 +566,7 @@ public class InventoryService {
     private boolean hasConsumableSelection(String value) {
         if (value == null) return false;
         String normalized = value.trim().toLowerCase();
-        return !normalized.isBlank() && !normalized.equals("none");
+        return !normalized.isBlank() && !normalized.equals("none") && !normalized.equals("customer provided");
     }
 
     private boolean isDetergentItem(InventoryItemResponse item) {

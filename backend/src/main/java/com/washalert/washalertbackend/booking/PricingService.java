@@ -100,10 +100,8 @@ public class PricingService {
         String name = serviceName.toLowerCase(Locale.ROOT);
 
         if (isDryOnlyService(name)) {
-            boolean detActive = detergent != null && !detergent.isBlank()
-                    && !detergent.equalsIgnoreCase("none");
-            boolean fabActive = fabcon != null && !fabcon.isBlank()
-                    && !fabcon.equalsIgnoreCase("none");
+            boolean detActive = !isNoSupply(detergent);
+            boolean fabActive = !isNoSupply(fabcon);
             if (detActive || fabActive) {
                 throw new IllegalArgumentException("Add-ons are not needed for Dry-only service.");
             }
@@ -113,10 +111,8 @@ public class PricingService {
         int maxLoads = computeLoadCount(serviceName, weightKg);
         if (maxLoads <= 0) return;
 
-        boolean detActive = detergent != null && !detergent.isBlank()
-                && !detergent.equalsIgnoreCase("none");
-        boolean fabActive = fabcon != null && !fabcon.isBlank()
-                && !fabcon.equalsIgnoreCase("none");
+        boolean detActive = !isNoSupply(detergent);
+        boolean fabActive = !isNoSupply(fabcon);
 
         if (detActive && detQty > maxLoads) {
             throw new IllegalArgumentException(
@@ -126,6 +122,13 @@ public class PricingService {
             throw new IllegalArgumentException(
                     "This booking only needs up to " + maxLoads + " pack(s) based on the number of loads.");
         }
+    }
+
+    /** Returns true when the supply value means "no supply selected". Handles null, blank, "none", and "customer provided". */
+    private static boolean isNoSupply(String s) {
+        if (s == null || s.isBlank()) return true;
+        String lower = s.trim().toLowerCase(Locale.ROOT);
+        return lower.equals("none") || lower.equals("customer provided");
     }
 
     // Mirrors the dry-only price branch in calculateServicePrice():
