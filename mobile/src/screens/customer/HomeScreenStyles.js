@@ -68,6 +68,17 @@ const S = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
   },
+  // "View Package Details & Inclusions" button below service cards
+  servicesDetailBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, marginHorizontal: 20, marginTop: 12, marginBottom: 4,
+    paddingVertical: 10, paddingHorizontal: 16,
+    backgroundColor: colors.background,
+    borderRadius: 12, borderWidth: 1, borderColor: colors.border,
+  },
+  servicesDetailBtnTxt: {
+    fontSize: 13, fontWeight: '600', color: colors.primary, flex: 1, textAlign: 'center',
+  },
 
   // ─── Scroll container sits on dark navy bg ────────────────────────────────
   scroll: { flex: 1, backgroundColor: colors.primary },

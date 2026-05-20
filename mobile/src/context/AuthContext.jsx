@@ -384,34 +384,35 @@ export const AuthProvider = ({ children }) => {
         email: normalizedEmail,
       });
 
-      console.info('[Auth][Mobile] OTP request started', { email: normalizedEmail });
-      logFirebaseTokenDiagnostics(firebaseIdToken, 'firebase-login-otp/request');
-      const challenge = await authRequest('/api/auth/firebase-login-otp/request', {
+      console.info('[Auth][Mobile] Direct login started', { email: normalizedEmail });
+      logFirebaseTokenDiagnostics(firebaseIdToken, 'firebase/direct-login');
+      const result = await authRequest('/api/auth/firebase/direct-login', {
         method: 'POST',
         body: {
           idToken: firebaseIdToken,
           platform: 'MOBILE',
         },
       });
-      console.info('[Auth][Mobile] OTP request success', {
+      console.info('[Auth][Mobile] Direct login success', {
         email: normalizedEmail,
-        resendCooldownSeconds: challenge?.resendCooldownSeconds || 60,
-        requiresPasswordUpdate: Boolean(challenge?.requiresPasswordUpdate),
+        requiresPasswordUpdate: Boolean(result?.requiresPasswordUpdate),
       });
       await persistOnboardingSeen();
-      if (challenge?.requiresPasswordUpdate) {
+      if (result?.requiresPasswordUpdate) {
         return {
           success: true,
           requiresPasswordUpdate: true,
           email: normalizedEmail,
-          message: challenge?.message || 'Password update required before continuing.',
+          message: result?.message || 'Password update required before continuing.',
         };
       }
+      const profile = requireSessionProfilePayload(result, 'Login');
+      const mapped = mapSessionProfile(profile);
+      setUser(mapped);
+      await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(mapped));
       return {
         success: true,
-        requiresOtp: true,
-        email: normalizedEmail,
-        resendCooldownSeconds: challenge?.resendCooldownSeconds || 60,
+        user: mapped,
       };
     } catch (error) {
       console.error('[Auth][Mobile] Login flow failed', error);

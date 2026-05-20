@@ -67,14 +67,7 @@ const LoginScreen = ({ navigation }) => {
         });
         return;
       }
-      if (result.requiresOtp) {
-        navigation.navigate('OTPVerification', {
-          email: email.trim().toLowerCase(),
-          type: 'login_otp',
-        });
-        return;
-      }
-      Alert.alert('Login Failed', 'Unable to start OTP verification. Please try again.');
+      // result.success + user set in context — navigation handled by auth state listener
     } catch (_error) {
       Alert.alert('Login Failed', 'Unable to login right now. Please try again.');
     } finally {

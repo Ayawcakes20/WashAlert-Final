@@ -110,7 +110,6 @@ export default function LoginPage() {
     }
     setSubmitting(true);
     const normalizedEmail = email.trim();
-    let loginStep: "firebase_sign_in" | "otp_request" = "firebase_sign_in";
     try {
       console.info("[Auth][Web] Firebase sign-in started", { email: normalizedEmail });
       const firebaseAuth = await withTimeout(
@@ -119,31 +118,30 @@ export default function LoginPage() {
       );
       console.info("[Auth][Web] Firebase sign-in success", { email: firebaseAuth.email });
 
-      loginStep = "otp_request";
-      console.info("[Auth][Web] OTP request started", { email: normalizedEmail });
-      const challenge = await withTimeout(authApi.requestFirebaseLoginOtp({
+      const result = await withTimeout(authApi.firebaseDirectLogin({
         idToken: firebaseAuth.idToken,
         platform: "WEB",
-      }), "OTP request timed out. Please try again.");
-      console.info("[Auth][Web] OTP request success", {
-        email: normalizedEmail,
-        expiresInSeconds: challenge?.expiresInSeconds,
-        resendCooldownSeconds: challenge?.resendCooldownSeconds,
-      });
+      }), "Sign-in timed out. Please try again.");
+
+      if ("requiresPasswordUpdate" in result && result.requiresPasswordUpdate) {
+        saveFirebaseWebSession({
+          idToken: firebaseAuth.idToken,
+          refreshToken: firebaseAuth.refreshToken,
+          email: firebaseAuth.email,
+        });
+        navigate("/change-password");
+        return;
+      }
 
       saveFirebaseWebSession({
         idToken: firebaseAuth.idToken,
         refreshToken: firebaseAuth.refreshToken,
         email: firebaseAuth.email,
       });
-      toast.success(challenge?.message || "OTP sent to your email.");
-      navigate(`/login-otp?email=${encodeURIComponent(normalizedEmail)}`);
+      toast.success("Signed in successfully.");
+      navigate("/app/dashboard");
     } catch (err: any) {
-      if (loginStep === "firebase_sign_in") {
-        console.error("[Auth][Web] Firebase sign-in failed", err);
-      } else {
-        console.error("[Auth][Web] OTP request failed", err);
-      }
+      console.error("[Auth][Web] Login failed", err);
       const message = toFriendlyLoginMessage(err);
       setError(message);
       toast.error(message);
