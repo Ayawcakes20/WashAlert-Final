@@ -300,6 +300,11 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
 export const authApi = {
   login: (payload: { email: string; password: string; rememberMe?: boolean }) =>
     apiRequest<MeResponse>("/api/auth/login", { method: "POST", body: payload }),
+  firebaseDirectLogin: (payload: { idToken: string; platform: "WEB" | "MOBILE" }) =>
+    apiRequest<AuthSessionProfile | { requiresPasswordUpdate: true; message: string }>("/api/auth/firebase/direct-login", {
+      method: "POST",
+      body: payload,
+    }),
   requestFirebaseLoginOtp: (payload: { idToken: string; platform: "WEB" | "MOBILE"; selectedBranch?: string }) =>
     apiRequest<FirebaseLoginOtpChallenge>("/api/auth/firebase-login-otp/request", {
       method: "POST",

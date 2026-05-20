@@ -13,9 +13,8 @@ import AddressPickerSheet from '../../components/AddressPickerSheet';
 const { width } = Dimensions.get('window');
 
 const SERVICE_MODES = [
-  { id: 'FULL_SERVICE',  label: 'Full Service',  hint: 'Pickup → Laundry → Delivery', icon: 'washing-machine',  backendServiceType: 'PICKUP_DELIVERY', needsAddress: true  },
-  { id: 'DROP_OFF_ONLY', label: 'Drop-off Only', hint: 'You bring & pick up at branch', icon: 'store-outline',    backendServiceType: 'DROP_OFF',        needsAddress: false },
-  { id: 'PICKUP_ONLY',   label: 'Pickup Only',   hint: 'We pick up — you get at branch',icon: 'truck-outline',   backendServiceType: 'PICKUP_DELIVERY', needsAddress: true  },
+  { id: 'DELIVERY',  label: 'Delivery',  hint: 'We pick up your laundry and deliver it back clean', icon: 'truck-outline',  backendServiceType: 'PICKUP_DELIVERY', needsAddress: true  },
+  { id: 'PICK_UP',   label: 'Pick Up',   hint: 'Drop off your laundry at our branch and pick it up when done', icon: 'store-outline', backendServiceType: 'DROP_OFF',        needsAddress: false },
 ];
 const DET_OPTS = [
   { id: 'none',  label: 'Customer Provided',           price: 0  },
@@ -27,7 +26,7 @@ const FAB_OPTS = [
   { id: 'charm', label: 'Charm Fabcon (Basic)',         price: 15 },
   { id: 'downy', label: 'Downy (Premium)',              price: 25 },
 ];
-const VIS_STEPS = ['Branch','Service','Supplies','Schedule','Confirm'];
+const VIS_STEPS = ['Location','Service','Extras','Schedule','Confirm'];
 const VIS_MAP   = { 1:1, 2:1, 3:2, 4:3, 5:4, 6:5 };
 
 // ── Accurate Pricing Engine ──────────────────────────────────────────────────
@@ -126,7 +125,7 @@ export default function BookingScreen({ route, navigation }) {
   const [branches_, setBranches]  = useState([]);
   const [services_, setServices]  = useState([]);
   const [branch, setBranch]       = useState(null);
-  const [svcMode, setSvcMode]     = useState('FULL_SERVICE');
+  const [svcMode, setSvcMode]     = useState('DELIVERY');
   const [address, setAddress]     = useState(null);
   const [addrSheet, setAddrSheet] = useState(false);
   const [defAddr, setDefAddr]     = useState(null);
@@ -517,15 +516,15 @@ export default function BookingScreen({ route, navigation }) {
 
   return(
     <SafeAreaView style={S.container} edges={['top']}>
-      <AddressPickerSheet visible={addrSheet} title={svcMode==='PICKUP_ONLY'?'Pickup Address':'Pickup & Delivery Address'} onConfirm={a=>{setAddrSheet(false);setAddress(a);if(step===2)setStep(3);}} onClose={()=>setAddrSheet(false)} initialValue={address} fallbackCoordinate={branch?.latitude?{latitude:Number(branch.latitude),longitude:Number(branch.longitude)}:null}/>
+      <AddressPickerSheet visible={addrSheet} title="Pickup & Delivery Address" onConfirm={a=>{setAddrSheet(false);setAddress(a);if(step===2)setStep(3);}} onClose={()=>setAddrSheet(false)} initialValue={address} fallbackCoordinate={branch?.latitude?{latitude:Number(branch.latitude),longitude:Number(branch.longitude)}:null}/>
       <View style={S.hdr}><Text style={S.hdrTitle}>New Booking</Text><Text style={S.hdrSub}>Step {vis} of {VIS_STEPS.length}</Text></View>
       <Stepper/>
       <ScrollView ref={scrollRef} style={{flex:1}} contentContainerStyle={S.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
         {step===1&&(
           <View>
-            <Text style={S.q}>Where are we washing?</Text>
-            <Text style={S.hint}>Choose a branch and your preferred service type.</Text>
+            <Text style={S.q}>{"Let's start your booking"}</Text>
+            <Text style={S.hint}>Select how you want the service and choose a branch near you.</Text>
             <Text style={S.sec}>Service Type</Text>
             {SERVICE_MODES.map(m=>(
               <TouchableOpacity key={m.id} style={[S.modeCard,svcMode===m.id&&S.modeCardOn]} onPress={()=>setSvcMode(m.id)} activeOpacity={0.8}>
@@ -547,8 +546,8 @@ export default function BookingScreen({ route, navigation }) {
 
         {step===2&&(
           <View>
-            <Text style={S.q}>{svcMode==='PICKUP_ONLY'?'Where should we pick up?':'Pickup & delivery address?'}</Text>
-            <Text style={S.hint}>{svcMode==='FULL_SERVICE'?"We'll pick up from here and deliver back clean.":"We'll come pick up your laundry from this address."}</Text>
+            <Text style={S.q}>What is your address?</Text>
+            <Text style={S.hint}>We will pick up your laundry from here and deliver it back clean.</Text>
             <View style={S.branchPill}><Ionicons name="storefront-outline" size={14} color={colors.accent}/><Text style={S.branchPillTxt}>Processing at: <Text style={{fontWeight:'700'}}>{branch?.name}</Text></Text></View>
             {!address?(
               <TouchableOpacity style={S.addrEmpty} onPress={()=>setAddrSheet(true)} activeOpacity={0.75}>
@@ -572,8 +571,8 @@ export default function BookingScreen({ route, navigation }) {
         {step===3&&(
           <View>
             <Text style={S.q}>Choose a service</Text>
-            <Text style={S.hint}>Select the laundry package that suits your load. Prices shown are per-load flat rates (except Handwash).</Text>
-            
+            <Text style={S.hint}>Select the laundry package that fits your needs.</Text>
+
             <Text style={S.sec}>Laundry Package</Text>
             <View style={S.svcGrid}>
               {services_.map(svc=>(
@@ -584,6 +583,29 @@ export default function BookingScreen({ route, navigation }) {
                 </TouchableOpacity>
               ))}
             </View>
+
+            {/* Service inclusions — shown when a service is selected */}
+            {service && (()=>{
+              const n = (service.name||'').toLowerCase();
+              let inclusions = [];
+              if(n.includes('premium full'))     inclusions = ['Machine wash','Machine dry','Folding','Fabric conditioner included','Priority processing'];
+              else if(n.includes('basic full'))  inclusions = ['Machine wash','Machine dry','Folding'];
+              else if(n.includes('ecowash'))     inclusions = ['Eco-friendly wash cycle','Machine dry','Folding'];
+              else if(n.includes('handwash'))    inclusions = ['Hand wash (gentle on delicates)','Air dry recommended'];
+              else if(n.includes('dry'))         inclusions = ['Machine dry only','No washing included'];
+              else                               inclusions = ['Machine wash','Folding'];
+              return inclusions.length>0?(
+                <View style={{backgroundColor:'#F0FDF4',borderRadius:14,padding:14,borderWidth:1,borderColor:'#BBF7D0',marginTop:4}}>
+                  <Text style={{fontSize:12,fontWeight:'800',color:'#166534',marginBottom:8,letterSpacing:0.3}}>{"WHAT'S INCLUDED"}</Text>
+                  {inclusions.map((item,i)=>(
+                    <View key={i} style={{flexDirection:'row',alignItems:'center',gap:8,marginBottom:5}}>
+                      <Ionicons name="checkmark-circle" size={15} color="#16A34A"/>
+                      <Text style={{fontSize:13,color:'#166534'}}>{item}</Text>
+                    </View>
+                  ))}
+                </View>
+              ):null;
+            })()}
 
             <Text style={S.sec}>Estimated Load Size</Text>
             <View style={{flexDirection:'row',gap:12}}>

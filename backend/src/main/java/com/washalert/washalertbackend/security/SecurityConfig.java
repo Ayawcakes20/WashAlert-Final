@@ -147,6 +147,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST,
                                 "/api/auth/register",
                                 "/api/auth/login",
+                                "/api/auth/firebase/direct-login",
                                 "/api/auth/firebase/complete-first-login-password",
                                 "/api/auth/mobile/register-profile",
                                 "/api/auth/complete-invitation",
