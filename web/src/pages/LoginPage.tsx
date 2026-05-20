@@ -6,7 +6,7 @@ import logoLaundryHubs from "@/assets/logo-laundryhubs.webp";
 import logoSpeedyWash from "@/assets/logo-speedywash.webp";
 import { authApi } from "@/lib/api";
 import { firebaseAuthApi } from "@/lib/firebaseAuth";
-import { saveFirebaseWebSession } from "@/lib/session";
+import { saveFirebaseWebSession, saveSessionUser } from "@/lib/session";
 import { toast } from "@/components/ui/sonner";
 
 type LoginField = "email" | "password";
@@ -138,8 +138,31 @@ export default function LoginPage() {
         refreshToken: firebaseAuth.refreshToken,
         email: firebaseAuth.email,
       });
+
+      // Persist the session profile so RequireInternal/RequireRole guards pass.
+      const sessionProfile = result as Exclude<typeof result, { requiresPasswordUpdate: true }>;
+      const me = await authApi.me().catch(() => ({
+        id: sessionProfile.id,
+        firebaseUid: sessionProfile.firebaseUid,
+        email: sessionProfile.email,
+        fullName: sessionProfile.fullName,
+        role: sessionProfile.role,
+        status: sessionProfile.status,
+        branchId: sessionProfile.branchId,
+        branch: sessionProfile.branch,
+        enabled: sessionProfile.status === "ACTIVE",
+        mustChangePassword: false,
+        provider: "FIREBASE",
+      }));
+      saveSessionUser(me);
+
+      const role = (me.role || "").toUpperCase();
+      if (role !== "ADMIN" && role !== "STAFF") {
+        navigate("/unauthorized");
+        return;
+      }
       toast.success("Signed in successfully.");
-      navigate("/app/dashboard");
+      navigate("/dashboard");
     } catch (err: any) {
       console.error("[Auth][Web] Login failed", err);
       const message = toFriendlyLoginMessage(err);
