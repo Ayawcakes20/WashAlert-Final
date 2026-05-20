@@ -242,6 +242,28 @@ public class AuthController {
         return ResponseEntity.ok(authService.toSessionResponse(finalizedUser, req.platform().trim().toUpperCase()));
     }
 
+    @PostMapping("/firebase/direct-login")
+    public ResponseEntity<?> firebaseDirectLogin(
+            @Valid @RequestBody CompleteFirstLoginPasswordRequest req,
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) {
+        try {
+            User resolvedUser = authService.resolveFirebaseUserForLoginChallenge(req.idToken(), req.platform(), null);
+            if (resolvedUser.isMustChangePassword()) {
+                return ResponseEntity.ok(Map.of(
+                    "requiresPasswordUpdate", true,
+                    "message", "Password update required before continuing."
+                ));
+            }
+            User finalizedUser = authService.markLoginSuccess(resolvedUser.getId());
+            establishSession(finalizedUser, request, response);
+            return ResponseEntity.ok(authService.toSessionResponse(finalizedUser, req.platform().trim().toUpperCase()));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
+        }
+    }
+
     @PostMapping("/firebase/complete-first-login-password")
     public ResponseEntity<?> completeFirstLoginPassword(
             @Valid @RequestBody CompleteFirstLoginPasswordRequest req,

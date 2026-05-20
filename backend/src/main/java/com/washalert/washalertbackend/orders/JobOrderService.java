@@ -1304,6 +1304,7 @@ public class JobOrderService {
                     "Orders can only be cancelled when PENDING or awaiting your price confirmation. Current status: " + jo.getStatus());
         }
 
+        inventoryService.releaseForOrder(jo);
         String cancelReason = jo.getStatus() == JobOrderStatus.AWAITING_PRICE_CONFIRMATION
             ? "Customer rejected final price and cancelled"
             : "Cancelled by customer";

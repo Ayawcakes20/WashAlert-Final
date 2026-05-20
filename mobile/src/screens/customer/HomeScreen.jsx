@@ -318,6 +318,16 @@ export default function HomeScreen({ navigation }) {
               </TouchableOpacity>
             }
           />
+
+          <TouchableOpacity
+            style={S.servicesDetailBtn}
+            onPress={() => navigation.navigate('Services')}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="list-outline" size={15} color={colors.primary} />
+            <Text style={S.servicesDetailBtnTxt}>View Package Details & Inclusions</Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.primary} />
+          </TouchableOpacity>
         </View>
 
         {/* ── Body Sheet ───────────────────────────────────────────────── */}

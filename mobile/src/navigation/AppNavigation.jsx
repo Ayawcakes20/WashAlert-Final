@@ -39,6 +39,7 @@ import TermsAndConditionsScreen from '../screens/customer/TermsAndConditionsScre
 import PrivacyPolicyScreen from '../screens/customer/PrivacyPolicyScreen';
 import PaymentSuccessScreen from '../screens/customer/PaymentSuccessScreen';
 import PaymentCancelScreen from '../screens/customer/PaymentCancelScreen';
+import ServicesScreen from '../screens/customer/ServicesScreen';
 
 // Driver Screens
 import DriverDashboardScreen from '../screens/driver/DriverDashboardScreen';
@@ -267,6 +268,7 @@ const CustomerStack = () => (
     <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={stackHeader('Privacy Policy')} />
     <Stack.Screen name="PaymentSuccess" component={PaymentSuccessScreen} options={stackHeader('Payment Success')} />
     <Stack.Screen name="PaymentCancel"  component={PaymentCancelScreen}  options={stackHeader('Payment Cancelled')} />
+    <Stack.Screen name="Services"       component={ServicesScreen}        options={{ headerShown: false }} />
   </Stack.Navigator>
 );
 

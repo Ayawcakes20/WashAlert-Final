@@ -376,7 +376,7 @@ export default function PredictiveInventoryPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/30">
-                {["Item", "Category", "Current Stock", "Reserved", "Unit", "Proj. Use 7d", "After 7d", "Reorder Level", "Status", "Actions"].map((h) => (
+                {["Item", "Category", "Current Stock", "Expected Use", "Unit", "Proj. Use 7d", "After 7d", "Reorder Level", "Status", "Actions"].map((h) => (
                   <th key={h} className="text-left p-4 font-medium text-muted-foreground whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -399,7 +399,7 @@ export default function PredictiveInventoryPage() {
                       {(() => {
                         const reserved = pendingConsumption[inv.product] ?? 0;
                         return reserved > 0
-                          ? <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">{reserved} reserved</span>
+                          ? <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">{reserved} expected</span>
                           : <span className="text-xs text-muted-foreground">—</span>;
                       })()}
                     </td>
