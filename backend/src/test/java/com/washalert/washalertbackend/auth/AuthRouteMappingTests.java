@@ -44,6 +44,7 @@ class AuthRouteMappingTests {
     void setPasswordEndpointIsMapped() throws NoSuchMethodException {
         Method setPasswordMethod = AuthController.class.getDeclaredMethod(
                 "setPassword",
+                com.washalert.washalertbackend.auth.dto.SetPasswordRequest.class,
                 HttpServletRequest.class
         );
         PostMapping postMapping = setPasswordMethod.getAnnotation(PostMapping.class);

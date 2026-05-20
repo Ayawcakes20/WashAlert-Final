@@ -58,14 +58,25 @@ class MigrationParityServiceTests {
                 new MachineResponse(1L, "M-1", "Main", MachineType.WASHER, MachineStatus.AVAILABLE, LocalDateTime.now())
         ));
         when(firestoreReadService.listInventoryItems()).thenReturn(List.of(
-                new InventoryItemResponse(1L, "Main", "Detergent", "Supplies", "kg", BigDecimal.ONE, BigDecimal.ONE, true, LocalDateTime.now())
+                new InventoryItemResponse(1L, "Main", "Detergent", "Supplies", "kg", BigDecimal.ONE, BigDecimal.ONE, true, 30, true, LocalDateTime.now())
         ));
         when(firestoreReadService.listOrders()).thenReturn(List.of(
-                new JobOrderResponse(
-                        1L, "WA-10001", "Customer", "Main", JobOrderStatus.PENDING, LocalDateTime.now(), LocalDateTime.now(),
-                        ServiceType.DROP_OFF, null, null, null, null, null, null, null, null, null, null, null,
-                        BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, BigDecimal.ZERO, false, "GCash", null,
-                        null, null, null, null, null, null, null, null, null, null, null)
+                JobOrderResponse.builder()
+                        .id(1L)
+                        .trackingNumber("WA-10001")
+                        .customerName("Customer")
+                        .branch("Main")
+                        .status(JobOrderStatus.PENDING)
+                        .createdAt(LocalDateTime.now())
+                        .updatedAt(LocalDateTime.now())
+                        .serviceType(ServiceType.DROP_OFF)
+                        .servicePrice(BigDecimal.ZERO)
+                        .suppliesPrice(BigDecimal.ZERO)
+                        .deliveryPrice(BigDecimal.ZERO)
+                        .totalPrice(BigDecimal.ZERO)
+                        .isPaid(false)
+                        .paymentMethod("GCash")
+                        .build()
         ));
         when(firestoreReadService.listDeliveries()).thenReturn(List.of(
                 new DeliveryResponse(
@@ -73,7 +84,7 @@ class MigrationParityServiceTests {
                         "Driver", 10L, "09999", null, null, "COD", "PENDING", false, BigDecimal.ZERO, BigDecimal.ONE, 1,
                         DeliveryWorkflowStatus.PENDING, DeliveryLeg.DELIVERY_TO_CUSTOMER, DeliveryStatus.PENDING_PICKUP,
                         null, null, null, null, null, null, LocalDateTime.now(),
-                        null, null, null, null, null, null, null, 1, null, null, null
+                        null, null, null, null, null, null, null, 1, null, null, null, null
                 )
         ));
 

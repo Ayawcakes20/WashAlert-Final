@@ -7,6 +7,7 @@ import com.washalert.washalertbackend.firebase.FirestoreSyncService;
 import com.washalert.washalertbackend.user.*;
 import com.washalert.washalertbackend.verification.MailService;
 import com.washalert.washalertbackend.verification.OtpService;
+import com.washalert.washalertbackend.security.PasswordStrengthValidator;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -26,9 +27,9 @@ class AuthServicePlatformRulesTests {
         FirestoreReadService firestoreReadService = mock(FirestoreReadService.class);
         DataReadProperties dataReadProperties = new DataReadProperties();
         FirebaseIdentityService firebaseIdentityService = mock(FirebaseIdentityService.class);
-        MailService mailService = mock(MailService.class);
         OtpService otpService = mock(OtpService.class);
-        PasswordResetProperties passwordResetProperties = new PasswordResetProperties();
+        PasswordResetService passwordResetService = mock(PasswordResetService.class);
+        PasswordStrengthValidator passwordStrengthValidator = mock(PasswordStrengthValidator.class);
 
         AuthService service = new AuthService(
                 users,
@@ -37,9 +38,9 @@ class AuthServicePlatformRulesTests {
                 firestoreReadService,
                 dataReadProperties,
                 firebaseIdentityService,
-                mailService,
                 otpService,
-                passwordResetProperties
+                passwordResetService,
+                passwordStrengthValidator
         );
 
         FirebaseToken token = mock(FirebaseToken.class);
@@ -74,9 +75,9 @@ class AuthServicePlatformRulesTests {
         FirestoreReadService firestoreReadService = mock(FirestoreReadService.class);
         DataReadProperties dataReadProperties = new DataReadProperties();
         FirebaseIdentityService firebaseIdentityService = mock(FirebaseIdentityService.class);
-        MailService mailService = mock(MailService.class);
         OtpService otpService = mock(OtpService.class);
-        PasswordResetProperties passwordResetProperties = new PasswordResetProperties();
+        PasswordResetService passwordResetService = mock(PasswordResetService.class);
+        PasswordStrengthValidator passwordStrengthValidator = mock(PasswordStrengthValidator.class);
 
         AuthService service = new AuthService(
                 users,
@@ -85,9 +86,9 @@ class AuthServicePlatformRulesTests {
                 firestoreReadService,
                 dataReadProperties,
                 firebaseIdentityService,
-                mailService,
                 otpService,
-                passwordResetProperties
+                passwordResetService,
+                passwordStrengthValidator
         );
 
         FirebaseToken token = mock(FirebaseToken.class);
@@ -122,9 +123,9 @@ class AuthServicePlatformRulesTests {
         FirestoreReadService firestoreReadService = mock(FirestoreReadService.class);
         DataReadProperties dataReadProperties = new DataReadProperties();
         FirebaseIdentityService firebaseIdentityService = mock(FirebaseIdentityService.class);
-        MailService mailService = mock(MailService.class);
         OtpService otpService = mock(OtpService.class);
-        PasswordResetProperties passwordResetProperties = new PasswordResetProperties();
+        PasswordResetService passwordResetService = mock(PasswordResetService.class);
+        PasswordStrengthValidator passwordStrengthValidator = mock(PasswordStrengthValidator.class);
 
         AuthService service = new AuthService(
                 users,
@@ -133,9 +134,9 @@ class AuthServicePlatformRulesTests {
                 firestoreReadService,
                 dataReadProperties,
                 firebaseIdentityService,
-                mailService,
                 otpService,
-                passwordResetProperties
+                passwordResetService,
+                passwordStrengthValidator
         );
 
         FirebaseToken token = mock(FirebaseToken.class);

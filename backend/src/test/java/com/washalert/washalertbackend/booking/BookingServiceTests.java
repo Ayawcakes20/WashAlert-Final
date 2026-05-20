@@ -14,6 +14,7 @@ import com.washalert.washalertbackend.orders.LoadSize;
 import com.washalert.washalertbackend.orders.ServiceType;
 import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
 import com.washalert.washalertbackend.booking.dto.CreateBookingRequest;
+import com.washalert.washalertbackend.inventory.InventoryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -48,7 +49,8 @@ class BookingServiceTests {
         timelineService = mock(JobOrderTimelineService.class);
         notificationService = mock(NotificationService.class);
         pricingService = mock(PricingService.class);
-
+        InventoryService inventoryService = mock(InventoryService.class);
+        
         BookingProperties bookingProperties = new BookingProperties();
         bookingProperties.setOpenHour(7);
         bookingProperties.setCloseHour(22);
@@ -61,7 +63,8 @@ class BookingServiceTests {
                 deliveryOrderRepository,
                 timelineService,
                 notificationService,
-                pricingService
+                pricingService,
+                inventoryService
         );
 
         when(machineRepository.lockByBranch(any())).thenReturn(List.of(activeMachine()));
@@ -71,7 +74,13 @@ class BookingServiceTests {
                         new BigDecimal("240.00"),
                         new BigDecimal("40.00"),
                         BigDecimal.ZERO,
-                        new BigDecimal("280.00")
+                        new BigDecimal("280.00"),
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        "None",
+                        "None",
+                        new BigDecimal("560.00"),
+                        1
                 ));
         when(jobOrderRepository.saveAndFlush(any(JobOrder.class))).thenAnswer(invocation -> {
             JobOrder order = invocation.getArgument(0);
@@ -94,10 +103,10 @@ class BookingServiceTests {
                 .paymentMethod("GCASH")
                 .build());
 
-        assertThat(response.id()).isEqualTo(17L);
-        assertThat(response.status()).isEqualTo(JobOrderStatus.PENDING);
-        assertThat(response.trackingNumber()).isEqualTo("WA-10017");
-        assertThat(response.paymentMethod()).isEqualTo("GCASH");
+        assertThat(response.getId()).isEqualTo(17L);
+        assertThat(response.getStatus()).isEqualTo(JobOrderStatus.PENDING);
+        assertThat(response.getTrackingNumber()).isEqualTo("WA-10017");
+        assertThat(response.getPaymentMethod()).isEqualTo("GCASH");
     }
 
     @Test
@@ -116,7 +125,7 @@ class BookingServiceTests {
                 .paymentMethod("cod")
                 .build());
 
-        assertThat(response.paymentMethod()).isEqualTo("CASH");
+        assertThat(response.getPaymentMethod()).isEqualTo("CASH");
     }
 
     @Test
@@ -253,7 +262,9 @@ class BookingServiceTests {
                     preferredDate,
                     preferredSlotStartTime,
                     detergentPreference,
+                    null,
                     fabricConditionerPreference,
+                    null,
                     loadSize,
                     estimatedWeightKg,
                     containsBulkyItems,
@@ -269,7 +280,13 @@ class BookingServiceTests {
                     deliveryContactName,
                     deliveryContactPhone,
                     branchLatitude,
-                    branchLongitude
+                    branchLongitude,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    null
             );
         }
     }

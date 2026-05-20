@@ -80,7 +80,7 @@ class BusinessRulesHardeningTests {
         assertThrows(IllegalStateException.class, () ->
                 jobOrderService.updateStatus(
                         order.getId(),
-                        new UpdateJobOrderRequest(JobOrderStatus.DRYING),
+                        new UpdateJobOrderRequest(JobOrderStatus.DRYING, null),
                         new AuthUserDetails(staff)
                 )
         );

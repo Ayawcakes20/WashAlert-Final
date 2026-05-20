@@ -233,7 +233,7 @@ public class BookingService {
                 .rushPrice(req.rushPrice() != null ? req.rushPrice() : est.rushPrice())
                 .deliveryPrice(req.deliveryPrice() != null ? req.deliveryPrice() : est.deliveryPrice())
                 .totalPrice(req.total() != null ? req.total() : est.totalPrice())
-                .paymentMethod(req.paymentMethod())
+                .paymentMethod(paymentMethod)
                 .serviceName(req.serviceName())
                 .status(JobOrderStatus.PENDING)
                 .createdAt(LocalDateTime.now())

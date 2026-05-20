@@ -6,6 +6,7 @@ import com.washalert.washalertbackend.common.DataReadProperties;
 import com.washalert.washalertbackend.firebase.FirestoreReadService;
 import com.washalert.washalertbackend.firebase.FirestoreSyncService;
 import com.washalert.washalertbackend.security.AuthUserDetails;
+import com.washalert.washalertbackend.security.PasswordStrengthValidator;
 import com.washalert.washalertbackend.user.AuthProvider;
 import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
@@ -34,9 +35,9 @@ class AuthServiceTests {
         DataReadProperties dataReadProperties = new DataReadProperties();
         dataReadProperties.setReadMode(DataReadMode.FIRESTORE);
         FirebaseIdentityService firebaseIdentityService = mock(FirebaseIdentityService.class);
-        MailService mailService = mock(MailService.class);
         OtpService otpService = mock(OtpService.class);
-        PasswordResetProperties passwordResetProperties = new PasswordResetProperties();
+        PasswordResetService passwordResetService = mock(PasswordResetService.class);
+        PasswordStrengthValidator passwordStrengthValidator = mock(PasswordStrengthValidator.class);
 
         AuthService service = new AuthService(
                 users,
@@ -45,9 +46,9 @@ class AuthServiceTests {
                 firestoreReadService,
                 dataReadProperties,
                 firebaseIdentityService,
-                mailService,
                 otpService,
-                passwordResetProperties
+                passwordResetService,
+                passwordStrengthValidator
         );
 
         User principalUser = User.builder()
@@ -97,9 +98,9 @@ class AuthServiceTests {
         DataReadProperties dataReadProperties = new DataReadProperties();
         dataReadProperties.setReadMode(DataReadMode.HYBRID);
         FirebaseIdentityService firebaseIdentityService = mock(FirebaseIdentityService.class);
-        MailService mailService = mock(MailService.class);
         OtpService otpService = mock(OtpService.class);
-        PasswordResetProperties passwordResetProperties = new PasswordResetProperties();
+        PasswordResetService passwordResetService = mock(PasswordResetService.class);
+        PasswordStrengthValidator passwordStrengthValidator = mock(PasswordStrengthValidator.class);
 
         AuthService service = new AuthService(
                 users,
@@ -108,9 +109,9 @@ class AuthServiceTests {
                 firestoreReadService,
                 dataReadProperties,
                 firebaseIdentityService,
-                mailService,
                 otpService,
-                passwordResetProperties
+                passwordResetService,
+                passwordStrengthValidator
         );
 
         User principalUser = User.builder()

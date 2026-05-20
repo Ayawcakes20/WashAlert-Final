@@ -246,7 +246,7 @@ public class JobOrderService {
         return new DashboardSummaryResponse(pending, washing, drying, ready, recent(principal));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, noRollbackFor = {IllegalArgumentException.class, OrderNotFoundException.class})
     public OrderTrackingResponse trackByTrackingNumber(String trackingNumber) {
         String cleanTracking = normalizeTrackingNumber(trackingNumber);
 

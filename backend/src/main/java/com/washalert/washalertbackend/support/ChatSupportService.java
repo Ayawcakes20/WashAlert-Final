@@ -12,7 +12,7 @@ import com.washalert.washalertbackend.support.dto.ChatSupportRequest;
 import com.washalert.washalertbackend.support.dto.ChatSupportResponse;
 import com.washalert.washalertbackend.support.dto.SupportTicketResponse;
 import com.washalert.washalertbackend.user.Role;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -58,7 +58,7 @@ public class ChatSupportService {
         this.notificationService = notificationService;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = IllegalArgumentException.class)
     public ChatSupportResponse reply(ChatSupportRequest req) {
         String sessionId = normalizeSessionId(req.sessionId());
         String userMessage = req.message().trim();

@@ -62,7 +62,7 @@ class HybridFallbackIntegrationTests {
         createOrder(tracking, "Light", JobOrderStatus.PENDING, ServiceType.DROP_OFF);
 
         JobOrderResponse fromList = jobOrderService.listAll(new AuthUserDetails(staff)).stream()
-                .filter(o -> tracking.equals(o.trackingNumber()))
+                .filter(o -> tracking.equals(o.getTrackingNumber()))
                 .findFirst()
                 .orElse(null);
 

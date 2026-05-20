@@ -10,6 +10,8 @@ import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
 import com.washalert.washalertbackend.user.UserStatus;
 import com.washalert.washalertbackend.verification.OtpService;
+import com.washalert.washalertbackend.security.LoginAttemptService;
+import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -31,7 +33,16 @@ class AuthControllerOtpFlowTests {
     void setUp() {
         authService = mock(AuthService.class);
         otpService = mock(OtpService.class);
-        controller = new AuthController(authService, otpService);
+        StaffInvitationService staffInvitationService = mock(StaffInvitationService.class);
+        PasswordResetService passwordResetService = mock(PasswordResetService.class);
+        LoginAttemptService loginAttemptService = mock(LoginAttemptService.class);
+        controller = new AuthController(
+                authService,
+                otpService,
+                staffInvitationService,
+                passwordResetService,
+                loginAttemptService
+        );
     }
 
     @Test
@@ -128,7 +139,8 @@ class AuthControllerOtpFlowTests {
 
         ResponseEntity<?> response = controller.verifyOtp(
                 new VerifyOtpRequest("customer@example.com", "111111"),
-                request
+                request,
+                mock(HttpServletResponse.class)
         );
 
         assertThat(response.getStatusCode().value()).isEqualTo(400);
