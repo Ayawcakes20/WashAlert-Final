@@ -410,12 +410,12 @@ export const ordersApi = {
     apiRequest<JobOrderResponse>(`/api/bookings/${id}/cancel`, {
       method: "PATCH",
     }),
-  setActualWeight: (id: number, payload: { actualWeightKg: number; finalPrice: number; deliveryFee?: number }) =>
+  setActualWeight: (id: number, payload: { actualWeightKg: number; finalPrice: number; deliveryFee?: number; detergentQuantity?: number; conditionerQuantity?: number }) =>
     apiRequest<JobOrderResponse>(`/api/orders/${id}/set-actual-weight`, {
       method: "PUT",
       body: payload,
     }),
-  setPrice: (id: number, payload: { actualWeightKg: number; finalPrice: number; deliveryFee?: number }) =>
+  setPrice: (id: number, payload: { actualWeightKg: number; finalPrice: number; deliveryFee?: number; detergentQuantity?: number; conditionerQuantity?: number }) =>
     apiRequest<JobOrderResponse>(`/api/orders/${id}/set-price`, {
       method: "POST",
       body: payload,

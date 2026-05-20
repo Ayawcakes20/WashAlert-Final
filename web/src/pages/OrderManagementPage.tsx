@@ -542,6 +542,8 @@ export default function OrderManagementPage() {
     actualWeightKg: number;
     finalPrice: number;
     deliveryFee: number;
+    detergentQuantity?: number;
+    conditionerQuantity?: number;
   }) => {
     if (!setPriceOrderId) return;
     setSetPriceSubmitting(true);
@@ -550,6 +552,8 @@ export default function OrderManagementPage() {
         actualWeightKg: params.actualWeightKg,
         finalPrice: params.finalPrice,
         deliveryFee: params.deliveryFee,
+        detergentQuantity: params.detergentQuantity,
+        conditionerQuantity: params.conditionerQuantity,
       });
       toast.success("✓ Receipt sent to customer");
       setSetPriceOpen(false);

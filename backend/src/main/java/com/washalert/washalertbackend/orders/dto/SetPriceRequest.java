@@ -15,5 +15,9 @@ public record SetPriceRequest(
         @DecimalMin(value = "0.0", inclusive = false, message = "Final price must be positive.")
         BigDecimal finalPrice,
 
-        BigDecimal deliveryFee
+        BigDecimal deliveryFee,
+
+        Integer detergentQuantity,
+
+        Integer conditionerQuantity
 ) {}

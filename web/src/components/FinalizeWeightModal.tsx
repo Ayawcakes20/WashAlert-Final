@@ -65,6 +65,8 @@ interface FinalizeWeightModalProps {
     deliveryFee: number;
     staffNotes?: string;
     manualAdjustment?: number;
+    detergentQuantity?: number;
+    conditionerQuantity?: number;
   }) => void;
   onCancel: () => void;
 }
@@ -320,10 +322,20 @@ export function FinalizeWeightModal({
     } catch { /* ignore – UI falls back to no cap */ }
   }, []);
 
-  const getAvailQty = (itemName: string | undefined): number => {
+  const getAvailQty = useCallback((itemName: string | undefined): number => {
     if (!itemName || itemName.toLowerCase() === "none") return 0;
     return availStock[itemName.toLowerCase()] ?? 999;
-  };
+  }, [availStock]);
+
+  const isHandwash = order?.serviceName?.toLowerCase().includes("handwash") ?? false;
+  const actualKg = parseFloat(actualWeightRaw) || 0;
+  const deliveryFee = parseFloat(deliveryFeeRaw) || 0;
+  const manualAdjustment = parseFloat(manualAdjustmentRaw) || 0;
+  const weightValid = actualKg >= 5;
+  const showWeightError = actualKg > 0 && !weightValid;
+  const calculatedLoads = isHandwash ? 1 : Math.ceil(actualKg / 9);
+
+  const prevLoadsRef = useRef<number | null>(null);
 
   // Reset form when a new order is opened
   useEffect(() => {
@@ -346,13 +358,43 @@ export function FinalizeWeightModal({
     }
   }, [open, order?.id, fetchAvailability]);
 
-  if (!order) return null;
+  // Keep track of calculated loads to detect changes and auto-scale supplies
+  useEffect(() => {
+    if (!open || !order) {
+      prevLoadsRef.current = null;
+      return;
+    }
 
-  const actualKg = parseFloat(actualWeightRaw) || 0;
-  const deliveryFee = parseFloat(deliveryFeeRaw) || 0;
-  const manualAdjustment = parseFloat(manualAdjustmentRaw) || 0;
-  const weightValid = actualKg >= 5;
-  const showWeightError = actualKg > 0 && !weightValid;
+    // Only scale if weight is valid
+    if (!weightValid) {
+      return;
+    }
+
+    const currentLoads = calculatedLoads;
+
+    // Initialize prevLoadsRef on first valid load calculation
+    if (prevLoadsRef.current === null) {
+      prevLoadsRef.current = currentLoads;
+      return;
+    }
+
+    if (prevLoadsRef.current !== currentLoads) {
+      // The number of loads has changed! Auto-adjust detergent and conditioner quantities if they are set (not "none")
+      const detMax = getAvailQty(order.detergent);
+      const conMax = getAvailQty(order.conditioner);
+
+      if (order.detergent && order.detergent.toLowerCase() !== "none") {
+        setDetQty(Math.min(detMax, currentLoads));
+      }
+      if (order.conditioner && order.conditioner.toLowerCase() !== "none") {
+        setConQty(Math.min(conMax, currentLoads));
+      }
+
+      prevLoadsRef.current = currentLoads;
+    }
+  }, [open, order, weightValid, calculatedLoads, getAvailQty]);
+
+  if (!order) return null;
 
   const pricing: PricingResult | null =
     weightValid ? computeOrderPricing({
@@ -370,6 +412,8 @@ export function FinalizeWeightModal({
       deliveryFee,
       staffNotes,
       manualAdjustment,
+      detergentQuantity: detQty,
+      conditionerQuantity: conQty,
     });
   };
 

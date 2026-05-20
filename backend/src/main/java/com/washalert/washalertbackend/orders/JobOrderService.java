@@ -514,6 +514,12 @@ public class JobOrderService {
         if (req.deliveryFee() != null) {
             jo.setDeliveryPrice(req.deliveryFee());
         }
+        if (req.detergentQuantity() != null) {
+            jo.setDetergentQuantity(req.detergentQuantity());
+        }
+        if (req.conditionerQuantity() != null) {
+            jo.setConditionerQuantity(req.conditionerQuantity());
+        }
         jo.setTotalPrice(
                 req.finalPrice().add(req.deliveryFee() != null ? req.deliveryFee() : java.math.BigDecimal.ZERO));
         jo.setStatus(JobOrderStatus.AWAITING_PRICE_CONFIRMATION);
