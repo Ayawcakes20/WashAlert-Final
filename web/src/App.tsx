@@ -66,6 +66,7 @@ const App = () => (
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/set-password" element={<SetPasswordPage />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
+          <Route path="/app/dashboard" element={<Navigate to="/dashboard" replace />} />
           <Route
             element={
               <RequireInternal>
