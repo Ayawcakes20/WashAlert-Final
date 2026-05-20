@@ -365,20 +365,49 @@ public class InventoryService {
     }
 
     /**
-     * Auto-deducts 1 pack each of the order's detergent and fabric conditioner
-     * from branch inventory when washing begins. Failures are swallowed so an
-     * inventory gap never blocks an order status transition.
+     * Deducts stock at booking time so inventory reflects reserved supplies immediately.
+     * Uses reason prefix "Booking: TN" so WASHING can detect and skip double-deduction.
+     */
+    @Transactional
+    public void deductAtBooking(JobOrder order) {
+        if (order == null || order.getBranch() == null) return;
+        String branch = order.getBranch().trim();
+        int detQty = (order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0) ? order.getDetergentQuantity() : 1;
+        int conQty = (order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0) ? order.getConditionerQuantity() : 1;
+        deductConsumable(branch, order.getDetergentPreference(), detQty, "Booking: " + order.getTrackingNumber(), "system");
+        deductConsumable(branch, order.getFabricConditionerPreference(), conQty, "Booking: " + order.getTrackingNumber(), "system");
+    }
+
+    /**
+     * Releases inventory reserved at booking when an order is cancelled.
+     * Adds stock back using reason "Booking-Release: TN".
+     */
+    @Transactional
+    public void releaseForOrder(JobOrder order) {
+        if (order == null || order.getBranch() == null) return;
+        String branch = order.getBranch().trim();
+        int detQty = (order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0) ? order.getDetergentQuantity() : 1;
+        int conQty = (order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0) ? order.getConditionerQuantity() : 1;
+        releaseConsumable(branch, order.getDetergentPreference(), detQty, "Booking-Release: " + order.getTrackingNumber(), "system");
+        releaseConsumable(branch, order.getFabricConditionerPreference(), conQty, "Booking-Release: " + order.getTrackingNumber(), "system");
+    }
+
+    /**
+     * Auto-deducts at WASHING. Skips if booking-time deduction already happened
+     * (identified by "Booking: TN" movement) to prevent double-deduction.
      */
     @Transactional
     public void deductForOrder(JobOrder order) {
         if (order == null || order.getBranch() == null) return;
+        if (movementRepository.existsByReasonStartingWith("Booking: " + order.getTrackingNumber())) {
+            log.info("[INVENTORY] Booking-time deduction already exists for {} — skipping WASHING deduct", order.getTrackingNumber());
+            return;
+        }
         String branch = order.getBranch().trim();
-        String actor = "system";
-
         int detQty = (order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0) ? order.getDetergentQuantity() : 1;
         int conQty = (order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0) ? order.getConditionerQuantity() : 1;
-        deductConsumable(branch, order.getDetergentPreference(), detQty, order.getTrackingNumber(), actor);
-        deductConsumable(branch, order.getFabricConditionerPreference(), conQty, order.getTrackingNumber(), actor);
+        deductConsumable(branch, order.getDetergentPreference(), detQty, "Order: " + order.getTrackingNumber(), "system");
+        deductConsumable(branch, order.getFabricConditionerPreference(), conQty, "Order: " + order.getTrackingNumber(), "system");
     }
 
     private String resolveInventoryItemName(String preference) {
@@ -391,7 +420,7 @@ public class InventoryService {
         return preference.trim();
     }
 
-    private void deductConsumable(String branch, String itemName, int qty, String trackingNumber, String actor) {
+    private void deductConsumable(String branch, String itemName, int qty, String reason, String actor) {
         if (!hasConsumableSelection(itemName) || qty <= 0) return;
         try {
             String resolvedName = resolveInventoryItemName(itemName);
@@ -414,14 +443,41 @@ public class InventoryService {
             InventoryMovement movement = InventoryMovement.builder()
                     .inventoryItem(saved)
                     .quantityDelta(deductAmount.negate())
-                    .reason("Order: " + trackingNumber)
+                    .reason(reason)
                     .performedBy(actor)
                     .build();
             movementRepository.save(movement);
             firestoreSyncService.upsert("inventory", String.valueOf(saved.getId()), toResponse(saved));
             maybeNotifyLowStockCrossed(saved, wasLow, isLowStock(saved), "deducted");
         } catch (Exception ex) {
-            log.error("[INVENTORY] Failed to deduct '{}' for order '{}': {}", itemName, trackingNumber, ex.getMessage());
+            log.error("[INVENTORY] Failed to deduct '{}' for reason '{}': {}", itemName, reason, ex.getMessage());
+        }
+    }
+
+    private void releaseConsumable(String branch, String itemName, int qty, String reason, String actor) {
+        if (!hasConsumableSelection(itemName) || qty <= 0) return;
+        try {
+            String resolvedName = resolveInventoryItemName(itemName);
+            InventoryItem item = itemRepository
+                    .findByBranchIgnoreCaseAndItemNameIgnoreCase(branch, resolvedName)
+                    .orElse(null);
+            if (item == null) {
+                log.warn("[INVENTORY] Release skipped — item '{}' not found in branch '{}'", resolvedName, branch);
+                return;
+            }
+            BigDecimal releaseAmount = BigDecimal.valueOf(qty);
+            item.setCurrentStock(item.getCurrentStock().add(releaseAmount));
+            InventoryItem saved = itemRepository.save(item);
+            InventoryMovement movement = InventoryMovement.builder()
+                    .inventoryItem(saved)
+                    .quantityDelta(releaseAmount)
+                    .reason(reason)
+                    .performedBy(actor)
+                    .build();
+            movementRepository.save(movement);
+            firestoreSyncService.upsert("inventory", String.valueOf(saved.getId()), toResponse(saved));
+        } catch (Exception ex) {
+            log.error("[INVENTORY] Failed to release '{}' for reason '{}': {}", itemName, reason, ex.getMessage());
         }
     }
 

@@ -855,9 +855,12 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
           onComplete: () => {
             const isCash = isCashCodPaymentMethod(delivery.paymentMethod) && !delivery.isPaid;
             if (isCash) {
+              const collectAmt = delivery.amountToCollect ?? 0;
               Alert.alert(
                 'Collect Payment',
-                `Did you collect PHP ${delivery.amountToCollect?.toLocaleString()} from ${delivery.customerName}?`,
+                collectAmt > 0
+                  ? `Did you collect PHP ${collectAmt.toLocaleString()} from ${delivery.customerName}?`
+                  : `Confirm cash collection from ${delivery.customerName}? (Final amount unavailable — verify with branch.)`,
                 [
                   { text: 'Not yet', style: 'cancel' },
                   { text: 'Yes, Collected', onPress: () => handleAction('confirmDelivery', { codCollected: true }) }

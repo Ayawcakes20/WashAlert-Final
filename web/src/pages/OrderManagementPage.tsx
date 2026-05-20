@@ -253,8 +253,44 @@ const renderStatusBadge = (status: ApiOrderStatus) => {
     );
   }
 
+  if (status === "PENDING") {
+    return (
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-yellow-50 text-yellow-700 border border-yellow-200 w-fit">
+        <div className="h-1.5 w-1.5 rounded-full bg-yellow-400 animate-pulse" />
+        <span className="text-[10px] font-bold uppercase tracking-tight">{label}</span>
+      </div>
+    );
+  }
+
+  if (status === "ASSIGNED_FOR_DELIVERY" || status === "EN_ROUTE_TO_BRANCH" || status === "PICKED_UP_FROM_BRANCH") {
+    return (
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 w-fit">
+        <div className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
+        <span className="text-[10px] font-bold uppercase tracking-tight">{label}</span>
+      </div>
+    );
+  }
+
+  if (status === "COLLECTION_FAILED") {
+    return (
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-orange-50 text-orange-700 border border-orange-200 w-fit">
+        <div className="h-1.5 w-1.5 rounded-full bg-orange-500" />
+        <span className="text-[10px] font-bold uppercase tracking-tight">{label}</span>
+      </div>
+    );
+  }
+
+  if (status === "CANCELLED" || status === "FAILED") {
+    return (
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-red-50 text-red-700 border border-red-200 w-fit">
+        <div className="h-1.5 w-1.5 rounded-full bg-red-400" />
+        <span className="text-[10px] font-bold uppercase tracking-tight">{label}</span>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-50 text-slate-500 border border-slate-100 w-fit">
+    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 border border-slate-200 w-fit">
       <span className="text-[10px] font-bold uppercase tracking-tight">{label}</span>
     </div>
   );

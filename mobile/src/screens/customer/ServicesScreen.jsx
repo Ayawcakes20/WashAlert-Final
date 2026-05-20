@@ -17,8 +17,8 @@ const LAUNDRY_SERVICES = [
     inclusions: [
       'Machine wash cycle',
       'Folding',
-      'Detergent (optional add-on)',
-      'Fabric conditioner (optional add-on)',
+      'Detergent — 1 pack (optional add-on)',
+      'Fabric conditioner — 1 pack (optional add-on)',
     ],
     note: 'Price is per load. Final load count confirmed after weighing at branch.',
   },
@@ -34,6 +34,7 @@ const LAUNDRY_SERVICES = [
     inclusions: [
       'Machine dry cycle',
       'Folding',
+      'No detergent or fabric conditioner needed',
     ],
     note: 'Best for items that are already washed or lightly used.',
   },
@@ -50,7 +51,8 @@ const LAUNDRY_SERVICES = [
       'Eco wash cycle',
       'Machine dry',
       'Folding',
-      'Detergent (optional add-on)',
+      'Detergent — 1 pack (optional add-on)',
+      'Fabric conditioner — not included (bring your own or skip)',
     ],
     note: 'Great for everyday clothes and delicates.',
   },
@@ -67,8 +69,8 @@ const LAUNDRY_SERVICES = [
       'Machine wash',
       'Machine dry',
       'Folding',
-      'Detergent (optional add-on)',
-      'Fabric conditioner (optional add-on)',
+      'Detergent — 1 pack (optional add-on)',
+      'Fabric conditioner — 1 pack (optional add-on)',
     ],
     note: 'Best value for regular household laundry.',
   },
@@ -85,8 +87,8 @@ const LAUNDRY_SERVICES = [
       'Machine wash',
       'Machine dry',
       'Folding',
-      'Premium detergent included',
-      'Fabric conditioner included',
+      'Premium detergent — 1 pack (included in price)',
+      'Fabric conditioner — 1 pack (included in price)',
       'Priority processing',
     ],
     note: 'Ideal for work clothes, uniforms, and items needing special care.',
@@ -104,6 +106,8 @@ const LAUNDRY_SERVICES = [
       'Hand wash (gentle on delicates)',
       'Air dry recommended',
       'Folding',
+      'Detergent — 1 pack (optional add-on)',
+      'Fabric conditioner — not recommended for delicates',
     ],
     note: 'Recommended for lingerie, silk, linen, and other delicates.',
   },
@@ -113,14 +117,14 @@ export default function ServicesScreen({ navigation }) {
   const [expanded, setExpanded] = useState(null);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={20} color={colors.text} />
         </TouchableOpacity>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Laundry Services</Text>
-          <Text style={styles.headerSub}>Our available packages and inclusions</Text>
+          <Text style={styles.headerSub}>Tap a package to see what is included</Text>
         </View>
       </View>
 
@@ -156,11 +160,16 @@ export default function ServicesScreen({ navigation }) {
                   </View>
                   <Text style={styles.price}>{svc.price}</Text>
                 </View>
-                <Ionicons
-                  name={isOpen ? 'chevron-up' : 'chevron-down'}
-                  size={18}
-                  color={colors.textTertiary}
-                />
+                <View style={styles.detailsToggle}>
+                  <Text style={[styles.detailsTxt, isOpen && styles.detailsTxtActive]}>
+                    {isOpen ? 'Hide' : 'Details'}
+                  </Text>
+                  <Ionicons
+                    name={isOpen ? 'chevron-up' : 'chevron-down'}
+                    size={14}
+                    color={isOpen ? colors.primary : colors.textTertiary}
+                  />
+                </View>
               </View>
 
               {isOpen && (
@@ -187,20 +196,23 @@ export default function ServicesScreen({ navigation }) {
           );
         })}
 
-        <View style={styles.footer}>
+        <View style={styles.footerNote}>
           <Text style={styles.footerText}>
             All prices are estimates. Final price is confirmed after weighing at the branch.
           </Text>
-          <TouchableOpacity
-            style={styles.bookBtn}
-            onPress={() => navigation.navigate('Book')}
-            activeOpacity={0.85}
-          >
-            <MaterialCommunityIcons name="washing-machine" size={18} color="#fff" />
-            <Text style={styles.bookBtnTxt}>Book Now</Text>
-          </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <View style={styles.stickyFooter}>
+        <TouchableOpacity
+          style={styles.bookBtn}
+          onPress={() => navigation.navigate('Book')}
+          activeOpacity={0.85}
+        >
+          <MaterialCommunityIcons name="washing-machine" size={18} color="#fff" />
+          <Text style={styles.bookBtnTxt}>Book Now</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -227,7 +239,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 20, fontWeight: '800', color: colors.text, letterSpacing: -0.3 },
   headerSub: { fontSize: 13, color: colors.textSecondary, marginTop: 1 },
-  scroll: { paddingHorizontal: 20, paddingBottom: 40 },
+  scroll: { paddingHorizontal: 20, paddingBottom: 16 },
   card: {
     backgroundColor: colors.surface,
     borderRadius: 16,
@@ -264,6 +276,19 @@ const styles = StyleSheet.create({
   },
   tagTxt: { fontSize: 10, fontWeight: '700' },
   price: { fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
+  detailsToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  detailsTxt: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textTertiary,
+  },
+  detailsTxtActive: {
+    color: colors.primary,
+  },
   details: {
     paddingHorizontal: 16,
     paddingBottom: 16,
@@ -284,8 +309,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 8,
   },
-  inclRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  inclText: { fontSize: 13, color: '#166534' },
+  inclRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 6 },
+  inclText: { fontSize: 13, color: '#166534', flex: 1, lineHeight: 18 },
   note: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -296,14 +321,22 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   noteTxt: { flex: 1, fontSize: 12, color: '#1D4ED8', lineHeight: 18 },
-  footer: { marginTop: 8, alignItems: 'center', gap: 12 },
+  footerNote: { marginTop: 4, marginBottom: 8 },
   footerText: { fontSize: 12, color: colors.textTertiary, textAlign: 'center', lineHeight: 18 },
+  stickyFooter: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.background,
+  },
   bookBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
     backgroundColor: colors.primary,
-    paddingHorizontal: 28,
     paddingVertical: 14,
     borderRadius: 14,
   },

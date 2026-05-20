@@ -242,6 +242,7 @@ public class BookingService {
         jobOrderRepository.saveAndFlush(order);
         order.setTrackingNumber(formatTrackingNumber(order.getId()));
         JobOrder saved = jobOrderRepository.save(order);
+        inventoryService.deductAtBooking(saved);
         timelineService.log(saved, saved.getStatus(), "customer", "Booking created");
         notificationService.enqueueEmail(
                 saved.getCustomerEmail(),

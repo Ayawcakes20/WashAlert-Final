@@ -5,6 +5,7 @@ import com.washalert.washalertbackend.common.dto.PagedResponse;
 import com.washalert.washalertbackend.delivery.dto.BranchHandoverRequest;
 import com.washalert.washalertbackend.delivery.dto.CreateDeliveryRequest;
 import com.washalert.washalertbackend.delivery.dto.DeliveryResponse;
+import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
 import com.washalert.washalertbackend.delivery.dto.DriverAvailableOrderResponse;
 import com.washalert.washalertbackend.delivery.dto.FinalHandoverRequest;
 import com.washalert.washalertbackend.delivery.dto.PickupCompleteRequest;
@@ -859,7 +860,9 @@ public class DeliveryService {
                 order.getTrackingNumber() + ":cod-paid"
         );
 
-        firestoreSyncService.upsert("deliveries", delivery.getJobOrder().getTrackingNumber(), toResponse(delivery));
+        firestoreSyncService.upsert("deliveries", order.getTrackingNumber(), toResponse(delivery));
+        firestoreSyncService.upsertBlocking("orders", order.getTrackingNumber(),
+                JobOrderResponse.from(order, PaymentStatus.PAID));
         return toResponse(delivery);
     }
 
