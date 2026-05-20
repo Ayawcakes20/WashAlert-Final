@@ -61,7 +61,12 @@ public class PaymongoWebhookService {
                     return;
                 }
 
-                PaymentRecord record = paymentRepository.findByJobOrder_TrackingNumber(trackingNumber.toUpperCase())
+                // Use List variant + findFirst() to avoid IncorrectResultSizeDataAccessException
+                // when multiple payment records exist for the same order (e.g. customer tapped GCash pay twice)
+                PaymentRecord record = paymentRepository
+                        .findByJobOrder_TrackingNumberOrderBySubmittedAtDesc(trackingNumber.toUpperCase())
+                        .stream()
+                        .findFirst()
                         .orElseThrow(() -> new IllegalStateException("Payment record not found for: " + trackingNumber));
 
                 if (record.getStatus() != PaymentStatus.PAID) {
@@ -107,8 +112,10 @@ public class PaymongoWebhookService {
                 log.info("Ignored Paymongo event: {}", eventType);
             }
         } catch (Exception ex) {
+            // Log the error but do NOT re-throw — rethrowing causes HTTP 500 which makes
+            // PayMongo retry the webhook indefinitely. We return 200 from the controller
+            // regardless, and rely on PayMongo's dashboard for manual inspection.
             log.error("Failed to process Paymongo webhook: {}", ex.getMessage(), ex);
-            throw new RuntimeException("Webhook processing error");
         }
     }
 }
