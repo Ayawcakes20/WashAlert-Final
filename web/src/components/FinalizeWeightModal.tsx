@@ -620,10 +620,10 @@ export function FinalizeWeightModal({
                     })()}
                   </div>
                   {pricing && pricing.numberOfLoads > detQty && (
-                    <p className="text-[10px] font-bold text-amber-600 bg-amber-50 p-2 rounded-lg flex items-center gap-2">
-                      <Info className="h-3 w-3" />
-                      Tip: Suggested {pricing.numberOfLoads} packs for {pricing.numberOfLoads} loads
-                    </p>
+                    <div className="text-sm font-bold text-red-600 bg-red-50 border border-red-200 p-3 rounded-lg flex items-center gap-2.5 shadow-sm">
+                      <AlertCircle className="h-5 w-5 shrink-0 text-red-500" />
+                      <span>Tip: Suggested {pricing.numberOfLoads} packs for {pricing.numberOfLoads} loads</span>
+                    </div>
                   )}
 
                   {/* Delivery fee & Adjustment row */}
@@ -661,18 +661,7 @@ export function FinalizeWeightModal({
                     </div>
                   </div>
 
-                  {/* Staff Notes */}
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                      Staff Remarks / Notes
-                    </label>
-                    <textarea
-                      value={staffNotes}
-                      onChange={(e) => setStaffNotes(e.target.value)}
-                      placeholder="Add any internal remarks or special notes for the customer..."
-                      className="w-full h-24 p-4 border-2 border-slate-200 rounded-xl font-medium text-sm focus:outline-none focus:border-blue-500 resize-none transition-all"
-                    />
-                  </div>
+
                 </div>
               </div>
 
@@ -853,6 +842,24 @@ export function FinalizeWeightModal({
                   </motion.div>
                 )}
               </AnimatePresence>
+
+              {/* Staff Remarks / Notes */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2">
+                  <div className="h-2.5 w-2.5 rounded-full bg-slate-400" />
+                  <p className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
+                    Staff Remarks / Notes
+                  </p>
+                </div>
+                <div className="p-5">
+                  <textarea
+                    value={staffNotes}
+                    onChange={(e) => setStaffNotes(e.target.value)}
+                    placeholder="Add any internal remarks or special notes for the customer..."
+                    className="w-full h-24 p-4 border-2 border-slate-200 rounded-xl font-medium text-sm focus:outline-none focus:border-blue-500 resize-none transition-all"
+                  />
+                </div>
+              </div>
             </div>
           </ScrollArea>
 
