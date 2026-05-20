@@ -56,26 +56,33 @@ public class SchemaMigrationRunner implements ApplicationRunner {
 
     private void addColumnIfMissing(String table, String column, String definition) {
         try {
-            // MySQL 8+ supports IF NOT EXISTS — use it directly
-            String sql = String.format(
-                    "ALTER TABLE `%s` ADD COLUMN IF NOT EXISTS `%s` %s",
-                    table, column, definition);
-            jdbc.execute(sql);
-            log.debug("[SchemaMigration] Ensured column {}.{}", table, column);
+            String checkSql = "SELECT count(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?";
+            Integer count = jdbc.queryForObject(checkSql, Integer.class, table, column);
+            
+            if (count == null || count == 0) {
+                String sql = String.format("ALTER TABLE `%s` ADD COLUMN `%s` %s", table, column, definition);
+                jdbc.execute(sql);
+                log.info("[SchemaMigration] Added column {}.{}", table, column);
+            } else {
+                log.debug("[SchemaMigration] Column {}.{} already exists", table, column);
+            }
         } catch (Exception e) {
-            // Older MySQL / MariaDB may not support IF NOT EXISTS — swallow safely
-            log.warn("[SchemaMigration] Could not add {}.{}: {}", table, column, e.getMessage());
+            log.warn("[SchemaMigration] Error adding {}.{}: {}", table, column, e.getMessage());
         }
     }
 
     private void addIndexIfMissing(String table, String indexName, String column) {
         try {
-            String sql = String.format(
-                    "CREATE INDEX IF NOT EXISTS `%s` ON `%s` (`%s`)",
-                    indexName, table, column);
-            jdbc.execute(sql);
+            String checkSql = "SELECT count(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?";
+            Integer count = jdbc.queryForObject(checkSql, Integer.class, table, indexName);
+            
+            if (count == null || count == 0) {
+                String sql = String.format("CREATE INDEX `%s` ON `%s` (`%s`)", indexName, table, column);
+                jdbc.execute(sql);
+                log.info("[SchemaMigration] Added index {}", indexName);
+            }
         } catch (Exception e) {
-            log.debug("[SchemaMigration] Index {} skipped: {}", indexName, e.getMessage());
+            log.warn("[SchemaMigration] Error adding index {}: {}", indexName, e.getMessage());
         }
     }
 }
