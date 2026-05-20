@@ -1570,9 +1570,11 @@ export const driverOrders = {
   getById: async (id) => {
     try {
       const order = await apiRequest(`/api/orders/driver/task/${id}`);
+      const mapped = mapJobOrderToMobile(order);
       return {
-        ...mapJobOrderToMobile(order),
+        ...mapped,
         status: String(order.status || '').toUpperCase(),
+        amountToCollect: mapped.finalPrice ?? mapped.amount ?? mapped.servicePrice ?? 0,
       };
     } catch (error) {
       throw new Error('Unable to load task. It may have already been completed or was not assigned to you.');
