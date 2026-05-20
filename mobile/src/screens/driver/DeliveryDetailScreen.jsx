@@ -572,45 +572,37 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
   const callCustomer = async () => {
     const rawPhone = delivery?.contactPhone || delivery?.customerPhone;
     if (!rawPhone) {
-      Alert.alert('No phone number available.', 'Customer contact number is not provided.');
+      Alert.alert('No Phone Number', 'Customer contact number is not provided.');
       return;
     }
-    
+
     try {
       const phone = normalizePhone(rawPhone);
       if (!phone) {
-        Alert.alert('Invalid phone number', 'The phone number format is invalid.');
+        Alert.alert('Invalid Number', 'The phone number format is not valid.');
         return;
       }
 
-      // Format for tel: URL — handle both +63 and 0 prefixes
+      // Format: convert leading 0 → +63 (Philippine numbers)
       let formattedPhone = phone;
       if (formattedPhone.startsWith('0')) {
-        // Convert 0 prefix to +63 for international format
         formattedPhone = '+63' + formattedPhone.slice(1);
       } else if (!formattedPhone.startsWith('+')) {
-        // If neither + nor 0, assume it's missing country code
         formattedPhone = '+63' + formattedPhone;
       }
 
-      const telUrl = `tel:${formattedPhone}`;
-      const canOpen = await Linking.canOpenURL(telUrl);
-      
-      if (!canOpen) {
-        // Try with plain number as fallback
-        const fallbackUrl = `tel:${phone}`;
-        const canOpenFallback = await Linking.canOpenURL(fallbackUrl);
-        if (!canOpenFallback) {
-          Alert.alert('Dialer Not Available', 'Your device cannot open the phone dialer. Phone: ' + phone);
-          return;
-        }
-        await Linking.openURL(fallbackUrl);
-      } else {
-        await Linking.openURL(telUrl);
-      }
+      // NOTE: Skip Linking.canOpenURL for tel: — on Android it always returns false
+      // unless CALL_PHONE permission is in the manifest. openURL always works on real devices.
+      await Linking.openURL(`tel:${formattedPhone}`);
     } catch (error) {
       console.error('[callCustomer] Error:', error);
-      Alert.alert('Unable to open phone dialer.', 'Please try again or contact the customer manually.');
+      // Last resort: show the number so they can dial manually
+      const phone = normalizePhone(rawPhone);
+      Alert.alert(
+        'Open Dialer Manually',
+        `Could not open dialer automatically.\nPlease call: ${phone}`,
+        [{ text: 'OK' }]
+      );
     }
   };
 
