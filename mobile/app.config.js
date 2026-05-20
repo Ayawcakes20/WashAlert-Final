@@ -1,30 +1,27 @@
-const appJson = require('./app.json');
-
 module.exports = ({ config }) => {
-  const baseExpoConfig = appJson.expo || config || {};
   const envMapsKey = (process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '').trim();
   const fallbackMapsKey =
-    baseExpoConfig?.android?.config?.googleMaps?.apiKey ||
-    baseExpoConfig?.ios?.config?.googleMapsApiKey ||
+    config?.android?.config?.googleMaps?.apiKey ||
+    config?.ios?.config?.googleMapsApiKey ||
     '';
   const googleMapsApiKey = envMapsKey || fallbackMapsKey;
 
   return {
-    ...baseExpoConfig,
+    ...config,
     android: {
-      ...baseExpoConfig.android,
+      ...config.android,
       config: {
-        ...(baseExpoConfig.android?.config || {}),
+        ...(config.android?.config || {}),
         googleMaps: {
-          ...((baseExpoConfig.android?.config || {}).googleMaps || {}),
+          ...((config.android?.config || {}).googleMaps || {}),
           apiKey: googleMapsApiKey,
         },
       },
     },
     ios: {
-      ...baseExpoConfig.ios,
+      ...config.ios,
       config: {
-        ...(baseExpoConfig.ios?.config || {}),
+        ...(config.ios?.config || {}),
         googleMapsApiKey: googleMapsApiKey,
       },
     },

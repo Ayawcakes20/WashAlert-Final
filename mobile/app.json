@@ -2,7 +2,7 @@
   "expo": {
     "name": "WashAlertMobile",
     "slug": "WashAlertMobile",
-    "owner": "washalert",
+    "owner": "prince061204",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -98,7 +98,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "4cadc5cf-023b-4d89-8594-fb4701381dfb"
+        "projectId": "5f840956-6833-4222-bfd8-5c7ddff60118"
       }
     }
   }
