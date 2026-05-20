@@ -378,7 +378,7 @@ public class JobOrderService {
                     jo.setPaid(true);
                     jo.setCodCollected(true);
                     jo.setCodCollectedAt(java.time.LocalDateTime.now());
-                    paymentRepository.findByJobOrder_TrackingNumber(jo.getTrackingNumber())
+                    paymentRepository.findByJobOrder_TrackingNumberOrderBySubmittedAtDesc(jo.getTrackingNumber()).stream().findFirst()
                             .filter(pr -> pr.getStatus() != com.washalert.washalertbackend.payment.PaymentStatus.PAID)
                             .ifPresent(pr -> {
                                 pr.setStatus(com.washalert.washalertbackend.payment.PaymentStatus.PAID);
@@ -751,7 +751,7 @@ public class JobOrderService {
     }
 
     private JobOrderResponse toResponse(JobOrder jo) {
-        PaymentStatus paymentStatus = paymentRepository.findByJobOrder_TrackingNumber(jo.getTrackingNumber())
+        PaymentStatus paymentStatus = paymentRepository.findByJobOrder_TrackingNumberOrderBySubmittedAtDesc(jo.getTrackingNumber()).stream().findFirst()
                 .map(PaymentRecord::getStatus)
                 .orElse(null);
         return toResponse(jo, paymentStatus);
@@ -1190,7 +1190,7 @@ public class JobOrderService {
             order.setCodCollectedAt(LocalDateTime.now());
             // Also update the PaymentRecord so paymentStatus = PAID for all consumers.
             try {
-                paymentRepository.findByJobOrder_TrackingNumber(order.getTrackingNumber())
+                paymentRepository.findByJobOrder_TrackingNumberOrderBySubmittedAtDesc(order.getTrackingNumber()).stream().findFirst()
                         .filter(pr -> pr.getStatus() != com.washalert.washalertbackend.payment.PaymentStatus.PAID)
                         .ifPresent(pr -> {
                             pr.setStatus(com.washalert.washalertbackend.payment.PaymentStatus.PAID);
