@@ -161,6 +161,7 @@ const assetToEditForm = (a: BranchAsset) => ({
 export default function BranchAssetsPage() {
   const user = getSessionUser();
   const isAdmin = user?.role === "ADMIN";
+  const isStaff = user?.role === "STAFF";
   const userBranch = user?.branch || "";
 
   const [assets, setAssets] = useState<BranchAsset[]>(loadAssets);
@@ -532,6 +533,17 @@ export default function BranchAssetsPage() {
           </motion.div>
         ))}
       </div>
+
+      {/* Staff info banner */}
+      {isStaff && (
+        <motion.div variants={anim} className="flex items-start gap-2.5 rounded-xl bg-primary/5 border border-primary/15 px-4 py-3 text-sm text-foreground">
+          <span className="text-base leading-none mt-0.5 flex-shrink-0">ℹ️</span>
+          <p>
+            You are viewing assets for <strong>{userBranch || "your branch"}</strong>.
+            Contact your admin to add or update equipment records.
+          </p>
+        </motion.div>
+      )}
 
       {/* Branch filter tabs (admin only) + Search + Condition filter */}
       <motion.div variants={anim} className="flex flex-col gap-3">
