@@ -21,6 +21,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.DynamicInsert;
+import org.hibernate.annotations.DynamicUpdate;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -37,6 +39,8 @@ import java.time.LocalTime;
                 @Index(name = "idx_job_orders_booking_slot", columnList = "branch,booking_date,slot_start_time")
         }
 )
+@DynamicUpdate  // Only include changed columns in UPDATE — prevents SQL errors for new columns not yet in production DB
+@DynamicInsert  // Only include non-null columns in INSERT — prevents errors on columns with DB-level defaults
 @Getter
 @Setter
 @NoArgsConstructor
