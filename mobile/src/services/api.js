@@ -1576,7 +1576,7 @@ export const driverOrders = {
         status: String(order.status || '').toUpperCase(),
         amountToCollect: mapped.finalPrice ?? mapped.amount ?? mapped.servicePrice ?? 0,
       };
-    } catch (error) {
+    } catch (_error) {
       throw new Error('Unable to load task. It may have already been completed or was not assigned to you.');
     }
   },
@@ -1585,6 +1585,18 @@ export const driverOrders = {
       method: 'PUT',
       body: { latitude, longitude }
     });
+  },
+};
+
+export const inventoryApi = {
+  list: async (branch) => {
+    const params = branch ? `?branch=${encodeURIComponent(branch)}` : '';
+    return await apiRequest(`/api/inventory${params}`);
+  },
+  forecast: async (days = 30, branch) => {
+    const params = new URLSearchParams({ days: String(days) });
+    if (branch) params.set('branch', branch);
+    return await apiRequest(`/api/inventory/forecast?${params.toString()}`);
   },
 };
 
@@ -1622,4 +1634,5 @@ export default {
   payments,
   support,
   profileApi,
+  inventoryApi,
 };

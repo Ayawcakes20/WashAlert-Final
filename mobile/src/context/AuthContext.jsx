@@ -257,6 +257,8 @@ const resolveMobileRole = (profile = {}) => {
   const backendRole = String(profile.role || '').trim().toUpperCase();
   if (backendRole === 'DRIVER') return 'driver';
   if (backendRole === 'CUSTOMER') return 'customer';
+  if (backendRole === 'STAFF') return 'staff';
+  if (backendRole === 'ADMIN') return 'admin';
 
   const modules = new Set((profile.allowedModules || []).map((item) => String(item).toLowerCase()));
   if (modules.has('driver-delivery')) return 'driver';
