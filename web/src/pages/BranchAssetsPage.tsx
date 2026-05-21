@@ -46,13 +46,7 @@ const ASSET_CATEGORIES = [
   "Other",
 ] as const;
 
-const ASSET_SUGGESTIONS: Record<string, string[]> = {
-  Appliance: ["Electric Fan", "Aircon", "TV", "Refrigerator", "Water Dispenser"],
-  Furniture: ["Chair", "Table", "Cabinet", "Shelf", "Bench"],
-  Equipment: ["Iron", "Washing Basket", "Trolley", "Scale", "Laundry Cart"],
-  Electronics: ["CCTV Camera", "Computer", "Printer", "Router", "UPS"],
-  Other: [],
-};
+
 
 const CONDITIONS: AssetCondition[] = ["Working", "For Repair", "Broken"];
 
@@ -114,7 +108,7 @@ export default function BranchAssetsPage() {
     name: "", category: "", condition: "Working" as AssetCondition,
     quantity: "1", branch: isAdmin ? "" : userBranch, notes: "",
   });
-  const [customName, setCustomName] = useState(false);
+
 
   // ── Remove dialog ──
   const [removeOpen, setRemoveOpen] = useState(false);
@@ -169,7 +163,6 @@ export default function BranchAssetsPage() {
       name: "", category: "", condition: "Working",
       quantity: "1", branch: isAdmin ? "" : userBranch, notes: "",
     });
-    setCustomName(false);
     setAddOpen(true);
   };
 
@@ -222,12 +215,10 @@ export default function BranchAssetsPage() {
 
   const handleRefresh = () => {
     setAssets(loadAssets());
-    toast.success("Asset list refreshed.");
+    toast.success("Inventory refreshed.");
   };
 
-  // ─── Category suggestions based on selected category ─────────────────────
 
-  const suggestions = addForm.category ? (ASSET_SUGGESTIONS[addForm.category] || []) : [];
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -239,7 +230,7 @@ export default function BranchAssetsPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight flex items-center gap-2">
             <Boxes className="h-6 w-6 text-primary" />
-            Branch Assets
+            Inventory
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Track physical equipment and furniture per branch — electric fans, aircons, chairs, and more
@@ -250,7 +241,7 @@ export default function BranchAssetsPage() {
             <RefreshCw className="h-4 w-4" />
           </Button>
           <Button className="h-10 px-5 rounded-xl gradient-navy" onClick={openAdd}>
-            <Plus className="h-4 w-4" /> Add Asset
+            <Plus className="h-4 w-4" /> Add Item
           </Button>
         </div>
       </motion.div>
@@ -258,7 +249,7 @@ export default function BranchAssetsPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: "Total Assets",  value: stats.total,     icon: Boxes,          color: "bg-primary/10 text-primary" },
+          { label: "Total Items",   value: stats.total,     icon: Boxes,          color: "bg-primary/10 text-primary" },
           { label: "Working",       value: stats.working,   icon: CheckCircle2,   color: "bg-emerald-500/15 text-emerald-600" },
           { label: "For Repair",    value: stats.forRepair, icon: AlertCircle,    color: "bg-amber-500/15 text-amber-600" },
           { label: "Broken",        value: stats.broken,    icon: XCircle,        color: "bg-destructive/10 text-destructive" },
@@ -310,7 +301,7 @@ export default function BranchAssetsPage() {
           <div>
             <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
               <ClipboardList className="h-4 w-4 text-primary" />
-              Asset Register
+              Inventory Register
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
               All physical assets tracked for{" "}
@@ -395,9 +386,9 @@ export default function BranchAssetsPage() {
                   <td colSpan={8} className="p-12 text-center">
                     <div className="flex flex-col items-center gap-3 text-muted-foreground">
                       <Boxes className="h-10 w-10 opacity-20" />
-                      <p className="text-sm font-medium">No assets found</p>
+                      <p className="text-sm font-medium">No items found</p>
                       <p className="text-xs">
-                        {search ? "Try a different search term." : "Click \"Add Asset\" to register the first item."}
+                        {search ? "Try a different search term." : "Click \"Add Item\" to register the first item."}
                       </p>
                     </div>
                   </td>
@@ -429,10 +420,10 @@ export default function BranchAssetsPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Boxes className="h-5 w-5 text-primary" /> Add Branch Asset
+              <Boxes className="h-5 w-5 text-primary" /> Add Inventory Item
             </DialogTitle>
             <DialogDescription>
-              Register a new physical asset for the branch.
+              Register a new item for the branch inventory.
             </DialogDescription>
           </DialogHeader>
 
@@ -476,43 +467,15 @@ export default function BranchAssetsPage() {
               </Select>
             </div>
 
-            {/* Asset Name */}
+            {/* Item Name */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="add-name">Asset Name</Label>
-                {suggestions.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setCustomName((v) => !v)}
-                    className="text-[11px] text-primary hover:underline"
-                  >
-                    {customName ? "← Pick from list" : "Type custom name"}
-                  </button>
-                )}
-              </div>
-
-              {!customName && suggestions.length > 0 ? (
-                <Select
-                  value={addForm.name}
-                  onValueChange={(val) => setAddForm((p) => ({ ...p, name: val }))}
-                >
-                  <SelectTrigger id="add-name" className="w-full text-foreground">
-                    <SelectValue placeholder="Select an asset" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {suggestions.map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  id="add-name"
-                  placeholder="e.g. Electric Fan, Aircon, Chair"
-                  value={addForm.name}
-                  onChange={(e) => setAddForm((p) => ({ ...p, name: e.target.value }))}
-                />
-              )}
+              <Label htmlFor="add-name">Item Name</Label>
+              <Input
+                id="add-name"
+                placeholder="e.g. Electric Fan, Aircon, Chair, Table..."
+                value={addForm.name}
+                onChange={(e) => setAddForm((p) => ({ ...p, name: e.target.value }))}
+              />
             </div>
 
             {/* Condition + Quantity */}
@@ -562,7 +525,7 @@ export default function BranchAssetsPage() {
             <Button variant="outline" onClick={() => setAddOpen(false)} disabled={addSubmitting}>Cancel</Button>
             <Button onClick={() => void submitAdd()} disabled={addSubmitting} className="gradient-navy">
               {addSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              {addSubmitting ? "Adding..." : "Add Asset"}
+              {addSubmitting ? "Adding..." : "Add Item"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -574,7 +537,7 @@ export default function BranchAssetsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <Trash2 className="h-5 w-5 text-destructive" />
-              Remove Asset?
+              Remove Item?
             </AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently remove{" "}
