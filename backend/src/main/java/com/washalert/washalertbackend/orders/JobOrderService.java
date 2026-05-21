@@ -573,6 +573,18 @@ public class JobOrderService {
             return toResponse(jo);
         }
 
+        // If the order status is already WASHING, DRYING, READY, ASSIGNED_FOR_DELIVERY, OUT_FOR_DELIVERY, or DELIVERED,
+        // it means the price has already been confirmed. Return the response immediately.
+        boolean isAlreadyConfirmed = jo.getStatus() == JobOrderStatus.WASHING ||
+                jo.getStatus() == JobOrderStatus.DRYING ||
+                jo.getStatus() == JobOrderStatus.READY ||
+                jo.getStatus() == JobOrderStatus.ASSIGNED_FOR_DELIVERY ||
+                jo.getStatus() == JobOrderStatus.OUT_FOR_DELIVERY ||
+                jo.getStatus() == JobOrderStatus.DELIVERED;
+        if (isAlreadyConfirmed) {
+            return toResponse(jo);
+        }
+
         if (jo.getStatus() != JobOrderStatus.AWAITING_PRICE_CONFIRMATION) {
             throw new IllegalStateException(
                     "Order is not awaiting price confirmation. Current status: " + jo.getStatus());

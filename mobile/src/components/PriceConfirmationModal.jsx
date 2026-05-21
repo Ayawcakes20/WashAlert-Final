@@ -71,22 +71,32 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
       const isGcash = paymentMethodStr.includes('GCASH');
       const isPaid = ['paid', 'verified'].includes(String(fullOrderData.paymentStatus || '').toLowerCase());
 
-      // 1. Confirm the price first
-      let confirmedOrder;
-      try {
-        confirmedOrder = await bookings.confirmPrice(fullOrderData);
-      } catch (confirmErr) {
-        // Handle Forbidden (CSRF or Role issue)
-        if (confirmErr.message?.includes('Forbidden') || confirmErr.message?.includes('Unauthorized')) {
-          Alert.alert(
-            'Action Restricted',
-            'You do not have permission to confirm this price. Please try logging in again.',
-            [{ text: 'OK' }]
-          );
-          return;
-        }
+      // 1. Confirm the price first (if not already confirmed/washing on backend)
+      const currentStatus = String(fullOrderData.status || '').toUpperCase();
+      const isAlreadyConfirmedOrPast = [
+        // Mapped mobile values
+        'PRICE_APPROVED', 'WASHING', 'DRYING', 'READY', 'DELIVERING', 'DELIVERED', 'COMPLETED',
+        // Raw backend values
+        'PRICE_CONFIRMED', 'WASHING', 'DRYING', 'READY', 'ASSIGNED_FOR_DELIVERY', 'OUT_FOR_DELIVERY', 'DELIVERED'
+      ].includes(currentStatus);
 
-        throw new Error(`Price confirmation failed: ${confirmErr.message}`);
+      let confirmedOrder = fullOrderData;
+      if (!isAlreadyConfirmedOrPast) {
+        try {
+          confirmedOrder = await bookings.confirmPrice(fullOrderData);
+        } catch (confirmErr) {
+          // Handle Forbidden (CSRF or Role issue)
+          if (confirmErr.message?.includes('Forbidden') || confirmErr.message?.includes('Unauthorized')) {
+            Alert.alert(
+              'Action Restricted',
+              'You do not have permission to confirm this price. Please try logging in again.',
+              [{ text: 'OK' }]
+            );
+            return;
+          }
+
+          throw new Error(`Price confirmation failed: ${confirmErr.message}`);
+        }
       }
 
       // 2. If GCash and not yet paid, trigger PayMongo Checkout
