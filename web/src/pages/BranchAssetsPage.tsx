@@ -508,11 +508,9 @@ export default function BranchAssetsPage() {
           <Button variant="outline" className="h-10 px-4 rounded-xl" onClick={handleRefresh}>
             <RefreshCw className="h-4 w-4" />
           </Button>
-          {isAdmin && (
-            <Button className="h-10 px-5 rounded-xl gradient-navy" onClick={openAdd}>
-              <Plus className="h-4 w-4" /> Add Item
-            </Button>
-          )}
+          <Button className="h-10 px-5 rounded-xl gradient-navy" onClick={openAdd}>
+            <Plus className="h-4 w-4" /> Add Item
+          </Button>
         </div>
       </motion.div>
 
@@ -537,10 +535,11 @@ export default function BranchAssetsPage() {
       {/* Staff info banner */}
       {isStaff && (
         <motion.div variants={anim} className="flex items-start gap-2.5 rounded-xl bg-primary/5 border border-primary/15 px-4 py-3 text-sm text-foreground">
-          <span className="text-base leading-none mt-0.5 flex-shrink-0">ℹ️</span>
+          <span className="text-base leading-none mt-0.5 flex-shrink-0">📍</span>
           <p>
-            You are viewing assets for <strong>{userBranch || "your branch"}</strong>.
-            Contact your admin to add or update equipment records.
+            You are managing assets for <strong>{userBranch || "your branch"}</strong>.
+            You can add, edit, and delete assets for your branch.
+            Changes to other branches require admin access.
           </p>
         </motion.div>
       )}
@@ -685,24 +684,20 @@ export default function BranchAssetsPage() {
                         >
                           <Eye className="h-3.5 w-3.5" />
                         </button>
-                        {isAdmin && (
-                          <>
-                            <button
-                              onClick={() => openEdit(asset)}
-                              title="Edit asset"
-                              className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={() => openRemove(asset)}
-                              title="Remove asset"
-                              className="p-1.5 rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </>
-                        )}
+                        <button
+                          onClick={() => openEdit(asset)}
+                          title="Edit asset"
+                          className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => openRemove(asset)}
+                          title="Remove asset"
+                          className="p-1.5 rounded-lg text-destructive hover:bg-destructive/10 transition-colors"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -867,7 +862,7 @@ export default function BranchAssetsPage() {
           })()}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDetailsOpen(false)}>Close</Button>
-            {isAdmin && detailsTarget && (
+            {detailsTarget && (
               <Button
                 className="gradient-navy"
                 onClick={() => { setDetailsOpen(false); openEdit(detailsTarget); }}

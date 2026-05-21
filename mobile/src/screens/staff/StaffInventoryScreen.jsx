@@ -7,14 +7,44 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
 import { inventoryApi } from '../../services/api';
 
-// ─── Branch Asset Card (mobile read-only) ────────────────────────────────────
+// ─── Asset Storage (AsyncStorage, branch-scoped) ─────────────────────────────
+
+const assetStorageKey = (branch) => `washalert_branch_assets_mobile_${branch}`;
+
+async function loadStoredAssets(branch) {
+  try {
+    const raw = await AsyncStorage.getItem(assetStorageKey(branch));
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveStoredAssets(branch, assets) {
+  try {
+    await AsyncStorage.setItem(assetStorageKey(branch), JSON.stringify(assets));
+  } catch { /* silent */ }
+}
+
+function generateId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+const ASSET_CONDITIONS = ['Working', 'For Repair', 'Broken'];
+const ASSET_CATEGORIES = ['Appliance', 'Furniture', 'Equipment', 'Electronics', 'Other'];
 
 const ASSET_CONDITION_STYLE = {
   Working:      { bg: '#D1FAE5', text: '#065F46', icon: 'check-circle-outline' },
@@ -22,7 +52,197 @@ const ASSET_CONDITION_STYLE = {
   Broken:       { bg: '#FEE2E2', text: '#991B1B', icon: 'close-circle-outline' },
 };
 
-function AssetCard({ asset }) {
+// ─── Asset Form Modal ─────────────────────────────────────────────────────────
+
+const BLANK_FORM = { name: '', category: 'Equipment', condition: 'Working', quantity: '1', unit: 'units', notes: '' };
+
+function AssetFormModal({ visible, onClose, onSave, initial, branchName, title }) {
+  const [form, setForm] = useState(initial ?? BLANK_FORM);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) setForm(initial ?? BLANK_FORM);
+  }, [visible, initial]);
+
+  const set = (key, val) => setForm((p) => ({ ...p, [key]: val }));
+
+  const handleSave = async () => {
+    if (!form.name.trim()) { Alert.alert('Validation', 'Asset name is required.'); return; }
+    if (!form.category.trim()) { Alert.alert('Validation', 'Category is required.'); return; }
+    const qty = Number(form.quantity);
+    if (!qty || qty < 1) { Alert.alert('Validation', 'Quantity must be at least 1.'); return; }
+    setSaving(true);
+    await onSave({ ...form, quantity: qty });
+    setSaving(false);
+  };
+
+  const cycleOption = (key, options) => {
+    const idx = options.indexOf(form[key]);
+    set(key, options[(idx + 1) % options.length]);
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <SafeAreaView style={formStyles.container} edges={['top', 'bottom']}>
+          <View style={formStyles.header}>
+            <Text style={formStyles.title}>{title}</Text>
+            <TouchableOpacity onPress={onClose} style={formStyles.closeBtn}>
+              <Ionicons name="close" size={22} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={formStyles.scroll} contentContainerStyle={formStyles.scrollContent}>
+            {/* Branch (locked) */}
+            <View style={formStyles.field}>
+              <Text style={formStyles.label}>Branch</Text>
+              <View style={formStyles.lockedField}>
+                <Text style={formStyles.lockedText}>{branchName}</Text>
+                <View style={formStyles.lockedBadge}>
+                  <Ionicons name="lock-closed" size={10} color={colors.textSecondary} />
+                  <Text style={formStyles.lockedBadgeText}>Your branch</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Item Name */}
+            <View style={formStyles.field}>
+              <Text style={formStyles.label}>Item Name <Text style={formStyles.required}>*</Text></Text>
+              <TextInput
+                style={formStyles.input}
+                value={form.name}
+                onChangeText={(v) => set('name', v)}
+                placeholder="e.g. Electric Fan, Aircon, Chair..."
+                placeholderTextColor={colors.textSecondary}
+              />
+            </View>
+
+            {/* Category */}
+            <View style={formStyles.field}>
+              <Text style={formStyles.label}>Category <Text style={formStyles.required}>*</Text></Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={formStyles.chipScroll}>
+                {ASSET_CATEGORIES.map((c) => (
+                  <TouchableOpacity
+                    key={c}
+                    style={[formStyles.chip, form.category === c && formStyles.chipActive]}
+                    onPress={() => set('category', c)}
+                  >
+                    <Text style={[formStyles.chipText, form.category === c && formStyles.chipTextActive]}>{c}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Condition */}
+            <View style={formStyles.field}>
+              <Text style={formStyles.label}>Condition</Text>
+              <TouchableOpacity
+                style={[formStyles.cycleBtn, { backgroundColor: ASSET_CONDITION_STYLE[form.condition]?.bg ?? '#F3F4F6' }]}
+                onPress={() => cycleOption('condition', ASSET_CONDITIONS)}
+              >
+                <MaterialCommunityIcons
+                  name={ASSET_CONDITION_STYLE[form.condition]?.icon ?? 'circle-outline'}
+                  size={16}
+                  color={ASSET_CONDITION_STYLE[form.condition]?.text ?? colors.text}
+                />
+                <Text style={[formStyles.cycleBtnText, { color: ASSET_CONDITION_STYLE[form.condition]?.text ?? colors.text }]}>
+                  {form.condition}
+                </Text>
+                <Ionicons name="chevron-forward" size={14} color={ASSET_CONDITION_STYLE[form.condition]?.text ?? colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Quantity + Unit */}
+            <View style={formStyles.row}>
+              <View style={[formStyles.field, { flex: 1 }]}>
+                <Text style={formStyles.label}>Quantity <Text style={formStyles.required}>*</Text></Text>
+                <TextInput
+                  style={formStyles.input}
+                  value={String(form.quantity)}
+                  onChangeText={(v) => set('quantity', v)}
+                  keyboardType="numeric"
+                  placeholderTextColor={colors.textSecondary}
+                />
+              </View>
+              <View style={[formStyles.field, { flex: 1 }]}>
+                <Text style={formStyles.label}>Unit</Text>
+                <TextInput
+                  style={formStyles.input}
+                  value={form.unit}
+                  onChangeText={(v) => set('unit', v)}
+                  placeholder="units"
+                  placeholderTextColor={colors.textSecondary}
+                />
+              </View>
+            </View>
+
+            {/* Notes */}
+            <View style={formStyles.field}>
+              <Text style={formStyles.label}>Notes <Text style={formStyles.optional}>(optional)</Text></Text>
+              <TextInput
+                style={[formStyles.input, formStyles.textArea]}
+                value={form.notes}
+                onChangeText={(v) => set('notes', v)}
+                placeholder="Location, serial number, remarks..."
+                placeholderTextColor={colors.textSecondary}
+                multiline
+                numberOfLines={3}
+              />
+            </View>
+          </ScrollView>
+
+          <View style={formStyles.footer}>
+            <TouchableOpacity style={formStyles.cancelBtn} onPress={onClose} disabled={saving}>
+              <Text style={formStyles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[formStyles.saveBtn, saving && formStyles.saveBtnDisabled]} onPress={handleSave} disabled={saving}>
+              {saving
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={formStyles.saveText}>Save Item</Text>}
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+const formStyles = StyleSheet.create({
+  container:    { flex: 1, backgroundColor: colors.background },
+  header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
+  title:        { fontSize: 17, fontWeight: '700', color: colors.text },
+  closeBtn:     { padding: 4 },
+  scroll:       { flex: 1 },
+  scrollContent: { padding: 16, gap: 16, paddingBottom: 24 },
+  field:        { gap: 6 },
+  label:        { fontSize: 13, fontWeight: '600', color: colors.text },
+  required:     { color: colors.error },
+  optional:     { color: colors.textSecondary, fontWeight: '400' },
+  input:        { backgroundColor: colors.surface, borderRadius: 10, padding: 12, fontSize: 14, color: colors.text, borderWidth: 1, borderColor: colors.border },
+  textArea:     { minHeight: 72, textAlignVertical: 'top' },
+  row:          { flexDirection: 'row', gap: 12 },
+  lockedField:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.surface, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: colors.border },
+  lockedText:   { fontSize: 14, color: colors.text, fontWeight: '600' },
+  lockedBadge:  { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.border, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  lockedBadgeText: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
+  chipScroll:   { flexGrow: 0 },
+  chip:         { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginRight: 8 },
+  chipActive:   { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText:     { fontSize: 13, color: colors.text, fontWeight: '500' },
+  chipTextActive: { color: '#fff', fontWeight: '700' },
+  cycleBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, padding: 12 },
+  cycleBtnText: { fontSize: 14, fontWeight: '700', flex: 1 },
+  footer:       { flexDirection: 'row', gap: 10, padding: 16, borderTopWidth: 1, borderTopColor: colors.border },
+  cancelBtn:    { flex: 1, padding: 14, borderRadius: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
+  cancelText:   { fontSize: 14, fontWeight: '600', color: colors.text },
+  saveBtn:      { flex: 2, padding: 14, borderRadius: 10, backgroundColor: colors.primary, alignItems: 'center' },
+  saveBtnDisabled: { opacity: 0.6 },
+  saveText:     { fontSize: 14, fontWeight: '700', color: '#fff' },
+});
+
+// ─── Asset Card (with edit / delete) ─────────────────────────────────────────
+
+function AssetCard({ asset, onEdit, onDelete }) {
   const style = ASSET_CONDITION_STYLE[asset.condition] ?? ASSET_CONDITION_STYLE['For Repair'];
   return (
     <View style={assetStyles.card}>
@@ -39,18 +259,24 @@ function AssetCard({ asset }) {
           <Text style={[assetStyles.condText, { color: style.text }]}>{asset.condition}</Text>
         </View>
       </View>
-      {asset.lastInspected && (
-        <Text style={assetStyles.assetInspected}>
-          Last checked: {new Date(asset.lastInspected).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
-        </Text>
-      )}
+      {asset.notes ? <Text style={assetStyles.assetNotes} numberOfLines={2}>{asset.notes}</Text> : null}
+      <View style={assetStyles.cardActions}>
+        <TouchableOpacity style={assetStyles.actionBtn} onPress={onEdit}>
+          <Ionicons name="create-outline" size={14} color={colors.primary} />
+          <Text style={[assetStyles.actionText, { color: colors.primary }]}>Edit</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[assetStyles.actionBtn, assetStyles.actionBtnDelete]} onPress={onDelete}>
+          <Ionicons name="trash-outline" size={14} color={colors.error} />
+          <Text style={[assetStyles.actionText, { color: colors.error }]}>Delete</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
 const assetStyles = StyleSheet.create({
   card: {
-    backgroundColor: colors.surface, borderRadius: 12, padding: 12, gap: 6,
+    backgroundColor: colors.surface, borderRadius: 12, padding: 12, gap: 8,
     shadowColor: colors.shadow, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
   },
   cardHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
@@ -58,9 +284,13 @@ const assetStyles = StyleSheet.create({
   cardTitles: { flex: 1 },
   assetName:  { fontSize: 13, fontWeight: '700', color: colors.text },
   assetMeta:  { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+  assetNotes: { fontSize: 11, color: colors.textSecondary },
   condBadge:  { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
   condText:   { fontSize: 10, fontWeight: '700' },
-  assetInspected: { fontSize: 11, color: colors.textSecondary },
+  cardActions: { flexDirection: 'row', gap: 8, paddingTop: 4, borderTopWidth: 1, borderTopColor: colors.border },
+  actionBtn:   { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: colors.background },
+  actionBtnDelete: { marginLeft: 'auto' },
+  actionText:  { fontSize: 12, fontWeight: '600' },
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -223,6 +453,16 @@ export default function StaffInventoryScreen() {
   const [forecastPage, setForecastPage] = useState(1);
   const [narrativePage, setNarrativePage] = useState(1);
 
+  // Asset modal state
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
+
+  const loadAssets = useCallback(async () => {
+    const stored = await loadStoredAssets(branch);
+    setBranchAssets(stored);
+  }, [branch]);
+
   const fetchData = useCallback(async () => {
     try {
       setError(null);
@@ -232,16 +472,14 @@ export default function StaffInventoryScreen() {
       ]);
       setInventory(Array.isArray(inv) ? inv : []);
       setForecast(Array.isArray(fc) ? fc : []);
-      // Branch assets are stored on the web client (localStorage) — not available
-      // via backend API. Show empty state with a helpful message.
-      setBranchAssets([]);
+      await loadAssets();
     } catch (_err) {
       setError('Unable to load inventory. Pull down to retry.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [branch]);
+  }, [branch, loadAssets]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -249,6 +487,69 @@ export default function StaffInventoryScreen() {
     setRefreshing(true);
     fetchData();
   }, [fetchData]);
+
+  // Asset CRUD handlers
+  const handleAddAsset = async (formData) => {
+    const newAsset = {
+      id: generateId(),
+      name: formData.name.trim(),
+      category: formData.category,
+      condition: formData.condition,
+      quantity: formData.quantity,
+      unit: formData.unit.trim() || 'units',
+      notes: formData.notes.trim(),
+      branch,
+      addedAt: new Date().toISOString(),
+    };
+    const updated = [...branchAssets, newAsset];
+    await saveStoredAssets(branch, updated);
+    setBranchAssets(updated);
+    setAddModalOpen(false);
+  };
+
+  const handleEditAsset = async (formData) => {
+    if (!editTarget) return;
+    const updated = branchAssets.map((a) =>
+      a.id === editTarget.id
+        ? {
+            ...a,
+            name: formData.name.trim(),
+            category: formData.category,
+            condition: formData.condition,
+            quantity: formData.quantity,
+            unit: formData.unit.trim() || 'units',
+            notes: formData.notes.trim(),
+          }
+        : a,
+    );
+    await saveStoredAssets(branch, updated);
+    setBranchAssets(updated);
+    setEditModalOpen(false);
+    setEditTarget(null);
+  };
+
+  const confirmDelete = (asset) => {
+    Alert.alert(
+      'Delete Asset',
+      `Are you sure you want to delete "${asset.name}"? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: async () => {
+            const updated = branchAssets.filter((a) => a.id !== asset.id);
+            await saveStoredAssets(branch, updated);
+            setBranchAssets(updated);
+          },
+        },
+      ],
+    );
+  };
+
+  const openEdit = (asset) => {
+    setEditTarget(asset);
+    setEditModalOpen(true);
+  };
 
   // Merge forecast data into inventory
   const enriched = inventory.map((item) => {
@@ -259,13 +560,12 @@ export default function StaffInventoryScreen() {
   });
 
   const criticalItems = enriched.filter((i) => {
-    const estUse7 = +(( i.estimatedDailyUsage ?? 0) * 7).toFixed(1);
+    const estUse7 = +((i.estimatedDailyUsage ?? 0) * 7).toFixed(1);
     const after7 = +(i.currentStock - estUse7).toFixed(1);
     return getStatus(i.currentStock, i.reorderLevel, after7) === 'Critical';
   });
 
-  // Stats
-  const healthy  = enriched.filter((i) => {
+  const healthy = enriched.filter((i) => {
     const estUse7 = +((i.estimatedDailyUsage ?? 0) * 7).toFixed(1);
     return getStatus(i.currentStock, i.reorderLevel, i.currentStock - estUse7) === 'Healthy';
   }).length;
@@ -275,7 +575,6 @@ export default function StaffInventoryScreen() {
     .filter((d) => d !== null)
     .sort((a, b) => a - b)[0] ?? null;
 
-  // Pagination slices
   const forecastTotalPages = Math.max(1, Math.ceil(enriched.length / ITEMS_PER_PAGE));
   const pagedForecast = enriched.slice((forecastPage - 1) * ITEMS_PER_PAGE, forecastPage * ITEMS_PER_PAGE);
 
@@ -419,21 +718,65 @@ export default function StaffInventoryScreen() {
           )}
         </View>
 
-        {/* Branch Assets — read-only */}
+        {/* Branch Assets — full CRUD, own branch */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Branch Assets</Text>
-            <Text style={styles.assetSubtitle}>Equipment and furniture at your branch (view only)</Text>
+            <View>
+              <Text style={styles.sectionTitle}>Branch Assets</Text>
+              <Text style={styles.assetSubtitle}>Equipment and furniture — {branch || 'your branch'}</Text>
+            </View>
+            <TouchableOpacity style={styles.addAssetBtn} onPress={() => setAddModalOpen(true)}>
+              <Ionicons name="add" size={16} color="#fff" />
+              <Text style={styles.addAssetText}>Add</Text>
+            </TouchableOpacity>
           </View>
+
           {branchAssets.length === 0 ? (
-            <Text style={styles.emptyText}>No assets recorded for your branch yet.</Text>
+            <View style={styles.emptyAssets}>
+              <MaterialCommunityIcons name="cube-outline" size={32} color={colors.textSecondary} style={{ opacity: 0.4 }} />
+              <Text style={styles.emptyText}>No assets recorded for your branch yet.</Text>
+              <TouchableOpacity style={styles.emptyAddBtn} onPress={() => setAddModalOpen(true)}>
+                <Text style={styles.emptyAddText}>+ Add First Item</Text>
+              </TouchableOpacity>
+            </View>
           ) : (
             branchAssets.map((asset) => (
-              <AssetCard key={asset.id} asset={asset} />
+              <AssetCard
+                key={asset.id}
+                asset={asset}
+                onEdit={() => openEdit(asset)}
+                onDelete={() => confirmDelete(asset)}
+              />
             ))
           )}
         </View>
       </ScrollView>
+
+      {/* Add Asset Modal */}
+      <AssetFormModal
+        visible={addModalOpen}
+        title="Add Branch Asset"
+        branchName={branch || 'Your Branch'}
+        onClose={() => setAddModalOpen(false)}
+        onSave={handleAddAsset}
+      />
+
+      {/* Edit Asset Modal */}
+      <AssetFormModal
+        visible={editModalOpen}
+        title="Edit Branch Asset"
+        branchName={branch || 'Your Branch'}
+        initial={editTarget ? {
+          name: editTarget.name,
+          category: editTarget.category,
+          condition: editTarget.condition,
+          quantity: String(editTarget.quantity),
+          unit: editTarget.unit ?? 'units',
+          notes: editTarget.notes ?? '',
+        } : undefined}
+        onClose={() => { setEditModalOpen(false); setEditTarget(null); }}
+        onSave={handleEditAsset}
+      />
     </SafeAreaView>
   );
 }
@@ -557,6 +900,20 @@ const styles = StyleSheet.create({
   paginatorTextDisabled: { color: colors.disabled },
   paginatorPage:         { fontSize: 13, color: colors.textSecondary, minWidth: 60, textAlign: 'center' },
 
-  emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', paddingVertical: 24 },
+  emptyText:    { fontSize: 14, color: colors.textSecondary, textAlign: 'center', paddingVertical: 8 },
   assetSubtitle: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+
+  addAssetBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: colors.primary, borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 7,
+  },
+  addAssetText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+
+  emptyAssets: { alignItems: 'center', gap: 8, paddingVertical: 20 },
+  emptyAddBtn: {
+    paddingHorizontal: 20, paddingVertical: 10,
+    backgroundColor: colors.primary, borderRadius: 10,
+  },
+  emptyAddText: { fontSize: 14, fontWeight: '700', color: '#fff' },
 });
