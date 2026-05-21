@@ -14,6 +14,55 @@ import { colors } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
 import { inventoryApi } from '../../services/api';
 
+// ─── Branch Asset Card (mobile read-only) ────────────────────────────────────
+
+const ASSET_CONDITION_STYLE = {
+  Working:      { bg: '#D1FAE5', text: '#065F46', icon: 'check-circle-outline' },
+  'For Repair': { bg: '#FEF3C7', text: '#92400E', icon: 'alert-circle-outline' },
+  Broken:       { bg: '#FEE2E2', text: '#991B1B', icon: 'close-circle-outline' },
+};
+
+function AssetCard({ asset }) {
+  const style = ASSET_CONDITION_STYLE[asset.condition] ?? ASSET_CONDITION_STYLE['For Repair'];
+  return (
+    <View style={assetStyles.card}>
+      <View style={assetStyles.cardHeader}>
+        <View style={assetStyles.cardLeft}>
+          <MaterialCommunityIcons name="cube-outline" size={18} color={colors.accent} />
+          <View style={assetStyles.cardTitles}>
+            <Text style={assetStyles.assetName}>{asset.name}</Text>
+            <Text style={assetStyles.assetMeta}>{asset.category} · {asset.quantity} {asset.unit ?? 'units'}</Text>
+          </View>
+        </View>
+        <View style={[assetStyles.condBadge, { backgroundColor: style.bg }]}>
+          <MaterialCommunityIcons name={style.icon} size={12} color={style.text} />
+          <Text style={[assetStyles.condText, { color: style.text }]}>{asset.condition}</Text>
+        </View>
+      </View>
+      {asset.lastInspected && (
+        <Text style={assetStyles.assetInspected}>
+          Last checked: {new Date(asset.lastInspected).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+const assetStyles = StyleSheet.create({
+  card: {
+    backgroundColor: colors.surface, borderRadius: 12, padding: 12, gap: 6,
+    shadowColor: colors.shadow, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+  },
+  cardHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  cardLeft:   { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  cardTitles: { flex: 1 },
+  assetName:  { fontSize: 13, fontWeight: '700', color: colors.text },
+  assetMeta:  { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+  condBadge:  { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
+  condText:   { fontSize: 10, fontWeight: '700' },
+  assetInspected: { fontSize: 11, color: colors.textSecondary },
+});
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const calcDaysRemaining = (stock, avgDailyUsage) => {
@@ -166,6 +215,7 @@ export default function StaffInventoryScreen() {
 
   const [inventory, setInventory] = useState([]);
   const [forecast, setForecast] = useState([]);
+  const [branchAssets, setBranchAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
@@ -182,6 +232,9 @@ export default function StaffInventoryScreen() {
       ]);
       setInventory(Array.isArray(inv) ? inv : []);
       setForecast(Array.isArray(fc) ? fc : []);
+      // Branch assets are stored on the web client (localStorage) — not available
+      // via backend API. Show empty state with a helpful message.
+      setBranchAssets([]);
     } catch (_err) {
       setError('Unable to load inventory. Pull down to retry.');
     } finally {
@@ -365,6 +418,21 @@ export default function StaffInventoryScreen() {
             </View>
           )}
         </View>
+
+        {/* Branch Assets — read-only */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Branch Assets</Text>
+            <Text style={styles.assetSubtitle}>Equipment and furniture at your branch (view only)</Text>
+          </View>
+          {branchAssets.length === 0 ? (
+            <Text style={styles.emptyText}>No assets recorded for your branch yet.</Text>
+          ) : (
+            branchAssets.map((asset) => (
+              <AssetCard key={asset.id} asset={asset} />
+            ))
+          )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -490,4 +558,5 @@ const styles = StyleSheet.create({
   paginatorPage:         { fontSize: 13, color: colors.textSecondary, minWidth: 60, textAlign: 'center' },
 
   emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', paddingVertical: 24 },
+  assetSubtitle: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
 });
