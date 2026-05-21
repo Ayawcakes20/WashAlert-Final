@@ -396,7 +396,7 @@ export default function PredictiveInventoryPage() {
   };
   const openAdjust = (row: InventoryItem) => {
     setSelectedItem(row);
-    setAdjustForm({ quantityDelta: "0", direction: "OUT", reason: "" });
+    setAdjustForm({ quantityDelta: "0", direction: "IN", reason: "Restock" });
     setAdjustOpen(true);
   };
   const openDelete = (row: InventoryItem) => { setSelectedItem(row); setDeleteOpen(true); };
@@ -630,7 +630,7 @@ export default function PredictiveInventoryPage() {
           <h2 className="text-lg font-semibold text-foreground">7-Day Inventory Forecast</h2>
           <p className="text-xs text-muted-foreground mt-0.5">Projected usage and stock levels based on historical movement data</p>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-scroll">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/30 bg-muted/20">
@@ -644,7 +644,7 @@ export default function PredictiveInventoryPage() {
                   { label: "Stock After 7 Days", tip: "Predicted remaining stock after 7 days of normal usage. A negative number (shown in red) means the item will run out before 7 days are up." },
                   { label: "Reorder Level", tip: "The minimum stock quantity at which a restock should be triggered. When Current Stock falls to or below this level, the item is marked Critical." },
                   { label: "Status", tip: "Healthy: stock is well above reorder level. Low Stock: stock is approaching reorder level (within 1.5×). Critical: stock is at or below reorder level." },
-                  ...(isAdmin ? [{ label: "Actions" }] : []),
+                  { label: "Actions" },
                 ].map((h) => (
                   <th key={h.label} className="text-left p-4 font-medium text-muted-foreground whitespace-nowrap group/th relative">
                     <span className="inline-flex items-center gap-1.5 cursor-default select-none">
@@ -666,7 +666,7 @@ export default function PredictiveInventoryPage() {
               {loading
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i} className="border-b border-border/20">
-                      {Array.from({ length: isAdmin ? 10 : 9 }).map((_, j) => (
+                      {Array.from({ length: 10 }).map((_, j) => (
                         <td key={j} className="p-4"><Skeleton className="h-4 w-full rounded" /></td>
                       ))}
                     </tr>
@@ -701,9 +701,9 @@ export default function PredictiveInventoryPage() {
                         <td className="p-4">
                           <div className="flex flex-col gap-1.5 min-w-[110px]">
                             <span className="font-semibold text-foreground text-sm">{inv.currentStock} <span className="text-xs font-normal text-muted-foreground">{inv.unit}</span></span>
-                            <div className="h-1.5 rounded-full bg-muted w-full overflow-hidden">
+                            <div className="h-3 rounded-full bg-muted w-full overflow-hidden">
                               <div
-                                className={`h-1.5 rounded-full transition-all duration-500 ${inv.status === "Critical" ? "bg-destructive" : inv.status === "Low Stock" ? "bg-amber-500" : "bg-emerald-500"}`}
+                                className={`h-3 rounded-full transition-all duration-500 ${inv.status === "Critical" ? "bg-destructive" : inv.status === "Low Stock" ? "bg-amber-500" : "bg-emerald-500"}`}
                                 style={{ width: `${Math.min(100, inv.reorderLevel > 0 ? (inv.currentStock / (inv.reorderLevel * 2)) * 100 : 100)}%` }}
                               />
                             </div>
@@ -747,21 +747,28 @@ export default function PredictiveInventoryPage() {
                         <td className="p-4">
                           <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusStyle[inv.status]}`}>{inv.status}</span>
                         </td>
-                        {isAdmin && (
-                          <td className="p-4">
-                            <div className="flex items-center gap-1.5">
-                              <button onClick={() => openAdjust(inv)} className="text-xs font-medium text-primary hover:underline whitespace-nowrap">Update</button>
-                              <span className="text-border">·</span>
-                              <button onClick={() => openEdit(inv)} className="text-xs text-muted-foreground hover:text-foreground"><Pencil className="h-3 w-3" /></button>
-                              <button onClick={() => openDelete(inv)} className="text-xs text-destructive hover:text-destructive/80"><Trash2 className="h-3 w-3" /></button>
-                            </div>
-                          </td>
-                        )}
+                        <td className="p-4">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => openAdjust(inv)}
+                              className="text-xs font-semibold text-white bg-primary hover:bg-primary/80 transition-colors px-2.5 py-1 rounded-lg whitespace-nowrap"
+                            >
+                              + Add Stock
+                            </button>
+                            {isAdmin && (
+                              <>
+                                <span className="text-border">·</span>
+                                <button onClick={() => openEdit(inv)} className="text-xs text-muted-foreground hover:text-foreground"><Pencil className="h-3 w-3" /></button>
+                                <button onClick={() => openDelete(inv)} className="text-xs text-destructive hover:text-destructive/80"><Trash2 className="h-3 w-3" /></button>
+                              </>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
               {!loading && filteredInventory.length === 0 && (
-                <tr><td colSpan={isAdmin ? 10 : 9} className="p-8 text-center text-sm text-muted-foreground">No inventory items found.</td></tr>
+                <tr><td colSpan={10} className="p-8 text-center text-sm text-muted-foreground">No inventory items found.</td></tr>
               )}
             </tbody>
           </table>
@@ -1086,7 +1093,13 @@ export default function PredictiveInventoryPage() {
       {/* Adjust */}
       <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Adjust Stock</DialogTitle><DialogDescription>Apply stock in/out for {selectedItem?.product}.</DialogDescription></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Update Stock — {selectedItem?.product}</DialogTitle>
+            <DialogDescription>
+              <span className="text-foreground font-medium">Current: {selectedItem?.currentStock} {selectedItem?.unit}</span>
+              {" · "}Select <strong>IN</strong> to add received stock, or <strong>OUT</strong> to record usage.
+            </DialogDescription>
+          </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2"><Label>Quantity</Label><Input type="number" min="0.01" step="0.01" value={adjustForm.quantityDelta} onChange={(e) => setAdjustForm((p) => ({ ...p, quantityDelta: e.target.value }))} /></div>
