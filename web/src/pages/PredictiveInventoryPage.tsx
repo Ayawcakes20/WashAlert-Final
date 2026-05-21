@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Package, AlertTriangle, TrendingUp, Droplets, Sparkles,
   Plus, Pencil, Trash2, Loader2, MapPin, CalendarClock, RefreshCw,
@@ -132,6 +132,11 @@ function generateNarrative(item: InventoryItem): NarrativeCard {
   };
 }
 
+// Normalize "JP Rizal" → "JP Rizal Branch" to prevent display duplication
+function normalizeBranch(branch: string): string {
+  return branch.trim() === "JP Rizal" ? "JP Rizal Branch" : branch;
+}
+
 const statusStyle: Record<string, string> = {
   Healthy: "bg-emerald-500/15 text-emerald-600",
   "Low Stock": "bg-amber-500/15 text-amber-600",
@@ -196,6 +201,17 @@ export default function PredictiveInventoryPage() {
   const [alertsPage, setAlertsPage] = useState(1);
   const [narrativePage, setNarrativePage] = useState(1);
 
+  // Chart connection
+  const chartRef = useRef<HTMLDivElement>(null);
+  const [hoveredItem, setHoveredItem] = useState<number | null>(null);
+  const [highlightedItem, setHighlightedItem] = useState<number | null>(null);
+
+  const scrollToChartAndHighlight = (itemId: number) => {
+    chartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setHighlightedItem(itemId);
+    setTimeout(() => setHighlightedItem(null), 2000);
+  };
+
   // Dialogs
   const [createOpen, setCreateOpen] = useState(false);
   const [createSubmitting, setCreateSubmitting] = useState(false);
@@ -239,7 +255,15 @@ export default function PredictiveInventoryPage() {
       });
       setForecast(forecastResp || []);
 
-      const mappedInventory = (items || []).map((i) => mapInventoryRecord(i, lowStockIds, forecastMap));
+      const rawInventory = (items || []).map((i) => mapInventoryRecord(i, lowStockIds, forecastMap));
+      // Deduplicate: same item at same normalized branch should appear only once
+      const seenKeys = new Set<string>();
+      const mappedInventory = rawInventory.filter((i) => {
+        const key = `${i.product}||${i.branch}`;
+        if (seenKeys.has(key)) return false;
+        seenKeys.add(key);
+        return true;
+      });
 
       const uniqueBranches = Array.from(new Set(mappedInventory.map((i) => i.branch))).sort();
       setBranches(uniqueBranches);
@@ -477,34 +501,64 @@ export default function PredictiveInventoryPage() {
           {guideOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
         </button>
         {guideOpen && (
-          <div className="px-5 py-4 grid grid-cols-1 sm:grid-cols-3 gap-5 bg-muted/20 border-t border-border/30">
-            {[
-              { icon: "📋", title: "7-Day Forecast Table", desc: "Shows each item's current stock and how much will be used in the next 7 days. Items highlighted in red will run out soon and need restocking." },
-              { icon: "⚠️", title: "Stock Alerts", desc: "Lists only Critical items that need immediate attention. Stock below the reorder level means the item must be restocked now." },
-              { icon: "📈", title: "Forecast Charts", desc: "The line chart shows projected stock per item over 30 days. When a line crosses its dashed reorder threshold, that item needs restocking." },
-            ].map((g) => (
-              <div key={g.title} className="flex gap-3 items-start">
-                <span className="text-xl leading-none mt-0.5 flex-shrink-0">{g.icon}</span>
-                <div>
-                  <p className="text-sm font-semibold text-foreground">{g.title}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{g.desc}</p>
+          <div className="px-5 py-4 space-y-4 bg-muted/20 border-t border-border/30">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+              {[
+                { icon: "📋", title: "7-Day Forecast Table", desc: "Shows your current stock and estimates how much will be left after 7 days based on actual usage from completed orders. Each row matches one line in the 30-Day Chart below." },
+                { icon: "⚠️", title: "Inventory Recommendations", desc: "Explains each item in plain language — the same numbers from the table, with a clear action: restock now, plan soon, or no action needed." },
+                { icon: "📈", title: "30-Day Chart", desc: "Shows the same items plotted over 30 days. Each colored line matches one row in the table above. Where a line crosses its dashed threshold, that item will hit its reorder level." },
+              ].map((g) => (
+                <div key={g.title} className="flex gap-3 items-start">
+                  <span className="text-xl leading-none mt-0.5 flex-shrink-0">{g.icon}</span>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{g.title}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{g.desc}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
+            <div className="rounded-lg bg-primary/5 border border-primary/10 p-3 text-xs text-foreground/80 space-y-1">
+              <p className="font-semibold text-foreground">Basis for the forecast:</p>
+              <p>· <strong>Average daily usage</strong> = Total used in last 30 days ÷ 30</p>
+              <p>· <strong>Days remaining</strong> = Current stock ÷ Average daily usage</p>
+              <p>· <strong>Forecast line</strong> = Current stock − (Average daily usage × Day number)</p>
+              <p className="text-muted-foreground pt-1">All forecasts are based on actual completed order data from your branch. If an item shows "No data", it means no usage has been logged yet.</p>
+            </div>
           </div>
         )}
       </motion.div>
 
-      {/* Alert banner */}
-      {(criticalCount > 0 || lowStockCount > 0) && !loading && (
-        <motion.div variants={anim} className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-center gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
-          <p className="text-sm text-foreground">
-            <span className="font-semibold">{criticalCount + lowStockCount} item(s)</span> need restocking across{" "}
-            <span className="font-semibold">{branchesWithAlerts} branch(es)</span>
-          </p>
-        </motion.div>
-      )}
+      {/* Alert banner — red, lists critical items by name */}
+      {criticalCount > 0 && !loading && (() => {
+        const critList = inventory.filter((i) => i.status === "Critical");
+        const shown = critList.slice(0, 3);
+        const extra = critList.length - 3;
+        return (
+          <motion.div variants={anim} className="bg-destructive/10 border border-destructive/25 rounded-xl p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-destructive mb-1.5">
+                  {criticalCount} item(s) need immediate restocking:
+                </p>
+                <ul className="space-y-0.5">
+                  {shown.map((i) => (
+                    <li key={i.id} className="text-xs text-foreground">
+                      · <span className="font-medium">{i.product}</span> — {i.branch}{" "}
+                      <span className="text-muted-foreground">({i.currentStock} {i.unit}, reorder level: {i.reorderLevel})</span>
+                    </li>
+                  ))}
+                  {extra > 0 && (
+                    <li className="text-xs text-destructive font-medium cursor-pointer hover:underline" onClick={() => document.getElementById("stock-alerts-section")?.scrollIntoView({ behavior: "smooth" })}>
+                      ...and {extra} more — View all critical items ↓
+                    </li>
+                  )}
+                </ul>
+              </div>
+            </div>
+          </motion.div>
+        );
+      })()}
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {/* Stats — skeleton while loading */}
@@ -553,6 +607,23 @@ export default function PredictiveInventoryPage() {
         </motion.div>
       )}
 
+      {/* Status legend — above table (Issue 5A) */}
+      {!loading && (
+        <motion.div variants={anim} className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs px-1 py-1">
+          <span className="font-semibold text-muted-foreground">Status guide:</span>
+          {[
+            { color: "bg-emerald-500", label: "Healthy", desc: "above reorder level" },
+            { color: "bg-amber-500",   label: "Low Stock", desc: "within 1.5× reorder level" },
+            { color: "bg-destructive", label: "Critical", desc: "at or below reorder level" },
+          ].map((s) => (
+            <span key={s.label} className="inline-flex items-center gap-1.5 text-foreground">
+              <span className={`h-2.5 w-2.5 rounded-full ${s.color} flex-shrink-0`} />
+              <strong>{s.label}</strong> — {s.desc}
+            </span>
+          ))}
+        </motion.div>
+      )}
+
       {/* 7-Day Forecast Table */}
       <motion.div variants={anim} className="glass-card rounded-2xl overflow-hidden">
         <div className="p-5 border-b border-border/30">
@@ -566,27 +637,27 @@ export default function PredictiveInventoryPage() {
                 {[
                   { label: "Item" },
                   { label: "Category" },
-                  { label: "Current Stock", tip: "Colored bar shows stock fullness relative to reorder level." },
-                  { label: "Pending Orders", tip: "Reserved for active orders not yet processed." },
+                  { label: "Current Stock", tip: "The total quantity of this item currently available at this branch, including any pending incoming stock." },
+                  { label: "Pending Orders", tip: "Stock that has been ordered but not yet received. This is added to Current Stock to show the full expected quantity." },
                   { label: "Unit" },
-                  { label: "Est. Usage (7 Days)", tip: "Forecasted consumption over the next 7 days." },
-                  { label: "Stock After 7 Days", tip: "Red ⚠ means item will run out within 7 days." },
-                  { label: "Reorder Level", tip: "Minimum stock before restock is recommended." },
-                  { label: "Status" },
+                  { label: "Est. Usage (7 Days)", tip: "Estimated consumption over the next 7 days, calculated from your branch's average daily usage over the past 30 days of completed orders." },
+                  { label: "Stock After 7 Days", tip: "Predicted remaining stock after 7 days of normal usage. A negative number (shown in red) means the item will run out before 7 days are up." },
+                  { label: "Reorder Level", tip: "The minimum stock quantity at which a restock should be triggered. When Current Stock falls to or below this level, the item is marked Critical." },
+                  { label: "Status", tip: "Healthy: stock is well above reorder level. Low Stock: stock is approaching reorder level (within 1.5×). Critical: stock is at or below reorder level." },
                   ...(isAdmin ? [{ label: "Actions" }] : []),
                 ].map((h) => (
-                  <th key={h.label} className="text-left p-4 font-medium text-muted-foreground whitespace-nowrap">
-                    <span className="inline-flex items-center gap-1.5">
+                  <th key={h.label} className="text-left p-4 font-medium text-muted-foreground whitespace-nowrap group/th relative">
+                    <span className="inline-flex items-center gap-1.5 cursor-default select-none">
                       {h.label}
                       {"tip" in h && h.tip && (
-                        <span className="group relative inline-block">
-                          <Info className="h-3 w-3 text-muted-foreground/40 hover:text-primary cursor-help transition-colors" />
-                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 w-52 text-xs font-normal text-foreground bg-popover border border-border shadow-xl rounded-xl px-3 py-2 leading-relaxed whitespace-normal">
-                            {h.tip}
-                          </span>
-                        </span>
+                        <Info className="h-3 w-3 text-muted-foreground/40 group-hover/th:text-primary transition-colors" />
                       )}
                     </span>
+                    {"tip" in h && h.tip && (
+                      <span className="pointer-events-none absolute top-full left-0 mt-1 hidden group-hover/th:block z-50 max-w-[260px] w-max text-xs font-normal text-foreground bg-popover border border-border shadow-xl rounded-xl px-3 py-2 leading-relaxed whitespace-normal">
+                        {h.tip}
+                      </span>
+                    )}
                   </th>
                 ))}
               </tr>
@@ -603,20 +674,34 @@ export default function PredictiveInventoryPage() {
                 : pagedTable.map((inv) => {
                     const after7 = inv.currentStock - inv.forecastedUsage * 7;
                     const isNeg = after7 < 0;
+                    const noUsage = inv.forecastedUsage < 0.001;
                     return (
-                      <tr key={inv.id} className="border-b border-border/20 hover:bg-muted/30 transition-colors">
+                      <tr
+                        key={inv.id}
+                        className="border-b border-border/20 hover:bg-muted/30 transition-colors group/row"
+                        onMouseEnter={() => setHoveredItem(inv.id)}
+                        onMouseLeave={() => setHoveredItem(null)}
+                      >
                         <td className="p-4">
                           <div className="flex items-center gap-2">
                             {inv.type === "Detergent" ? <Droplets className="h-4 w-4 text-primary flex-shrink-0" /> : <Sparkles className="h-4 w-4 text-secondary flex-shrink-0" />}
                             <span className="font-medium text-foreground">{inv.product}</span>
                           </div>
                           <span className="text-xs text-muted-foreground ml-6">{inv.branch}</span>
+                          {hoveredItem === inv.id && (
+                            <button
+                              onClick={() => scrollToChartAndHighlight(inv.id)}
+                              className="ml-6 text-[10px] font-semibold text-primary hover:underline block mt-0.5"
+                            >
+                              See forecast →
+                            </button>
+                          )}
                         </td>
                         <td className="p-4 text-muted-foreground">{inv.category}</td>
                         <td className="p-4">
                           <div className="flex flex-col gap-1.5 min-w-[110px]">
                             <span className="font-semibold text-foreground text-sm">{inv.currentStock} <span className="text-xs font-normal text-muted-foreground">{inv.unit}</span></span>
-                            <div className="h-1.5 rounded-full bg-muted w-full overflow-hidden" title={`${inv.currentStock} — reorder at ${inv.reorderLevel}`}>
+                            <div className="h-1.5 rounded-full bg-muted w-full overflow-hidden">
                               <div
                                 className={`h-1.5 rounded-full transition-all duration-500 ${inv.status === "Critical" ? "bg-destructive" : inv.status === "Low Stock" ? "bg-amber-500" : "bg-emerald-500"}`}
                                 style={{ width: `${Math.min(100, inv.reorderLevel > 0 ? (inv.currentStock / (inv.reorderLevel * 2)) * 100 : 100)}%` }}
@@ -631,13 +716,32 @@ export default function PredictiveInventoryPage() {
                         </td>
                         <td className="p-4 text-muted-foreground">{inv.unit}</td>
                         <td className="p-4 text-muted-foreground">
-                          {inv.forecastedUsage < 0.001 ? <span className="text-xs text-muted-foreground italic">No data</span> : (inv.forecastedUsage * 7).toFixed(1)}
+                          {noUsage ? (
+                            <span className="group/nd relative inline-block">
+                              <span className="text-xs text-muted-foreground italic cursor-help">No data</span>
+                              <span className="pointer-events-none absolute bottom-full left-0 mb-1 hidden group-hover/nd:block z-50 w-[220px] text-xs font-normal text-foreground bg-popover border border-border shadow-xl rounded-xl px-3 py-2 leading-relaxed whitespace-normal">
+                                No completed orders have been recorded for this item yet. Forecast cannot be calculated without usage history.
+                              </span>
+                            </span>
+                          ) : (inv.forecastedUsage * 7).toFixed(1)}
                         </td>
-                        <td className={`p-4 font-medium ${isNeg ? "text-destructive" : "text-foreground"}`}>
+                        <td className={`p-4 font-medium relative group/neg ${isNeg ? "text-destructive bg-red-50 dark:bg-red-950/20" : "text-foreground"}`}>
                           <span className="inline-flex items-center gap-1">
                             {isNeg && <AlertCircle className="h-3.5 w-3.5 text-destructive" />}
-                            {inv.forecastedUsage < 0.001 ? <span className="text-xs text-muted-foreground italic">No data</span> : after7.toFixed(1)}
+                            {noUsage ? (
+                              <span className="group/nd2 relative inline-block">
+                                <span className="text-xs text-muted-foreground italic cursor-help">No data</span>
+                                <span className="pointer-events-none absolute bottom-full left-0 mb-1 hidden group-hover/nd2:block z-50 w-[220px] text-xs font-normal text-foreground bg-popover border border-border shadow-xl rounded-xl px-3 py-2 leading-relaxed whitespace-normal">
+                                  No completed orders have been recorded for this item yet.
+                                </span>
+                              </span>
+                            ) : after7.toFixed(1)}
                           </span>
+                          {isNeg && (
+                            <span className="pointer-events-none absolute bottom-full left-0 mb-1 hidden group-hover/neg:block z-50 w-[220px] text-xs font-normal text-foreground bg-popover border border-border shadow-xl rounded-xl px-3 py-2 leading-relaxed whitespace-normal">
+                              This item will run out before 7 days are up at current usage rate.
+                            </span>
+                          )}
                         </td>
                         <td className="p-4 text-muted-foreground">{inv.reorderLevel}</td>
                         <td className="p-4">
@@ -685,7 +789,7 @@ export default function PredictiveInventoryPage() {
 
       {/* Stock Alerts — Critical only */}
       {!loading && criticalItems.length > 0 && (
-        <motion.div variants={anim} className="glass-card rounded-2xl p-6 border-l-4 border-destructive">
+        <motion.div id="stock-alerts-section" variants={anim} className="glass-card rounded-2xl p-6 border-l-4 border-destructive">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-destructive" /> Stock Alerts
@@ -758,14 +862,24 @@ export default function PredictiveInventoryPage() {
               monitor:  { accent: "border-l-4 border-l-amber-500 bg-amber-500/5",        dotColor: "bg-amber-500",     textColor: "text-amber-600" },
               healthy:  { accent: "border-l-4 border-l-emerald-500 bg-emerald-500/5",   dotColor: "bg-emerald-500",   textColor: "text-emerald-600" },
             }[card.tier];
+            const { item } = card;
+            const estUse7 = item.forecastedUsage < 0.001 ? null : +(item.forecastedUsage * 7).toFixed(1);
+            const stockAfter = item.forecastedUsage < 0.001 ? null : +(item.currentStock - item.forecastedUsage * 7).toFixed(1);
             return (
               <div key={idx} className={`rounded-xl border border-border/20 p-4 ${cfg.accent}`}>
                 <div className="flex items-start gap-3">
                   <span className={`mt-1 h-3 w-3 rounded-full flex-shrink-0 ${cfg.dotColor}`} />
                   <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className="text-sm font-bold text-foreground">{card.item.product} — {card.item.branch}</span>
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                      <span className="text-sm font-bold text-foreground">{item.product} — {item.branch}</span>
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${cfg.dotColor} text-white`}>{card.badge}</span>
+                    </div>
+                    {/* Data summary — mirrors table row values */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mb-2 text-[11px]">
+                      <div><span className="text-muted-foreground">Current stock:</span> <span className="font-semibold text-foreground">{item.currentStock} {item.unit}</span></div>
+                      <div><span className="text-muted-foreground">Est. use (7d):</span> <span className="font-semibold text-foreground">{estUse7 !== null ? `${estUse7} ${item.unit}` : "No data"}</span></div>
+                      <div><span className="text-muted-foreground">After 7 days:</span> <span className={`font-semibold ${stockAfter !== null && stockAfter < 0 ? "text-destructive" : "text-foreground"}`}>{stockAfter !== null ? `${stockAfter} ${item.unit}` : "No data"}</span></div>
+                      <div><span className="text-muted-foreground">Reorder level:</span> <span className="font-semibold text-foreground">{item.reorderLevel} {item.unit}</span></div>
                     </div>
                     <p className={`text-xs font-semibold mb-1 ${cfg.textColor}`}>{card.subtitle}</p>
                     <p className="text-xs text-foreground/80 leading-relaxed">{card.text}</p>
@@ -785,9 +899,9 @@ export default function PredictiveInventoryPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* 30-day per-item line chart */}
-        <motion.div variants={anim} className="glass-card rounded-2xl p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-1">Consumption Forecast (30 Days)</h2>
-          {/* How to read this chart */}
+        <motion.div variants={anim} ref={chartRef} className="glass-card rounded-2xl p-6 scroll-mt-24">
+          <h2 className="text-lg font-semibold text-foreground mb-0.5">30-Day Stock Forecast — Same Items as Table Above</h2>
+          <p className="text-xs text-muted-foreground mb-3">Each line below corresponds to one row in the 7-Day Forecast table. The dashed lines show each item's reorder level.</p>
           <div className="rounded-lg bg-blue-50 border border-blue-100 p-3 mb-4 text-xs text-blue-800 leading-relaxed">
             Each line shows how much stock is predicted to remain each day. The <strong>dashed lines</strong> are reorder thresholds — when a colored line crosses its dashed line, that item needs restocking. Based on: average daily usage × number of days projected.
             {selectedTab === "All" && <span className="block mt-1 font-medium">Showing top 5 most critical items across all branches.</span>}
@@ -818,9 +932,22 @@ export default function PredictiveInventoryPage() {
                 {chartLines.map((line) => (
                   <ReferenceLine key={`ref_${line.key}`} y={line.reorderLevel} stroke={line.color} strokeDasharray="5 4" strokeWidth={1} label={{ value: `Reorder`, position: "insideTopLeft", fontSize: 9, fill: line.color }} />
                 ))}
-                {chartLines.map((line) => (
-                  <Line key={line.key} type="monotone" dataKey={line.key} name={line.key} stroke={line.color} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                ))}
+                {chartLines.map((line) => {
+                  const isHighlighted = highlightedItem !== null && line.key === `item_${highlightedItem}`;
+                  return (
+                    <Line
+                      key={line.key}
+                      type="monotone"
+                      dataKey={line.key}
+                      name={line.key}
+                      stroke={line.color}
+                      strokeWidth={isHighlighted ? 4 : 2}
+                      strokeOpacity={highlightedItem !== null && !isHighlighted ? 0.3 : 1}
+                      dot={false}
+                      activeDot={{ r: 4 }}
+                    />
+                  );
+                })}
               </LineChart>
             </ResponsiveContainer>
           )}
@@ -1016,7 +1143,7 @@ function mapInventoryRecord(
     id: i.id,
     product: i.itemName,
     type: i.category?.toLowerCase().includes("conditioner") ? "Fabric Conditioner" : "Detergent",
-    branch: i.branch,
+    branch: normalizeBranch(i.branch),
     currentStock: Number(i.currentStock || 0),
     maxStock: Number(i.reorderLevel || 0) * 2 || 100,
     reorderLevel: Number(i.reorderLevel || 0),

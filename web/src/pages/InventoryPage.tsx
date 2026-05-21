@@ -3,8 +3,6 @@ import { Package, Boxes } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import PredictiveInventoryPage from "./PredictiveInventoryPage";
 import BranchAssetsPage from "./BranchAssetsPage";
-import { getSessionUser } from "@/lib/session";
-
 type Tab = "predictive" | "assets";
 
 const ALL_TABS: { id: Tab; label: string; icon: typeof Package; description: string }[] = [
@@ -24,15 +22,12 @@ const ALL_TABS: { id: Tab; label: string; icon: typeof Package; description: str
 
 export default function InventoryPage() {
   const user = getSessionUser();
-  const isAdmin = user?.role === "ADMIN";
 
-  // Staff only sees Predictive Inventory — never Branch Assets
-  const tabs = isAdmin ? ALL_TABS : ALL_TABS.filter((t) => t.id !== "assets");
+  // All roles see both tabs — access control is inside each page
+  const tabs = ALL_TABS;
 
   const [activeTab, setActiveTab] = useState<Tab>("predictive");
-
-  // If staff somehow has 'assets' active (e.g. stale state), reset to predictive
-  const safeActiveTab: Tab = isAdmin ? activeTab : "predictive";
+  const safeActiveTab: Tab = activeTab;
 
   return (
     <div className="space-y-6">
