@@ -29,6 +29,7 @@ import {
   deliveriesApi,
   feedbackApi,
   usersApi,
+  paymentsApi,
   type CreateOrderPayload,
   type FeedbackResponse,
   type JobOrderResponse,
@@ -665,35 +666,69 @@ export default function OrderManagementPage() {
   }, [loadOrders, ordersPage]);
 
   const applyStatusUpdate = async (order: Order, codCollected?: boolean) => {
-    const allowed = getAllowedStatusTransitions(order.status);
+    let currentOrder = order;
+
+    // Check if GCash payment is pending verification
+    const isGcash = currentOrder.paymentMethod?.toUpperCase().includes("GCASH");
+    let isUnpaidGcash = isGcash && !currentOrder.isPaid;
+
+    if (isUnpaidGcash) {
+      setStatusUpdatingId(currentOrder.id);
+      try {
+        toast.info("Verifying GCash payment status with PayMongo...");
+        const trackRes = await paymentsApi.track(currentOrder.trackingNumber);
+        if (trackRes && (trackRes.status === "PAID" || trackRes.status === "VERIFIED")) {
+          // Re-fetch since backend tracking updated it in database
+          const freshOrder = await ordersApi.getById(currentOrder.id);
+          const mapped = mapOrder(freshOrder);
+          setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
+          setSelectedOrder(mapped);
+          
+          currentOrder = mapped;
+          isUnpaidGcash = isGcash && !currentOrder.isPaid;
+          toast.success("GCash payment successfully verified!");
+        } else {
+          toast.info("GCash payment could not be automatically verified yet.");
+        }
+      } catch (err: any) {
+        console.error("Failed to track payment status:", err);
+      } finally {
+        setStatusUpdatingId(null);
+      }
+    }
+
+    const allowed = getAllowedStatusTransitions(currentOrder.status);
     const fallbackStatus = allowed[0];
-    const nextStatus = fallbackStatus || order.status;
-    if (nextStatus === order.status) return;
-    if (!allowed.includes(nextStatus)) {
-      toast.error(`Invalid transition from ${statusLabel[order.status]} to ${statusLabel[nextStatus]}.`);
+    const nextStatus = fallbackStatus || currentOrder.status;
+
+    // If the order already transitioned to or past the target state (e.g. from PRICE_CONFIRMED to WASHING automatically via track payment)
+    if (nextStatus === currentOrder.status) {
+      await loadOrders(Math.max(0, ordersPage - 1), true);
       return;
     }
 
-    // Check if GCash payment is pending verification
-    const isGcash = order.paymentMethod?.toUpperCase().includes("GCASH");
-    const isUnpaidGcash = isGcash && !order.isPaid;
+    if (!allowed.includes(nextStatus)) {
+      toast.error(`Invalid transition from ${statusLabel[currentOrder.status]} to ${statusLabel[nextStatus]}.`);
+      return;
+    }
+
     const washingPaymentBlocked = nextStatus === "WASHING" && isUnpaidGcash;
     const deliveryPaymentBlocked = nextStatus === "DELIVERED" && isUnpaidGcash;
 
     if (washingPaymentBlocked || deliveryPaymentBlocked) {
       const confirmManualPay = window.confirm(
-        `GCash payment for order ${order.orderId} has not been verified yet.\n\n` +
+        `GCash payment for order ${currentOrder.orderId} has not been verified yet.\n\n` +
         `Do you want to confirm this payment manually and proceed to ${statusLabel[nextStatus]}?`
       );
       if (confirmManualPay) {
-        setStatusUpdatingId(order.id);
+        setStatusUpdatingId(currentOrder.id);
         try {
           // First mark as paid
-          const updatedPay = await ordersApi.markAsPaid(order.id);
-          toast.success(`Payment manually marked as Paid for ${order.orderId}.`);
+          const updatedPay = await ordersApi.markAsPaid(currentOrder.id);
+          toast.success(`Payment manually marked as Paid for ${currentOrder.orderId}.`);
           
           // Then update status
-          const updated = await ordersApi.updateStatus(order.id, nextStatus, codCollected);
+          const updated = await ordersApi.updateStatus(currentOrder.id, nextStatus, codCollected);
           const mapped = mapOrder(updated);
           setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
           setSelectedOrder(mapped);
@@ -709,9 +744,9 @@ export default function OrderManagementPage() {
       return;
     }
 
-    setStatusUpdatingId(order.id);
+    setStatusUpdatingId(currentOrder.id);
     try {
-      const updated = await ordersApi.updateStatus(order.id, nextStatus, codCollected);
+      const updated = await ordersApi.updateStatus(currentOrder.id, nextStatus, codCollected);
       const mapped = mapOrder(updated);
       setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
       setSelectedOrder(mapped);
@@ -790,8 +825,27 @@ export default function OrderManagementPage() {
     setFeedbackData(null);
     setStaffNoteInput("");
     try {
-      const detail = await ordersApi.getById(orderId);
-      const mapped = mapOrder(detail);
+      let detail = await ordersApi.getById(orderId);
+      let mapped = mapOrder(detail);
+
+      // Auto-verify unpaid GCash payment when opening details to sync state
+      const isGcash = mapped.paymentMethod?.toUpperCase().includes("GCASH");
+      if (isGcash && !mapped.isPaid) {
+        try {
+          const trackRes = await paymentsApi.track(mapped.trackingNumber);
+          if (trackRes && (trackRes.status === "PAID" || trackRes.status === "VERIFIED")) {
+            // Re-fetch since backend tracking updated it in database
+            detail = await ordersApi.getById(orderId);
+            mapped = mapOrder(detail);
+            toast.success("GCash payment verified successfully!");
+            // Update orders list to reflect the verified payment status
+            setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
+          }
+        } catch (trackErr) {
+          console.error("Auto-tracking payment failed on details open:", trackErr);
+        }
+      }
+
       setSelectedOrder(mapped);
       if (mapped.status === "DELIVERED" || mapped.status === "READY") {
         void loadFeedback(mapped.orderId);
@@ -2185,7 +2239,7 @@ export default function OrderManagementPage() {
                             <Button
                               className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14 disabled:opacity-50"
                               onClick={handleMarkNextStep}
-                              disabled={!!deliveryPaymentBlocked || !!washingPaymentBlocked}
+                              disabled={statusUpdatingId === selectedOrder.id}
                             >
                               {statusUpdatingId === selectedOrder.id ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
                               Mark as {statusLabel[nextStatus] || 'Next Step'}

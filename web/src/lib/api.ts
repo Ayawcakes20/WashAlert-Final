@@ -779,3 +779,21 @@ export const supportApi = {
     }),
 };
 
+export const paymentsApi = {
+  track: (trackingNumber: string) =>
+    apiRequest<{
+      id: number;
+      trackingNumber: string;
+      branch: string;
+      method: string;
+      amount: number;
+      referenceNumber: string | null;
+      proofUrl: string | null;
+      status: "PENDING" | "VERIFIED" | "REJECTED" | "PAID";
+      submittedAt: string;
+      verifiedAt: string | null;
+      verifiedBy: string | null;
+      notes: string | null;
+    }>(`/api/payments/track/${encodeURIComponent(trackingNumber)}`),
+};
+
