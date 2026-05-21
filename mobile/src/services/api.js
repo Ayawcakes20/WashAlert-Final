@@ -991,9 +991,26 @@ export const bookings = {
       // Always try the authenticated customer endpoint first — it returns actualWeightKg, finalPrice, etc.
       // This is the ONLY endpoint with all price data the receipt needs.
       if (!isNaN(id) && id != null) {
-        const jobOrder = await apiRequest(`/api/orders/my/paged?size=100`);
-        const match = (jobOrder?.content || []).find((o) => String(o.id) === String(id));
+        let jobOrder = await apiRequest(`/api/orders/my/paged?size=100`);
+        let match = (jobOrder?.content || []).find((o) => String(o.id) === String(id));
         if (match) {
+          // If GCash and not paid, trigger active verification
+          if (String(match.paymentMethod || '').toUpperCase().includes('GCASH') && 
+              !['PAID', 'VERIFIED'].includes(String(match.paymentStatus || '').toUpperCase())) {
+            try {
+              const paymentSync = await apiRequest(`/api/payments/track/${encodeURIComponent(match.trackingNumber)}`);
+              if (paymentSync && (paymentSync.status === 'PAID' || paymentSync.status === 'VERIFIED')) {
+                // Re-fetch orders to get updated mysql database states (washing, paid status, timeline, etc.)
+                jobOrder = await apiRequest(`/api/orders/my/paged?size=100`);
+                const updatedMatch = (jobOrder?.content || []).find((o) => String(o.id) === String(id));
+                if (updatedMatch) {
+                  match = updatedMatch;
+                }
+              }
+            } catch (err) {
+              console.warn('[bookings.getById] Active GCash sync failed:', err);
+            }
+          }
           const mapped = mapJobOrderToMobile(match, {});
           // Save to local cache
           const orders = await getLocalOrders();

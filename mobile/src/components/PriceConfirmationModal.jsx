@@ -111,6 +111,26 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
             enableBarCollapsing: true,
           });
 
+          // Check if payment was completed successfully by calling the track endpoint
+          let isPaymentSyncSuccessful = false;
+          try {
+            const paymentSync = await payments.trackPayment(checkoutTarget);
+            if (paymentSync && (paymentSync.status === 'PAID' || paymentSync.status === 'VERIFIED')) {
+              isPaymentSyncSuccessful = true;
+            }
+          } catch (syncErr) {
+            console.warn('[PriceModal] Payment status sync failed:', syncErr);
+          }
+
+          if (isPaymentSyncSuccessful) {
+            Alert.alert(
+              'Payment Confirmed',
+              'Your GCash payment was confirmed successfully! We are now washing your laundry.',
+              [{ text: 'OK', onPress: () => onConfirmed?.() }]
+            );
+            return;
+          }
+
           if (browserResult.type === 'cancel') {
             Alert.alert(
               'Payment Link Sent',
