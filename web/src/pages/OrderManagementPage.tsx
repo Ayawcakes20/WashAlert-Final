@@ -673,11 +673,48 @@ export default function OrderManagementPage() {
       toast.error(`Invalid transition from ${statusLabel[order.status]} to ${statusLabel[nextStatus]}.`);
       return;
     }
+
+    // Check if GCash payment is pending verification
+    const isGcash = order.paymentMethod?.toUpperCase().includes("GCASH");
+    const isUnpaidGcash = isGcash && !order.isPaid;
+    const washingPaymentBlocked = nextStatus === "WASHING" && isUnpaidGcash;
+    const deliveryPaymentBlocked = nextStatus === "DELIVERED" && isUnpaidGcash;
+
+    if (washingPaymentBlocked || deliveryPaymentBlocked) {
+      const confirmManualPay = window.confirm(
+        `GCash payment for order ${order.orderId} has not been verified yet.\n\n` +
+        `Do you want to confirm this payment manually and proceed to ${statusLabel[nextStatus]}?`
+      );
+      if (confirmManualPay) {
+        setStatusUpdatingId(order.id);
+        try {
+          // First mark as paid
+          const updatedPay = await ordersApi.markAsPaid(order.id);
+          toast.success(`Payment manually marked as Paid for ${order.orderId}.`);
+          
+          // Then update status
+          const updated = await ordersApi.updateStatus(order.id, nextStatus, codCollected);
+          const mapped = mapOrder(updated);
+          setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
+          setSelectedOrder(mapped);
+          toast.success(`Order ${updated.trackingNumber} moved to ${statusLabel[mapped.status]}.`);
+          await loadOrders(Math.max(0, ordersPage - 1), true);
+        } catch (err: any) {
+          toast.error(err?.message || "Failed to confirm payment and update status.");
+          await loadOrders(Math.max(0, ordersPage - 1), true);
+        } finally {
+          setStatusUpdatingId(null);
+        }
+      }
+      return;
+    }
+
     setStatusUpdatingId(order.id);
     try {
       const updated = await ordersApi.updateStatus(order.id, nextStatus, codCollected);
       const mapped = mapOrder(updated);
       setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
+      setSelectedOrder(mapped);
       toast.success(`Order ${updated.trackingNumber} moved to ${statusLabel[mapped.status]}.`);
       await loadOrders(Math.max(0, ordersPage - 1), true);
     } catch (err: any) {
@@ -2163,17 +2200,43 @@ export default function OrderManagementPage() {
                               </Button>
                             )}
                             {washingPaymentBlocked && (
-                              <div className="w-full bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
+                              <div className="w-full bg-amber-50 border border-amber-200 rounded-lg p-3 text-center flex flex-col items-center gap-2">
                                 <p className="text-[11px] font-bold text-amber-600 uppercase tracking-widest italic">
                                   GCash payment must be confirmed before washing can start.
                                 </p>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 px-3 text-xs font-bold border-amber-300 text-amber-700 hover:bg-amber-100/50"
+                                  onClick={() => void handleManualMarkAsPaid(selectedOrder.id)}
+                                  disabled={markingPaidId === selectedOrder.id}
+                                >
+                                  {markingPaidId === selectedOrder.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                  ) : (
+                                    "Confirm GCash Payment Manually"
+                                  )}
+                                </Button>
                               </div>
                             )}
                             {deliveryPaymentBlocked && (
-                              <div className="w-full bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
+                              <div className="w-full bg-amber-50 border border-amber-200 rounded-lg p-3 text-center flex flex-col items-center gap-2">
                                 <p className="text-[11px] font-bold text-amber-600 uppercase tracking-widest italic">
                                   Payment must be confirmed before marking this order as delivered.
                                 </p>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 px-3 text-xs font-bold border-amber-300 text-amber-700 hover:bg-amber-100/50"
+                                  onClick={() => void handleManualMarkAsPaid(selectedOrder.id)}
+                                  disabled={markingPaidId === selectedOrder.id}
+                                >
+                                  {markingPaidId === selectedOrder.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                  ) : (
+                                    "Confirm GCash Payment Manually"
+                                  )}
+                                </Button>
                               </div>
                             )}
                           </>
