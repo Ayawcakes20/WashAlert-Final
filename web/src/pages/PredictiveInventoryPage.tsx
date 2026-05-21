@@ -2,11 +2,12 @@ import { motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import {
   Package, AlertTriangle, TrendingDown, TrendingUp, Droplets, Sparkles,
-  Plus, Pencil, Trash2, Loader2, MapPin, CalendarClock, RefreshCw
+  Plus, Pencil, Trash2, Loader2, MapPin, CalendarClock, RefreshCw,
+  Info, ChevronDown, ChevronUp, BookOpen,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line, Area, AreaChart
+  LineChart, Line, Area, AreaChart, Legend, LabelList, ReferenceLine,
 } from "recharts";
 import { inventoryApi, branchesApi, type InventoryRecord } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
@@ -70,6 +71,9 @@ export default function PredictiveInventoryPage() {
   const [pendingConsumption, setPendingConsumption] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [guideOpen, setGuideOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem("inv_guide_open") !== "false"; } catch { return true; }
+  });
   const [selectedTab, setSelectedTab] = useState("All");
   const [branches, setBranches] = useState<string[]>([]);
   const [dynamicBranches, setDynamicBranches] = useState<string[]>([]);
@@ -310,6 +314,54 @@ export default function PredictiveInventoryPage() {
         </div>
       </motion.div>
 
+      {/* ── How to Read This Page ── */}
+      <motion.div variants={item} className="rounded-2xl border border-border/40 overflow-hidden">
+        <button
+          onClick={() => {
+            const next = !guideOpen;
+            setGuideOpen(next);
+            try { localStorage.setItem("inv_guide_open", String(next)); } catch {}
+          }}
+          className="w-full flex items-center justify-between px-5 py-3.5 bg-primary/5 hover:bg-primary/10 transition-colors"
+        >
+          <div className="flex items-center gap-2.5">
+            <BookOpen className="h-4 w-4 text-primary" />
+            <span className="text-sm font-semibold text-foreground">How to Read This Page</span>
+            <span className="text-xs text-muted-foreground">(click to {guideOpen ? "hide" : "show"})</span>
+          </div>
+          {guideOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+        </button>
+        {guideOpen && (
+          <div className="px-5 py-4 grid grid-cols-1 sm:grid-cols-3 gap-5 bg-muted/20 border-t border-border/30">
+            {[
+              {
+                icon: "📋",
+                title: "7-Day Forecast Table",
+                desc: "Shows each item's current stock and how much will be used in the next 7 days. Items highlighted in red will run out soon and need restocking.",
+              },
+              {
+                icon: "⚠️",
+                title: "Stock Alerts",
+                desc: "Lists all Critical and Low Stock items that need your immediate attention. Click 'Restock' on any item to record a stock-in adjustment.",
+              },
+              {
+                icon: "📈",
+                title: "Forecast Charts",
+                desc: "The line chart projects total stock for 30 days — if it hits the red dashed line (0), stock runs out on that day. The bar chart shows daily usage per branch.",
+              },
+            ].map((g) => (
+              <div key={g.title} className="flex gap-3 items-start">
+                <span className="text-xl leading-none mt-0.5 flex-shrink-0">{g.icon}</span>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">{g.title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{g.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </motion.div>
+
       {/* Alert banner */}
       {(criticalCount > 0 || lowStockCount > 0) && !loading && (
         <motion.div variants={item} className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-center gap-3">
@@ -375,9 +427,32 @@ export default function PredictiveInventoryPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border/30">
-                {["Item", "Category", "Current Stock", "Expected Use", "Unit", "Proj. Use 7d", "After 7d", "Reorder Level", "Status", "Actions"].map((h) => (
-                  <th key={h} className="text-left p-4 font-medium text-muted-foreground whitespace-nowrap">{h}</th>
+              <tr className="border-b border-border/30 bg-muted/20">
+                {[
+                  { label: "Item", tip: "" },
+                  { label: "Category", tip: "" },
+                  { label: "Current Stock", tip: "How many units are currently in stock at this branch. The colored bar shows fullness relative to the reorder level." },
+                  { label: "Pending Orders", tip: "Quantity of this item already reserved for active customer orders that have not been processed yet." },
+                  { label: "Unit", tip: "" },
+                  { label: "Est. Usage (7 Days)", tip: "Total forecasted consumption over the next 7 days, calculated from historical order patterns." },
+                  { label: "Stock After 7 Days", tip: "Projected remaining stock after 7 days of usage. A red number means the item will run out within 7 days." },
+                  { label: "Reorder Level", tip: "The minimum stock quantity before a restock is recommended. When stock falls below this, the item is flagged as Low Stock or Critical." },
+                  { label: "Status", tip: "🟢 Healthy — above reorder level   🟡 Low Stock — near reorder level   🔴 Critical — below reorder level" },
+                  { label: "Actions", tip: "" },
+                ].map((h) => (
+                  <th key={h.label} className="text-left p-4 font-medium text-muted-foreground whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1.5">
+                      {h.label}
+                      {h.tip && (
+                        <span className="group relative inline-block">
+                          <Info className="h-3 w-3 text-muted-foreground/40 hover:text-primary cursor-help transition-colors" />
+                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 w-56 text-xs font-normal text-foreground bg-popover border border-border shadow-xl rounded-xl px-3 py-2.5 leading-relaxed whitespace-normal">
+                            {h.tip}
+                          </span>
+                        </span>
+                      )}
+                    </span>
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -394,7 +469,25 @@ export default function PredictiveInventoryPage() {
                       <span className="text-xs text-muted-foreground ml-6">{inv.branch}</span>
                     </td>
                     <td className="p-4 text-muted-foreground">{inv.category}</td>
-                    <td className="p-4 font-medium text-foreground">{inv.currentStock}</td>
+                    <td className="p-4">
+                      <div className="flex flex-col gap-1.5 min-w-[110px]">
+                        <span className="font-semibold text-foreground text-sm">
+                          {inv.currentStock} <span className="text-xs font-normal text-muted-foreground">{inv.unit}</span>
+                        </span>
+                        <div
+                          className="h-1.5 rounded-full bg-muted w-full overflow-hidden"
+                          title={`${inv.currentStock} units — reorder at ${inv.reorderLevel}`}
+                        >
+                          <div
+                            className={`h-1.5 rounded-full transition-all duration-500 ${
+                              inv.status === "Critical" ? "bg-destructive" :
+                              inv.status === "Low Stock" ? "bg-amber-500" : "bg-emerald-500"
+                            }`}
+                            style={{ width: `${Math.min(100, inv.reorderLevel > 0 ? (inv.currentStock / (inv.reorderLevel * 2)) * 100 : 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    </td>
                     <td className="p-4">
                       {(() => {
                         const reserved = pendingConsumption[inv.product] ?? 0;
@@ -427,67 +520,38 @@ export default function PredictiveInventoryPage() {
             </tbody>
           </table>
         </div>
+        {/* Status colour key */}
+        <div className="px-5 py-3 border-t border-border/20 flex flex-wrap items-center gap-x-6 gap-y-2 bg-muted/10">
+          <span className="text-xs font-semibold text-muted-foreground">Status key:</span>
+          <span className="inline-flex items-center gap-1.5 text-xs text-foreground">
+            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 flex-shrink-0" />
+            <strong>Healthy</strong> — stock is above reorder level
+          </span>
+          <span className="inline-flex items-center gap-1.5 text-xs text-foreground">
+            <span className="h-2.5 w-2.5 rounded-full bg-amber-500 flex-shrink-0" />
+            <strong>Low Stock</strong> — approaching reorder level
+          </span>
+          <span className="inline-flex items-center gap-1.5 text-xs text-foreground">
+            <span className="h-2.5 w-2.5 rounded-full bg-destructive flex-shrink-0" />
+            <strong>Critical</strong> — below reorder level
+          </span>
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            A <span className="text-destructive font-bold mx-0.5">red</span> “Stock After 7 Days” means the item will run out within a week.
+          </span>
+        </div>
       </motion.div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 30-day consumption forecast line chart */}
-        <motion.div variants={item} className="glass-card rounded-2xl p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-1">Consumption Forecast (30 Days)</h2>
-          <p className="text-xs text-muted-foreground mb-4">Projected total stock across all items based on average daily usage</p>
-          <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={consumptionForecast}>
-              <defs>
-                <linearGradient id="stockGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(218, 58%, 20%)" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="hsl(218, 58%, 20%)" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(214, 25%, 90%)" />
-              <XAxis dataKey="day" tick={{ fontSize: 9, fill: "hsl(215, 16%, 47%)" }} interval={4} />
-              <YAxis tick={{ fontSize: 10, fill: "hsl(215, 16%, 47%)" }} />
-              <Tooltip formatter={(v: number) => [`${v} units`, "Projected Stock"]} />
-              <Area type="monotone" dataKey="stock" stroke="hsl(218, 58%, 20%)" strokeWidth={2} fill="url(#stockGrad)" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </motion.div>
-
-        {/* Daily consumption per branch bar chart */}
-        <motion.div variants={item} className="glass-card rounded-2xl p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-1">Daily Consumption Forecast (per branch)</h2>
-          <p className="text-xs text-muted-foreground mb-4">Estimated daily usage of detergent and fabric conditioner per branch</p>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={forecastData} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(214, 25%, 90%)" />
-              <XAxis type="number" tick={{ fontSize: 10, fill: "hsl(215, 16%, 47%)" }} />
-              <YAxis dataKey="branch" type="category" tick={{ fontSize: 10, fill: "hsl(215, 16%, 47%)" }} width={100} />
-              <Tooltip />
-              <Bar dataKey="detergent" name="Detergent (kg/L)" fill="hsl(218, 58%, 20%)" radius={[0, 6, 6, 0]} />
-              <Bar dataKey="conditioner" name="Conditioner (L)" fill="hsl(168, 55%, 68%)" radius={[0, 6, 6, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </motion.div>
-      </div>
-
-      {/* Predictive Narrative Section */}
-      {forecast.filter(f => f.narrative).length > 0 && (
-        <motion.div variants={item} className="mt-6 space-y-3">
-          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Inventory Recommendations</h3>
-          {forecast.filter(f => f.narrative).map((f, idx) => (
-            <div key={idx} className="flex items-start gap-3 rounded-lg border p-4 bg-muted/30">
-              <AlertTriangle className={`mt-0.5 h-4 w-4 shrink-0 ${f.estimatedDaysUntilStockout != null && f.estimatedDaysUntilStockout <= 7 ? 'text-destructive' : 'text-amber-500'}`} />
-              <p className="text-sm text-foreground/80">{f.narrative}</p>
-            </div>
-          ))}
-        </motion.div>
-      )}
-
-      {/* Stock level progress view */}
+      {/* Stock Alerts — moved above charts for immediate visibility */}
       {filteredInventory.filter((i) => i.status !== "Healthy").length > 0 && (
         <motion.div variants={item} className="glass-card rounded-2xl p-6 border-l-4 border-destructive">
-          <h2 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-destructive" /> Stock Alerts
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" /> Stock Alerts
+            </h2>
+            <span className="text-xs font-semibold bg-destructive/10 text-destructive px-3 py-1 rounded-full">
+              {filteredInventory.filter((i) => i.status !== "Healthy").length} item(s) need attention
+            </span>
+          </div>
           <div className="space-y-3">
             {filteredInventory.filter((i) => i.status !== "Healthy").map((inv) => (
               <div key={inv.id} className={`flex items-center justify-between p-3 rounded-xl ${inv.status === "Critical" ? "bg-destructive/5" : "bg-amber-500/5"}`}>
@@ -495,7 +559,7 @@ export default function PredictiveInventoryPage() {
                   {inv.type === "Detergent" ? <Droplets className="h-4 w-4 text-primary" /> : <Sparkles className="h-4 w-4 text-secondary" />}
                   <div>
                     <span className="text-sm font-medium text-foreground">{inv.product}</span>
-                    <span className="text-xs text-muted-foreground ml-2">- {inv.branch}</span>
+                    <span className="text-xs text-muted-foreground ml-2">— {inv.branch}</span>
                     <div className="flex items-center gap-2 mt-1">
                       <div className="flex-1 h-1.5 rounded-full bg-muted w-32">
                         <div
@@ -503,7 +567,7 @@ export default function PredictiveInventoryPage() {
                           style={{ width: `${Math.min(100, (inv.currentStock / (inv.maxStock || 1)) * 100)}%` }}
                         />
                       </div>
-                      <span className="text-[10px] text-muted-foreground">{inv.currentStock}/{inv.maxStock} {inv.unit}</span>
+                      <span className="text-[10px] text-muted-foreground">{inv.currentStock} / {inv.maxStock} {inv.unit}</span>
                     </div>
                   </div>
                 </div>
@@ -517,6 +581,136 @@ export default function PredictiveInventoryPage() {
           </div>
         </motion.div>
       )}
+
+      {/* Predictive Narrative / Recommendations */}
+      {forecast.filter(f => f.narrative).length > 0 && (
+        <motion.div variants={item} className="space-y-3">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+            <Info className="h-4 w-4" /> Inventory Recommendations
+          </h3>
+          {forecast.filter(f => f.narrative).map((f, idx) => (
+            <div key={idx} className="flex items-start gap-3 rounded-lg border p-4 bg-muted/30">
+              <AlertTriangle className={`mt-0.5 h-4 w-4 shrink-0 ${f.estimatedDaysUntilStockout != null && f.estimatedDaysUntilStockout <= 7 ? 'text-destructive' : 'text-amber-500'}`} />
+              <p className="text-sm text-foreground/80">{f.narrative}</p>
+            </div>
+          ))}
+        </motion.div>
+      )}
+
+      {/* ── Charts ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        {/* 30-day consumption forecast area chart */}
+        <motion.div variants={item} className="glass-card rounded-2xl p-6">
+          <h2 className="text-lg font-semibold text-foreground mb-1">Consumption Forecast (30 Days)</h2>
+          <p className="text-xs text-muted-foreground mb-0.5">Projected total stock across all items based on average daily usage.</p>
+          <p className="text-xs text-muted-foreground mb-4 flex items-center gap-1.5">
+            <span className="inline-block w-8 border-t-2 border-dashed border-destructive rounded" />
+            <span>Red dashed line = stockout threshold. If the line reaches it, stock runs out on that day.</span>
+          </p>
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={consumptionForecast} margin={{ top: 10, right: 20, left: 15, bottom: 30 }}>
+              <defs>
+                <linearGradient id="stockGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="hsl(218, 58%, 20%)" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="hsl(218, 58%, 20%)" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(214, 25%, 90%)" />
+              <XAxis
+                dataKey="day"
+                tick={{ fontSize: 9, fill: "hsl(215, 16%, 47%)" }}
+                interval={4}
+                label={{ value: "Day →", position: "insideBottomRight", offset: 0, fontSize: 10, fill: "hsl(215, 16%, 47%)" }}
+              />
+              <YAxis
+                tick={{ fontSize: 10, fill: "hsl(215, 16%, 47%)" }}
+                label={{ value: "Stock (units)", angle: -90, position: "insideLeft", offset: -5, fontSize: 10, fill: "hsl(215, 16%, 47%)" }}
+                width={60}
+              />
+              <Tooltip
+                formatter={(v: number) => [`${v} units`, "Projected Stock"]}
+                contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid hsl(214, 25%, 85%)" }}
+              />
+              <Legend
+                verticalAlign="top"
+                align="right"
+                iconType="square"
+                wrapperStyle={{ fontSize: 11, paddingBottom: 4 }}
+                formatter={() => "Total Projected Stock"}
+              />
+              <ReferenceLine
+                y={0}
+                stroke="hsl(0, 72%, 51%)"
+                strokeDasharray="5 4"
+                strokeWidth={1.5}
+                label={{ value: "⚠ Stockout", position: "insideTopRight", fontSize: 10, fill: "hsl(0, 72%, 51%)" }}
+              />
+              <Area
+                type="monotone"
+                dataKey="stock"
+                name="Total Projected Stock"
+                stroke="hsl(218, 58%, 20%)"
+                strokeWidth={2.5}
+                fill="url(#stockGrad)"
+                dot={false}
+                activeDot={{ r: 4, fill: "hsl(218, 58%, 20%)" }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </motion.div>
+
+        {/* Daily consumption per branch bar chart */}
+        <motion.div variants={item} className="glass-card rounded-2xl p-6">
+          <h2 className="text-lg font-semibold text-foreground mb-1">Daily Consumption by Branch</h2>
+          <p className="text-xs text-muted-foreground mb-0.5">Estimated daily usage of detergent and fabric conditioner per branch.</p>
+          <p className="text-xs text-muted-foreground mb-4">
+            <span className="font-medium text-foreground">Longer bar = more daily usage.</span> Numbers at the end of each bar show the exact amount.
+          </p>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={forecastData} layout="vertical" margin={{ top: 5, right: 55, left: 10, bottom: 25 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(214, 25%, 90%)" />
+              <XAxis
+                type="number"
+                tick={{ fontSize: 10, fill: "hsl(215, 16%, 47%)" }}
+                label={{ value: "Est. Daily Usage (units)", position: "insideBottom", offset: -14, fontSize: 10, fill: "hsl(215, 16%, 47%)" }}
+              />
+              <YAxis
+                dataKey="branch"
+                type="category"
+                tick={{ fontSize: 10, fill: "hsl(215, 16%, 47%)" }}
+                width={110}
+              />
+              <Tooltip
+                formatter={(v: number, name: string) => [`${v} units/day`, name]}
+                contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid hsl(214, 25%, 85%)" }}
+              />
+              <Legend
+                verticalAlign="top"
+                align="right"
+                iconType="square"
+                wrapperStyle={{ fontSize: 11, paddingBottom: 8 }}
+              />
+              <Bar dataKey="detergent" name="Detergent" fill="hsl(218, 58%, 20%)" radius={[0, 4, 4, 0]}>
+                <LabelList
+                  dataKey="detergent"
+                  position="right"
+                  style={{ fontSize: 10, fill: "hsl(215, 16%, 47%)", fontWeight: 600 }}
+                  formatter={(v: any) => (v > 0 ? `${v}` : "")}
+                />
+              </Bar>
+              <Bar dataKey="conditioner" name="Fabric Conditioner" fill="hsl(168, 55%, 68%)" radius={[0, 4, 4, 0]}>
+                <LabelList
+                  dataKey="conditioner"
+                  position="right"
+                  style={{ fontSize: 10, fill: "hsl(215, 16%, 47%)", fontWeight: 600 }}
+                  formatter={(v: any) => (v > 0 ? `${v}` : "")}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </motion.div>
+      </div>
 
       {/* Create Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
