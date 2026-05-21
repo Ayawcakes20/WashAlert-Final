@@ -93,12 +93,29 @@ public class PaymentService {
         return toResponse(saved);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public PaymentResponse trackByTrackingNumber(String trackingNumber) {
         String tracking = normalizeTracking(trackingNumber);
-        return paymentRepository.findByTrackingNumberWithJobOrder(tracking)
-                .map(this::toResponse)
-                .orElse(null);
+        PaymentRecord record = paymentRepository.findByTrackingNumberWithJobOrder(tracking).orElse(null);
+        if (record == null) {
+            return null;
+        }
+
+        if (record.getStatus() == PaymentStatus.PENDING 
+                && record.getMethod() == PaymentMethod.GCASH 
+                && record.getReferenceNumber() != null 
+                && !record.getReferenceNumber().isBlank()) {
+            try {
+                boolean isPaid = paymongoService.checkCheckoutSessionPaid(record.getReferenceNumber());
+                if (isPaid) {
+                    confirmPayment(record, record.getReferenceNumber(), "Paymongo Active Tracker");
+                }
+            } catch (Exception e) {
+                log.error("[PAYMENT][GCASH] Failed to verify checkout session status for tracking={}", tracking, e);
+            }
+        }
+
+        return toResponse(record);
     }
 
     @Transactional(readOnly = true)
@@ -222,11 +239,10 @@ public class PaymentService {
 
         payment.setAmount(resolvedAmount);
         payment.setStatus(PaymentStatus.PENDING);
-        paymentRepository.save(payment);
 
-        String checkoutUrl;
+        CheckoutSessionResult sessionResult;
         try {
-            checkoutUrl = paymongoService.createCheckoutSession(order);
+            sessionResult = paymongoService.createCheckoutSession(order);
         } catch (IllegalStateException ex) {
             log.error("[PAYMENT][GCASH] PayMongo checkout error tracking={}: {}", tracking, ex.getMessage());
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -237,21 +253,63 @@ public class PaymentService {
                     "Unable to start GCash checkout right now. Please try again or choose another payment option.");
         }
 
-        if (checkoutUrl == null || checkoutUrl.isBlank()) {
+        if (sessionResult == null || sessionResult.checkoutUrl() == null || sessionResult.checkoutUrl().isBlank()) {
             log.error("[PAYMENT][GCASH] PayMongo returned empty checkout URL tracking={}", tracking);
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Unable to generate GCash checkout URL.");
         }
-        log.info("CHECKOUT URL GENERATED: {}", checkoutUrl);
-        /* 
-        // Logic removed to follow the new 'Staff-Gated' workflow. 
-        // Payment doesn't automatically start washing; staff must still verify weight/price.
-        if (order.getStatus() == JobOrderStatus.PENDING) {
-            order.setStatus(JobOrderStatus.WASHING);
-            orderRepository.save(order);
-            timelineService.log(order, order.getStatus(), "system", "GCash checkout initiated");
+        log.info("CHECKOUT URL GENERATED: {}, SESSION ID: {}", sessionResult.checkoutUrl(), sessionResult.sessionId());
+        
+        payment.setReferenceNumber(sessionResult.sessionId());
+        paymentRepository.save(payment);
+
+        return sessionResult.checkoutUrl();
+    }
+
+    @Transactional
+    public void confirmPayment(PaymentRecord record, String referenceNumber, String verifier) {
+        if (record.getStatus() != PaymentStatus.PAID) {
+            record.setStatus(PaymentStatus.PAID);
+            record.setVerifiedAt(LocalDateTime.now());
+            record.setVerifiedBy(verifier);
+            if (referenceNumber != null && !referenceNumber.isBlank()) {
+                record.setReferenceNumber(referenceNumber);
+            }
+            paymentRepository.save(record);
+
+            JobOrder jobOrder = record.getJobOrder();
+            jobOrder.setPaid(true);
+            
+            // Transition status to WASHING if price was confirmed
+            if (jobOrder.getStatus() == JobOrderStatus.PRICE_CONFIRMED) {
+                jobOrder.setStatus(JobOrderStatus.WASHING);
+                timelineService.log(jobOrder, jobOrder.getStatus(), "system", 
+                        "Payment confirmed via " + verifier + ". Order is now being processed.");
+            } else {
+                timelineService.log(jobOrder, jobOrder.getStatus(), "system", 
+                        "Payment confirmed via " + verifier + ".");
+            }
+            
+            orderRepository.save(jobOrder);
+            
+            // Sync to Firestore for real-time dashboard updates — blocking so customers see PAID immediately.
+            JobOrderResponse response = JobOrderResponse.from(jobOrder, PaymentStatus.PAID);
+            firestoreSyncService.upsertBlocking("orders", jobOrder.getTrackingNumber(), response);
+
+            notificationService.enqueueEmail(
+                    jobOrder.getCustomerEmail(),
+                    "WashAlert Payment Received!",
+                    "Your payment for order %s has been confirmed. We are now processing your laundry.".formatted(jobOrder.getTrackingNumber()),
+                    "PAYMENT_PAID",
+                    String.valueOf(record.getId())
+            );
+            notificationService.enqueuePushToUserEmail(
+                    jobOrder.getCustomerEmail(),
+                    "Payment Confirmed",
+                    "Payment for order %s has been confirmed.".formatted(jobOrder.getTrackingNumber()),
+                    "PAYMENT_PAID",
+                    jobOrder.getTrackingNumber().toUpperCase() + ":paid"
+            );
         }
-        */
-        return checkoutUrl;
     }
 
     private PaymentResponse toResponse(PaymentRecord p) {

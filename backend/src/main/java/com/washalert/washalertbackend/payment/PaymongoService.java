@@ -31,7 +31,7 @@ public class PaymongoService {
     }
 
     @SuppressWarnings("unchecked")
-    public String createCheckoutSession(JobOrder order) {
+    public CheckoutSessionResult createCheckoutSession(JobOrder order) {
         String secretKey = getSecretKey();
         if (secretKey == null || secretKey.isBlank()) {
             log.error("[PAYMONGO] Missing secret key configuration for tracking={}", order.getTrackingNumber());
@@ -100,11 +100,12 @@ public class PaymongoService {
             response = restTemplate.postForObject(url, request, Map.class);
             
             if (response != null && response.get("data") instanceof Map<?, ?> dataMap) {
+                String sessionId = (String) dataMap.get("id");
                 if (dataMap.get("attributes") instanceof Map<?, ?> respAttrs) {
                     Object checkoutUrlObj = respAttrs.get("checkout_url");
                     if (checkoutUrlObj instanceof String checkoutUrl) {
-                        log.info("[PAYMONGO] Checkout session created successfully tracking={}", order.getTrackingNumber());
-                        return checkoutUrl;
+                        log.info("[PAYMONGO] Checkout session created successfully tracking={} sessionId={}", order.getTrackingNumber(), sessionId);
+                        return new CheckoutSessionResult(checkoutUrl, sessionId);
                     }
                 }
             }
@@ -123,5 +124,61 @@ public class PaymongoService {
             log.error("[PAYMONGO] Critical failure tracking={}", order.getTrackingNumber(), ex);
             throw new IllegalStateException("Unable to start GCash checkout right now. Please try again later.");
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    public boolean checkCheckoutSessionPaid(String sessionId) {
+        String secretKey = getSecretKey();
+        if (secretKey == null || secretKey.isBlank() || sessionId == null || sessionId.isBlank()) {
+            log.warn("[PAYMONGO] Missing secret key or sessionId, cannot verify payment session");
+            return false;
+        }
+
+        String url = "https://api.paymongo.com/v1/checkout_sessions/" + sessionId;
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+        
+        // Basic Auth: secretKey as username, password empty
+        String auth = secretKey + ":";
+        String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        headers.set("Authorization", "Basic " + encodedAuth);
+
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+        try {
+            log.info("[PAYMONGO] Querying checkout session status for sessionId={}", sessionId);
+            Map<String, Object> response = restTemplate.exchange(url, org.springframework.http.HttpMethod.GET, entity, Map.class).getBody();
+            if (response != null && response.get("data") instanceof Map<?, ?> dataMap) {
+                if (dataMap.get("attributes") instanceof Map<?, ?> respAttrs) {
+                    String status = (String) respAttrs.get("status");
+                    log.info("[PAYMONGO] Checkout session status for sessionId={} is status={}", sessionId, status);
+                    if ("completed".equalsIgnoreCase(status)) {
+                        return true;
+                    }
+                    
+                    // Also check payments list for safety
+                    if (respAttrs.get("payments") instanceof List<?> payments) {
+                        for (Object paymentObj : payments) {
+                            if (paymentObj instanceof Map<?, ?> paymentMap) {
+                                if (paymentMap.get("attributes") instanceof Map<?, ?> payAttrs) {
+                                    String payStatus = (String) payAttrs.get("status");
+                                    if ("paid".equalsIgnoreCase(payStatus)) {
+                                        log.info("[PAYMONGO] Found paid transaction inside checkout session payments sessionId={}", sessionId);
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (org.springframework.web.client.HttpStatusCodeException ex) {
+            log.error("[PAYMONGO] HTTP error retrieving checkout session sessionId={} httpStatus={}", 
+                    sessionId, ex.getStatusCode());
+        } catch (Exception ex) {
+            log.error("[PAYMONGO] Critical error retrieving checkout session sessionId={}", sessionId, ex);
+        }
+        return false;
     }
 }

@@ -1,17 +1,9 @@
 package com.washalert.washalertbackend.payment;
 
-import com.washalert.washalertbackend.firebase.FirestoreSyncService;
-import com.washalert.washalertbackend.notification.NotificationService;
-import com.washalert.washalertbackend.orders.JobOrder;
-import com.washalert.washalertbackend.orders.JobOrderRepository;
-import com.washalert.washalertbackend.orders.JobOrderStatus;
-import com.washalert.washalertbackend.orders.JobOrderTimelineService;
-import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.Map;
 
 @Slf4j
@@ -19,23 +11,14 @@ import java.util.Map;
 public class PaymongoWebhookService {
 
     private final PaymentRecordRepository paymentRepository;
-    private final JobOrderRepository jobOrderRepository;
-    private final NotificationService notificationService;
-    private final JobOrderTimelineService timelineService;
-    private final FirestoreSyncService firestoreSyncService;
+    private final PaymentService paymentService;
 
     public PaymongoWebhookService(
             PaymentRecordRepository paymentRepository,
-            JobOrderRepository jobOrderRepository,
-            NotificationService notificationService,
-            JobOrderTimelineService timelineService,
-            FirestoreSyncService firestoreSyncService
+            PaymentService paymentService
     ) {
         this.paymentRepository = paymentRepository;
-        this.jobOrderRepository = jobOrderRepository;
-        this.notificationService = notificationService;
-        this.timelineService = timelineService;
-        this.firestoreSyncService = firestoreSyncService;
+        this.paymentService = paymentService;
     }
 
     @Transactional
@@ -69,45 +52,7 @@ public class PaymongoWebhookService {
                         .findFirst()
                         .orElseThrow(() -> new IllegalStateException("Payment record not found for: " + trackingNumber));
 
-                if (record.getStatus() != PaymentStatus.PAID) {
-                    record.setStatus(PaymentStatus.PAID);
-                    record.setVerifiedAt(LocalDateTime.now());
-                    record.setVerifiedBy("Paymongo Webhook");
-                    record.setReferenceNumber((String) eventData.get("id")); // Session ID or similar
-                    paymentRepository.save(record);
-
-                    JobOrder jobOrder = record.getJobOrder();
-                    jobOrder.setPaid(true);
-                    
-                    // Transition status to WASHING if price was confirmed
-                    if (jobOrder.getStatus() == JobOrderStatus.PRICE_CONFIRMED) {
-                        jobOrder.setStatus(JobOrderStatus.WASHING);
-                        timelineService.log(jobOrder, jobOrder.getStatus(), "system", "Payment confirmed via PayMongo webhook. Order is now being processed.");
-                    } else {
-                        timelineService.log(jobOrder, jobOrder.getStatus(), "system", "Payment confirmed via PayMongo webhook.");
-                    }
-                    
-                    jobOrderRepository.save(jobOrder);
-                    
-                    // Sync to Firestore for real-time dashboard updates — blocking so customers see PAID immediately.
-                    JobOrderResponse response = JobOrderResponse.from(jobOrder, PaymentStatus.PAID);
-                    firestoreSyncService.upsertBlocking("orders", jobOrder.getTrackingNumber(), response);
-
-                    notificationService.enqueueEmail(
-                            jobOrder.getCustomerEmail(),
-                            "WashAlert Payment Received!",
-                            "Your payment for order %s has been confirmed. We are now processing your laundry.".formatted(trackingNumber),
-                            "PAYMENT_PAID",
-                            String.valueOf(record.getId())
-                    );
-                    notificationService.enqueuePushToUserEmail(
-                            jobOrder.getCustomerEmail(),
-                            "Payment Confirmed",
-                            "Payment for order %s has been confirmed.".formatted(trackingNumber),
-                            "PAYMENT_PAID",
-                            trackingNumber.toUpperCase() + ":paid"
-                    );
-                }
+                paymentService.confirmPayment(record, (String) eventData.get("id"), "Paymongo Webhook");
             } else {
                 log.info("Ignored Paymongo event: {}", eventType);
             }
