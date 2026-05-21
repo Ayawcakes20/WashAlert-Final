@@ -238,7 +238,7 @@ const renderStatusBadge = (status: ApiOrderStatus) => {
 
   if (status === "OUT_FOR_DELIVERY") {
     return (
-      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-brand-navy text-white border border-brand-navy w-fit">
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800 text-white border border-slate-700 w-fit">
         <div className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
         <span className="text-[10px] font-bold uppercase tracking-tight">Delivering</span>
       </div>

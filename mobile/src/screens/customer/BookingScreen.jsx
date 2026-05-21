@@ -160,10 +160,23 @@ export default function BookingScreen({ route, navigation }) {
   // True when the selected service is Dry-only (no washing cycle, add-ons not applicable).
   const isDryOnly = computedLoadCount === 0;
 
-  // Active qty for the selected addon, always ≥ 1 when an item is selected.
-  // The map may hold 0 for unselected items; we clamp so the booking payload is correct.
-  const detQty = det !== 'none' ? Math.max(1, detQtyMap[det] ?? 1) : 0;
-  const fabQty = fab !== 'none' ? Math.max(1, fabQtyMap[fab] ?? 1) : 0;
+  // Active qty for the selected addon.
+  // Returns 0 if the item is out of stock (supplyAvail loaded and available=false),
+  // otherwise clamps to at least 1 so the booking payload is correct.
+  const detQty = det !== 'none'
+    ? (() => {
+        const avail = supplyAvail?.detergent?.find(d => d.id === det);
+        if (avail !== null && avail !== undefined && !avail.available) return 0;
+        return Math.max(1, detQtyMap[det] ?? 1);
+      })()
+    : 0;
+  const fabQty = fab !== 'none'
+    ? (() => {
+        const avail = supplyAvail?.conditioner?.find(c => c.id === fab);
+        if (avail !== null && avail !== undefined && !avail.available) return 0;
+        return Math.max(1, fabQtyMap[fab] ?? 1);
+      })()
+    : 0;
 
   // Show a floating toast for 3.5 s — clears automatically
   const showToast = (msg) => {
@@ -692,8 +705,18 @@ export default function BookingScreen({ route, navigation }) {
                         setDet('none');
                         setDetQtyMap({ surf: 0, ariel: 0 });
                       } else {
-                        // Default to first shop item if nothing shop selected yet
-                        if(det==='none') { setDet('surf'); setDetQtyMap(m=>({...m,surf:Math.max(1,m.surf??1)})); }
+                        // Default to first in-stock shop item
+                        if(det==='none') {
+                          const detItems = ['surf','ariel'];
+                          const firstInStock = detItems.find(id => {
+                            const a = supplyAvail?.detergent?.find(d => d.id === id);
+                            return !a || a.available;
+                          });
+                          if(firstInStock) {
+                            setDet(firstInStock);
+                            setDetQtyMap(m=>({...m,[firstInStock]:Math.max(1,m[firstInStock]??1)}));
+                          }
+                        }
                       }
                       setStockError(null);
                     }}
@@ -734,11 +757,13 @@ export default function BookingScreen({ route, navigation }) {
                   <View style={{flexDirection:'row',alignItems:'center',paddingRight:12,gap:6}}>
                     <TouchableOpacity
                       onPress={()=>{
-                        if(!isSel){ if(!isOut){setDet(o.id);setDetQtyMap(m=>({...m,[o.id]:1}));setStockError(null);} return; }
+                        if(isOut){ showToast(`${o.label} is out of stock.`); return; }
+                        if(!isSel){ setDet(o.id);setDetQtyMap(m=>({...m,[o.id]:1}));setStockError(null); return; }
                         setDetQtyMap(m=>({...m,[o.id]:Math.max(1,(m[o.id]??1)-1)}));
                         setStockError(null);
                       }}
-                      style={{width:28,height:28,borderRadius:14,backgroundColor:isSel?colors.primary:'#D1D5DB',alignItems:'center',justifyContent:'center'}}
+                      disabled={isOut}
+                      style={{width:28,height:28,borderRadius:14,backgroundColor:isOut?'#D1D5DB':isSel?colors.primary:'#D1D5DB',alignItems:'center',justifyContent:'center'}}
                     >
                       <Text style={{color:isSel?'#fff':'#9CA3AF',fontSize:16,fontWeight:'700',lineHeight:20}}>-</Text>
                     </TouchableOpacity>
@@ -791,7 +816,18 @@ export default function BookingScreen({ route, navigation }) {
                         setFab('none');
                         setFabQtyMap({ charm: 0, downy: 0 });
                       } else {
-                        if(fab==='none') { setFab('charm'); setFabQtyMap(m=>({...m,charm:Math.max(1,m.charm??1)})); }
+                        // Default to first in-stock shop item
+                        if(fab==='none') {
+                          const fabItems = ['charm','downy'];
+                          const firstInStock = fabItems.find(id => {
+                            const a = supplyAvail?.conditioner?.find(c => c.id === id);
+                            return !a || a.available;
+                          });
+                          if(firstInStock) {
+                            setFab(firstInStock);
+                            setFabQtyMap(m=>({...m,[firstInStock]:Math.max(1,m[firstInStock]??1)}));
+                          }
+                        }
                       }
                       setStockError(null);
                     }}
@@ -831,11 +867,13 @@ export default function BookingScreen({ route, navigation }) {
                   <View style={{flexDirection:'row',alignItems:'center',paddingRight:12,gap:6}}>
                     <TouchableOpacity
                       onPress={()=>{
-                        if(!isSel){ if(!isOut){setFab(o.id);setFabQtyMap(m=>({...m,[o.id]:1}));setStockError(null);} return; }
+                        if(isOut){ showToast(`${o.label} is out of stock.`); return; }
+                        if(!isSel){ setFab(o.id);setFabQtyMap(m=>({...m,[o.id]:1}));setStockError(null); return; }
                         setFabQtyMap(m=>({...m,[o.id]:Math.max(1,(m[o.id]??1)-1)}));
                         setStockError(null);
                       }}
-                      style={{width:28,height:28,borderRadius:14,backgroundColor:isSel?colors.primary:'#D1D5DB',alignItems:'center',justifyContent:'center'}}
+                      disabled={isOut}
+                      style={{width:28,height:28,borderRadius:14,backgroundColor:isOut?'#D1D5DB':isSel?colors.primary:'#D1D5DB',alignItems:'center',justifyContent:'center'}}
                     >
                       <Text style={{color:isSel?'#fff':'#9CA3AF',fontSize:16,fontWeight:'700',lineHeight:20}}>-</Text>
                     </TouchableOpacity>

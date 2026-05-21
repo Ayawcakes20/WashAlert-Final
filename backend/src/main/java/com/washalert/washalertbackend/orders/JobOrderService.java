@@ -20,6 +20,7 @@ import com.washalert.washalertbackend.orders.dto.OrderTrackingEventResponse;
 import com.washalert.washalertbackend.orders.dto.OrderTrackingResponse;
 import com.washalert.washalertbackend.orders.dto.SetPriceRequest;
 import com.washalert.washalertbackend.orders.dto.UpdateJobOrderRequest;
+import com.washalert.washalertbackend.payment.PaymentMethod;
 import com.washalert.washalertbackend.payment.PaymentRecord;
 import com.washalert.washalertbackend.payment.PaymentRecordRepository;
 import com.washalert.washalertbackend.payment.PaymentStatus;
@@ -472,6 +473,38 @@ public class JobOrderService {
         jo.setPaid(true);
         jo.setUpdatedAt(LocalDateTime.now());
         JobOrder saved = repo.save(jo);
+
+        // Synchronize PaymentRecord
+        java.util.Optional<PaymentRecord> existing = paymentRepository.findByJobOrder_TrackingNumberOrderBySubmittedAtDesc(jo.getTrackingNumber()).stream().findFirst();
+        if (existing.isPresent()) {
+            PaymentRecord pr = existing.get();
+            pr.setStatus(PaymentStatus.PAID);
+            pr.setVerifiedAt(LocalDateTime.now());
+            pr.setVerifiedBy(actor.getEmail());
+            paymentRepository.save(pr);
+        } else {
+            PaymentMethod method = PaymentMethod.CASH;
+            if (jo.getPaymentMethod() != null) {
+                String pmUpper = jo.getPaymentMethod().toUpperCase();
+                if (pmUpper.contains("GCASH")) {
+                    method = PaymentMethod.GCASH;
+                } else if (pmUpper.contains("MAYA")) {
+                    method = PaymentMethod.MAYA;
+                }
+            }
+            PaymentRecord newRecord = PaymentRecord.builder()
+                    .jobOrder(jo)
+                    .method(method)
+                    .amount(jo.getTotalPrice() != null ? jo.getTotalPrice() : java.math.BigDecimal.ZERO)
+                    .status(PaymentStatus.PAID)
+                    .submittedAt(LocalDateTime.now())
+                    .verifiedAt(LocalDateTime.now())
+                    .verifiedBy(actor.getEmail())
+                    .notes("Manual override payment verification by staff")
+                    .build();
+            paymentRepository.save(newRecord);
+        }
+
         JobOrderResponse response = toResponse(jo, PaymentStatus.PAID);
         firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
         return response;
@@ -831,10 +864,13 @@ public class JobOrderService {
     }
 
     private PaymentStatus resolvePaymentStatus(boolean orderPaid, PaymentStatus paymentStatus) {
-        if (paymentStatus != null) {
-            return paymentStatus;
+        if (orderPaid) {
+            if (paymentStatus == PaymentStatus.VERIFIED) {
+                return PaymentStatus.VERIFIED;
+            }
+            return PaymentStatus.PAID;
         }
-        return orderPaid ? PaymentStatus.PAID : null;
+        return paymentStatus;
     }
 
     private String formatTrackingNumber(Long id) {
