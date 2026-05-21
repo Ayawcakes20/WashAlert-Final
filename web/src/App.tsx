@@ -21,6 +21,7 @@ import OrderManagementPage from "./pages/OrderManagementPage";
 import MachineMonitoringPage from "./pages/MachineMonitoringPage";
 import DeliveryManagementPage from "./pages/DeliveryManagementPage";
 import PredictiveInventoryPage from "./pages/PredictiveInventoryPage";
+import BranchAssetsPage from "./pages/BranchAssetsPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import AIChatSupportPage from "./pages/AIChatSupportPage";
 import AnnouncementsPage from "./pages/AnnouncementsPage";
@@ -101,6 +102,7 @@ const App = () => (
             />
             <Route path="/delivery" element={<DeliveryManagementPage />} />
             <Route path="/inventory" element={<PredictiveInventoryPage />} />
+            <Route path="/branch-assets" element={<BranchAssetsPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/chat-support" element={<AIChatSupportPage />} />
             <Route path="/support-tickets" element={<SupportTicketsPage />} />
