@@ -3,10 +3,11 @@ import { Package, Boxes } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import PredictiveInventoryPage from "./PredictiveInventoryPage";
 import BranchAssetsPage from "./BranchAssetsPage";
+import { getSessionUser } from "@/lib/session";
 
 type Tab = "predictive" | "assets";
 
-const tabs: { id: Tab; label: string; icon: typeof Package; description: string }[] = [
+const ALL_TABS: { id: Tab; label: string; icon: typeof Package; description: string }[] = [
   {
     id: "predictive",
     label: "Predictive Inventory",
@@ -22,7 +23,16 @@ const tabs: { id: Tab; label: string; icon: typeof Package; description: string 
 ];
 
 export default function InventoryPage() {
+  const user = getSessionUser();
+  const isAdmin = user?.role === "ADMIN";
+
+  // Staff only sees Predictive Inventory — never Branch Assets
+  const tabs = isAdmin ? ALL_TABS : ALL_TABS.filter((t) => t.id !== "assets");
+
   const [activeTab, setActiveTab] = useState<Tab>("predictive");
+
+  // If staff somehow has 'assets' active (e.g. stale state), reset to predictive
+  const safeActiveTab: Tab = isAdmin ? activeTab : "predictive";
 
   return (
     <div className="space-y-6">
@@ -30,7 +40,7 @@ export default function InventoryPage() {
       <div className="glass-card rounded-2xl p-1.5 flex gap-1.5">
         {tabs.map((tab) => {
           const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
+          const isActive = safeActiveTab === tab.id;
           return (
             <button
               key={tab.id}
@@ -75,13 +85,13 @@ export default function InventoryPage() {
       {/* Tab content */}
       <AnimatePresence mode="wait">
         <motion.div
-          key={activeTab}
+          key={safeActiveTab}
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.2 }}
         >
-          {activeTab === "predictive" ? <PredictiveInventoryPage /> : <BranchAssetsPage />}
+          {safeActiveTab === "predictive" ? <PredictiveInventoryPage /> : <BranchAssetsPage />}
         </motion.div>
       </AnimatePresence>
     </div>

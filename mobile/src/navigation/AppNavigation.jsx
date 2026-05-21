@@ -47,6 +47,9 @@ import DriverDeliveriesScreen from '../screens/driver/DriverDeliveriesScreen';
 import DeliveryDetailScreen from '../screens/driver/DeliveryDetailScreen';
 import DriverProfileScreen from '../screens/driver/DriverProfileScreen';
 
+// Staff Screens
+import StaffInventoryScreen from '../screens/staff/StaffInventoryScreen';
+
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
@@ -333,6 +336,72 @@ const DriverTabs = () => (
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Staff Tabs & Stack
+// ─────────────────────────────────────────────────────────────────────────────
+const STAFF_TABS = [
+  { name: 'Inventory', label: 'Inventory', icon: 'package-variant-closed-minus', iconActive: 'package-variant-closed-check', lib: 'mci' },
+  { name: 'StaffProfile', label: 'Profile', icon: 'person-outline', iconActive: 'person', lib: 'ion' },
+];
+
+function StaffTabBar({ state, descriptors, navigation }) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={[tabStyles.outerWrapper, { paddingBottom: insets.bottom + 8 }]}>
+      <View style={tabStyles.pill}>
+        {state.routes.map((route, index) => {
+          const isFocused = state.index === index;
+          const tab = STAFF_TABS[index];
+          const onPress = () => {
+            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+            if (!isFocused && !event.defaultPrevented) navigation.navigate(route.name);
+          };
+          return (
+            <TouchableOpacity key={route.key} style={tabStyles.tabItem} onPress={onPress} activeOpacity={0.7}>
+              <View style={[tabStyles.iconWrap, isFocused && tabStyles.iconWrapActive]}>
+                {tab.lib === 'mci' ? (
+                  <MaterialCommunityIcons
+                    name={isFocused ? tab.iconActive : tab.icon}
+                    size={21}
+                    color={isFocused ? colors.primary : colors.textTertiary}
+                  />
+                ) : (
+                  <Ionicons
+                    name={isFocused ? tab.iconActive : tab.icon}
+                    size={21}
+                    color={isFocused ? colors.primary : colors.textTertiary}
+                  />
+                )}
+              </View>
+              <Text style={[tabStyles.tabLabel, isFocused && tabStyles.tabLabelActive]}>{tab.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+const StaffTabs = () => (
+  <Tab.Navigator
+    tabBar={(props) => <StaffTabBar {...props} />}
+    screenOptions={{ headerShown: false }}
+  >
+    <Tab.Screen name="Inventory"    component={StaffInventoryScreen} />
+    <Tab.Screen name="StaffProfile" component={ProfileScreen} />
+  </Tab.Navigator>
+);
+
+const StaffStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="StaffTabs"     component={StaffTabs} />
+    <Stack.Screen name="EditProfile"   component={EditProfileScreen}    options={stackHeader('Edit Profile')} />
+    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={stackHeader('Change Password')} />
+    <Stack.Screen name="TermsAndConditions" component={TermsAndConditionsScreen} options={stackHeader('Terms & Conditions')} />
+    <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={stackHeader('Privacy Policy')} />
+  </Stack.Navigator>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Driver Stack
 // ─────────────────────────────────────────────────────────────────────────────
 const DriverStack = () => (
@@ -354,6 +423,7 @@ const AppNavigator = () => {
   const { loading, isAuthenticated, hasSeenOnboarding, user } = useAuth();
   const roleModules = new Set((user?.allowedModules || []).map((item) => String(item).toLowerCase()));
   const isDriver = user?.role === 'driver' || roleModules.has('driver-delivery');
+  const isStaff = user?.role === 'staff' || user?.role === 'admin';
   const requiresDriverPasswordUpdate = isAuthenticated && isDriver && Boolean(user?.mustChangePassword);
 
   if (loading) return <SplashScreen />;
@@ -391,6 +461,8 @@ const AppNavigator = () => {
           />
         ) : isDriver ? (
           <Stack.Screen name="Driver" component={DriverStack} />
+        ) : isStaff ? (
+          <Stack.Screen name="Staff" component={StaffStack} />
         ) : (
           <Stack.Screen name="Customer" component={CustomerStack} />
         )}
