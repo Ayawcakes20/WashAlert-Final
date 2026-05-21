@@ -572,6 +572,7 @@ export default function OrderManagementPage() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [markingPaidId, setMarkingPaidId] = useState<number | null>(null);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editSubmitting, setEditSubmitting] = useState(false);
@@ -845,6 +846,22 @@ export default function OrderManagementPage() {
       toast.error(err?.message || "Unable to cancel order.");
     } finally {
       setCancelSubmitting(false);
+    }
+  };
+
+  const handleManualMarkAsPaid = async (orderId: number) => {
+    setMarkingPaidId(orderId);
+    try {
+      const updated = await ordersApi.markAsPaid(orderId);
+      const mapped = mapOrder(updated);
+      setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
+      setSelectedOrder(mapped);
+      toast.success("Payment manually marked as Paid successfully.");
+      await loadOrders(Math.max(0, ordersPage - 1), true);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to mark payment as paid.");
+    } finally {
+      setMarkingPaidId(null);
     }
   };
 
@@ -1939,11 +1956,28 @@ export default function OrderManagementPage() {
                     </div>
                     <div className="flex justify-between items-center">
                       <p className="text-[11px] text-slate-400 font-bold uppercase">Status</p>
-                      {selectedOrder.isPaid ? (
-                        <span className="bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full text-[9px] font-black uppercase">● Paid</span>
-                      ) : (
-                        <span className="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full text-[9px] font-black uppercase">● Pending</span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {selectedOrder.isPaid ? (
+                          <span className="bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full text-[9px] font-black uppercase">● Paid</span>
+                        ) : (
+                          <>
+                            <span className="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full text-[9px] font-black uppercase">● Pending</span>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-[10px] font-bold rounded-lg border-emerald-200 text-emerald-600 hover:bg-emerald-50 active:scale-95 transition-all flex items-center gap-1"
+                              onClick={() => void handleManualMarkAsPaid(selectedOrder.id)}
+                              disabled={markingPaidId === selectedOrder.id}
+                            >
+                              {markingPaidId === selectedOrder.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                "Confirm Payment"
+                              )}
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 flex justify-between items-center mt-2">
                       <div>
