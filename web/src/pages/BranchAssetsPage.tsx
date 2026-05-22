@@ -110,10 +110,20 @@ function generateId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function isStale(dateStr?: string): boolean {
-  if (!dateStr) return false;
-  const days = (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24);
-  return days > 90;
+function generateNextProductId(assets: BranchAsset[]): string {
+  let maxNum = 1000;
+  for (const asset of assets) {
+    if (asset.productId) {
+      const match = asset.productId.match(/\d+$/);
+      if (match) {
+        const num = parseInt(match[0], 10);
+        if (num > maxNum) {
+          maxNum = num;
+        }
+      }
+    }
+  }
+  return `AST-${maxNum + 1}`;
 }
 
 function fmtDate(iso?: string) {
@@ -157,8 +167,8 @@ const anim = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 
 // ─── Blank form helpers ───────────────────────────────────────────────────────
 
-const blankAdd = (isAdmin: boolean, userBranch: string): FormState => ({
-  productId: "",
+const blankAdd = (isAdmin: boolean, userBranch: string, defaultProductId: string): FormState => ({
+  productId: defaultProductId,
   name: "", category: "", condition: "Working" as AssetCondition,
   quantity: "1", branch: isAdmin ? "" : userBranch,
   notes: "", unit: "units", purchaseDate: "", lastInspected: "",
@@ -169,7 +179,7 @@ const assetToEditForm = (a: BranchAsset): FormState => ({
   name: a.name, category: a.category, condition: a.condition,
   quantity: String(a.quantity), branch: a.branch,
   notes: a.notes, unit: a.unit ?? "units",
-  purchaseDate: a.purchaseDate ?? "", lastInspected: a.lastInspected ?? "",
+  purchaseDate: a.purchaseDate ?? "", lastInspected: "",
 });
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -189,7 +199,7 @@ export default function BranchAssetsPage() {
   // ── Add dialog ──
   const [addOpen, setAddOpen] = useState(false);
   const [addSubmitting, setAddSubmitting] = useState(false);
-  const [addForm, setAddForm] = useState<FormState>(() => blankAdd(isAdmin, userBranch));
+  const [addForm, setAddForm] = useState<FormState>(() => blankAdd(isAdmin, userBranch, ""));
 
   // ── Edit dialog ──
   const [editOpen, setEditOpen] = useState(false);
@@ -266,7 +276,8 @@ export default function BranchAssetsPage() {
 
   // Add
   const openAdd = () => {
-    setAddForm(blankAdd(isAdmin, userBranch));
+    const nextId = generateNextProductId(assets);
+    setAddForm(blankAdd(isAdmin, userBranch, nextId));
     setAddOpen(true);
   };
 
@@ -275,6 +286,7 @@ export default function BranchAssetsPage() {
     if (!addForm.name.trim())     { toast.error("Asset name is required."); return; }
     if (!addForm.category.trim()) { toast.error("Category is required."); return; }
     if (!addForm.branch.trim())   { toast.error("Branch is required."); return; }
+    if (!addForm.purchaseDate.trim()) { toast.error("Purchase Date is required."); return; }
     const qty = Number(addForm.quantity);
     if (!qty || qty < 1)          { toast.error("Quantity must be at least 1."); return; }
 
@@ -324,6 +336,7 @@ export default function BranchAssetsPage() {
     if (!editForm.name.trim())     { toast.error("Asset name is required."); return; }
     if (!editForm.category.trim()) { toast.error("Category is required."); return; }
     if (!editForm.branch.trim())   { toast.error("Branch is required."); return; }
+    if (!editForm.purchaseDate.trim()) { toast.error("Purchase Date is required."); return; }
     const qty = Number(editForm.quantity);
     if (!qty || qty < 1)           { toast.error("Quantity must be at least 1."); return; }
 
@@ -520,7 +533,7 @@ export default function BranchAssetsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/30">
-                {["Product ID", "Asset Name", "Category", "Condition", "Qty", "Branch", "Notes", "Added", "Last Inspected", "Actions"].map((h) => (
+                {["Product ID", "Asset Name", "Category", "Condition", "Qty", "Branch", "Notes", "Added", "Actions"].map((h) => (
                   <th key={h} className="text-left p-4 font-medium text-muted-foreground whitespace-nowrap">
                     {h}
                   </th>
@@ -531,7 +544,6 @@ export default function BranchAssetsPage() {
               {pagedAssets.map((asset) => {
                 const cond = conditionStyle[asset.condition];
                 const CondIcon = cond.icon;
-                const stale = isStale(asset.lastInspected);
                 return (
                   <tr key={asset.id} className="border-b border-border/20 hover:bg-muted/30 transition-colors group">
                     <td className="p-4">
@@ -573,16 +585,6 @@ export default function BranchAssetsPage() {
                     <td className="p-4 text-xs text-muted-foreground whitespace-nowrap">
                       {fmtDate(asset.addedAt)}
                     </td>
-                    <td className="p-4 text-xs whitespace-nowrap">
-                      {asset.lastInspected ? (
-                        <span className={stale ? "text-amber-600 font-medium flex items-center gap-1" : "text-muted-foreground"}>
-                          {stale && <AlertCircle className="h-3 w-3" />}
-                          {fmtDate(asset.lastInspected)}
-                        </span>
-                      ) : (
-                        <span className="text-border">—</span>
-                      )}
-                    </td>
                     <td className="p-4">
                       <div className="flex items-center gap-1">
                         <button
@@ -614,7 +616,7 @@ export default function BranchAssetsPage() {
 
               {filteredAssets.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="p-12 text-center">
+                  <td colSpan={9} className="p-12 text-center">
                     <div className="flex flex-col items-center gap-3 text-muted-foreground">
                       <Boxes className="h-10 w-10 opacity-20" />
                       <p className="text-sm font-medium">No items found</p>
@@ -724,7 +726,6 @@ export default function BranchAssetsPage() {
           {detailsTarget && (() => {
             const cond = conditionStyle[detailsTarget.condition];
             const CondIcon = cond.icon;
-            const stale = isStale(detailsTarget.lastInspected);
             return (
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between items-start">
@@ -758,18 +759,6 @@ export default function BranchAssetsPage() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Purchase Date</span>
                   <span className="text-foreground">{fmtDate(detailsTarget.purchaseDate)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Last Inspected</span>
-                  {detailsTarget.lastInspected ? (
-                    <span className={stale ? "text-amber-600 font-medium flex items-center gap-1" : "text-foreground"}>
-                      {stale && <AlertCircle className="h-3 w-3" />}
-                      {fmtDate(detailsTarget.lastInspected)}
-                      {stale && <span className="text-xs">(overdue)</span>}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Date Added</span>
@@ -953,28 +942,16 @@ function AssetFormFields({
         />
       </div>
 
-      {/* Purchase Date + Last Inspected */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label className="flex items-center gap-1">
-            <Calendar className="h-3.5 w-3.5" /> Purchase Date
-          </Label>
-          <Input
-            type="date"
-            value={form.purchaseDate}
-            onChange={(e) => setForm((p) => ({ ...p, purchaseDate: e.target.value }))}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label className="flex items-center gap-1">
-            <Calendar className="h-3.5 w-3.5" /> Last Inspected
-          </Label>
-          <Input
-            type="date"
-            value={form.lastInspected}
-            onChange={(e) => setForm((p) => ({ ...p, lastInspected: e.target.value }))}
-          />
-        </div>
+      {/* Purchase Date */}
+      <div className="space-y-2">
+        <Label className="flex items-center gap-1">
+          <Calendar className="h-3.5 w-3.5" /> Purchase Date <span className="text-destructive">*</span>
+        </Label>
+        <Input
+          type="date"
+          value={form.purchaseDate}
+          onChange={(e) => setForm((p) => ({ ...p, purchaseDate: e.target.value }))}
+        />
       </div>
 
       {/* Notes */}
