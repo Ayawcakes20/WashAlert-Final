@@ -68,11 +68,16 @@ const ASSET_CATEGORIES = [
 ] as const;
 
 const KNOWN_BRANCHES = [
-  "JP Rizal",
-  "JP Rizal Branch",
   "Makati Branch",
+  "Chestnut Branch",
   "Republic Branch",
-  "Triplets - Makati",
+  "Holy Spirit Branch",
+  "Sta. Catalina Branch",
+  "Brookside Branch",
+  "JP Rizal Branch",
+  "Luzon Branch",
+  "St. Anthony Branch",
+  "UP Diliman / San Vicente Branch"
 ];
 
 const CONDITIONS: AssetCondition[] = ["Working", "For Repair", "Broken"];
@@ -97,10 +102,49 @@ const STORAGE_KEY = "washalert_branch_assets";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+const BRANCH_NORM_MAP: Record<string, string> = {
+  "jp rizal": "JP Rizal Branch",
+  "jp rizal branch": "JP Rizal Branch",
+  "speedywash - jp rizal": "JP Rizal Branch",
+  "triplets - makati": "Makati Branch",
+  "triplets laundryhubs - makati": "Makati Branch",
+  "makati": "Makati Branch",
+  "makati branch": "Makati Branch",
+  "speedywash - chestnut": "Chestnut Branch",
+  "chestnut branch": "Chestnut Branch",
+  "speedywash - republic": "Republic Branch",
+  "republic branch": "Republic Branch",
+  "speedywash - t.o.n": "Holy Spirit Branch",
+  "holy spirit branch": "Holy Spirit Branch",
+  "speedywash - s. catalina": "Sta. Catalina Branch",
+  "sta. catalina branch": "Sta. Catalina Branch",
+  "speedywash - pasig": "Brookside Branch",
+  "brookside branch": "Brookside Branch",
+  "speedywash - up diliman": "UP Diliman / San Vicente Branch",
+  "up diliman / san vicente branch": "UP Diliman / San Vicente Branch",
+  "luzon branch": "Luzon Branch",
+  "st. anthony branch": "St. Anthony Branch"
+};
+
 function loadAssets(): BranchAsset[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as BranchAsset[]) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as BranchAsset[];
+    let migrated = false;
+    const mapped = parsed.map(asset => {
+      const bLower = asset.branch ? asset.branch.trim().toLowerCase() : "";
+      const canonical = BRANCH_NORM_MAP[bLower];
+      if (canonical && asset.branch !== canonical) {
+        migrated = true;
+        return { ...asset, branch: canonical };
+      }
+      return asset;
+    });
+    if (migrated) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(mapped));
+    }
+    return mapped;
   } catch {
     return [];
   }
@@ -221,7 +265,8 @@ export default function BranchAssetsPage() {
   const user = getSessionUser();
   const isAdmin = user?.role === "ADMIN";
   const isStaff = user?.role === "STAFF";
-  const userBranch = user?.branch || "";
+  const rawUserBranch = user?.branch || "";
+  const userBranch = BRANCH_NORM_MAP[rawUserBranch.trim().toLowerCase()] || rawUserBranch;
 
   const [assets, setAssets] = useState<BranchAsset[]>(loadAssets);
   const [selectedTab, setSelectedTab] = useState("All");
