@@ -936,9 +936,9 @@ export default function PredictiveInventoryPage() {
                   contentStyle={{ fontSize: 11, borderRadius: 8 }}
                 />
                 <Legend
-                  verticalAlign="top"
-                  align="left"
-                  wrapperStyle={{ fontSize: 10, paddingBottom: 8 }}
+                  verticalAlign="bottom"
+                  align="center"
+                  wrapperStyle={{ fontSize: 10, paddingTop: 10 }}
                   formatter={(key: string) => chartLines.find((l) => l.key === key)?.label ?? key}
                 />
                 {chartLines.map((line) => (
@@ -980,7 +980,7 @@ export default function PredictiveInventoryPage() {
                   <XAxis type="number" tick={{ fontSize: 10, fill: "hsl(215, 16%, 47%)" }} label={{ value: "Est. Daily Usage (units)", position: "insideBottom", offset: -14, fontSize: 10, fill: "hsl(215, 16%, 47%)" }} />
                   <YAxis dataKey="branch" type="category" tick={{ fontSize: 10, fill: "hsl(215, 16%, 47%)" }} width={110} />
                   <Tooltip formatter={(v: number, name: string) => [`${v} units/day`, name]} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                  <Legend verticalAlign="top" align="right" iconType="square" wrapperStyle={{ fontSize: 11, paddingBottom: 8 }} />
+                  <Legend verticalAlign="bottom" align="center" iconType="square" wrapperStyle={{ fontSize: 11, paddingTop: 10 }} />
                   <Bar dataKey="detergent" name="Detergent" fill="hsl(218,58%,20%)" radius={[0, 4, 4, 0]}>
                     <LabelList dataKey="detergent" position="right" style={{ fontSize: 10, fill: "hsl(215, 16%, 47%)", fontWeight: 600 }} formatter={(v: any) => (v > 0 ? `${v}` : "")} />
                   </Bar>
