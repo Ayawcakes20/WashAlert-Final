@@ -475,7 +475,7 @@ export default function PredictiveInventoryPage() {
           <Button variant="outline" className="h-10 px-4 rounded-xl" onClick={() => { setLoading(true); loadInventory().finally(() => setLoading(false)); }}>
             <RefreshCw className="h-4 w-4" />
           </Button>
-          {isAdmin && (
+          {(isAdmin || isStaff) && (
             <Button className="h-10 px-5 rounded-xl gradient-navy" onClick={openCreate}>
               <Plus className="h-4 w-4" /> Create Item
             </Button>
@@ -755,10 +755,15 @@ export default function PredictiveInventoryPage() {
                             >
                               + Add Stock
                             </button>
-                            {isAdmin && (
+                            {(isAdmin || isStaff) && (
                               <>
                                 <span className="text-border">·</span>
                                 <button onClick={() => openEdit(inv)} className="text-xs text-muted-foreground hover:text-foreground"><Pencil className="h-3 w-3" /></button>
+                              </>
+                            )}
+                            {isAdmin && (
+                              <>
+                                <span className="text-border">·</span>
                                 <button onClick={() => openDelete(inv)} className="text-xs text-destructive hover:text-destructive/80"><Trash2 className="h-3 w-3" /></button>
                               </>
                             )}
@@ -826,7 +831,7 @@ export default function PredictiveInventoryPage() {
                   <p className="text-[10px] text-muted-foreground">
                     {inv.daysUntilEmpty !== null ? `~${inv.daysUntilEmpty.toFixed(1)} day(s) left` : "N/A"}
                   </p>
-                  {isAdmin && (
+                  {(isAdmin || isStaff) && (
                     <button onClick={() => openAdjust(inv)} className="text-[10px] font-semibold text-primary hover:underline">Restock</button>
                   )}
                 </div>
