@@ -38,6 +38,8 @@ interface BranchAsset {
   unit?: string;
   purchaseDate?: string;
   lastInspected?: string;
+  brand?: string;
+  purchasePrice?: number;
 }
 
 interface FormState {
@@ -51,6 +53,8 @@ interface FormState {
   unit: string;
   purchaseDate: string;
   lastInspected: string;
+  brand: string;
+  purchasePrice: string;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -172,6 +176,7 @@ const blankAdd = (isAdmin: boolean, userBranch: string, defaultProductId: string
   name: "", category: "", condition: "Working" as AssetCondition,
   quantity: "1", branch: isAdmin ? "" : userBranch,
   notes: "", unit: "units", purchaseDate: "", lastInspected: "",
+  brand: "", purchasePrice: "",
 });
 
 const assetToEditForm = (a: BranchAsset): FormState => ({
@@ -180,6 +185,8 @@ const assetToEditForm = (a: BranchAsset): FormState => ({
   quantity: String(a.quantity), branch: a.branch,
   notes: a.notes, unit: a.unit ?? "units",
   purchaseDate: a.purchaseDate ?? "", lastInspected: "",
+  brand: a.brand || "",
+  purchasePrice: a.purchasePrice !== undefined && a.purchasePrice !== null ? String(a.purchasePrice) : "",
 });
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -287,6 +294,12 @@ export default function BranchAssetsPage() {
     if (!addForm.category.trim()) { toast.error("Category is required."); return; }
     if (!addForm.branch.trim())   { toast.error("Branch is required."); return; }
     if (!addForm.purchaseDate.trim()) { toast.error("Purchase Date is required."); return; }
+    if (!addForm.brand.trim())    { toast.error("Brand name is required."); return; }
+    if (!addForm.purchasePrice.trim()) { toast.error("Purchase Price is required."); return; }
+    
+    const priceNum = Number(addForm.purchasePrice);
+    if (isNaN(priceNum) || priceNum < 0) { toast.error("Purchase Price must be a valid positive number."); return; }
+
     const qty = Number(addForm.quantity);
     if (!qty || qty < 1)          { toast.error("Quantity must be at least 1."); return; }
 
@@ -312,7 +325,9 @@ export default function BranchAssetsPage() {
       addedAt: new Date().toISOString(),
       unit: addForm.unit.trim() || "units",
       purchaseDate: addForm.purchaseDate || undefined,
-      lastInspected: addForm.lastInspected || undefined,
+      lastInspected: undefined,
+      brand: addForm.brand.trim() || undefined,
+      purchasePrice: priceNum,
     };
 
     const updated = [...assets, newAsset];
@@ -337,6 +352,12 @@ export default function BranchAssetsPage() {
     if (!editForm.category.trim()) { toast.error("Category is required."); return; }
     if (!editForm.branch.trim())   { toast.error("Branch is required."); return; }
     if (!editForm.purchaseDate.trim()) { toast.error("Purchase Date is required."); return; }
+    if (!editForm.brand.trim())    { toast.error("Brand name is required."); return; }
+    if (!editForm.purchasePrice.trim()) { toast.error("Purchase Price is required."); return; }
+
+    const priceNum = Number(editForm.purchasePrice);
+    if (isNaN(priceNum) || priceNum < 0) { toast.error("Purchase Price must be a valid positive number."); return; }
+
     const qty = Number(editForm.quantity);
     if (!qty || qty < 1)           { toast.error("Quantity must be at least 1."); return; }
 
@@ -554,7 +575,12 @@ export default function BranchAssetsPage() {
                     <td className="p-4">
                       <div className="flex items-center gap-2">
                         <Boxes className="h-4 w-4 text-primary flex-shrink-0" />
-                        <span className="font-medium text-foreground">{asset.name}</span>
+                        <div className="flex flex-col">
+                          <span className="font-medium text-foreground">{asset.name}</span>
+                          {asset.brand && (
+                            <span className="text-[10px] text-muted-foreground">Brand: {asset.brand}</span>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="p-4">
@@ -752,6 +778,12 @@ export default function BranchAssetsPage() {
                   <span className="text-muted-foreground">Quantity</span>
                   <span className="font-bold">{detailsTarget.quantity} {detailsTarget.unit ?? "units"}</span>
                 </div>
+                {detailsTarget.brand && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Brand</span>
+                    <span className="text-foreground font-semibold">{detailsTarget.brand}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Branch</span>
                   <span className="text-foreground">{detailsTarget.branch}</span>
@@ -760,6 +792,12 @@ export default function BranchAssetsPage() {
                   <span className="text-muted-foreground">Purchase Date</span>
                   <span className="text-foreground">{fmtDate(detailsTarget.purchaseDate)}</span>
                 </div>
+                {detailsTarget.purchasePrice !== undefined && detailsTarget.purchasePrice !== null && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Purchase Price</span>
+                    <span className="text-foreground font-semibold">₱{Number(detailsTarget.purchasePrice).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Date Added</span>
                   <span className="text-foreground">{fmtDate(detailsTarget.addedAt)}</span>
@@ -885,20 +923,31 @@ function AssetFormFields({
       <div className="space-y-2">
         <Label>Product ID / Serial Number</Label>
         <Input
-          placeholder="e.g. PROD-1001, SN-88273..."
           value={form.productId}
-          onChange={(e) => setForm((p) => ({ ...p, productId: e.target.value }))}
+          readOnly
+          className="bg-muted text-muted-foreground cursor-not-allowed font-mono font-medium"
         />
+        <p className="text-[10px] text-muted-foreground mt-0.5">Auto-generated by the system.</p>
       </div>
 
-      {/* Item Name */}
-      <div className="space-y-2">
-        <Label>Item Name</Label>
-        <Input
-          placeholder="e.g. Electric Fan, Aircon, Chair..."
-          value={form.name}
-          onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-        />
+      {/* Item Name + Brand */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label>Item Name <span className="text-destructive">*</span></Label>
+          <Input
+            placeholder="e.g. Electric Fan, Aircon..."
+            value={form.name}
+            onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Brand Name <span className="text-destructive">*</span></Label>
+          <Input
+            placeholder="e.g. Samsung, LG..."
+            value={form.brand}
+            onChange={(e) => setForm((p) => ({ ...p, brand: e.target.value }))}
+          />
+        </div>
       </div>
 
       {/* Condition + Quantity */}
@@ -942,16 +991,29 @@ function AssetFormFields({
         />
       </div>
 
-      {/* Purchase Date */}
-      <div className="space-y-2">
-        <Label className="flex items-center gap-1">
-          <Calendar className="h-3.5 w-3.5" /> Purchase Date <span className="text-destructive">*</span>
-        </Label>
-        <Input
-          type="date"
-          value={form.purchaseDate}
-          onChange={(e) => setForm((p) => ({ ...p, purchaseDate: e.target.value }))}
-        />
+      {/* Purchase Date + Purchase Price */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label className="flex items-center gap-1">
+            <Calendar className="h-3.5 w-3.5" /> Purchase Date <span className="text-destructive">*</span>
+          </Label>
+          <Input
+            type="date"
+            value={form.purchaseDate}
+            onChange={(e) => setForm((p) => ({ ...p, purchaseDate: e.target.value }))}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Purchase Price (₱) <span className="text-destructive">*</span></Label>
+          <Input
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="e.g. 15000"
+            value={form.purchasePrice}
+            onChange={(e) => setForm((p) => ({ ...p, purchasePrice: e.target.value }))}
+          />
+        </div>
       </div>
 
       {/* Notes */}
