@@ -114,20 +114,46 @@ function generateId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function generateNextProductId(assets: BranchAsset[]): string {
+function getAssetAbbreviation(name: string): string {
+  const trimmed = name.trim().toLowerCase();
+  if (!trimmed) return "AST";
+
+  // Specific overrides
+  if (trimmed === "aircon" || trimmed === "air conditioner") return "AC";
+  if (trimmed === "television" || trimmed === "tv") return "TV";
+
+  // Split by spaces, hyphens, or underscores
+  const words = trimmed.split(/[\s_-]+/).filter(Boolean);
+  if (words.length === 0) return "AST";
+
+  if (words.length > 1) {
+    return words.map(w => w[0].toUpperCase()).join("");
+  } else {
+    const word = words[0];
+    if (word.length >= 2) {
+      return word.slice(0, 2).toUpperCase();
+    }
+    return word.toUpperCase() + "X";
+  }
+}
+
+function generateNextProductId(assets: BranchAsset[], name: string): string {
+  const prefix = getAssetAbbreviation(name);
   let maxNum = 1000;
+  
+  const regex = new RegExp(`^${prefix}-(\\d+)$`, 'i');
   for (const asset of assets) {
     if (asset.productId) {
-      const match = asset.productId.match(/\d+$/);
+      const match = asset.productId.match(regex);
       if (match) {
-        const num = parseInt(match[0], 10);
+        const num = parseInt(match[1], 10);
         if (num > maxNum) {
           maxNum = num;
         }
       }
     }
   }
-  return `AST-${maxNum + 1}`;
+  return `${prefix}-${maxNum + 1}`;
 }
 
 function fmtDate(iso?: string) {
@@ -283,7 +309,7 @@ export default function BranchAssetsPage() {
 
   // Add
   const openAdd = () => {
-    const nextId = generateNextProductId(assets);
+    const nextId = generateNextProductId(assets, "");
     setAddForm(blankAdd(isAdmin, userBranch, nextId));
     setAddOpen(true);
   };
@@ -701,6 +727,8 @@ export default function BranchAssetsPage() {
             adminBranch={isAdmin}
             branches={branches}
             userBranch={userBranch}
+            assets={assets}
+            mode="add"
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)} disabled={addSubmitting}>Cancel</Button>
@@ -730,6 +758,8 @@ export default function BranchAssetsPage() {
             adminBranch={isAdmin}
             branches={branches}
             userBranch={userBranch}
+            assets={assets}
+            mode="edit"
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)} disabled={editSubmitting}>Cancel</Button>
@@ -872,10 +902,12 @@ interface AssetFormFieldsProps {
   adminBranch: boolean;
   branches: string[];
   userBranch: string;
+  assets: BranchAsset[];
+  mode: "add" | "edit";
 }
 
 function AssetFormFields({
-  form, setForm, adminBranch, branches, userBranch,
+  form, setForm, adminBranch, branches, userBranch, assets, mode,
 }: AssetFormFieldsProps) {
   return (
     <div className="space-y-4">
@@ -937,7 +969,13 @@ function AssetFormFields({
           <Input
             placeholder="e.g. Electric Fan, Aircon..."
             value={form.name}
-            onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+            onChange={(e) => {
+              const newName = e.target.value;
+              setForm((p) => {
+                const nextId = mode === "add" ? generateNextProductId(assets, newName) : p.productId;
+                return { ...p, name: newName, productId: nextId };
+              });
+            }}
           />
         </div>
         <div className="space-y-2">
