@@ -556,7 +556,7 @@ export default function OrderManagementPage() {
         detergentQuantity: params.detergentQuantity,
         conditionerQuantity: params.conditionerQuantity,
       });
-      toast.success("✓ Receipt sent to customer");
+      toast.success("Receipt sent to the customer");
       setSetPriceOpen(false);
       await loadOrders(Math.max(0, ordersPage - 1), true);
       if (selectedOrder && selectedOrder.id === setPriceOrderId) {
@@ -668,11 +668,16 @@ export default function OrderManagementPage() {
   const applyStatusUpdate = async (order: Order, codCollected?: boolean) => {
     let currentOrder = order;
 
-    // Check if GCash payment is pending verification
+    const allowed = getAllowedStatusTransitions(currentOrder.status);
+    const fallbackStatus = allowed[0];
+    const nextStatus = fallbackStatus || currentOrder.status;
+
+    // Check if GCash payment is pending verification (only for statuses that require payment)
     const isGcash = currentOrder.paymentMethod?.toUpperCase().includes("GCASH");
     let isUnpaidGcash = isGcash && !currentOrder.isPaid;
+    const requiresPaymentVerification = nextStatus === "WASHING" || nextStatus === "DELIVERED";
 
-    if (isUnpaidGcash) {
+    if (isUnpaidGcash && requiresPaymentVerification) {
       setStatusUpdatingId(currentOrder.id);
       try {
         toast.info("Verifying GCash payment status with PayMongo...");
@@ -696,10 +701,6 @@ export default function OrderManagementPage() {
         setStatusUpdatingId(null);
       }
     }
-
-    const allowed = getAllowedStatusTransitions(currentOrder.status);
-    const fallbackStatus = allowed[0];
-    const nextStatus = fallbackStatus || currentOrder.status;
 
     // If the order already transitioned to or past the target state (e.g. from PRICE_CONFIRMED to WASHING automatically via track payment)
     if (nextStatus === currentOrder.status) {
