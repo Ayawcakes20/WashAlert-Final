@@ -27,6 +27,7 @@ type AssetCondition = "Working" | "For Repair" | "Broken";
 
 interface BranchAsset {
   id: string;
+  productId: string;
   name: string;
   category: string;
   condition: AssetCondition;
@@ -37,6 +38,19 @@ interface BranchAsset {
   unit?: string;
   purchaseDate?: string;
   lastInspected?: string;
+}
+
+interface FormState {
+  productId: string;
+  name: string;
+  category: string;
+  condition: AssetCondition;
+  quantity: string;
+  branch: string;
+  notes: string;
+  unit: string;
+  purchaseDate: string;
+  lastInspected: string;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -143,13 +157,15 @@ const anim = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 
 // ─── Blank form helpers ───────────────────────────────────────────────────────
 
-const blankAdd = (isAdmin: boolean, userBranch: string) => ({
+const blankAdd = (isAdmin: boolean, userBranch: string): FormState => ({
+  productId: "",
   name: "", category: "", condition: "Working" as AssetCondition,
   quantity: "1", branch: isAdmin ? "" : userBranch,
   notes: "", unit: "units", purchaseDate: "", lastInspected: "",
 });
 
-const assetToEditForm = (a: BranchAsset) => ({
+const assetToEditForm = (a: BranchAsset): FormState => ({
+  productId: a.productId || "",
   name: a.name, category: a.category, condition: a.condition,
   quantity: String(a.quantity), branch: a.branch,
   notes: a.notes, unit: a.unit ?? "units",
@@ -173,13 +189,13 @@ export default function BranchAssetsPage() {
   // ── Add dialog ──
   const [addOpen, setAddOpen] = useState(false);
   const [addSubmitting, setAddSubmitting] = useState(false);
-  const [addForm, setAddForm] = useState(() => blankAdd(isAdmin, userBranch));
+  const [addForm, setAddForm] = useState<FormState>(() => blankAdd(isAdmin, userBranch));
 
   // ── Edit dialog ──
   const [editOpen, setEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<BranchAsset | null>(null);
   const [editSubmitting, setEditSubmitting] = useState(false);
-  const [editForm, setEditForm] = useState(blankAdd(isAdmin, userBranch));
+  const [editForm, setEditForm] = useState<FormState>(() => blankAdd(isAdmin, userBranch));
 
   // ── View Details dialog ──
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -220,6 +236,7 @@ export default function BranchAssetsPage() {
       list = list.filter(
         (a) =>
           a.name.toLowerCase().includes(q) ||
+          (a.productId && a.productId.toLowerCase().includes(q)) ||
           a.category.toLowerCase().includes(q) ||
           a.condition.toLowerCase().includes(q) ||
           a.notes.toLowerCase().includes(q),
@@ -254,17 +271,26 @@ export default function BranchAssetsPage() {
   };
 
   const submitAdd = async () => {
+    if (!addForm.productId.trim()) { toast.error("Product ID is required."); return; }
     if (!addForm.name.trim())     { toast.error("Asset name is required."); return; }
     if (!addForm.category.trim()) { toast.error("Category is required."); return; }
     if (!addForm.branch.trim())   { toast.error("Branch is required."); return; }
     const qty = Number(addForm.quantity);
     if (!qty || qty < 1)          { toast.error("Quantity must be at least 1."); return; }
 
+    const normalizedProdId = addForm.productId.trim().toLowerCase();
+    const isTaken = assets.some(a => a.productId && a.productId.trim().toLowerCase() === normalizedProdId);
+    if (isTaken) {
+      toast.error(`Product ID "${addForm.productId.trim()}" is already in use.`);
+      return;
+    }
+
     setAddSubmitting(true);
     await new Promise((r) => setTimeout(r, 300));
 
     const newAsset: BranchAsset = {
       id: generateId(),
+      productId: addForm.productId.trim(),
       name: addForm.name.trim(),
       category: addForm.category.trim(),
       condition: addForm.condition,
@@ -294,11 +320,19 @@ export default function BranchAssetsPage() {
 
   const submitEdit = async () => {
     if (!editTarget) return;
+    if (!editForm.productId.trim()) { toast.error("Product ID is required."); return; }
     if (!editForm.name.trim())     { toast.error("Asset name is required."); return; }
     if (!editForm.category.trim()) { toast.error("Category is required."); return; }
     if (!editForm.branch.trim())   { toast.error("Branch is required."); return; }
     const qty = Number(editForm.quantity);
     if (!qty || qty < 1)           { toast.error("Quantity must be at least 1."); return; }
+
+    const normalizedProdId = editForm.productId.trim().toLowerCase();
+    const isTaken = assets.some(a => a.id !== editTarget.id && a.productId && a.productId.trim().toLowerCase() === normalizedProdId);
+    if (isTaken) {
+      toast.error(`Product ID "${editForm.productId.trim()}" is already in use.`);
+      return;
+    }
 
     setEditSubmitting(true);
     await new Promise((r) => setTimeout(r, 300));
@@ -307,6 +341,7 @@ export default function BranchAssetsPage() {
       a.id === editTarget.id
         ? {
             ...a,
+            productId: editForm.productId.trim(),
             name: editForm.name.trim(),
             category: editForm.category.trim(),
             condition: editForm.condition,
@@ -355,138 +390,6 @@ export default function BranchAssetsPage() {
     setAssets(loadAssets());
     toast.success("Inventory refreshed.");
   };
-
-  // ─── Asset form fields (reused in Add + Edit) ─────────────────────────────
-
-  type FormState = typeof addForm;
-
-  const AssetFormFields = ({
-    form, setForm, adminBranch,
-  }: { form: FormState; setForm: (fn: (p: FormState) => FormState) => void; adminBranch: boolean }) => (
-    <div className="space-y-4">
-      {/* Branch */}
-      {adminBranch ? (
-        <div className="space-y-2">
-          <Label>Branch</Label>
-          <Select value={form.branch} onValueChange={(val) => setForm((p) => ({ ...p, branch: val }))}>
-            <SelectTrigger className="w-full text-foreground">
-              <SelectValue placeholder="Select a branch" />
-            </SelectTrigger>
-            <SelectContent>
-              {branches.map((b) => (
-                <SelectItem key={b} value={b}>{b}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <Label>Branch</Label>
-          <Input value={userBranch} readOnly className="bg-muted text-muted-foreground" />
-        </div>
-      )}
-
-      {/* Category */}
-      <div className="space-y-2">
-        <Label>Category</Label>
-        <Select
-          value={form.category}
-          onValueChange={(val) => setForm((p) => ({ ...p, category: val }))}
-        >
-          <SelectTrigger className="w-full text-foreground">
-            <SelectValue placeholder="Select a category" />
-          </SelectTrigger>
-          <SelectContent>
-            {ASSET_CATEGORIES.map((c) => (
-              <SelectItem key={c} value={c}>{c}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Item Name */}
-      <div className="space-y-2">
-        <Label>Item Name</Label>
-        <Input
-          placeholder="e.g. Electric Fan, Aircon, Chair..."
-          value={form.name}
-          onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-        />
-      </div>
-
-      {/* Condition + Quantity */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label>Condition</Label>
-          <Select
-            value={form.condition}
-            onValueChange={(val) => setForm((p) => ({ ...p, condition: val as AssetCondition }))}
-          >
-            <SelectTrigger className="w-full text-foreground">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CONDITIONS.map((c) => (
-                <SelectItem key={c} value={c}>{c}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Quantity</Label>
-          <Input
-            type="number" min="1" step="1"
-            value={form.quantity}
-            onChange={(e) => setForm((p) => ({ ...p, quantity: e.target.value }))}
-          />
-        </div>
-      </div>
-
-      {/* Unit */}
-      <div className="space-y-2">
-        <Label>Unit <span className="text-muted-foreground text-xs">(default: units)</span></Label>
-        <Input
-          placeholder="e.g. units, pieces, sets"
-          value={form.unit}
-          onChange={(e) => setForm((p) => ({ ...p, unit: e.target.value }))}
-        />
-      </div>
-
-      {/* Purchase Date + Last Inspected */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label className="flex items-center gap-1">
-            <Calendar className="h-3.5 w-3.5" /> Purchase Date
-          </Label>
-          <Input
-            type="date"
-            value={form.purchaseDate}
-            onChange={(e) => setForm((p) => ({ ...p, purchaseDate: e.target.value }))}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label className="flex items-center gap-1">
-            <Calendar className="h-3.5 w-3.5" /> Last Inspected
-          </Label>
-          <Input
-            type="date"
-            value={form.lastInspected}
-            onChange={(e) => setForm((p) => ({ ...p, lastInspected: e.target.value }))}
-          />
-        </div>
-      </div>
-
-      {/* Notes */}
-      <div className="space-y-2">
-        <Label>Notes <span className="text-muted-foreground text-xs">(optional)</span></Label>
-        <Input
-          placeholder="e.g. Located in washing area, serial no. ABC123"
-          value={form.notes}
-          onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
-        />
-      </div>
-    </div>
-  );
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -617,7 +520,7 @@ export default function BranchAssetsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/30">
-                {["Asset Name", "Category", "Condition", "Qty", "Branch", "Notes", "Added", "Last Inspected", "Actions"].map((h) => (
+                {["Product ID", "Asset Name", "Category", "Condition", "Qty", "Branch", "Notes", "Added", "Last Inspected", "Actions"].map((h) => (
                   <th key={h} className="text-left p-4 font-medium text-muted-foreground whitespace-nowrap">
                     {h}
                   </th>
@@ -631,6 +534,11 @@ export default function BranchAssetsPage() {
                 const stale = isStale(asset.lastInspected);
                 return (
                   <tr key={asset.id} className="border-b border-border/20 hover:bg-muted/30 transition-colors group">
+                    <td className="p-4">
+                      <span className="font-mono text-xs text-foreground bg-muted px-2.5 py-1 rounded-md">
+                        {asset.productId || "—"}
+                      </span>
+                    </td>
                     <td className="p-4">
                       <div className="flex items-center gap-2">
                         <Boxes className="h-4 w-4 text-primary flex-shrink-0" />
@@ -706,7 +614,7 @@ export default function BranchAssetsPage() {
 
               {filteredAssets.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="p-12 text-center">
+                  <td colSpan={10} className="p-12 text-center">
                     <div className="flex flex-col items-center gap-3 text-muted-foreground">
                       <Boxes className="h-10 w-10 opacity-20" />
                       <p className="text-sm font-medium">No items found</p>
@@ -759,7 +667,13 @@ export default function BranchAssetsPage() {
               Register a new item for the branch inventory.
             </DialogDescription>
           </DialogHeader>
-          <AssetFormFields form={addForm} setForm={setAddForm} adminBranch={isAdmin} />
+          <AssetFormFields
+            form={addForm}
+            setForm={setAddForm}
+            adminBranch={isAdmin}
+            branches={branches}
+            userBranch={userBranch}
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)} disabled={addSubmitting}>Cancel</Button>
             <Button onClick={() => void submitAdd()} disabled={addSubmitting} className="gradient-navy">
@@ -782,7 +696,13 @@ export default function BranchAssetsPage() {
               <span className="font-semibold text-foreground">{editTarget?.name}</span>.
             </DialogDescription>
           </DialogHeader>
-          <AssetFormFields form={editForm} setForm={setEditForm} adminBranch={isAdmin} />
+          <AssetFormFields
+            form={editForm}
+            setForm={setEditForm}
+            adminBranch={isAdmin}
+            branches={branches}
+            userBranch={userBranch}
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)} disabled={editSubmitting}>Cancel</Button>
             <Button onClick={() => void submitEdit()} disabled={editSubmitting} className="gradient-navy">
@@ -807,6 +727,10 @@ export default function BranchAssetsPage() {
             const stale = isStale(detailsTarget.lastInspected);
             return (
               <div className="space-y-3 text-sm">
+                <div className="flex justify-between items-start">
+                  <span className="text-muted-foreground">Product ID</span>
+                  <span className="font-mono text-xs text-foreground bg-muted px-2 py-0.5 rounded">{detailsTarget.productId || "—"}</span>
+                </div>
                 <div className="flex justify-between items-start">
                   <span className="text-muted-foreground">Name</span>
                   <span className="font-semibold text-foreground text-right max-w-[60%]">{detailsTarget.name}</span>
@@ -910,5 +834,158 @@ export default function BranchAssetsPage() {
         </AlertDialogContent>
       </AlertDialog>
     </motion.div>
+  );
+}
+
+// ─── Asset Form Fields Component ─────────────────────────────────────────────
+
+interface AssetFormFieldsProps {
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  adminBranch: boolean;
+  branches: string[];
+  userBranch: string;
+}
+
+function AssetFormFields({
+  form, setForm, adminBranch, branches, userBranch,
+}: AssetFormFieldsProps) {
+  return (
+    <div className="space-y-4">
+      {/* Branch */}
+      {adminBranch ? (
+        <div className="space-y-2">
+          <Label>Branch</Label>
+          <Select value={form.branch} onValueChange={(val) => setForm((p) => ({ ...p, branch: val }))}>
+            <SelectTrigger className="w-full text-foreground">
+              <SelectValue placeholder="Select a branch" />
+            </SelectTrigger>
+            <SelectContent>
+              {branches.map((b) => (
+                <SelectItem key={b} value={b}>{b}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <Label>Branch</Label>
+          <Input value={userBranch} readOnly className="bg-muted text-muted-foreground" />
+        </div>
+      )}
+
+      {/* Category */}
+      <div className="space-y-2">
+        <Label>Category</Label>
+        <Select
+          value={form.category}
+          onValueChange={(val) => setForm((p) => ({ ...p, category: val }))}
+        >
+          <SelectTrigger className="w-full text-foreground">
+            <SelectValue placeholder="Select a category" />
+          </SelectTrigger>
+          <SelectContent>
+            {ASSET_CATEGORIES.map((c) => (
+              <SelectItem key={c} value={c}>{c}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Product ID */}
+      <div className="space-y-2">
+        <Label>Product ID / Serial Number</Label>
+        <Input
+          placeholder="e.g. PROD-1001, SN-88273..."
+          value={form.productId}
+          onChange={(e) => setForm((p) => ({ ...p, productId: e.target.value }))}
+        />
+      </div>
+
+      {/* Item Name */}
+      <div className="space-y-2">
+        <Label>Item Name</Label>
+        <Input
+          placeholder="e.g. Electric Fan, Aircon, Chair..."
+          value={form.name}
+          onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+        />
+      </div>
+
+      {/* Condition + Quantity */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label>Condition</Label>
+          <Select
+            value={form.condition}
+            onValueChange={(val) => setForm((p) => ({ ...p, condition: val as AssetCondition }))}
+          >
+            <SelectTrigger className="w-full text-foreground">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CONDITIONS.map((c) => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Quantity</Label>
+          <Input
+            type="number" min="1" step="1"
+            value={form.quantity}
+            disabled={true}
+            className="bg-muted text-muted-foreground cursor-not-allowed font-medium"
+            onChange={(e) => setForm((p) => ({ ...p, quantity: e.target.value }))}
+          />
+          <p className="text-[10px] text-muted-foreground mt-0.5">Quantity is fixed to 1 for unique product tracking.</p>
+        </div>
+      </div>
+
+      {/* Unit */}
+      <div className="space-y-2">
+        <Label>Unit <span className="text-muted-foreground text-xs">(default: units)</span></Label>
+        <Input
+          placeholder="e.g. units, pieces, sets"
+          value={form.unit}
+          onChange={(e) => setForm((p) => ({ ...p, unit: e.target.value }))}
+        />
+      </div>
+
+      {/* Purchase Date + Last Inspected */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label className="flex items-center gap-1">
+            <Calendar className="h-3.5 w-3.5" /> Purchase Date
+          </Label>
+          <Input
+            type="date"
+            value={form.purchaseDate}
+            onChange={(e) => setForm((p) => ({ ...p, purchaseDate: e.target.value }))}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="flex items-center gap-1">
+            <Calendar className="h-3.5 w-3.5" /> Last Inspected
+          </Label>
+          <Input
+            type="date"
+            value={form.lastInspected}
+            onChange={(e) => setForm((p) => ({ ...p, lastInspected: e.target.value }))}
+          />
+        </div>
+      </div>
+
+      {/* Notes */}
+      <div className="space-y-2">
+        <Label>Notes <span className="text-muted-foreground text-xs">(optional)</span></Label>
+        <Input
+          placeholder="e.g. Located in washing area, serial no. ABC123"
+          value={form.notes}
+          onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
+        />
+      </div>
+    </div>
   );
 }
