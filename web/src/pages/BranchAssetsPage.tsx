@@ -1032,9 +1032,7 @@ function AssetFormFields({
       {/* Purchase Date + Purchase Price */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
-          <Label className="flex items-center gap-1">
-            <Calendar className="h-3.5 w-3.5" /> Purchase Date <span className="text-destructive">*</span>
-          </Label>
+          <Label>Purchase Date <span className="text-destructive">*</span></Label>
           <Input
             type="date"
             value={form.purchaseDate}
