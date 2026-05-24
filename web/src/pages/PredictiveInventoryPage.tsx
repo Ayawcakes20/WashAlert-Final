@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  CircleHelp,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -207,6 +208,18 @@ function Paginator({
         </button>
       </div>
     </div>
+  );
+}
+
+function InfoHint({ text }: { text: string }) {
+  return (
+    <span
+      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-slate-600"
+      title={text}
+      aria-label={text}
+    >
+      <CircleHelp className="h-3 w-3" />
+    </span>
   );
 }
 
@@ -759,10 +772,12 @@ export default function PredictiveInventoryPage() {
                 ].map((col) => (
                   <th
                     key={col.label}
-                    title={col.hint}
                     className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap"
                   >
-                    {col.label}
+                    <span className="inline-flex items-center gap-1.5">
+                      <span>{col.label}</span>
+                      <InfoHint text={col.hint} />
+                    </span>
                   </th>
                 ))}
               </tr>

@@ -387,17 +387,23 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
               setLocationWarning('');
             }
 
-            // Firestore real-time sync (Complete Payload)
-            if (delivery.id) {
+            // Firestore real-time sync (write by deliveryId and trackingNumber for compatibility)
+            const trackingDocIds = [
+              delivery?.id ? String(delivery.id) : '',
+              delivery?.trackingNumber ? String(delivery.trackingNumber) : '',
+            ].filter(Boolean);
+            for (const trackingDocId of trackingDocIds) {
               await setDoc(
-                doc(db, 'delivery_tracking', String(delivery.id)),
+                doc(db, 'delivery_tracking', trackingDocId),
                 {
                   lat: coords.latitude,
                   lng: coords.longitude,
                   status: delivery.status,
                   timestamp: serverTimestamp(),
                   driverId: String(user?.id || ''),
-                  orderId: String(delivery.id)
+                  orderId: String(delivery.id || ''),
+                  trackingNumber: String(delivery.trackingNumber || ''),
+                  driverName: String(user?.fullName || ''),
                 },
                 { merge: true }
               );

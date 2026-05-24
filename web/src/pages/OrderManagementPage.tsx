@@ -1816,13 +1816,13 @@ export default function OrderManagementPage() {
           ) : selectedOrder ? (
             <div className="flex flex-col h-full max-h-[90vh]">
               {/* Header */}
-              <div className="bg-slate-900 px-6 py-5 text-white flex justify-between items-center gap-4">
-                <div className="min-w-0">
+              <div className="bg-slate-900 px-6 py-5 pr-16 text-white flex justify-between items-start gap-4">
+                <div className="min-w-0 flex-1">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Order</p>
                   <h2 className="text-xl font-black tracking-tight truncate">{selectedOrder.orderId}</h2>
                   <p className="text-slate-400 text-[11px] font-medium mt-0.5">{formatDateTime(selectedOrder.createdAt)}</p>
                 </div>
-                <div className="flex flex-col items-end gap-2 shrink-0">
+                <div className="flex max-w-[220px] flex-col items-end gap-2 shrink-0 text-right">
                   <Badge className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide border-none whitespace-nowrap ${selectedOrder.status === 'READY' || selectedOrder.status === 'PRICE_CONFIRMED' ? 'bg-emerald-500 text-white' :
                       selectedOrder.status === 'AWAITING_PRICE_CONFIRMATION' ? 'bg-amber-500 text-white' :
                         selectedOrder.status === 'WASHING' || selectedOrder.status === 'DRYING' ? 'bg-blue-600 text-white' :
@@ -1831,7 +1831,7 @@ export default function OrderManagementPage() {
                     }`}>
                     {statusLabel[selectedOrder.status]}
                   </Badge>
-                  <span className="text-[10px] text-slate-400 font-semibold">{selectedOrder.branch}</span>
+                  <span className="text-[10px] text-slate-400 font-semibold break-words">{selectedOrder.branch}</span>
                 </div>
               </div>
 

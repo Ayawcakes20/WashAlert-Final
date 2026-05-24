@@ -633,7 +633,7 @@ const AddressPickerSheet = ({
               <TouchableOpacity onPress={() => setPanel('list')} style={styles.mapBackBtn}>
                 <Ionicons name="arrow-back" size={20} color={colors.text} />
               </TouchableOpacity>
-              <Text style={styles.mapHeaderText}>Drag pin to exact location</Text>
+              <Text style={styles.mapHeaderText}>Drag the pin or tap the map to adjust your exact location.</Text>
             </View>
 
             <MapView
@@ -699,7 +699,7 @@ const AddressPickerSheet = ({
                 <View style={styles.resolveRow}>
                   <Ionicons name="location" size={18} color={colors.primary} />
                   <Text style={styles.resolveAddressText} numberOfLines={2}>
-                    {resolvedAddress || 'Tap or drag pin to set address'}
+                    {resolvedAddress || 'Tap or drag pin to set address. If unresolved, please add landmark details.'}
                   </Text>
                 </View>
               )}
