@@ -62,7 +62,7 @@ class PaymentServiceTests {
         when(orderRepository.findByTrackingNumber("WA-10017")).thenReturn(Optional.of(order));
         when(paymentRepository.findByJobOrder_TrackingNumber("WA-10017")).thenReturn(Optional.empty());
         when(paymentRepository.save(any(PaymentRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(paymongoService.createCheckoutSession(order)).thenReturn("https://checkout.paymongo.com/session/abc123");
+        when(paymongoService.createCheckoutSession(order)).thenReturn(new CheckoutSessionResult("https://checkout.paymongo.com/session/abc123", "cs_123"));
 
         String checkoutUrl = paymentService.initiateGcashCheckout("wa-10017");
 

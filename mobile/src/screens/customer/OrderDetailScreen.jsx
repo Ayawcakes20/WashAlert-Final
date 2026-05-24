@@ -312,8 +312,36 @@ export default function OrderDetailScreen({ route, navigation }) {
       const { checkoutUrl } = await payments.initiateGcashCheckout(order);
       const url = String(checkoutUrl || '').trim();
       if (!url || !/^https?:\/\//i.test(url)) throw new Error('No checkout URL returned.');
-      try { await WebBrowser.openBrowserAsync(url); }
-      catch { if (await Linking.canOpenURL(url)) await Linking.openURL(url); }
+      
+      const trackingNumber = order.trackingNumber || order.orderId;
+      
+      try { 
+        await WebBrowser.openBrowserAsync(url, {
+          showTitle: true,
+          toolbarColor: '#2563EB',
+          controlsColor: '#ffffff',
+          enableBarCollapsing: true,
+        }); 
+      } catch { 
+        if (await Linking.canOpenURL(url)) await Linking.openURL(url); 
+      }
+
+      // Check payment status on return to active-sync with PayMongo
+      if (trackingNumber) {
+        try {
+          const paymentSync = await payments.trackPayment(trackingNumber);
+          if (paymentSync && (paymentSync.status === 'PAID' || paymentSync.status === 'VERIFIED')) {
+            Alert.alert(
+              'Payment Confirmed',
+              'Your GCash payment was confirmed successfully!'
+            );
+          }
+        } catch (syncErr) {
+          console.warn('[OrderDetail] Post-payNow payment status sync failed:', syncErr);
+        }
+      }
+
+      load();
     } catch (e) {
       const msg = String(e?.message || '');
       // Show a friendly message for all GCash errors — do not expose raw server messages.

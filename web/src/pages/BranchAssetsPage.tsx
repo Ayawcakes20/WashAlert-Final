@@ -27,6 +27,7 @@ type AssetCondition = "Working" | "For Repair" | "Broken";
 
 interface BranchAsset {
   id: string;
+  productId: string;
   name: string;
   category: string;
   condition: AssetCondition;
@@ -37,6 +38,23 @@ interface BranchAsset {
   unit?: string;
   purchaseDate?: string;
   lastInspected?: string;
+  brand?: string;
+  purchasePrice?: number;
+}
+
+interface FormState {
+  productId: string;
+  name: string;
+  category: string;
+  condition: AssetCondition;
+  quantity: string;
+  branch: string;
+  notes: string;
+  unit: string;
+  purchaseDate: string;
+  lastInspected: string;
+  brand: string;
+  purchasePrice: string;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -50,11 +68,16 @@ const ASSET_CATEGORIES = [
 ] as const;
 
 const KNOWN_BRANCHES = [
-  "JP Rizal",
-  "JP Rizal Branch",
   "Makati Branch",
+  "Chestnut Branch",
   "Republic Branch",
-  "Triplets - Makati",
+  "Holy Spirit Branch",
+  "Sta. Catalina Branch",
+  "Brookside Branch",
+  "JP Rizal Branch",
+  "Luzon Branch",
+  "St. Anthony Branch",
+  "UP Diliman / San Vicente Branch"
 ];
 
 const CONDITIONS: AssetCondition[] = ["Working", "For Repair", "Broken"];
@@ -79,10 +102,49 @@ const STORAGE_KEY = "washalert_branch_assets";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+const BRANCH_NORM_MAP: Record<string, string> = {
+  "jp rizal": "JP Rizal Branch",
+  "jp rizal branch": "JP Rizal Branch",
+  "speedywash - jp rizal": "JP Rizal Branch",
+  "triplets - makati": "Makati Branch",
+  "triplets laundryhubs - makati": "Makati Branch",
+  "makati": "Makati Branch",
+  "makati branch": "Makati Branch",
+  "speedywash - chestnut": "Chestnut Branch",
+  "chestnut branch": "Chestnut Branch",
+  "speedywash - republic": "Republic Branch",
+  "republic branch": "Republic Branch",
+  "speedywash - t.o.n": "Holy Spirit Branch",
+  "holy spirit branch": "Holy Spirit Branch",
+  "speedywash - s. catalina": "Sta. Catalina Branch",
+  "sta. catalina branch": "Sta. Catalina Branch",
+  "speedywash - pasig": "Brookside Branch",
+  "brookside branch": "Brookside Branch",
+  "speedywash - up diliman": "UP Diliman / San Vicente Branch",
+  "up diliman / san vicente branch": "UP Diliman / San Vicente Branch",
+  "luzon branch": "Luzon Branch",
+  "st. anthony branch": "St. Anthony Branch"
+};
+
 function loadAssets(): BranchAsset[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as BranchAsset[]) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as BranchAsset[];
+    let migrated = false;
+    const mapped = parsed.map(asset => {
+      const bLower = asset.branch ? asset.branch.trim().toLowerCase() : "";
+      const canonical = BRANCH_NORM_MAP[bLower];
+      if (canonical && asset.branch !== canonical) {
+        migrated = true;
+        return { ...asset, branch: canonical };
+      }
+      return asset;
+    });
+    if (migrated) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(mapped));
+    }
+    return mapped;
   } catch {
     return [];
   }
@@ -96,10 +158,46 @@ function generateId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function isStale(dateStr?: string): boolean {
-  if (!dateStr) return false;
-  const days = (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24);
-  return days > 90;
+function getAssetAbbreviation(name: string): string {
+  const trimmed = name.trim().toLowerCase();
+  if (!trimmed) return "AST";
+
+  // Specific overrides
+  if (trimmed === "aircon" || trimmed === "air conditioner") return "AC";
+  if (trimmed === "television" || trimmed === "tv") return "TV";
+
+  // Split by spaces, hyphens, or underscores
+  const words = trimmed.split(/[\s_-]+/).filter(Boolean);
+  if (words.length === 0) return "AST";
+
+  if (words.length > 1) {
+    return words.map(w => w[0].toUpperCase()).join("");
+  } else {
+    const word = words[0];
+    if (word.length >= 2) {
+      return word.slice(0, 2).toUpperCase();
+    }
+    return word.toUpperCase() + "X";
+  }
+}
+
+function generateNextProductId(assets: BranchAsset[], name: string): string {
+  const prefix = getAssetAbbreviation(name);
+  let maxNum = 1000;
+  
+  const regex = new RegExp(`^${prefix}-(\\d+)$`, 'i');
+  for (const asset of assets) {
+    if (asset.productId) {
+      const match = asset.productId.match(regex);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) {
+          maxNum = num;
+        }
+      }
+    }
+  }
+  return `${prefix}-${maxNum + 1}`;
 }
 
 function fmtDate(iso?: string) {
@@ -143,17 +241,22 @@ const anim = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 
 // ─── Blank form helpers ───────────────────────────────────────────────────────
 
-const blankAdd = (isAdmin: boolean, userBranch: string) => ({
+const blankAdd = (isAdmin: boolean, userBranch: string, defaultProductId: string): FormState => ({
+  productId: defaultProductId,
   name: "", category: "", condition: "Working" as AssetCondition,
   quantity: "1", branch: isAdmin ? "" : userBranch,
   notes: "", unit: "units", purchaseDate: "", lastInspected: "",
+  brand: "", purchasePrice: "",
 });
 
-const assetToEditForm = (a: BranchAsset) => ({
+const assetToEditForm = (a: BranchAsset): FormState => ({
+  productId: a.productId || "",
   name: a.name, category: a.category, condition: a.condition,
   quantity: String(a.quantity), branch: a.branch,
   notes: a.notes, unit: a.unit ?? "units",
-  purchaseDate: a.purchaseDate ?? "", lastInspected: a.lastInspected ?? "",
+  purchaseDate: a.purchaseDate ?? "", lastInspected: "",
+  brand: a.brand || "",
+  purchasePrice: a.purchasePrice !== undefined && a.purchasePrice !== null ? String(a.purchasePrice) : "",
 });
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -162,7 +265,8 @@ export default function BranchAssetsPage() {
   const user = getSessionUser();
   const isAdmin = user?.role === "ADMIN";
   const isStaff = user?.role === "STAFF";
-  const userBranch = user?.branch || "";
+  const rawUserBranch = user?.branch || "";
+  const userBranch = BRANCH_NORM_MAP[rawUserBranch.trim().toLowerCase()] || rawUserBranch;
 
   const [assets, setAssets] = useState<BranchAsset[]>(loadAssets);
   const [selectedTab, setSelectedTab] = useState("All");
@@ -173,13 +277,13 @@ export default function BranchAssetsPage() {
   // ── Add dialog ──
   const [addOpen, setAddOpen] = useState(false);
   const [addSubmitting, setAddSubmitting] = useState(false);
-  const [addForm, setAddForm] = useState(() => blankAdd(isAdmin, userBranch));
+  const [addForm, setAddForm] = useState<FormState>(() => blankAdd(isAdmin, userBranch, ""));
 
   // ── Edit dialog ──
   const [editOpen, setEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<BranchAsset | null>(null);
   const [editSubmitting, setEditSubmitting] = useState(false);
-  const [editForm, setEditForm] = useState(blankAdd(isAdmin, userBranch));
+  const [editForm, setEditForm] = useState<FormState>(() => blankAdd(isAdmin, userBranch));
 
   // ── View Details dialog ──
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -220,6 +324,7 @@ export default function BranchAssetsPage() {
       list = list.filter(
         (a) =>
           a.name.toLowerCase().includes(q) ||
+          (a.productId && a.productId.toLowerCase().includes(q)) ||
           a.category.toLowerCase().includes(q) ||
           a.condition.toLowerCase().includes(q) ||
           a.notes.toLowerCase().includes(q),
@@ -249,22 +354,39 @@ export default function BranchAssetsPage() {
 
   // Add
   const openAdd = () => {
-    setAddForm(blankAdd(isAdmin, userBranch));
+    const nextId = generateNextProductId(assets, "");
+    setAddForm(blankAdd(isAdmin, userBranch, nextId));
     setAddOpen(true);
   };
 
   const submitAdd = async () => {
+    if (!addForm.productId.trim()) { toast.error("Product ID is required."); return; }
     if (!addForm.name.trim())     { toast.error("Asset name is required."); return; }
     if (!addForm.category.trim()) { toast.error("Category is required."); return; }
     if (!addForm.branch.trim())   { toast.error("Branch is required."); return; }
+    if (!addForm.purchaseDate.trim()) { toast.error("Purchase Date is required."); return; }
+    if (!addForm.brand.trim())    { toast.error("Brand name is required."); return; }
+    if (!addForm.purchasePrice.trim()) { toast.error("Purchase Price is required."); return; }
+    
+    const priceNum = Number(addForm.purchasePrice);
+    if (isNaN(priceNum) || priceNum < 0) { toast.error("Purchase Price must be a valid positive number."); return; }
+
     const qty = Number(addForm.quantity);
     if (!qty || qty < 1)          { toast.error("Quantity must be at least 1."); return; }
+
+    const normalizedProdId = addForm.productId.trim().toLowerCase();
+    const isTaken = assets.some(a => a.productId && a.productId.trim().toLowerCase() === normalizedProdId);
+    if (isTaken) {
+      toast.error(`Product ID "${addForm.productId.trim()}" is already in use.`);
+      return;
+    }
 
     setAddSubmitting(true);
     await new Promise((r) => setTimeout(r, 300));
 
     const newAsset: BranchAsset = {
       id: generateId(),
+      productId: addForm.productId.trim(),
       name: addForm.name.trim(),
       category: addForm.category.trim(),
       condition: addForm.condition,
@@ -274,7 +396,9 @@ export default function BranchAssetsPage() {
       addedAt: new Date().toISOString(),
       unit: addForm.unit.trim() || "units",
       purchaseDate: addForm.purchaseDate || undefined,
-      lastInspected: addForm.lastInspected || undefined,
+      lastInspected: undefined,
+      brand: addForm.brand.trim() || undefined,
+      purchasePrice: priceNum,
     };
 
     const updated = [...assets, newAsset];
@@ -294,11 +418,26 @@ export default function BranchAssetsPage() {
 
   const submitEdit = async () => {
     if (!editTarget) return;
+    if (!editForm.productId.trim()) { toast.error("Product ID is required."); return; }
     if (!editForm.name.trim())     { toast.error("Asset name is required."); return; }
     if (!editForm.category.trim()) { toast.error("Category is required."); return; }
     if (!editForm.branch.trim())   { toast.error("Branch is required."); return; }
+    if (!editForm.purchaseDate.trim()) { toast.error("Purchase Date is required."); return; }
+    if (!editForm.brand.trim())    { toast.error("Brand name is required."); return; }
+    if (!editForm.purchasePrice.trim()) { toast.error("Purchase Price is required."); return; }
+
+    const priceNum = Number(editForm.purchasePrice);
+    if (isNaN(priceNum) || priceNum < 0) { toast.error("Purchase Price must be a valid positive number."); return; }
+
     const qty = Number(editForm.quantity);
     if (!qty || qty < 1)           { toast.error("Quantity must be at least 1."); return; }
+
+    const normalizedProdId = editForm.productId.trim().toLowerCase();
+    const isTaken = assets.some(a => a.id !== editTarget.id && a.productId && a.productId.trim().toLowerCase() === normalizedProdId);
+    if (isTaken) {
+      toast.error(`Product ID "${editForm.productId.trim()}" is already in use.`);
+      return;
+    }
 
     setEditSubmitting(true);
     await new Promise((r) => setTimeout(r, 300));
@@ -307,6 +446,7 @@ export default function BranchAssetsPage() {
       a.id === editTarget.id
         ? {
             ...a,
+            productId: editForm.productId.trim(),
             name: editForm.name.trim(),
             category: editForm.category.trim(),
             condition: editForm.condition,
@@ -355,138 +495,6 @@ export default function BranchAssetsPage() {
     setAssets(loadAssets());
     toast.success("Inventory refreshed.");
   };
-
-  // ─── Asset form fields (reused in Add + Edit) ─────────────────────────────
-
-  type FormState = typeof addForm;
-
-  const AssetFormFields = ({
-    form, setForm, adminBranch,
-  }: { form: FormState; setForm: (fn: (p: FormState) => FormState) => void; adminBranch: boolean }) => (
-    <div className="space-y-4">
-      {/* Branch */}
-      {adminBranch ? (
-        <div className="space-y-2">
-          <Label>Branch</Label>
-          <Select value={form.branch} onValueChange={(val) => setForm((p) => ({ ...p, branch: val }))}>
-            <SelectTrigger className="w-full text-foreground">
-              <SelectValue placeholder="Select a branch" />
-            </SelectTrigger>
-            <SelectContent>
-              {branches.map((b) => (
-                <SelectItem key={b} value={b}>{b}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <Label>Branch</Label>
-          <Input value={userBranch} readOnly className="bg-muted text-muted-foreground" />
-        </div>
-      )}
-
-      {/* Category */}
-      <div className="space-y-2">
-        <Label>Category</Label>
-        <Select
-          value={form.category}
-          onValueChange={(val) => setForm((p) => ({ ...p, category: val }))}
-        >
-          <SelectTrigger className="w-full text-foreground">
-            <SelectValue placeholder="Select a category" />
-          </SelectTrigger>
-          <SelectContent>
-            {ASSET_CATEGORIES.map((c) => (
-              <SelectItem key={c} value={c}>{c}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Item Name */}
-      <div className="space-y-2">
-        <Label>Item Name</Label>
-        <Input
-          placeholder="e.g. Electric Fan, Aircon, Chair..."
-          value={form.name}
-          onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-        />
-      </div>
-
-      {/* Condition + Quantity */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label>Condition</Label>
-          <Select
-            value={form.condition}
-            onValueChange={(val) => setForm((p) => ({ ...p, condition: val as AssetCondition }))}
-          >
-            <SelectTrigger className="w-full text-foreground">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CONDITIONS.map((c) => (
-                <SelectItem key={c} value={c}>{c}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Quantity</Label>
-          <Input
-            type="number" min="1" step="1"
-            value={form.quantity}
-            onChange={(e) => setForm((p) => ({ ...p, quantity: e.target.value }))}
-          />
-        </div>
-      </div>
-
-      {/* Unit */}
-      <div className="space-y-2">
-        <Label>Unit <span className="text-muted-foreground text-xs">(default: units)</span></Label>
-        <Input
-          placeholder="e.g. units, pieces, sets"
-          value={form.unit}
-          onChange={(e) => setForm((p) => ({ ...p, unit: e.target.value }))}
-        />
-      </div>
-
-      {/* Purchase Date + Last Inspected */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label className="flex items-center gap-1">
-            <Calendar className="h-3.5 w-3.5" /> Purchase Date
-          </Label>
-          <Input
-            type="date"
-            value={form.purchaseDate}
-            onChange={(e) => setForm((p) => ({ ...p, purchaseDate: e.target.value }))}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label className="flex items-center gap-1">
-            <Calendar className="h-3.5 w-3.5" /> Last Inspected
-          </Label>
-          <Input
-            type="date"
-            value={form.lastInspected}
-            onChange={(e) => setForm((p) => ({ ...p, lastInspected: e.target.value }))}
-          />
-        </div>
-      </div>
-
-      {/* Notes */}
-      <div className="space-y-2">
-        <Label>Notes <span className="text-muted-foreground text-xs">(optional)</span></Label>
-        <Input
-          placeholder="e.g. Located in washing area, serial no. ABC123"
-          value={form.notes}
-          onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
-        />
-      </div>
-    </div>
-  );
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -617,7 +625,7 @@ export default function BranchAssetsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/30">
-                {["Asset Name", "Category", "Condition", "Qty", "Branch", "Notes", "Added", "Last Inspected", "Actions"].map((h) => (
+                {["Product ID", "Asset Name", "Category", "Condition", "Qty", "Branch", "Notes", "Added", "Actions"].map((h) => (
                   <th key={h} className="text-left p-4 font-medium text-muted-foreground whitespace-nowrap">
                     {h}
                   </th>
@@ -628,13 +636,22 @@ export default function BranchAssetsPage() {
               {pagedAssets.map((asset) => {
                 const cond = conditionStyle[asset.condition];
                 const CondIcon = cond.icon;
-                const stale = isStale(asset.lastInspected);
                 return (
                   <tr key={asset.id} className="border-b border-border/20 hover:bg-muted/30 transition-colors group">
                     <td className="p-4">
+                      <span className="font-mono text-xs text-foreground bg-muted px-2.5 py-1 rounded-md">
+                        {asset.productId || "—"}
+                      </span>
+                    </td>
+                    <td className="p-4">
                       <div className="flex items-center gap-2">
                         <Boxes className="h-4 w-4 text-primary flex-shrink-0" />
-                        <span className="font-medium text-foreground">{asset.name}</span>
+                        <div className="flex flex-col">
+                          <span className="font-medium text-foreground">{asset.name}</span>
+                          {asset.brand && (
+                            <span className="text-[10px] text-muted-foreground">Brand: {asset.brand}</span>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="p-4">
@@ -664,16 +681,6 @@ export default function BranchAssetsPage() {
                     </td>
                     <td className="p-4 text-xs text-muted-foreground whitespace-nowrap">
                       {fmtDate(asset.addedAt)}
-                    </td>
-                    <td className="p-4 text-xs whitespace-nowrap">
-                      {asset.lastInspected ? (
-                        <span className={stale ? "text-amber-600 font-medium flex items-center gap-1" : "text-muted-foreground"}>
-                          {stale && <AlertCircle className="h-3 w-3" />}
-                          {fmtDate(asset.lastInspected)}
-                        </span>
-                      ) : (
-                        <span className="text-border">—</span>
-                      )}
                     </td>
                     <td className="p-4">
                       <div className="flex items-center gap-1">
@@ -759,7 +766,15 @@ export default function BranchAssetsPage() {
               Register a new item for the branch inventory.
             </DialogDescription>
           </DialogHeader>
-          <AssetFormFields form={addForm} setForm={setAddForm} adminBranch={isAdmin} />
+          <AssetFormFields
+            form={addForm}
+            setForm={setAddForm}
+            adminBranch={isAdmin}
+            branches={branches}
+            userBranch={userBranch}
+            assets={assets}
+            mode="add"
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)} disabled={addSubmitting}>Cancel</Button>
             <Button onClick={() => void submitAdd()} disabled={addSubmitting} className="gradient-navy">
@@ -782,7 +797,15 @@ export default function BranchAssetsPage() {
               <span className="font-semibold text-foreground">{editTarget?.name}</span>.
             </DialogDescription>
           </DialogHeader>
-          <AssetFormFields form={editForm} setForm={setEditForm} adminBranch={isAdmin} />
+          <AssetFormFields
+            form={editForm}
+            setForm={setEditForm}
+            adminBranch={isAdmin}
+            branches={branches}
+            userBranch={userBranch}
+            assets={assets}
+            mode="edit"
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)} disabled={editSubmitting}>Cancel</Button>
             <Button onClick={() => void submitEdit()} disabled={editSubmitting} className="gradient-navy">
@@ -804,9 +827,12 @@ export default function BranchAssetsPage() {
           {detailsTarget && (() => {
             const cond = conditionStyle[detailsTarget.condition];
             const CondIcon = cond.icon;
-            const stale = isStale(detailsTarget.lastInspected);
             return (
               <div className="space-y-3 text-sm">
+                <div className="flex justify-between items-start">
+                  <span className="text-muted-foreground">Product ID</span>
+                  <span className="font-mono text-xs text-foreground bg-muted px-2 py-0.5 rounded">{detailsTarget.productId || "—"}</span>
+                </div>
                 <div className="flex justify-between items-start">
                   <span className="text-muted-foreground">Name</span>
                   <span className="font-semibold text-foreground text-right max-w-[60%]">{detailsTarget.name}</span>
@@ -827,6 +853,12 @@ export default function BranchAssetsPage() {
                   <span className="text-muted-foreground">Quantity</span>
                   <span className="font-bold">{detailsTarget.quantity} {detailsTarget.unit ?? "units"}</span>
                 </div>
+                {detailsTarget.brand && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Brand</span>
+                    <span className="text-foreground font-semibold">{detailsTarget.brand}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Branch</span>
                   <span className="text-foreground">{detailsTarget.branch}</span>
@@ -835,18 +867,12 @@ export default function BranchAssetsPage() {
                   <span className="text-muted-foreground">Purchase Date</span>
                   <span className="text-foreground">{fmtDate(detailsTarget.purchaseDate)}</span>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Last Inspected</span>
-                  {detailsTarget.lastInspected ? (
-                    <span className={stale ? "text-amber-600 font-medium flex items-center gap-1" : "text-foreground"}>
-                      {stale && <AlertCircle className="h-3 w-3" />}
-                      {fmtDate(detailsTarget.lastInspected)}
-                      {stale && <span className="text-xs">(overdue)</span>}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </div>
+                {detailsTarget.purchasePrice !== undefined && detailsTarget.purchasePrice !== null && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Purchase Price</span>
+                    <span className="text-foreground font-semibold">₱{Number(detailsTarget.purchasePrice).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Date Added</span>
                   <span className="text-foreground">{fmtDate(detailsTarget.addedAt)}</span>
@@ -910,5 +936,176 @@ export default function BranchAssetsPage() {
         </AlertDialogContent>
       </AlertDialog>
     </motion.div>
+  );
+}
+
+// ─── Asset Form Fields Component ─────────────────────────────────────────────
+
+interface AssetFormFieldsProps {
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  adminBranch: boolean;
+  branches: string[];
+  userBranch: string;
+  assets: BranchAsset[];
+  mode: "add" | "edit";
+}
+
+function AssetFormFields({
+  form, setForm, adminBranch, branches, userBranch, assets, mode,
+}: AssetFormFieldsProps) {
+  return (
+    <div className="space-y-4">
+      {/* Branch */}
+      {adminBranch ? (
+        <div className="space-y-2">
+          <Label>Branch</Label>
+          <Select value={form.branch} onValueChange={(val) => setForm((p) => ({ ...p, branch: val }))}>
+            <SelectTrigger className="w-full text-foreground">
+              <SelectValue placeholder="Select a branch" />
+            </SelectTrigger>
+            <SelectContent>
+              {branches.map((b) => (
+                <SelectItem key={b} value={b}>{b}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <Label>Branch</Label>
+          <Input value={userBranch} readOnly className="bg-muted text-muted-foreground" />
+        </div>
+      )}
+
+      {/* Category */}
+      <div className="space-y-2">
+        <Label>Category</Label>
+        <Select
+          value={form.category}
+          onValueChange={(val) => setForm((p) => ({ ...p, category: val }))}
+        >
+          <SelectTrigger className="w-full text-foreground">
+            <SelectValue placeholder="Select a category" />
+          </SelectTrigger>
+          <SelectContent>
+            {ASSET_CATEGORIES.map((c) => (
+              <SelectItem key={c} value={c}>{c}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Product ID */}
+      <div className="space-y-2">
+        <Label>Product ID / Serial Number</Label>
+        <Input
+          value={form.productId}
+          readOnly
+          className="bg-muted text-muted-foreground cursor-not-allowed font-mono font-medium"
+        />
+        <p className="text-[10px] text-muted-foreground mt-0.5">Auto-generated by the system.</p>
+      </div>
+
+      {/* Item Name + Brand */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label>Item Name <span className="text-destructive">*</span></Label>
+          <Input
+            placeholder="e.g. Electric Fan, Aircon..."
+            value={form.name}
+            onChange={(e) => {
+              const newName = e.target.value;
+              setForm((p) => {
+                const nextId = mode === "add" ? generateNextProductId(assets, newName) : p.productId;
+                return { ...p, name: newName, productId: nextId };
+              });
+            }}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Brand Name <span className="text-destructive">*</span></Label>
+          <Input
+            placeholder="e.g. Samsung, LG..."
+            value={form.brand}
+            onChange={(e) => setForm((p) => ({ ...p, brand: e.target.value }))}
+          />
+        </div>
+      </div>
+
+      {/* Condition + Quantity */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label>Condition</Label>
+          <Select
+            value={form.condition}
+            onValueChange={(val) => setForm((p) => ({ ...p, condition: val as AssetCondition }))}
+          >
+            <SelectTrigger className="w-full text-foreground">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CONDITIONS.map((c) => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Quantity</Label>
+          <Input
+            type="number" min="1" step="1"
+            value={form.quantity}
+            disabled={true}
+            className="bg-muted text-muted-foreground cursor-not-allowed font-medium"
+            onChange={(e) => setForm((p) => ({ ...p, quantity: e.target.value }))}
+          />
+          <p className="text-[10px] text-muted-foreground mt-0.5">Quantity is fixed to 1 for unique product tracking.</p>
+        </div>
+      </div>
+
+      {/* Unit */}
+      <div className="space-y-2">
+        <Label>Unit <span className="text-muted-foreground text-xs">(default: units)</span></Label>
+        <Input
+          placeholder="e.g. units, pieces, sets"
+          value={form.unit}
+          onChange={(e) => setForm((p) => ({ ...p, unit: e.target.value }))}
+        />
+      </div>
+
+      {/* Purchase Date + Purchase Price */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label>Purchase Date <span className="text-destructive">*</span></Label>
+          <Input
+            type="date"
+            value={form.purchaseDate}
+            onChange={(e) => setForm((p) => ({ ...p, purchaseDate: e.target.value }))}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Purchase Price (₱) <span className="text-destructive">*</span></Label>
+          <Input
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="e.g. 15000"
+            value={form.purchasePrice}
+            onChange={(e) => setForm((p) => ({ ...p, purchasePrice: e.target.value }))}
+          />
+        </div>
+      </div>
+
+      {/* Notes */}
+      <div className="space-y-2">
+        <Label>Notes <span className="text-muted-foreground text-xs">(optional)</span></Label>
+        <Input
+          placeholder="e.g. Located in washing area, serial no. ABC123"
+          value={form.notes}
+          onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
+        />
+      </div>
+    </div>
   );
 }

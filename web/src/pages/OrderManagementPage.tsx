@@ -29,6 +29,7 @@ import {
   deliveriesApi,
   feedbackApi,
   usersApi,
+  paymentsApi,
   type CreateOrderPayload,
   type FeedbackResponse,
   type JobOrderResponse,
@@ -237,7 +238,7 @@ const renderStatusBadge = (status: ApiOrderStatus) => {
 
   if (status === "OUT_FOR_DELIVERY") {
     return (
-      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-brand-navy text-white border border-brand-navy w-fit">
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800 text-white border border-slate-700 w-fit">
         <div className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
         <span className="text-[10px] font-bold uppercase tracking-tight">Delivering</span>
       </div>
@@ -555,7 +556,7 @@ export default function OrderManagementPage() {
         detergentQuantity: params.detergentQuantity,
         conditionerQuantity: params.conditionerQuantity,
       });
-      toast.success("✓ Receipt sent to customer");
+      toast.success("Receipt sent to the customer");
       setSetPriceOpen(false);
       await loadOrders(Math.max(0, ordersPage - 1), true);
       if (selectedOrder && selectedOrder.id === setPriceOrderId) {
@@ -572,6 +573,7 @@ export default function OrderManagementPage() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [markingPaidId, setMarkingPaidId] = useState<number | null>(null);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editSubmitting, setEditSubmitting] = useState(false);
@@ -664,19 +666,91 @@ export default function OrderManagementPage() {
   }, [loadOrders, ordersPage]);
 
   const applyStatusUpdate = async (order: Order, codCollected?: boolean) => {
-    const allowed = getAllowedStatusTransitions(order.status);
+    let currentOrder = order;
+
+    const allowed = getAllowedStatusTransitions(currentOrder.status);
     const fallbackStatus = allowed[0];
-    const nextStatus = fallbackStatus || order.status;
-    if (nextStatus === order.status) return;
-    if (!allowed.includes(nextStatus)) {
-      toast.error(`Invalid transition from ${statusLabel[order.status]} to ${statusLabel[nextStatus]}.`);
+    const nextStatus = fallbackStatus || currentOrder.status;
+
+    // Check if GCash payment is pending verification (only for statuses that require payment)
+    const isGcash = currentOrder.paymentMethod?.toUpperCase().includes("GCASH");
+    let isUnpaidGcash = isGcash && !currentOrder.isPaid;
+    const requiresPaymentVerification = nextStatus === "WASHING" || nextStatus === "DELIVERED";
+
+    if (isUnpaidGcash && requiresPaymentVerification) {
+      setStatusUpdatingId(currentOrder.id);
+      try {
+        toast.info("Verifying GCash payment status with PayMongo...");
+        const trackRes = await paymentsApi.track(currentOrder.trackingNumber);
+        if (trackRes && (trackRes.status === "PAID" || trackRes.status === "VERIFIED")) {
+          // Re-fetch since backend tracking updated it in database
+          const freshOrder = await ordersApi.getById(currentOrder.id);
+          const mapped = mapOrder(freshOrder);
+          setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
+          setSelectedOrder(mapped);
+          
+          currentOrder = mapped;
+          isUnpaidGcash = isGcash && !currentOrder.isPaid;
+          toast.success("GCash payment successfully verified!");
+        } else {
+          toast.info("GCash payment could not be automatically verified yet.");
+        }
+      } catch (err: any) {
+        console.error("Failed to track payment status:", err);
+      } finally {
+        setStatusUpdatingId(null);
+      }
+    }
+
+    // If the order already transitioned to or past the target state (e.g. from PRICE_CONFIRMED to WASHING automatically via track payment)
+    if (nextStatus === currentOrder.status) {
+      await loadOrders(Math.max(0, ordersPage - 1), true);
       return;
     }
-    setStatusUpdatingId(order.id);
+
+    if (!allowed.includes(nextStatus)) {
+      toast.error(`Invalid transition from ${statusLabel[currentOrder.status]} to ${statusLabel[nextStatus]}.`);
+      return;
+    }
+
+    const washingPaymentBlocked = nextStatus === "WASHING" && isUnpaidGcash;
+    const deliveryPaymentBlocked = nextStatus === "DELIVERED" && isUnpaidGcash;
+
+    if (washingPaymentBlocked || deliveryPaymentBlocked) {
+      const confirmManualPay = window.confirm(
+        `GCash payment for order ${currentOrder.orderId} has not been verified yet.\n\n` +
+        `Do you want to confirm this payment manually and proceed to ${statusLabel[nextStatus]}?`
+      );
+      if (confirmManualPay) {
+        setStatusUpdatingId(currentOrder.id);
+        try {
+          // First mark as paid
+          const updatedPay = await ordersApi.markAsPaid(currentOrder.id);
+          toast.success(`Payment manually marked as Paid for ${currentOrder.orderId}.`);
+          
+          // Then update status
+          const updated = await ordersApi.updateStatus(currentOrder.id, nextStatus, codCollected);
+          const mapped = mapOrder(updated);
+          setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
+          setSelectedOrder(mapped);
+          toast.success(`Order ${updated.trackingNumber} moved to ${statusLabel[mapped.status]}.`);
+          await loadOrders(Math.max(0, ordersPage - 1), true);
+        } catch (err: any) {
+          toast.error(err?.message || "Failed to confirm payment and update status.");
+          await loadOrders(Math.max(0, ordersPage - 1), true);
+        } finally {
+          setStatusUpdatingId(null);
+        }
+      }
+      return;
+    }
+
+    setStatusUpdatingId(currentOrder.id);
     try {
-      const updated = await ordersApi.updateStatus(order.id, nextStatus, codCollected);
+      const updated = await ordersApi.updateStatus(currentOrder.id, nextStatus, codCollected);
       const mapped = mapOrder(updated);
       setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
+      setSelectedOrder(mapped);
       toast.success(`Order ${updated.trackingNumber} moved to ${statusLabel[mapped.status]}.`);
       await loadOrders(Math.max(0, ordersPage - 1), true);
     } catch (err: any) {
@@ -752,8 +826,27 @@ export default function OrderManagementPage() {
     setFeedbackData(null);
     setStaffNoteInput("");
     try {
-      const detail = await ordersApi.getById(orderId);
-      const mapped = mapOrder(detail);
+      let detail = await ordersApi.getById(orderId);
+      let mapped = mapOrder(detail);
+
+      // Auto-verify unpaid GCash payment when opening details to sync state
+      const isGcash = mapped.paymentMethod?.toUpperCase().includes("GCASH");
+      if (isGcash && !mapped.isPaid) {
+        try {
+          const trackRes = await paymentsApi.track(mapped.trackingNumber);
+          if (trackRes && (trackRes.status === "PAID" || trackRes.status === "VERIFIED")) {
+            // Re-fetch since backend tracking updated it in database
+            detail = await ordersApi.getById(orderId);
+            mapped = mapOrder(detail);
+            toast.success("GCash payment verified successfully!");
+            // Update orders list to reflect the verified payment status
+            setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
+          }
+        } catch (trackErr) {
+          console.error("Auto-tracking payment failed on details open:", trackErr);
+        }
+      }
+
       setSelectedOrder(mapped);
       if (mapped.status === "DELIVERED" || mapped.status === "READY") {
         void loadFeedback(mapped.orderId);
@@ -845,6 +938,22 @@ export default function OrderManagementPage() {
       toast.error(err?.message || "Unable to cancel order.");
     } finally {
       setCancelSubmitting(false);
+    }
+  };
+
+  const handleManualMarkAsPaid = async (orderId: number) => {
+    setMarkingPaidId(orderId);
+    try {
+      const updated = await ordersApi.markAsPaid(orderId);
+      const mapped = mapOrder(updated);
+      setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
+      setSelectedOrder(mapped);
+      toast.success("Payment manually marked as Paid successfully.");
+      await loadOrders(Math.max(0, ordersPage - 1), true);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to mark payment as paid.");
+    } finally {
+      setMarkingPaidId(null);
     }
   };
 
@@ -1939,11 +2048,28 @@ export default function OrderManagementPage() {
                     </div>
                     <div className="flex justify-between items-center">
                       <p className="text-[11px] text-slate-400 font-bold uppercase">Status</p>
-                      {selectedOrder.isPaid ? (
-                        <span className="bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full text-[9px] font-black uppercase">● Paid</span>
-                      ) : (
-                        <span className="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full text-[9px] font-black uppercase">● Pending</span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {selectedOrder.isPaid ? (
+                          <span className="bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full text-[9px] font-black uppercase">● Paid</span>
+                        ) : (
+                          <>
+                            <span className="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full text-[9px] font-black uppercase">● Pending</span>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-[10px] font-bold rounded-lg border-emerald-200 text-emerald-600 hover:bg-emerald-50 active:scale-95 transition-all flex items-center gap-1"
+                              onClick={() => void handleManualMarkAsPaid(selectedOrder.id)}
+                              disabled={markingPaidId === selectedOrder.id}
+                            >
+                              {markingPaidId === selectedOrder.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                "Confirm Payment"
+                              )}
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 flex justify-between items-center mt-2">
                       <div>
@@ -2114,7 +2240,7 @@ export default function OrderManagementPage() {
                             <Button
                               className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14 disabled:opacity-50"
                               onClick={handleMarkNextStep}
-                              disabled={!!deliveryPaymentBlocked || !!washingPaymentBlocked}
+                              disabled={statusUpdatingId === selectedOrder.id}
                             >
                               {statusUpdatingId === selectedOrder.id ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
                               Mark as {statusLabel[nextStatus] || 'Next Step'}
@@ -2129,17 +2255,43 @@ export default function OrderManagementPage() {
                               </Button>
                             )}
                             {washingPaymentBlocked && (
-                              <div className="w-full bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
+                              <div className="w-full bg-amber-50 border border-amber-200 rounded-lg p-3 text-center flex flex-col items-center gap-2">
                                 <p className="text-[11px] font-bold text-amber-600 uppercase tracking-widest italic">
                                   GCash payment must be confirmed before washing can start.
                                 </p>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 px-3 text-xs font-bold border-amber-300 text-amber-700 hover:bg-amber-100/50"
+                                  onClick={() => void handleManualMarkAsPaid(selectedOrder.id)}
+                                  disabled={markingPaidId === selectedOrder.id}
+                                >
+                                  {markingPaidId === selectedOrder.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                  ) : (
+                                    "Confirm GCash Payment Manually"
+                                  )}
+                                </Button>
                               </div>
                             )}
                             {deliveryPaymentBlocked && (
-                              <div className="w-full bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
+                              <div className="w-full bg-amber-50 border border-amber-200 rounded-lg p-3 text-center flex flex-col items-center gap-2">
                                 <p className="text-[11px] font-bold text-amber-600 uppercase tracking-widest italic">
                                   Payment must be confirmed before marking this order as delivered.
                                 </p>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 px-3 text-xs font-bold border-amber-300 text-amber-700 hover:bg-amber-100/50"
+                                  onClick={() => void handleManualMarkAsPaid(selectedOrder.id)}
+                                  disabled={markingPaidId === selectedOrder.id}
+                                >
+                                  {markingPaidId === selectedOrder.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                  ) : (
+                                    "Confirm GCash Payment Manually"
+                                  )}
+                                </Button>
                               </div>
                             )}
                           </>

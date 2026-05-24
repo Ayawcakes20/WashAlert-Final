@@ -151,7 +151,13 @@ public class InventoryService {
     // Returns current availability for each customer-selectable supply at the given branch.
     // No auth required — does NOT expose stock levels for non-selectable items.
     public SuppliesAvailability getSuppliesAvailability(String branch) {
+        // Normalize to canonical branch name so "JP Rizal" finds "JP Rizal Branch" rows.
+        String canonicalBranch = normalizeBranchName(branch);
+        if (canonicalBranch == null || canonicalBranch.isBlank()) canonicalBranch = branch;
+        final String effectiveBranch = canonicalBranch;
+
         record ItemDef(String id, String itemName) {}
+
 
         List<ItemDef> detDefs = List.of(
                 new ItemDef("surf",  "Surf Detergent"),
@@ -164,7 +170,7 @@ public class InventoryService {
 
         var detItems = detDefs.stream().map(def -> {
             InventoryItem item = itemRepository
-                    .findByBranchIgnoreCaseAndItemNameIgnoreCase(branch.trim(), def.itemName())
+                    .findByBranchIgnoreCaseAndItemNameIgnoreCase(effectiveBranch, def.itemName())
                     .orElse(null);
             int qty = (item != null && item.getCurrentStock() != null)
                     ? item.getCurrentStock().intValue() : 0;
@@ -173,7 +179,7 @@ public class InventoryService {
 
         var fabItems = fabDefs.stream().map(def -> {
             InventoryItem item = itemRepository
-                    .findByBranchIgnoreCaseAndItemNameIgnoreCase(branch.trim(), def.itemName())
+                    .findByBranchIgnoreCaseAndItemNameIgnoreCase(effectiveBranch, def.itemName())
                     .orElse(null);
             int qty = (item != null && item.getCurrentStock() != null)
                     ? item.getCurrentStock().intValue() : 0;
@@ -694,15 +700,69 @@ public class InventoryService {
                 .toList();
     }
 
+    // Canonical branch name aliases — maps any known short/legacy name to the canonical stored form.
+    // These must match the values in MachineSeeder.BRANCHES and the inventory DB rows.
+    private static final java.util.Map<String, String> BRANCH_ALIASES = new java.util.LinkedHashMap<>() {{
+        put("jp rizal",                          "JP Rizal Branch");
+        put("jp rizal branch",                   "JP Rizal Branch");
+        put("speedywash - jp rizal",             "JP Rizal Branch");
+        put("makati",                            "Makati Branch");
+        put("makati branch",                     "Makati Branch");
+        put("triplets laundryhubs - makati",     "Makati Branch");
+        put("triplets - makati",                 "Makati Branch");
+        put("chestnut",                          "Chestnut Branch");
+        put("chestnut branch",                   "Chestnut Branch");
+        put("chestnut st",                       "Chestnut Branch");
+        put("speedywash - chestnut",             "Chestnut Branch");
+        put("republic",                          "Republic Branch");
+        put("republic branch",                   "Republic Branch");
+        put("republic ave",                      "Republic Branch");
+        put("speedywash - republic",             "Republic Branch");
+        put("holy spirit",                       "Holy Spirit Branch");
+        put("holy spirit branch",                "Holy Spirit Branch");
+        put("tondo",                             "Holy Spirit Branch");
+        put("speedywash - t.o.n",               "Holy Spirit Branch");
+        put("sta. catalina",                     "Sta. Catalina Branch");
+        put("sta. catalina branch",              "Sta. Catalina Branch");
+        put("s. catalina",                       "Sta. Catalina Branch");
+        put("speedywash - s. catalina",          "Sta. Catalina Branch");
+        put("brookside",                         "Brookside Branch");
+        put("brookside branch",                  "Brookside Branch");
+        put("pasig city",                        "Brookside Branch");
+        put("speedywash - pasig",                "Brookside Branch");
+        put("luzon",                             "Luzon Branch");
+        put("luzon branch",                      "Luzon Branch");
+        put("samat st",                          "Luzon Branch");
+        put("st. anthony",                       "St. Anthony Branch");
+        put("st. anthony branch",                "St. Anthony Branch");
+        put("st. nino",                          "St. Anthony Branch");
+        put("up diliman",                        "UP Diliman / San Vicente Branch");
+        put("up diliman / san vicente branch",   "UP Diliman / San Vicente Branch");
+        put("speedywash - up diliman",           "UP Diliman / San Vicente Branch");
+    }};
+
+    /**
+     * Normalizes a branch name to its canonical form so that short aliases used in
+     * User.branch (e.g. "JP Rizal") resolve to the same DB value ("JP Rizal Branch").
+     */
+    private String normalizeBranchName(String branch) {
+        if (branch == null || branch.isBlank()) return branch;
+        String canonical = BRANCH_ALIASES.get(branch.trim().toLowerCase(java.util.Locale.ROOT));
+        return canonical != null ? canonical : branch.trim();
+    }
+
     private String resolveEffectiveBranch(String requestedBranch, User actor) {
         if (actor.getRole() == Role.STAFF) {
-            return actor.getBranch();
+            // Normalize staff branch to canonical name so their short branch alias
+            // (e.g. "JP Rizal") matches the inventory rows stored as "JP Rizal Branch".
+            return normalizeBranchName(actor.getBranch());
         }
         if (requestedBranch == null || requestedBranch.isBlank() || requestedBranch.equalsIgnoreCase("All")) {
             return null;
         }
-        return requestedBranch.trim();
+        return normalizeBranchName(requestedBranch);
     }
+
 
     private InventoryItemResponse toResponse(InventoryItem item) {
         return new InventoryItemResponse(
