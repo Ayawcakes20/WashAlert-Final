@@ -309,6 +309,14 @@ public class PaymentService {
                     "PAYMENT_PAID",
                     jobOrder.getTrackingNumber().toUpperCase() + ":paid"
             );
+            notificationService.enqueuePushToRoles(
+                    List.of(Role.STAFF, Role.ADMIN),
+                    jobOrder.getBranch(),
+                    "Payment Auto-Confirmed",
+                    "GCash payment confirmed for order " + jobOrder.getTrackingNumber() + ". Ready to proceed.",
+                    "PAYMENT_PAID",
+                    jobOrder.getTrackingNumber().toUpperCase() + ":staff:paid"
+            );
         }
     }
 

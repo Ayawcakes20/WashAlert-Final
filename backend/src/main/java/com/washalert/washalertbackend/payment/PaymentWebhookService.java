@@ -8,6 +8,7 @@ import com.washalert.washalertbackend.orders.JobOrderStatus;
 import com.washalert.washalertbackend.orders.JobOrderRepository;
 import com.washalert.washalertbackend.orders.JobOrderTimelineService;
 import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
+import com.washalert.washalertbackend.user.Role;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
@@ -148,6 +149,17 @@ public class PaymentWebhookService {
                     "PAYMENT_WEBHOOK",
                     payment.getJobOrder().getTrackingNumber() + ":" + payment.getStatus().name()
             );
+
+            if (payment.getStatus() == PaymentStatus.PAID) {
+                notificationService.enqueuePushToRoles(
+                        List.of(Role.STAFF, Role.ADMIN),
+                        payment.getJobOrder().getBranch(),
+                        "Payment Auto-Confirmed",
+                        "Online payment confirmed for order " + payment.getJobOrder().getTrackingNumber() + ". Ready to proceed.",
+                        "PAYMENT_WEBHOOK",
+                        payment.getJobOrder().getTrackingNumber() + ":staff:paid"
+                );
+            }
 
             event.setProcessingStatus(PaymentWebhookProcessingStatus.PROCESSED);
             event.setProcessedAt(LocalDateTime.now());

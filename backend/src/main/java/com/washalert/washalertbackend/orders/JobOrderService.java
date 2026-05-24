@@ -1265,7 +1265,9 @@ public class JobOrderService {
             log.warn("Failed to send delivery notifications for order {}: {}", saved.getId(), e.getMessage());
         }
 
-        JobOrderResponse response = toResponse(saved);
+        JobOrderResponse response = codCollected 
+                ? toResponse(saved, com.washalert.washalertbackend.payment.PaymentStatus.PAID) 
+                : toResponse(saved);
         
         try {
             firestoreSyncService.upsertBlocking("orders", saved.getTrackingNumber(), response);
