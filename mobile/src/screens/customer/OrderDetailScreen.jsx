@@ -218,7 +218,9 @@ export default function OrderDetailScreen({ route, navigation }) {
             if (mapped && mapped !== normalize(prev.status)) updates.status = raw;
             // Sync isPaid from Firestore so Pay Now button hides immediately
             // after the webhook fires without needing a full reload.
-            const firestoreIsPaid = data.isPaid === true || data.paymentStatus === 'PAID' || data.paymentStatus === 'VERIFIED';
+            // The synced doc stores the boolean under "paid" (Jackson strips the "is"
+            // prefix from isPaid()), so check both keys plus the payment status.
+            const firestoreIsPaid = data.isPaid === true || data.paid === true || data.paymentStatus === 'PAID' || data.paymentStatus === 'VERIFIED';
             if (firestoreIsPaid && !prev.isPaid) {
               updates.isPaid = true;
               updates.paymentStatus = 'Paid';

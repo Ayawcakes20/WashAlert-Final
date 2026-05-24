@@ -70,6 +70,10 @@ export type JobOrderResponse = {
   totalPrice?: number | null;
   finalPrice?: number | null;
   isPaid?: boolean;
+  // The backend DTO field `boolean isPaid` is serialized by Jackson via its getter
+  // isPaid() as the JSON key "paid" (the "is" prefix is stripped). Accept both so the
+  // web reflects payment status that the mobile/driver already settled (GCash/COD).
+  paid?: boolean;
   paymentMethod?: string | null;
   paymentStatus?: "PENDING" | "VERIFIED" | "REJECTED" | "PAID" | null;
   deliveryUnitFloor?: string | null;
