@@ -1685,17 +1685,17 @@ export default function OrderManagementPage() {
       </Dialog>
 
       <Dialog open={assignRiderOpen} onOpenChange={setAssignRiderOpen}>
-        <DialogContent className="sm:max-w-md border-slate-200 rounded-3xl p-0 overflow-hidden bg-[#F8FAFC] shadow-2xl [&>button:last-child]:text-white [&>button:last-child]:opacity-80 [&>button:last-child]:hover:opacity-100">
-          <div className="bg-gradient-to-br from-slate-900 to-brand-navy px-8 py-8 text-white border-b border-white/5">
+        <DialogContent className="sm:max-w-md border-brand-border rounded-2xl p-0 overflow-hidden bg-white shadow-2xl [&>button:last-child]:text-white [&>button:last-child]:opacity-90 [&>button:last-child]:hover:opacity-100">
+          <div className="bg-gradient-to-br from-brand-navy to-slate-900 px-8 py-8 text-white border-b border-white/10">
             <div className="flex items-center gap-4 mb-4 pr-10">
-              <div className="h-12 w-12 rounded-2xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center shrink-0">
-                <User className="h-6 w-6 text-blue-400" />
+              <div className="h-12 w-12 rounded-2xl bg-white/15 border border-white/30 flex items-center justify-center shrink-0">
+                <User className="h-6 w-6 text-white" />
               </div>
               <div>
                 <DialogTitle className="text-2xl font-black tracking-tight">
                   Assign Rider
                 </DialogTitle>
-                <DialogDescription className="text-blue-300/60 font-bold uppercase tracking-widest text-[10px]">
+                <DialogDescription className="text-slate-200 font-semibold uppercase tracking-wide text-xs mt-1">
                   Order {orders.find(o => o.id === assignRiderOrderId)?.orderId}
                 </DialogDescription>
               </div>
@@ -1707,30 +1707,30 @@ export default function OrderManagementPage() {
               const bookSlot = formatSlotTime(riderOrder?.slotStartTime, riderOrder?.slotEndTime);
               const isFuture = isBookingFutureDate(riderOrder?.bookingDate);
               return (
-                <div className="bg-white/5 rounded-2xl p-4 border border-white/10 space-y-2">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-400 font-bold uppercase tracking-wider">Customer</span>
+                <div className="bg-white/10 rounded-2xl p-4 border border-white/20 space-y-2.5">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-200 font-semibold uppercase tracking-wide">Customer</span>
                     <span className="font-black text-white">{riderOrder?.customerName}</span>
                   </div>
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-400 font-bold uppercase tracking-wider">Total Due</span>
-                    <span className="font-black text-white">₱{(riderOrder?.finalPrice ?? riderOrder?.totalPrice)?.toFixed(2) ?? '—'}</span>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-200 font-semibold uppercase tracking-wide">Total Due</span>
+                    <span className="font-black text-white">PHP {(riderOrder?.finalPrice ?? riderOrder?.totalPrice)?.toFixed(2) ?? "-"}</span>
                   </div>
                   {bookDate && (
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400 font-bold uppercase tracking-wider">Booking Date</span>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-200 font-semibold uppercase tracking-wide">Booking Date</span>
                       <span className="font-black text-white">{bookDate}</span>
                     </div>
                   )}
                   {bookSlot && (
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400 font-bold uppercase tracking-wider">Time Slot</span>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-200 font-semibold uppercase tracking-wide">Time Slot</span>
                       <span className="font-black text-white">{bookSlot}</span>
                     </div>
                   )}
                   {isFuture && (
-                    <div className="mt-1 flex items-center gap-1.5 bg-amber-500/20 border border-amber-400/30 rounded-xl px-3 py-2">
-                      <span className="text-xs font-black text-amber-200 uppercase tracking-wide">⚠ Scheduled for a future date</span>
+                    <div className="mt-1 flex items-center gap-2 bg-amber-100 border border-amber-300 rounded-xl px-3 py-2">
+                      <span className="text-xs font-bold text-amber-800 uppercase tracking-wide">Scheduled for a future date</span>
                     </div>
                   )}
                 </div>
@@ -1738,36 +1738,36 @@ export default function OrderManagementPage() {
             })()}
           </div>
 
-          <div className="p-8 space-y-6">
+          <div className="p-8 space-y-6 bg-slate-50/70">
             <div className="space-y-3">
-              <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Delivery Destination</Label>
+              <Label className="text-xs font-bold uppercase tracking-wide text-slate-600 ml-1">Delivery Destination</Label>
               <div className="bg-white p-4 rounded-2xl border border-slate-200 flex items-start gap-3 shadow-sm">
-                <div className="h-8 w-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 border border-amber-100">
-                  <Search className="h-4 w-4 text-amber-600" />
+                <div className="h-8 w-8 rounded-lg bg-brand-mint/20 flex items-center justify-center shrink-0 border border-brand-mint/40">
+                  <Search className="h-4 w-4 text-brand-navy" />
                 </div>
-                <p className="text-xs font-bold text-slate-700 leading-relaxed">
+                <p className="text-sm font-semibold text-slate-800 leading-relaxed">
                   {orders.find(o => o.id === assignRiderOrderId)?.deliveryAddress || "No address provided"}
                 </p>
               </div>
             </div>
 
             <div className="space-y-3">
-              <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Select Available Courier</Label>
+              <Label className="text-xs font-bold uppercase tracking-wide text-slate-600 ml-1">Select Available Courier</Label>
               {assignRiderSubmitting && availableDrivers.length === 0 ? (
                 <div className="h-16 flex items-center justify-center bg-white rounded-2xl border border-slate-200">
-                  <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                  <Loader2 className="h-5 w-5 animate-spin text-brand-navy" />
                 </div>
               ) : availableDrivers.length === 0 ? (
                 <div className="p-6 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col items-center gap-2">
                   <Info className="h-6 w-6 text-amber-600" />
-                  <p className="text-xs font-bold text-amber-800 text-center uppercase tracking-tight">No drivers are currently active in this branch.</p>
+                  <p className="text-sm font-semibold text-amber-800 text-center">No drivers are currently active in this branch.</p>
                 </div>
               ) : (
                 <div className="relative group">
                   <select
                     value={selectedDriverId}
                     onChange={(e) => setSelectedDriverId(e.target.value)}
-                    className="w-full h-16 rounded-2xl border-2 border-slate-200 bg-white px-6 text-sm font-black text-slate-900 focus:ring-8 focus:ring-blue-500/5 focus:border-blue-500 transition-all outline-none appearance-none cursor-pointer"
+                    className="w-full h-16 rounded-2xl border-2 border-slate-200 bg-white px-6 text-sm font-semibold text-slate-900 focus:ring-4 focus:ring-brand-navy/10 focus:border-brand-navy transition-all outline-none appearance-none cursor-pointer"
                   >
                     <option value="">Choose a rider from the fleet...</option>
                     {availableDrivers.map((driver) => (
@@ -1795,7 +1795,7 @@ export default function OrderManagementPage() {
             <Button
               onClick={() => void submitAssignRider()}
               disabled={assignRiderSubmitting || !selectedDriverId}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-black px-10 h-14 rounded-2xl shadow-xl shadow-blue-500/20 transition-all active:scale-[0.98] group flex-1 sm:flex-none"
+              className="bg-brand-navy hover:bg-brand-navy/90 text-white font-black px-10 h-14 rounded-2xl shadow-xl shadow-brand-navy/20 transition-all active:scale-[0.98] group flex-1 sm:flex-none"
             >
               {assignRiderSubmitting
                 ? <Loader2 className="h-5 w-5 animate-spin" />

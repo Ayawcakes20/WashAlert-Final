@@ -494,9 +494,13 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
 
     try {
       setUpdating(true);
-      const updated = await driverOrders[method](delivery.id, args);
+      const actionOrderId = delivery?.orderId ?? delivery?.dbId ?? delivery?.id;
+      if (!actionOrderId) {
+        throw new Error('Unable to continue: missing order reference. Please refresh this task.');
+      }
+      await driverOrders[method](actionOrderId, args);
       // Backend returns JobOrderResponse, map to mobile
-      const mapped = await driverOrders.getById(delivery.id);
+      const mapped = await driverOrders.getById(actionOrderId);
       setDelivery(mapped);
 
       setEtaInfo({ distance: null, duration: null }); // reset ETA on transition
@@ -506,9 +510,13 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
         ]);
       }
     } catch (e) {
-      const message = String(e?.message || '');
+      const message = String(e?.message || '').trim();
+      const friendlyMessage =
+        /internal server error/i.test(message)
+          ? 'Unable to process this action right now. Please refresh the task and try again.'
+          : message;
       console.warn('[DeliveryDetail][ActionFailed]', { method, deliveryId: delivery?.id, message });
-      Alert.alert('Action Failed', message || 'Something went wrong. Try again.');
+      Alert.alert('Action Failed', friendlyMessage || 'Something went wrong. Try again.');
     } finally {
       setUpdating(false);
     }

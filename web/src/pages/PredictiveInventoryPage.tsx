@@ -24,6 +24,8 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
+  ReferenceLine,
 } from "recharts";
 import { inventoryApi, branchesApi, type InventoryRecord } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
@@ -213,12 +215,17 @@ function Paginator({
 
 function InfoHint({ text }: { text: string }) {
   return (
-    <span
-      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-slate-600"
-      title={text}
-      aria-label={text}
-    >
-      <CircleHelp className="h-3 w-3" />
+    <span className="relative inline-flex items-center group">
+      <button
+        type="button"
+        className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        aria-label={text}
+      >
+        <CircleHelp className="h-3.5 w-3.5" />
+      </button>
+      <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 hidden w-72 -translate-x-1/2 rounded-lg border border-slate-300 bg-slate-900 px-3 py-2 text-[13px] font-medium leading-relaxed text-white shadow-xl group-hover:block group-focus-within:block">
+        {text}
+      </span>
     </span>
   );
 }
@@ -412,7 +419,7 @@ export default function PredictiveInventoryPage() {
 
   const selectedItemChart = useMemo(() => {
     if (!selectedExpandedItem || selectedExpandedItem.forecastedUsage < 0.001) {
-      return [] as Array<{ day: string; stock: number }>;
+      return [] as Array<{ day: string; stock: number; reorderLevel: number }>;
     }
     return Array.from({ length: 30 }, (_, idx) => ({
       day: `Day ${idx + 1}`,
@@ -423,6 +430,7 @@ export default function PredictiveInventoryPage() {
             selectedExpandedItem.forecastedUsage * (idx + 1)) * 10,
         ) / 10,
       ),
+      reorderLevel: selectedExpandedItem.reorderLevel,
     }));
   }, [selectedExpandedItem]);
 
@@ -612,6 +620,14 @@ export default function PredictiveInventoryPage() {
         </p>
       </div>
 
+      {isStaff && (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+          <p className="text-base text-foreground">
+            This forecast uses completed orders and confirmed upcoming bookings to estimate which supplies may need restocking for your branch.
+          </p>
+        </div>
+      )}
+
       {error && <p className="text-base text-destructive">{error}</p>}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -756,7 +772,7 @@ export default function PredictiveInventoryPage() {
           </span>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-visible">
           <table className="w-full min-w-[980px] text-sm">
             <thead>
               <tr className="border-b border-border/30 bg-muted/20">
@@ -854,26 +870,36 @@ export default function PredictiveInventoryPage() {
                                   <p className="text-base text-foreground leading-relaxed">
                                     Recommendation: <strong>{buildNarrative(inv)}</strong>
                                   </p>
-                                  <p className="text-sm text-muted-foreground leading-relaxed" title="Shows whether the forecast is based on completed orders, upcoming bookings, or both.">
-                                    {buildForecastBasis(inv)}
-                                  </p>
+                                  <div className="flex items-start gap-2">
+                                    <InfoHint text="Shows whether the forecast is based on completed orders, upcoming bookings, or both." />
+                                    <p className="text-sm text-muted-foreground leading-relaxed">{buildForecastBasis(inv)}</p>
+                                  </div>
                                   <p className="text-sm text-foreground">
                                     Current stock: <strong>{formatQuantity(inv.currentStock, inv.unit)}</strong>
                                   </p>
                                   <p className="text-sm text-foreground">
                                     Reorder level: <strong>{formatQuantity(inv.reorderLevel, inv.unit)}</strong>
                                   </p>
-                                  <p className="text-sm text-foreground">
-                                    Historical usage: <strong>{formatQuantity(inv.historicalDailyUsage, inv.unit, "No recent usage")}/day</strong>
-                                  </p>
-                                  <p className="text-sm text-foreground">
-                                    Confirmed orders 7D:{" "}
-                                    <strong>{inv.confirmedDemand7D > 0 ? formatQuantity(inv.confirmedDemand7D, inv.unit) : "No upcoming orders"}</strong>
-                                  </p>
-                                  <p className="text-sm text-foreground" title="Supply quantity already expected from active or pending bookings.">
-                                    Pending demand:{" "}
-                                    <strong>{pendingConsumption[inv.product] ? formatQuantity(pendingConsumption[inv.product], inv.unit) : "No pending demand"}</strong>
-                                  </p>
+                                  <div className="flex items-start gap-2">
+                                    <InfoHint text="Average usage from completed orders over the selected historical period." />
+                                    <p className="text-sm text-foreground">
+                                      Historical usage: <strong>{formatQuantity(inv.historicalDailyUsage, inv.unit, "No recent usage")}/day</strong>
+                                    </p>
+                                  </div>
+                                  <div className="flex items-start gap-2">
+                                    <InfoHint text="Supplies already expected from confirmed upcoming bookings in the next 7 days." />
+                                    <p className="text-sm text-foreground">
+                                      Confirmed orders 7D:{" "}
+                                      <strong>{inv.confirmedDemand7D > 0 ? formatQuantity(inv.confirmedDemand7D, inv.unit) : "No upcoming orders"}</strong>
+                                    </p>
+                                  </div>
+                                  <div className="flex items-start gap-2">
+                                    <InfoHint text="Supply quantity already expected from active or pending bookings." />
+                                    <p className="text-sm text-foreground">
+                                      Pending demand:{" "}
+                                      <strong>{pendingConsumption[inv.product] ? formatQuantity(pendingConsumption[inv.product], inv.unit) : "No pending demand"}</strong>
+                                    </p>
+                                  </div>
                                   <p className="text-sm text-foreground">
                                     Expected use 7D: <strong>{formatExpectedUse7D(inv)}</strong>
                                   </p>
@@ -905,6 +931,19 @@ export default function PredictiveInventoryPage() {
                                   <h3 className="text-lg font-semibold text-foreground mb-2">
                                     30-Day Forecast for {inv.product}
                                   </h3>
+                                  <p className="text-sm text-muted-foreground mb-3">
+                                    How to read this chart: if the projected stock line reaches the reorder level, the item should be restocked.
+                                  </p>
+                                  <div className="mb-3 flex flex-wrap gap-4 text-sm text-foreground">
+                                    <span className="inline-flex items-center gap-2">
+                                      <span className="h-0.5 w-8 bg-[hsl(218,58%,20%)]" />
+                                      Solid line = projected stock remaining
+                                    </span>
+                                    <span className="inline-flex items-center gap-2">
+                                      <span className="h-0.5 w-8 border-t-2 border-dashed border-[hsl(12,76%,61%)]" />
+                                      Dashed line = reorder level
+                                    </span>
+                                  </div>
                                   {selectedItemChart.length === 0 ? (
                                     <div className="h-[260px] flex items-center justify-center text-sm text-muted-foreground">
                                       No recent usage yet for chart projection.
@@ -913,9 +952,27 @@ export default function PredictiveInventoryPage() {
                                     <ResponsiveContainer width="100%" height={260}>
                                       <LineChart data={selectedItemChart} margin={{ top: 10, right: 16, left: 12, bottom: 8 }}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(214, 25%, 90%)" />
-                                        <XAxis dataKey="day" tick={{ fontSize: 13, fill: "hsl(215, 20%, 35%)" }} interval={4} />
-                                        <YAxis tick={{ fontSize: 13, fill: "hsl(215, 20%, 35%)" }} width={60} />
+                                        <XAxis
+                                          dataKey="day"
+                                          tick={{ fontSize: 13, fill: "hsl(215, 20%, 35%)" }}
+                                          interval={4}
+                                          label={{ value: "Forecast days", position: "insideBottom", offset: -4, fontSize: 13, fill: "hsl(215, 20%, 35%)" }}
+                                        />
+                                        <YAxis
+                                          tick={{ fontSize: 13, fill: "hsl(215, 20%, 35%)" }}
+                                          width={80}
+                                          label={{ value: "Stock remaining", angle: -90, position: "insideLeft", fontSize: 13, fill: "hsl(215, 20%, 35%)" }}
+                                        />
                                         <Tooltip contentStyle={{ fontSize: 13, borderRadius: 10 }} />
+                                        <Legend wrapperStyle={{ fontSize: 13 }} />
+                                        <ReferenceLine
+                                          y={inv.reorderLevel}
+                                          stroke="hsl(12,76%,61%)"
+                                          strokeDasharray="6 4"
+                                          strokeWidth={2}
+                                          ifOverflow="extendDomain"
+                                          label={{ value: "Reorder level", position: "right", fontSize: 12, fill: "hsl(12,76%,40%)" }}
+                                        />
                                         <Line type="monotone" dataKey="stock" stroke="hsl(218,58%,20%)" strokeWidth={3} dot={false} />
                                       </LineChart>
                                     </ResponsiveContainer>

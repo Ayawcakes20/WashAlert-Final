@@ -16,6 +16,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.time.Instant;
@@ -194,6 +195,19 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(org.springframework.web.HttpMediaTypeNotAcceptableException.class)
     public ResponseEntity<String> mediaTypeNotAcceptable(org.springframework.web.HttpMediaTypeNotAcceptableException ex) {
         return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE).body("");
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ApiError> responseStatus(ResponseStatusException ex, HttpServletRequest req) {
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        if (status == null) {
+            status = HttpStatus.BAD_REQUEST;
+        }
+        String message = ex.getReason();
+        if (message == null || message.isBlank()) {
+            message = status.getReasonPhrase();
+        }
+        return build(status, message, req);
     }
 
     @ExceptionHandler(Exception.class)
