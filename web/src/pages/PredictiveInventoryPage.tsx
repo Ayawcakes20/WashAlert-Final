@@ -7,8 +7,8 @@ import {
   AlertCircle,
 } from "lucide-react";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line, Legend, LabelList, ReferenceLine,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, Legend, ReferenceLine,
 } from "recharts";
 import { inventoryApi, branchesApi, type InventoryRecord } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
@@ -624,6 +624,53 @@ export default function PredictiveInventoryPage() {
         </motion.div>
       )}
 
+      {/* Forecast Narrative — tiered cards (above 7-day table per Issue 5) */}
+      {!loading && narrativeCards.length > 0 && (
+        <motion.div variants={anim} className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+              <Info className="h-4 w-4" /> Inventory Recommendations
+            </h3>
+          </div>
+
+          {pagedNarrative.map((card, idx) => {
+            const cfg = {
+              critical: { accent: "border-l-4 border-l-destructive bg-destructive/5",   dotColor: "bg-destructive",   textColor: "text-destructive" },
+              monitor:  { accent: "border-l-4 border-l-amber-500 bg-amber-500/5",        dotColor: "bg-amber-500",     textColor: "text-amber-600" },
+              healthy:  { accent: "border-l-4 border-l-emerald-500 bg-emerald-500/5",   dotColor: "bg-emerald-500",   textColor: "text-emerald-600" },
+            }[card.tier];
+            const { item } = card;
+            const estUse7 = item.forecastedUsage < 0.001 ? null : +(item.forecastedUsage * 7).toFixed(1);
+            const stockAfter = item.forecastedUsage < 0.001 ? null : +(item.currentStock - item.forecastedUsage * 7).toFixed(1);
+            return (
+              <div key={idx} className={`rounded-xl border border-border/20 p-4 ${cfg.accent}`}>
+                <div className="flex items-start gap-3">
+                  <span className={`mt-1 h-3 w-3 rounded-full flex-shrink-0 ${cfg.dotColor}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                      <span className="text-sm font-bold text-foreground">{item.product} — {item.branch}</span>
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${cfg.dotColor} text-white`}>{card.badge}</span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mb-2 text-[11px]">
+                      <div><span className="text-muted-foreground">Current stock:</span> <span className="font-semibold text-foreground">{item.currentStock} {item.unit}</span></div>
+                      <div><span className="text-muted-foreground">Est. use (7d):</span> <span className="font-semibold text-foreground">{estUse7 !== null ? `${estUse7} ${item.unit}` : "No data"}</span></div>
+                      <div><span className="text-muted-foreground">After 7 days:</span> <span className={`font-semibold ${stockAfter !== null && stockAfter < 0 ? "text-destructive" : "text-foreground"}`}>{stockAfter !== null ? `${stockAfter} ${item.unit}` : "No data"}</span></div>
+                      <div><span className="text-muted-foreground">Reorder level:</span> <span className="font-semibold text-foreground">{item.reorderLevel} {item.unit}</span></div>
+                    </div>
+                    <p className={`text-xs font-semibold mb-1 ${cfg.textColor}`}>{card.subtitle}</p>
+                    <p className="text-xs text-foreground/80 leading-relaxed">{card.text}</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {narrativeCards.length > NARRATIVE_PAGE_SIZE && (
+            <Paginator page={narrativePage} total={narrativeCards.length} pageSize={NARRATIVE_PAGE_SIZE} onPage={setNarrativePage} />
+          )}
+        </motion.div>
+      )}
+
       {/* 7-Day Forecast Table */}
       <motion.div variants={anim} className="glass-card rounded-2xl overflow-hidden">
         <div className="p-5 border-b border-border/30">
@@ -846,69 +893,8 @@ export default function PredictiveInventoryPage() {
         </motion.div>
       )}
 
-      {/* Forecast Narrative — tiered cards */}
-      {!loading && narrativeCards.length > 0 && (
-        <motion.div variants={anim} className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-              <Info className="h-4 w-4" /> Inventory Recommendations
-            </h3>
-          </div>
-
-          {/* Tier headings */}
-          {(["critical", "monitor", "healthy"] as const).map((tier) => {
-            const tierCards = narrativeCards.filter((c) => c.tier === tier);
-            if (tierCards.length === 0) return null;
-            const cfg = {
-              critical: { label: "Immediate Action Required", accent: "border-l-destructive bg-destructive/5", dot: "bg-destructive", text: "text-destructive" },
-              monitor:  { label: "Plan Restock Soon",         accent: "border-l-amber-500 bg-amber-500/5",     dot: "bg-amber-500",    text: "text-amber-600" },
-              healthy:  { label: "Sufficient Stock",          accent: "border-l-emerald-500 bg-emerald-500/5", dot: "bg-emerald-500",  text: "text-emerald-600" },
-            }[tier];
-            // Only paginate the full list; tier headings render inline
-            return null; // will render via pagedNarrative below
-          })}
-
-          {pagedNarrative.map((card, idx) => {
-            const cfg = {
-              critical: { accent: "border-l-4 border-l-destructive bg-destructive/5",   dotColor: "bg-destructive",   textColor: "text-destructive" },
-              monitor:  { accent: "border-l-4 border-l-amber-500 bg-amber-500/5",        dotColor: "bg-amber-500",     textColor: "text-amber-600" },
-              healthy:  { accent: "border-l-4 border-l-emerald-500 bg-emerald-500/5",   dotColor: "bg-emerald-500",   textColor: "text-emerald-600" },
-            }[card.tier];
-            const { item } = card;
-            const estUse7 = item.forecastedUsage < 0.001 ? null : +(item.forecastedUsage * 7).toFixed(1);
-            const stockAfter = item.forecastedUsage < 0.001 ? null : +(item.currentStock - item.forecastedUsage * 7).toFixed(1);
-            return (
-              <div key={idx} className={`rounded-xl border border-border/20 p-4 ${cfg.accent}`}>
-                <div className="flex items-start gap-3">
-                  <span className={`mt-1 h-3 w-3 rounded-full flex-shrink-0 ${cfg.dotColor}`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-2">
-                      <span className="text-sm font-bold text-foreground">{item.product} — {item.branch}</span>
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${cfg.dotColor} text-white`}>{card.badge}</span>
-                    </div>
-                    {/* Data summary — mirrors table row values */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mb-2 text-[11px]">
-                      <div><span className="text-muted-foreground">Current stock:</span> <span className="font-semibold text-foreground">{item.currentStock} {item.unit}</span></div>
-                      <div><span className="text-muted-foreground">Est. use (7d):</span> <span className="font-semibold text-foreground">{estUse7 !== null ? `${estUse7} ${item.unit}` : "No data"}</span></div>
-                      <div><span className="text-muted-foreground">After 7 days:</span> <span className={`font-semibold ${stockAfter !== null && stockAfter < 0 ? "text-destructive" : "text-foreground"}`}>{stockAfter !== null ? `${stockAfter} ${item.unit}` : "No data"}</span></div>
-                      <div><span className="text-muted-foreground">Reorder level:</span> <span className="font-semibold text-foreground">{item.reorderLevel} {item.unit}</span></div>
-                    </div>
-                    <p className={`text-xs font-semibold mb-1 ${cfg.textColor}`}>{card.subtitle}</p>
-                    <p className="text-xs text-foreground/80 leading-relaxed">{card.text}</p>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-
-          {narrativeCards.length > NARRATIVE_PAGE_SIZE && (
-            <Paginator page={narrativePage} total={narrativeCards.length} pageSize={NARRATIVE_PAGE_SIZE} onPage={setNarrativePage} />
-          )}
-        </motion.div>
-      )}
-
       {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="flex flex-col gap-6">
 
         {/* 30-day per-item line chart */}
         <motion.div variants={anim} ref={chartRef} className="glass-card rounded-2xl p-6 scroll-mt-24">
@@ -919,11 +905,11 @@ export default function PredictiveInventoryPage() {
             {selectedTab === "All" && <span className="block mt-1 font-medium">Showing top 5 most critical items across all branches.</span>}
           </div>
           {loading ? (
-            <Skeleton className="h-[280px] w-full rounded-xl" />
+            <Skeleton className="h-[400px] w-full rounded-xl" />
           ) : chartLines.length === 0 ? (
-            <div className="h-[280px] flex items-center justify-center text-sm text-muted-foreground">No usage data available for the selected filter.</div>
+            <div className="h-[400px] flex items-center justify-center text-sm text-muted-foreground">No usage data available for the selected filter.</div>
           ) : (
-            <ResponsiveContainer width="100%" height={280}>
+            <ResponsiveContainer width="100%" height={400}>
               <LineChart data={perItemData} margin={{ top: 10, right: 20, left: 15, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(214, 25%, 90%)" />
                 <XAxis dataKey="day" tick={{ fontSize: 9, fill: "hsl(215, 16%, 47%)" }} interval={4} />
@@ -965,30 +951,53 @@ export default function PredictiveInventoryPage() {
           )}
         </motion.div>
 
-        {/* Daily consumption per branch bar chart */}
-        {(isAdmin || isStaff) && (
+        {/* Branch Consumption Comparison Table */}
+        {(isAdmin || isStaff) && forecastData.length > 0 && (
           <motion.div variants={anim} className="glass-card rounded-2xl p-6">
-            <h2 className="text-lg font-semibold text-foreground mb-1">Daily Consumption by Branch</h2>
-            <p className="text-xs text-muted-foreground mb-0.5">Estimated daily usage of detergent and fabric conditioner per branch.</p>
-            <p className="text-xs text-muted-foreground mb-4"><span className="font-medium text-foreground">Longer bar = more daily usage.</span> Numbers show the exact amount.</p>
+            <h2 className="text-lg font-semibold text-foreground mb-1">Branch Consumption Comparison</h2>
+            <p className="text-xs text-muted-foreground mb-4">Estimated daily usage of detergent and fabric conditioner per branch. Color indicates consumption intensity.</p>
             {loading ? (
-              <Skeleton className="h-[280px] w-full rounded-xl" />
+              <Skeleton className="h-[180px] w-full rounded-xl" />
             ) : (
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={forecastData} layout="vertical" margin={{ top: 5, right: 55, left: 10, bottom: 25 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(214, 25%, 90%)" />
-                  <XAxis type="number" tick={{ fontSize: 10, fill: "hsl(215, 16%, 47%)" }} label={{ value: "Est. Daily Usage (units)", position: "insideBottom", offset: -14, fontSize: 10, fill: "hsl(215, 16%, 47%)" }} />
-                  <YAxis dataKey="branch" type="category" tick={{ fontSize: 10, fill: "hsl(215, 16%, 47%)" }} width={110} />
-                  <Tooltip formatter={(v: number, name: string) => [`${v} units/day`, name]} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                  <Legend verticalAlign="bottom" align="center" iconType="square" wrapperStyle={{ fontSize: 11, paddingTop: 10 }} />
-                  <Bar dataKey="detergent" name="Detergent" fill="hsl(218,58%,20%)" radius={[0, 4, 4, 0]}>
-                    <LabelList dataKey="detergent" position="right" style={{ fontSize: 10, fill: "hsl(215, 16%, 47%)", fontWeight: 600 }} formatter={(v: any) => (v > 0 ? `${v}` : "")} />
-                  </Bar>
-                  <Bar dataKey="conditioner" name="Fabric Conditioner" fill="hsl(168,55%,68%)" radius={[0, 4, 4, 0]}>
-                    <LabelList dataKey="conditioner" position="right" style={{ fontSize: 10, fill: "hsl(215, 16%, 47%)", fontWeight: 600 }} formatter={(v: any) => (v > 0 ? `${v}` : "")} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b border-border/30 bg-muted/20">
+                      <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Supply Type</th>
+                      {forecastData.map((row) => (
+                        <th key={row.branch} className="text-center p-3 font-medium text-muted-foreground whitespace-nowrap">{row.branch}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(["detergent", "conditioner"] as const).map((key) => {
+                      const label = key === "detergent" ? "Detergent" : "Fabric Conditioner";
+                      const values = forecastData.map((r) => r[key]);
+                      const max = Math.max(...values, 0.001);
+                      return (
+                        <tr key={key} className="border-b border-border/20 hover:bg-muted/20 transition-colors">
+                          <td className="p-3 font-medium text-foreground">{label}</td>
+                          {forecastData.map((row) => {
+                            const val = row[key];
+                            const ratio = val / max;
+                            const bgClass = val === 0 ? "bg-muted/30 text-muted-foreground" : ratio >= 0.8 ? "bg-destructive/15 text-destructive font-semibold" : ratio >= 0.5 ? "bg-amber-500/15 text-amber-700 font-semibold" : "bg-emerald-500/10 text-emerald-700 font-semibold";
+                            return (
+                              <td key={row.branch} className={`p-3 text-center rounded-sm ${bgClass}`}>
+                                {val > 0 ? `${val} units/day` : "—"}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <p className="text-[11px] text-muted-foreground mt-3 flex flex-wrap gap-x-4 gap-y-1 px-1">
+                  <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-destructive flex-shrink-0" /> High usage (&ge;80% of max)</span>
+                  <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-500 flex-shrink-0" /> Moderate usage (50–79%)</span>
+                  <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500 flex-shrink-0" /> Low usage (&lt;50%)</span>
+                </p>
+              </div>
             )}
           </motion.div>
         )}

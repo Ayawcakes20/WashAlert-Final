@@ -804,11 +804,23 @@ export default function OrderDetailScreen({ route, navigation }) {
             <Text style={styles.footerPrimaryText}>Track Order</Text>
           </TouchableOpacity>
         </View>
-        {ns==='pending'&&(
+        {/* Cancel button — visible for pre-processing statuses only */}
+        {(ns === 'pending' || ns === 'received') ? (
           <TouchableOpacity style={styles.cancelBtn} onPress={cancelOrder}>
             <Text style={styles.cancelText}>Cancel Booking</Text>
           </TouchableOpacity>
-        )}
+        ) : (ns !== 'delivered' && ns !== 'cancelled') ? (
+          <View style={styles.cancelBlockedRow}>
+            <Ionicons name="lock-closed-outline" size={13} color={colors.textSecondary}/>
+            <Text style={styles.cancelBlockedText}>
+              {(ns === 'awaiting_price' || ns === 'washing' || ns === 'drying')
+                ? 'Your laundry is already being processed and cannot be cancelled.'
+                : (ns === 'ready' || ns === 'delivering')
+                ? 'Your order is ready or on its way — cancellation is no longer available.'
+                : 'Cancellation is no longer available for this order.'}
+            </Text>
+          </View>
+        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -914,6 +926,8 @@ const styles = StyleSheet.create({
   footerPrimaryText: { fontSize:15, fontWeight:'700', color:'#FFF' },
   cancelBtn:  { alignItems:'center', paddingVertical:8 },
   cancelText: { fontSize:13, fontWeight:'700', color:colors.error },
+  cancelBlockedRow: { flexDirection:'row', alignItems:'flex-start', gap:6, paddingVertical:8, paddingHorizontal:4 },
+  cancelBlockedText: { flex:1, fontSize:12, color:colors.textSecondary, lineHeight:18 },
 
   // Pay Now Button
   payNowBtn: {
