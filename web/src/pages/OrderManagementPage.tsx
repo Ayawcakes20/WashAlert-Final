@@ -330,7 +330,10 @@ const mapOrder = (order: JobOrderResponse): Order => ({
   conditionerQuantity: order.conditionerQuantity,
   paymentMethod: order.paymentMethod,
   paymentStatus: order.paymentStatus,
-  isPaid: order.isPaid,
+  // Backend serializes the boolean as "paid" (Jackson strips the "is" prefix from
+  // isPaid()), so fall back to it — otherwise GCash/COD payments settled on mobile
+  // never flip the web badge off "Awaiting Payment".
+  isPaid: order.isPaid ?? order.paid,
   totalPrice: order.totalPrice || 0,
   servicePrice: order.servicePrice != null ? Number(order.servicePrice) : undefined,
   rushPrice: order.rushPrice != null ? Number(order.rushPrice) : undefined,

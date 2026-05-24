@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Package,
   AlertTriangle,
@@ -24,7 +24,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ReferenceLine,
 } from "recharts";
 import { inventoryApi, branchesApi, type InventoryRecord } from "@/lib/api";
@@ -213,19 +212,70 @@ function Paginator({
   );
 }
 
+// Tooltip rendered with position:fixed so it is never clipped by table/card/sidebar
+// overflow. Placement is computed from the trigger's viewport rect and flips/clamps
+// to stay fully on-screen (opens left near the right edge, above near the bottom).
 function InfoHint({ text }: { text: string }) {
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number; placeAbove: boolean }>({
+    top: 0,
+    left: 0,
+    placeAbove: false,
+  });
+
+  const TIP_WIDTH = 300; // px — within the readable 280–360 range
+
+  const show = () => {
+    const el = btnRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let left = r.left + r.width / 2 - TIP_WIDTH / 2;
+    left = Math.max(8, Math.min(left, vw - TIP_WIDTH - 8)); // clamp within viewport
+    const placeAbove = vh - r.bottom < 150; // not enough room below → open upward
+    const top = placeAbove ? r.top - 8 : r.bottom + 8;
+    setPos({ top, left, placeAbove });
+    setOpen(true);
+  };
+  const hide = () => setOpen(false);
+
   return (
-    <span className="relative inline-flex items-center group">
+    <span className="relative inline-flex items-center">
       <button
+        ref={btnRef}
         type="button"
         className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-primary/30"
         aria-label={text}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+        onClick={(e) => {
+          e.preventDefault();
+          open ? hide() : show();
+        }}
       >
         <CircleHelp className="h-3.5 w-3.5" />
       </button>
-      <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 hidden w-72 -translate-x-1/2 rounded-lg border border-slate-300 bg-slate-900 px-3 py-2 text-[13px] font-medium leading-relaxed text-white shadow-xl group-hover:block group-focus-within:block">
-        {text}
-      </span>
+      {open && (
+        <span
+          role="tooltip"
+          style={{
+            position: "fixed",
+            top: pos.top,
+            left: pos.left,
+            width: TIP_WIDTH,
+            maxWidth: "calc(100vw - 16px)",
+            transform: pos.placeAbove ? "translateY(-100%)" : undefined,
+            zIndex: 9999,
+          }}
+          className="pointer-events-none rounded-lg border border-slate-300 bg-slate-900 px-3 py-2 text-[13px] font-medium leading-relaxed text-white shadow-xl whitespace-normal"
+        >
+          {text}
+        </span>
+      )}
     </span>
   );
 }
@@ -406,16 +456,31 @@ export default function PredictiveInventoryPage() {
             if (b.daysUntilEmpty === null) return -1;
             return a.daysUntilEmpty - b.daysUntilEmpty;
           })[0] ?? null;
+        const daysCandidates = items
+          .map((i) => i.daysUntilEmpty)
+          .filter((d): d is number => typeof d === "number");
+        const fewestDaysLeft = daysCandidates.length ? Math.min(...daysCandidates) : null;
+        const expectedUse7DTotal = items.reduce((sum, i) => sum + Math.max(0, i.forecastedUsage * 7), 0);
         return {
           branch,
+          totalItems: items.length,
           critical,
           low,
           healthy,
           urgentItem: urgent?.product ?? "No urgent item",
+          fewestDaysLeft,
+          expectedUse7DTotal,
           action: urgent ? getRecommendedAction(urgent) : "Healthy",
         };
       })
-      .sort((a, b) => a.branch.localeCompare(b.branch));
+      // Sort by restocking urgency: most critical first, then low stock, then fewest days left.
+      .sort((a, b) => {
+        if (b.critical !== a.critical) return b.critical - a.critical;
+        if (b.low !== a.low) return b.low - a.low;
+        const ad = a.fewestDaysLeft ?? Number.POSITIVE_INFINITY;
+        const bd = b.fewestDaysLeft ?? Number.POSITIVE_INFINITY;
+        return ad - bd;
+      });
   }, [inventory]);
 
   const selectedExpandedItem = useMemo(
@@ -993,31 +1058,31 @@ export default function PredictiveInventoryPage() {
                                       No recent usage yet for chart projection.
                                     </div>
                                   ) : (
-                                    <ResponsiveContainer width="100%" height={260}>
-                                      <LineChart data={selectedItemChart} margin={{ top: 10, right: 16, left: 12, bottom: 8 }}>
+                                    <ResponsiveContainer width="100%" height={280}>
+                                      <LineChart data={selectedItemChart} margin={{ top: 12, right: 28, left: 16, bottom: 28 }}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(214, 25%, 90%)" />
                                         <XAxis
                                           dataKey="day"
                                           tick={{ fontSize: 13, fill: "hsl(215, 20%, 35%)" }}
                                           interval={4}
-                                          label={{ value: "Forecast days", position: "insideBottom", offset: -4, fontSize: 13, fill: "hsl(215, 20%, 35%)" }}
+                                          label={{ value: "Forecast days", position: "insideBottom", offset: -12, fontSize: 13, fill: "hsl(215, 20%, 35%)" }}
                                         />
                                         <YAxis
                                           tick={{ fontSize: 13, fill: "hsl(215, 20%, 35%)" }}
-                                          width={80}
-                                          label={{ value: "Stock remaining", angle: -90, position: "insideLeft", fontSize: 13, fill: "hsl(215, 20%, 35%)" }}
+                                          width={72}
+                                          label={{ value: "Stock remaining", angle: -90, position: "insideLeft", offset: 8, fontSize: 13, fill: "hsl(215, 20%, 35%)" }}
                                         />
                                         <Tooltip contentStyle={{ fontSize: 13, borderRadius: 10 }} />
-                                        <Legend wrapperStyle={{ fontSize: 13 }} />
+                                        {/* Reorder level: no in-chart label (it clipped on the right);
+                                            the legend strip above the chart explains the dashed line. */}
                                         <ReferenceLine
                                           y={inv.reorderLevel}
                                           stroke="hsl(12,76%,61%)"
                                           strokeDasharray="6 4"
                                           strokeWidth={2}
                                           ifOverflow="extendDomain"
-                                          label={{ value: "Reorder level", position: "right", fontSize: 12, fill: "hsl(12,76%,40%)" }}
                                         />
-                                        <Line type="monotone" dataKey="stock" stroke="hsl(218,58%,20%)" strokeWidth={3} dot={false} />
+                                        <Line type="monotone" dataKey="stock" name="Projected stock remaining" stroke="hsl(218,58%,20%)" strokeWidth={3} dot={false} />
                                       </LineChart>
                                     </ResponsiveContainer>
                                   )}
@@ -1057,23 +1122,27 @@ export default function PredictiveInventoryPage() {
           <div className="p-6 border-b border-border/30">
             <h2 className="text-xl font-semibold text-foreground">Branch Restock Overview</h2>
             <p className="text-base text-muted-foreground mt-1">
-              This compares branches by restocking urgency. Click View Branch to filter the forecast table.
+              Compare branches by restocking urgency. The branch with the fewest days left or the most
+              critical items should be restocked first.
             </p>
+            <p className="text-sm text-muted-foreground mt-1">Tip: click a branch row to filter the forecast table by that branch.</p>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px]">
+            <table className="w-full min-w-[980px]">
               <thead>
                 <tr className="border-b border-border/30 bg-muted/20">
                   {[
                     "Branch",
-                    "Critical Items",
-                    "Low Stock Items",
-                    "Healthy Items",
+                    "Total Items",
+                    "Critical",
+                    "Low Stock",
+                    "Healthy",
                     "Most Urgent Item",
+                    "Fewest Days Left",
+                    "Expected Use (7D)",
                     "Recommended Action",
-                    "View Branch",
                   ].map((h) => (
-                    <th key={h} className="text-left p-4 font-semibold text-[15px] text-foreground">
+                    <th key={h} className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap">
                       {h}
                     </th>
                   ))}
@@ -1081,18 +1150,29 @@ export default function PredictiveInventoryPage() {
               </thead>
               <tbody>
                 {branchOverview.map((row) => (
-                  <tr key={row.branch} className="border-b border-border/20">
+                  <tr
+                    key={row.branch}
+                    className="border-b border-border/20 cursor-pointer hover:bg-muted/30 transition-colors"
+                    onClick={() => handleTabChange(row.branch)}
+                    title="Click to filter the forecast table by this branch"
+                  >
                     <td className="p-4 text-base font-medium text-foreground">{row.branch}</td>
-                    <td className="p-4 text-base text-foreground">{row.critical}</td>
-                    <td className="p-4 text-base text-foreground">{row.low}</td>
+                    <td className="p-4 text-base text-foreground">{row.totalItems}</td>
+                    <td className="p-4 text-base">
+                      <span className={row.critical > 0 ? "font-semibold text-destructive" : "text-foreground"}>{row.critical}</span>
+                    </td>
+                    <td className="p-4 text-base">
+                      <span className={row.low > 0 ? "font-semibold text-amber-600" : "text-foreground"}>{row.low}</span>
+                    </td>
                     <td className="p-4 text-base text-foreground">{row.healthy}</td>
                     <td className="p-4 text-base text-foreground break-words">{row.urgentItem}</td>
-                    <td className="p-4 text-base text-foreground">{row.action}</td>
-                    <td className="p-4">
-                      <Button size="sm" variant="outline" onClick={() => handleTabChange(row.branch)}>
-                        View Branch
-                      </Button>
+                    <td className="p-4 text-base text-foreground">
+                      {row.fewestDaysLeft === null ? "—" : `${row.fewestDaysLeft} day(s)`}
                     </td>
+                    <td className="p-4 text-base text-foreground">
+                      {row.expectedUse7DTotal > 0 ? row.expectedUse7DTotal.toFixed(1) : "—"}
+                    </td>
+                    <td className="p-4 text-base text-foreground">{row.action}</td>
                   </tr>
                 ))}
               </tbody>

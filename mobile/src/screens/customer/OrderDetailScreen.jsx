@@ -21,17 +21,19 @@ const resolveTotal = (order) => order?.finalPrice ?? order?.amount ?? 0;
 
 const STEPS = [
   { key: 'pending',        label: 'Booking Placed',                  icon: 'checkmark-circle-outline' },
+  { key: 'pickup',         label: 'Rider Pickup',                    icon: 'bicycle-outline' },
   { key: 'received',       label: 'Order Received',                  icon: 'cube-outline' },
   { key: 'awaiting_price', label: 'Weighing & Price Confirmation',   icon: 'scale-outline' },
   { key: 'washing',        label: 'Washing in Progress',             icon: 'water-outline' },
   { key: 'drying',         label: 'Drying',                         icon: 'thermometer-outline' },
   { key: 'ready',          label: 'Ready for Pickup / Delivery',     icon: 'bag-check-outline' },
-  { key: 'delivering',     label: 'Out for Delivery',                icon: 'bicycle-outline' },
+  { key: 'delivering',     label: 'Out for Delivery',                icon: 'navigate-outline' },
   { key: 'delivered',      label: 'Delivered Successfully',          icon: 'checkmark-done-circle-outline' },
 ];
 
 const STATUS_BADGE = {
   pending:        { bg: '#EFF6FF', text: '#3B82F6', label: 'Order Pending' },
+  pickup:         { bg: '#EFF6FF', text: '#2563EB', label: 'Rider Assigned for Pickup' },
   received:       { bg: '#F0FDF4', text: '#10B981', label: 'Received' },
   awaiting_price: { bg: '#FFF7ED', text: '#EA580C', label: 'Awaiting Confirmation' },
   washing:        { bg: '#EFF6FF', text: '#2563EB', label: 'Washing' },
@@ -42,22 +44,50 @@ const STATUS_BADGE = {
   cancelled:      { bg: '#FEF2F2', text: '#EF4444', label: 'Cancelled' },
 };
 
+// Maps a raw order/delivery status to a timeline step key. Pickup-leg statuses
+// (rider collecting from the customer) map to 'pickup', NOT 'delivering', so an
+// order being picked up never shows "Out for Delivery".
 const normalize = (s) => {
   const raw = String(s||'').trim().toLowerCase().replace(/ /g,'_');
   const map = {
-    received:'received', order_received:'received', pending:'pending',
+    pending:'pending',
+    // Pickup leg — rider on the way to collect laundry from the customer
+    assigned_for_pickup:'pickup', en_route_to_customer:'pickup',
+    en_route_to_pickup:'pickup', pending_pickup:'pickup',
+    picked_up:'pickup', laundry_collected:'pickup', en_route_to_branch:'pickup',
+    // Laundry at branch
+    received:'received', order_received:'received',
+    // Pricing
     awaiting_price:'awaiting_price', awaiting_price_confirmation:'awaiting_price',
     price_confirmed:'awaiting_price', price_approved:'washing',
-    washing:'washing', drying:'drying', ready:'ready',
-    assigned_for_pickup:'delivering', en_route_to_customer:'delivering',
-    laundry_collected:'delivering', en_route_to_branch:'delivering',
-    pending_pickup:'ready', en_route_to_pickup:'delivering',
-    picked_up:'delivering', in_transit:'delivering', delivering:'delivering',
-    assigned_for_delivery:'delivering', out_for_delivery:'delivering',
-    collection_failed:'delivering',
+    // Processing
+    washing:'washing', in_transit:'washing', drying:'drying', ready:'ready',
+    // Delivery leg — only 'delivering' once the leg is actually active
+    assigned_for_delivery:'ready', picked_up_from_branch:'delivering',
+    out_for_delivery:'delivering', delivering:'delivering',
+    // Terminal
+    collection_failed:'cancelled',
     delivered:'delivered', cancelled:'cancelled', failed:'cancelled',
   };
   return map[raw] || 'pending';
+};
+
+// Precise, customer-friendly badge label for sub-states that share a timeline step.
+const rawStatusLabel = (s) => {
+  const raw = String(s||'').trim().toLowerCase().replace(/ /g,'_');
+  const labels = {
+    assigned_for_pickup: 'Rider Assigned for Pickup',
+    en_route_to_pickup: 'Rider on the Way for Pickup',
+    en_route_to_customer: 'Rider on the Way for Pickup',
+    pending_pickup: 'Awaiting Pickup',
+    picked_up: 'Laundry Collected',
+    laundry_collected: 'Laundry Collected',
+    en_route_to_branch: 'Heading to Branch',
+    assigned_for_delivery: 'Ready — Rider Assigned',
+    picked_up_from_branch: 'Out for Delivery',
+    out_for_delivery: 'Out for Delivery',
+  };
+  return labels[raw] || null;
 };
 
 // Returns true when payment is fully settled — covers all backend status aliases.
@@ -183,10 +213,14 @@ export default function OrderDetailScreen({ route, navigation }) {
           setOrder(prev => {
             if (!prev) return prev;
             const updates = {};
-            if (mapped && mapped !== prev.status) updates.status = mapped;
+            // Store the raw status so the precise badge label (e.g. "Rider on the
+            // Way for Pickup") is preserved; only update when the phase changes.
+            if (mapped && mapped !== normalize(prev.status)) updates.status = raw;
             // Sync isPaid from Firestore so Pay Now button hides immediately
             // after the webhook fires without needing a full reload.
-            const firestoreIsPaid = data.isPaid === true || data.paymentStatus === 'PAID' || data.paymentStatus === 'VERIFIED';
+            // The synced doc stores the boolean under "paid" (Jackson strips the "is"
+            // prefix from isPaid()), so check both keys plus the payment status.
+            const firestoreIsPaid = data.isPaid === true || data.paid === true || data.paymentStatus === 'PAID' || data.paymentStatus === 'VERIFIED';
             if (firestoreIsPaid && !prev.isPaid) {
               updates.isPaid = true;
               updates.paymentStatus = 'Paid';
@@ -267,20 +301,31 @@ export default function OrderDetailScreen({ route, navigation }) {
 
   const ns  = normalize(order.status);
   const sb  = STATUS_BADGE[ns] || STATUS_BADGE.pending;
+  // Precise label for sub-states (pickup/delivery legs), falling back to the step label.
+  const badgeLabel = rawStatusLabel(order.status) || sb.label;
 
-  // For pickup (DROP_OFF) orders, skip the 'delivering' step
+  // DROP_OFF orders have no rider pickup leg and no delivery leg — skip both steps.
   const isPickupOrder = !order.delivery && (
     String(order.serviceType || '').toUpperCase() === 'DROP_OFF' ||
     String(order.serviceMode || '').toUpperCase() === 'PICK_UP'
   );
-  const stepsForOrder = isPickupOrder ? STEPS.filter(s => s.key !== 'delivering') : STEPS;
+  const stepsForOrder = isPickupOrder
+    ? STEPS.filter(s => s.key !== 'delivering' && s.key !== 'pickup')
+    : STEPS;
 
   const idx = stepsForOrder.findIndex(s => s.key === ns);
   const pct = Math.max(5, Math.round(((idx>=0?idx+1:1)/stepsForOrder.length)*100));
 
   const branchKey = String(order?.branchName||order?.branch||'').trim().toLowerCase();
   const branchPhone = branchPhones[branchKey] || '';
-  const dial = v => String(v||'').replace(/[^0-9+]/g,'');
+
+  // Normalize PH numbers: keep digits/+, convert leading 0 → +63.
+  const dial = v => {
+    let raw = String(v||'').replace(/[^0-9+]/g,'');
+    if (raw.startsWith('0')) raw = '+63' + raw.slice(1);
+    else if (raw && !raw.startsWith('+')) raw = '+63' + raw;
+    return raw;
+  };
 
   // Robust fallback chain for assigned driver phone:
   // delivery.driverPhone (from DeliveryResponse, prefers mobileNumber) →
@@ -291,22 +336,32 @@ export default function OrderDetailScreen({ route, navigation }) {
     null
   );
 
+  // NOTE: do NOT gate tel:/sms: on Linking.canOpenURL — on Android canOpenURL('tel:')
+  // returns false unless CALL_PHONE is in the manifest, which blocked the dialer.
   const call = async phone => {
     const p = dial(phone);
-    if (!p) return Alert.alert('No Contact','Phone not available.');
-    const url = `tel:${p}`;
-    if (await Linking.canOpenURL(url)) await Linking.openURL(url);
-    else Alert.alert('Error','Cannot open dialer.');
+    if (!p) return Alert.alert('Phone number is not available yet.', 'No contact number is on record for this order.');
+    try {
+      await Linking.openURL(`tel:${p}`);
+    } catch {
+      Alert.alert('Open Dialer Manually', `Could not open the dialer automatically.\nPlease call: ${p}`);
+    }
   };
   const sms = async phone => {
     const p = dial(phone);
-    if (!p) return Alert.alert('No Contact','Phone not available.');
-    const url = `sms:${p}`;
-    if (await Linking.canOpenURL(url)) await Linking.openURL(url);
-    else Alert.alert('Error','Cannot open messaging.');
+    if (!p) return Alert.alert('Phone number is not available yet.', 'No contact number is on record for this order.');
+    try {
+      await Linking.openURL(`sms:${p}`);
+    } catch {
+      Alert.alert('Unable to open messaging app.', 'Please try again later.');
+    }
   };
 
-  const driverVisible = ns === 'delivering';
+  // Driver contact is relevant during both the pickup and delivery legs.
+  const driverVisible = ns === 'delivering' || ns === 'pickup';
+  // Footer Call/Message target the assigned driver when there is one, otherwise the branch.
+  const footerContactPhone = resolvedDriverPhone || branchPhone;
+  const footerContactLabel = resolvedDriverPhone ? 'Driver' : 'Branch';
 
   // 3-point condensed timeline
   const prevStep = idx > 0 ? STEPS[idx-1] : null;
@@ -519,7 +574,7 @@ export default function OrderDetailScreen({ route, navigation }) {
           <View style={styles.heroRight}>
             <Text style={styles.heroOrderId}>{order.trackingNumber || `#${order.id}`}</Text>
             <View style={[styles.badge,{backgroundColor:sb.bg}]}>
-              <Text style={[styles.badgeText,{color:sb.text}]}>{sb.label}</Text>
+              <Text style={[styles.badgeText,{color:sb.text}]}>{badgeLabel}</Text>
             </View>
             <Text style={styles.heroDate}>{order.date}</Text>
             {/* Hide price when awaiting_price — it's already shown in the orange card above */}
@@ -790,24 +845,24 @@ export default function OrderDetailScreen({ route, navigation }) {
       <View style={styles.stickyFooter}>
         <View style={styles.footerRow}>
           <TouchableOpacity
-            style={[styles.footerOutline, !branchPhone && { opacity: 0.45, borderColor: colors.border }]}
-            onPress={() => call(branchPhone)}
-            disabled={!branchPhone}
+            style={[styles.footerOutline, !footerContactPhone && { opacity: 0.45, borderColor: colors.border }]}
+            onPress={() => call(footerContactPhone)}
+            disabled={!footerContactPhone}
             activeOpacity={0.8}
           >
-            <Ionicons name="call-outline" size={18} color={branchPhone ? colors.primary : colors.disabled}/>
-            <Text style={[styles.footerOutlineText, !branchPhone && { color: colors.disabled }]}>
-              {branchPhone ? 'Call' : 'No Phone'}
+            <Ionicons name="call-outline" size={18} color={footerContactPhone ? colors.primary : colors.disabled}/>
+            <Text style={[styles.footerOutlineText, !footerContactPhone && { color: colors.disabled }]}>
+              {footerContactPhone ? `Call ${footerContactLabel}` : 'No Phone'}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.footerOutline, !branchPhone && { opacity: 0.45, borderColor: colors.border }]}
-            onPress={() => sms(branchPhone)}
-            disabled={!branchPhone}
+            style={[styles.footerOutline, !footerContactPhone && { opacity: 0.45, borderColor: colors.border }]}
+            onPress={() => sms(footerContactPhone)}
+            disabled={!footerContactPhone}
             activeOpacity={0.8}
           >
-            <Ionicons name="chatbubble-outline" size={18} color={branchPhone ? colors.primary : colors.disabled}/>
-            <Text style={[styles.footerOutlineText, !branchPhone && { color: colors.disabled }]}>Message</Text>
+            <Ionicons name="chatbubble-outline" size={18} color={footerContactPhone ? colors.primary : colors.disabled}/>
+            <Text style={[styles.footerOutlineText, !footerContactPhone && { color: colors.disabled }]}>Message</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.footerPrimary}
             onPress={() => navigation.navigate('Tracking', { orderId: order.id })}>

@@ -1618,8 +1618,17 @@ export const driverOrders = {
         status: String(order.status || '').toUpperCase(),
         amountToCollect: mapped.finalPrice ?? mapped.amount ?? mapped.servicePrice ?? 0,
       };
-    } catch (_error) {
-      throw new Error('Unable to load task. It may have already been completed or was not assigned to you.');
+    } catch (error) {
+      // Surface the backend's real reason when it is an access/assignment problem,
+      // so an assigned (even completed) task is not mislabeled as "not assigned".
+      const msg = String(error?.message || '');
+      if (/not assigned/i.test(msg)) {
+        throw new Error('This task is not assigned to you.');
+      }
+      if (/not found/i.test(msg)) {
+        throw new Error('This task could not be found. It may have been removed.');
+      }
+      throw new Error('Unable to load task right now. Please refresh and try again.');
     }
   },
   updateLocation: async (id, { latitude, longitude }) => {
