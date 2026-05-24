@@ -67,7 +67,8 @@ const INVENTORY_CATALOG = [
 const INVENTORY_CATEGORIES = ["Detergent", "Fabric Conditioner"] as const;
 const INVENTORY_UNITS = ["packs", "liters", "kg", "bottles", "pieces"] as const;
 
-const TABLE_PAGE_SIZE = 10;
+const DEFAULT_TABLE_PAGE_SIZE = 10;
+const TABLE_PAGE_SIZES = [10, 25, 50] as const;
 const ATTENTION_DEFAULT_LIMIT = 5;
 
 interface InventoryItem {
@@ -121,6 +122,19 @@ function getRecommendedAction(item: InventoryItem): string {
   return "Healthy";
 }
 
+function formatQuantity(value: number | null | undefined, unit?: string, emptyText = "Not enough data"): string {
+  if (typeof value !== "number" || Number.isNaN(value)) return emptyText;
+  const rawUnit = unit?.trim() ?? "";
+  const safeUnit = rawUnit && !/^\d+$/.test(rawUnit) ? rawUnit : "units";
+  const normalized = Number.isInteger(value) ? `${value}` : `${value.toFixed(1)}`;
+  return `${normalized} ${safeUnit}`;
+}
+
+function formatExpectedUse7D(item: InventoryItem): string {
+  if (item.forecastedUsage <= 0.001) return "No recent usage";
+  return formatQuantity(item.forecastedUsage * 7, item.unit);
+}
+
 function buildForecastBasis(item: InventoryItem): string {
   const hasHist = item.historicalDailyUsage > 0.001;
   const hasDemand = item.confirmedDemand7D > 0.001;
@@ -147,20 +161,36 @@ function Paginator({
   page,
   total,
   pageSize,
+  pageSizes,
+  onPageSizeChange,
   onPage,
 }: {
   page: number;
   total: number;
   pageSize: number;
+  pageSizes: readonly number[];
+  onPageSizeChange: (size: number) => void;
   onPage: (p: number) => void;
 }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   return (
     <div className="flex items-center justify-between px-4 py-3 border-t border-border/20 bg-muted/10 text-sm text-muted-foreground">
-      <span>
+      <span className="text-sm">
         Page {page} of {pages} ({total} item{total !== 1 ? "s" : ""})
       </span>
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
+        <label className="text-sm text-muted-foreground">Rows:</label>
+        <select
+          value={pageSize}
+          onChange={(e) => onPageSizeChange(Number(e.target.value))}
+          className="h-8 rounded-md border border-border bg-background px-2 text-sm text-foreground"
+        >
+          {pageSizes.map((size) => (
+            <option key={size} value={size}>
+              {size}
+            </option>
+          ))}
+        </select>
         <button
           disabled={page <= 1}
           onClick={() => onPage(page - 1)}
@@ -194,6 +224,7 @@ export default function PredictiveInventoryPage() {
   const [branches, setBranches] = useState<string[]>([]);
   const [dynamicBranches, setDynamicBranches] = useState<string[]>([]);
   const [tablePage, setTablePage] = useState(1);
+  const [tablePageSize, setTablePageSize] = useState(DEFAULT_TABLE_PAGE_SIZE);
   const [showAllAttention, setShowAllAttention] = useState(false);
   const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
 
@@ -326,9 +357,9 @@ export default function PredictiveInventoryPage() {
     : needsAttention.slice(0, ATTENTION_DEFAULT_LIMIT);
 
   const pagedTable = useMemo(() => {
-    const start = (tablePage - 1) * TABLE_PAGE_SIZE;
-    return filteredInventory.slice(start, start + TABLE_PAGE_SIZE);
-  }, [filteredInventory, tablePage]);
+    const start = (tablePage - 1) * tablePageSize;
+    return filteredInventory.slice(start, start + tablePageSize);
+  }, [filteredInventory, tablePage, tablePageSize]);
 
   const branchOverview = useMemo(() => {
     const grouped = new Map<string, InventoryItem[]>();
@@ -387,6 +418,10 @@ export default function PredictiveInventoryPage() {
     setTablePage(1);
     setExpandedRowId(null);
   };
+
+  useEffect(() => {
+    setTablePage(1);
+  }, [selectedTab, tablePageSize]);
 
   const openCreate = () => {
     setCreateForm({
@@ -558,6 +593,12 @@ export default function PredictiveInventoryPage() {
         </ul>
       </div>
 
+      <div className="rounded-xl border border-border/30 bg-white p-4">
+        <p className="text-base text-foreground">
+          Use this page to see which supplies need restocking first. The forecast uses current stock, completed order history, and confirmed upcoming bookings. Click View Details to see the calculation for each item.
+        </p>
+      </div>
+
       {error && <p className="text-base text-destructive">{error}</p>}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -639,7 +680,7 @@ export default function PredictiveInventoryPage() {
           </div>
           {visibleAttention.length === 0 ? (
             <p className="text-base text-muted-foreground">
-              All tracked items are currently healthy.
+              All supplies are healthy based on current stock and expected use.
             </p>
           ) : (
             <div className="space-y-3">
@@ -650,11 +691,9 @@ export default function PredictiveInventoryPage() {
                       <p className="text-lg font-semibold text-foreground">{item.product}</p>
                       <p className="text-sm text-muted-foreground">{item.branch}</p>
                       <p className="text-sm text-foreground">
-                        Current stock: {item.currentStock} {item.unit} | Expected use 7D:{" "}
-                        {item.forecastedUsage > 0.001
-                          ? (item.forecastedUsage * 7).toFixed(1)
-                          : "No recent usage"}{" "}
-                        {item.unit} | Days left: {item.daysUntilEmpty ?? "Not enough data"}
+                        Current stock: {formatQuantity(item.currentStock, item.unit)} | Expected use 7D:{" "}
+                        {formatExpectedUse7D(item)} | Days left:{" "}
+                        {item.daysUntilEmpty !== null ? `${item.daysUntilEmpty} day(s)` : "Not enough data yet"}
                       </p>
                       <p className="text-sm text-foreground">
                         Recommended action: {getRecommendedAction(item)}
@@ -705,23 +744,34 @@ export default function PredictiveInventoryPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[920px] text-sm">
+          <table className="w-full min-w-[980px] text-sm">
             <thead>
               <tr className="border-b border-border/30 bg-muted/20">
-                {["Item", "Branch", "Current Stock", "Expected Use 7D", "Days Left", "Status", "Action"].map(
-                  (label) => (
-                    <th key={label} className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap">
-                      {label}
-                    </th>
-                  ),
-                )}
+                {[
+                  { label: "Item", hint: "Inventory item name." },
+                  { label: "Branch", hint: "Branch where this stock is tracked." },
+                  { label: "Current Stock", hint: "Quantity currently available in this branch." },
+                  { label: "Expected Use 7D", hint: "Estimated amount that may be used in the next 7 days based on historical usage and confirmed bookings." },
+                  { label: "Reorder Level", hint: "Minimum stock level before restocking is recommended." },
+                  { label: "Days Left", hint: "Estimated days before this item reaches its reorder level." },
+                  { label: "Status", hint: "Critical, Low Stock, or Healthy based on stock level and expected use." },
+                  { label: "Action", hint: "Add stock or open details for this item." },
+                ].map((col) => (
+                  <th
+                    key={col.label}
+                    title={col.hint}
+                    className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap"
+                  >
+                    {col.label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {loading
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i} className="border-b border-border/20">
-                      {Array.from({ length: 7 }).map((__, j) => (
+                      {Array.from({ length: 8 }).map((__, j) => (
                         <td key={j} className="p-4">
                           <Skeleton className="h-5 w-full rounded" />
                         </td>
@@ -730,10 +780,7 @@ export default function PredictiveInventoryPage() {
                   ))
                 : pagedTable.map((inv) => {
                     const isExpanded = expandedRowId === inv.id;
-                    const expectedUse =
-                      inv.forecastedUsage > 0.001
-                        ? `${(inv.forecastedUsage * 7).toFixed(1)} ${inv.unit}`
-                        : "No recent usage";
+                    const expectedUse = formatExpectedUse7D(inv);
                     const daysLeft =
                       inv.daysUntilEmpty !== null
                         ? `${inv.daysUntilEmpty} day(s)`
@@ -753,9 +800,12 @@ export default function PredictiveInventoryPage() {
                           </td>
                           <td className="p-4 text-base text-foreground">{inv.branch}</td>
                           <td className="p-4 text-base text-foreground">
-                            {inv.currentStock} {inv.unit}
+                            {formatQuantity(inv.currentStock, inv.unit)}
                           </td>
                           <td className="p-4 text-base text-foreground">{expectedUse}</td>
+                          <td className="p-4 text-base text-foreground">
+                            {formatQuantity(inv.reorderLevel, inv.unit)}
+                          </td>
                           <td className="p-4 text-base text-foreground">{daysLeft}</td>
                           <td className="p-4">
                             <span className={`text-sm font-semibold px-3 py-1 rounded-full ${statusStyle[inv.status]}`}>
@@ -782,32 +832,42 @@ export default function PredictiveInventoryPage() {
                         </tr>
                         {isExpanded && (
                           <tr className="border-b border-border/20 bg-muted/10">
-                            <td colSpan={7} className="p-5">
+                            <td colSpan={8} className="p-5">
                               <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
                                 <div className="xl:col-span-1 rounded-xl border border-border/30 bg-white p-4 space-y-2">
                                   <h3 className="text-lg font-semibold text-foreground">Forecast Details</h3>
-                                  <p className="text-sm text-foreground">
-                                    Current stock: <strong>{inv.currentStock} {inv.unit}</strong>
+                                  <p className="text-base text-foreground leading-relaxed">
+                                    Recommendation: <strong>{buildNarrative(inv)}</strong>
+                                  </p>
+                                  <p className="text-sm text-muted-foreground leading-relaxed" title="Shows whether the forecast is based on completed orders, upcoming bookings, or both.">
+                                    {buildForecastBasis(inv)}
                                   </p>
                                   <p className="text-sm text-foreground">
-                                    Reorder level: <strong>{inv.reorderLevel} {inv.unit}</strong>
+                                    Current stock: <strong>{formatQuantity(inv.currentStock, inv.unit)}</strong>
                                   </p>
                                   <p className="text-sm text-foreground">
-                                    Historical usage: <strong>{inv.historicalDailyUsage.toFixed(1)} {inv.unit}/day</strong>
+                                    Reorder level: <strong>{formatQuantity(inv.reorderLevel, inv.unit)}</strong>
+                                  </p>
+                                  <p className="text-sm text-foreground">
+                                    Historical usage: <strong>{formatQuantity(inv.historicalDailyUsage, inv.unit, "No recent usage")}/day</strong>
                                   </p>
                                   <p className="text-sm text-foreground">
                                     Confirmed orders 7D:{" "}
-                                    <strong>{inv.confirmedDemand7D > 0 ? `${inv.confirmedDemand7D} ${inv.unit}` : "No upcoming orders"}</strong>
+                                    <strong>{inv.confirmedDemand7D > 0 ? formatQuantity(inv.confirmedDemand7D, inv.unit) : "No upcoming orders"}</strong>
+                                  </p>
+                                  <p className="text-sm text-foreground" title="Supply quantity already expected from active or pending bookings.">
+                                    Pending demand:{" "}
+                                    <strong>{pendingConsumption[inv.product] ? formatQuantity(pendingConsumption[inv.product], inv.unit) : "No pending demand"}</strong>
                                   </p>
                                   <p className="text-sm text-foreground">
-                                    Pending demand:{" "}
-                                    <strong>{pendingConsumption[inv.product] ? `${pendingConsumption[inv.product]} ${inv.unit}` : "No pending demand"}</strong>
+                                    Expected use 7D: <strong>{formatExpectedUse7D(inv)}</strong>
                                   </p>
                                   <p className="text-sm text-foreground">
                                     Days left: <strong>{inv.daysUntilEmpty ?? "Not enough data yet"}</strong>
                                   </p>
-                                  <p className="text-sm text-foreground leading-relaxed">{buildNarrative(inv)}</p>
-                                  <p className="text-sm text-muted-foreground leading-relaxed">{buildForecastBasis(inv)}</p>
+                                  <p className="text-sm text-muted-foreground leading-relaxed">
+                                    This forecast uses completed order history and confirmed upcoming bookings to estimate stock usage.
+                                  </p>
                                   {(isAdmin || isStaff) && (
                                     <div className="flex items-center gap-2 pt-2">
                                       <Button size="sm" variant="outline" onClick={() => openEdit(inv)}>
@@ -855,7 +915,7 @@ export default function PredictiveInventoryPage() {
                   })}
               {!loading && filteredInventory.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-base text-muted-foreground">
+                  <td colSpan={8} className="p-8 text-center text-base text-muted-foreground">
                     No inventory items found.
                   </td>
                 </tr>
@@ -864,11 +924,13 @@ export default function PredictiveInventoryPage() {
           </table>
         </div>
 
-        {!loading && filteredInventory.length > TABLE_PAGE_SIZE && (
+        {!loading && filteredInventory.length > tablePageSize && (
           <Paginator
             page={tablePage}
             total={filteredInventory.length}
-            pageSize={TABLE_PAGE_SIZE}
+            pageSize={tablePageSize}
+            pageSizes={TABLE_PAGE_SIZES}
+            onPageSizeChange={setTablePageSize}
             onPage={setTablePage}
           />
         )}
@@ -879,7 +941,7 @@ export default function PredictiveInventoryPage() {
           <div className="p-6 border-b border-border/30">
             <h2 className="text-xl font-semibold text-foreground">Branch Restock Overview</h2>
             <p className="text-base text-muted-foreground mt-1">
-              Compact branch summary for quick decisions.
+              This compares branches by restocking urgency. Click View Branch to filter the forecast table.
             </p>
           </div>
           <div className="overflow-x-auto">
