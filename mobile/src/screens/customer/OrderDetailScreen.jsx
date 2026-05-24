@@ -24,8 +24,10 @@ const STEPS = [
   { key: 'received',       label: 'Order Received',                  icon: 'cube-outline' },
   { key: 'awaiting_price', label: 'Weighing & Price Confirmation',   icon: 'scale-outline' },
   { key: 'washing',        label: 'Washing in Progress',             icon: 'water-outline' },
+  { key: 'drying',         label: 'Drying',                         icon: 'thermometer-outline' },
   { key: 'ready',          label: 'Ready for Pickup / Delivery',     icon: 'bag-check-outline' },
-  { key: 'delivered',      label: 'Delivered Successfully',           icon: 'checkmark-done-circle-outline' },
+  { key: 'delivering',     label: 'Out for Delivery',                icon: 'bicycle-outline' },
+  { key: 'delivered',      label: 'Delivered Successfully',          icon: 'checkmark-done-circle-outline' },
 ];
 
 const STATUS_BADGE = {
@@ -265,8 +267,16 @@ export default function OrderDetailScreen({ route, navigation }) {
 
   const ns  = normalize(order.status);
   const sb  = STATUS_BADGE[ns] || STATUS_BADGE.pending;
-  const idx = STEPS.findIndex(s => s.key === ns);
-  const pct = Math.max(5, Math.round(((idx>=0?idx+1:1)/STEPS.length)*100));
+
+  // For pickup (DROP_OFF) orders, skip the 'delivering' step
+  const isPickupOrder = !order.delivery && (
+    String(order.serviceType || '').toUpperCase() === 'DROP_OFF' ||
+    String(order.serviceMode || '').toUpperCase() === 'PICK_UP'
+  );
+  const stepsForOrder = isPickupOrder ? STEPS.filter(s => s.key !== 'delivering') : STEPS;
+
+  const idx = stepsForOrder.findIndex(s => s.key === ns);
+  const pct = Math.max(5, Math.round(((idx>=0?idx+1:1)/stepsForOrder.length)*100));
 
   const branchKey = String(order?.branchName||order?.branch||'').trim().toLowerCase();
   const branchPhone = branchPhones[branchKey] || '';
@@ -523,13 +533,13 @@ export default function OrderDetailScreen({ route, navigation }) {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Order Progress</Text>
           <View style={{marginTop:14}}>
-            {STEPS.map((step, i) => {
-              const stepIdx  = STEPS.findIndex(s => s.key === ns);
+            {stepsForOrder.map((step, i) => {
+              const stepIdx  = stepsForOrder.findIndex(s => s.key === ns);
               const isDone   = i < stepIdx;
               const isActive = i === stepIdx;
               const isPend   = i > stepIdx;
               const sb2      = STATUS_BADGE[step.key] || STATUS_BADGE.pending;
-              const isLast   = i === STEPS.length - 1;
+              const isLast   = i === stepsForOrder.length - 1;
               return (
                 <View key={step.key} style={{flexDirection:'row',alignItems:'flex-start'}}>
                   {/* Icon column */}
@@ -778,25 +788,26 @@ export default function OrderDetailScreen({ route, navigation }) {
 
       {/* STICKY FOOTER */}
       <View style={styles.stickyFooter}>
-        {/* Driver call button — shown when driver is en route */}
-        {driverVisible && resolvedDriverPhone ? (
+        <View style={styles.footerRow}>
           <TouchableOpacity
-            style={[styles.footerOutline, { marginBottom: 8, borderColor: colors.success }]}
-            onPress={() => call(resolvedDriverPhone)}
+            style={[styles.footerOutline, !branchPhone && { opacity: 0.45, borderColor: colors.border }]}
+            onPress={() => call(branchPhone)}
+            disabled={!branchPhone}
             activeOpacity={0.8}
           >
-            <Ionicons name="call" size={18} color={colors.success}/>
-            <Text style={[styles.footerOutlineText, { color: colors.success }]}>Call Driver</Text>
+            <Ionicons name="call-outline" size={18} color={branchPhone ? colors.primary : colors.disabled}/>
+            <Text style={[styles.footerOutlineText, !branchPhone && { color: colors.disabled }]}>
+              {branchPhone ? 'Call' : 'No Phone'}
+            </Text>
           </TouchableOpacity>
-        ) : null}
-        <View style={styles.footerRow}>
-          <TouchableOpacity style={styles.footerOutline} onPress={() => call(branchPhone)}>
-            <Ionicons name="call-outline" size={18} color={colors.primary}/>
-            <Text style={styles.footerOutlineText}>Call</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.footerOutline} onPress={() => sms(branchPhone)}>
-            <Ionicons name="chatbubble-outline" size={18} color={colors.primary}/>
-            <Text style={styles.footerOutlineText}>Message</Text>
+          <TouchableOpacity
+            style={[styles.footerOutline, !branchPhone && { opacity: 0.45, borderColor: colors.border }]}
+            onPress={() => sms(branchPhone)}
+            disabled={!branchPhone}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="chatbubble-outline" size={18} color={branchPhone ? colors.primary : colors.disabled}/>
+            <Text style={[styles.footerOutlineText, !branchPhone && { color: colors.disabled }]}>Message</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.footerPrimary}
             onPress={() => navigation.navigate('Tracking', { orderId: order.id })}>
@@ -846,7 +857,7 @@ const styles = StyleSheet.create({
   heroDate:    { fontSize:12, color:colors.textSecondary },
   heroAmount:  { fontSize:22, fontWeight:'900', color:colors.text },
   badge:       { alignSelf:'flex-start', paddingHorizontal:10, paddingVertical:4, borderRadius:100 },
-  badgeText:   { fontSize:12, fontWeight:'700' },
+  badgeText:   { fontSize:13, fontWeight:'700' },
 
   // CARDS
   card:     { backgroundColor:'#FFF', borderRadius:16, padding:16, marginBottom:12, borderWidth:1, borderColor:colors.border },
@@ -907,7 +918,7 @@ const styles = StyleSheet.create({
   // INFO ROWS
   infoRow: { flexDirection:'row', justifyContent:'space-between', marginBottom:10, alignItems:'center' },
   infoKey: { fontSize:13, color:colors.textSecondary },
-  infoVal: { fontSize:13, fontWeight:'600', color:colors.text, maxWidth:'60%', textAlign:'right' },
+  infoVal: { fontSize:13, fontWeight:'600', color:colors.text, maxWidth:'60%', textAlign:'right', flexShrink:1 },
   divider: { height:1, backgroundColor:colors.border, marginVertical:10 },
 
   // CODE CARD

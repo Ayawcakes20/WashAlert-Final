@@ -195,6 +195,8 @@ export default function PredictiveInventoryPage() {
   const [selectedTab, setSelectedTab] = useState("All");
   const [branches, setBranches] = useState<string[]>([]);
   const [dynamicBranches, setDynamicBranches] = useState<string[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState<"all" | "Detergent" | "Fabric Conditioner">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "Critical" | "Low Stock" | "Healthy">("all");
 
   // Pagination
   const [tablePage, setTablePage] = useState(1);
@@ -314,10 +316,14 @@ export default function PredictiveInventoryPage() {
   );
 
   const filteredInventory = useMemo(() => {
-    if (isStaff) return inventory.filter((i) => i.branch === userBranch);
-    if (selectedTab === "All") return inventory;
-    return inventory.filter((i) => i.branch === selectedTab);
-  }, [inventory, selectedTab, isStaff, userBranch]);
+    let items: InventoryItem[];
+    if (isStaff) items = inventory.filter((i) => i.branch === userBranch);
+    else if (selectedTab === "All") items = inventory;
+    else items = inventory.filter((i) => i.branch === selectedTab);
+    if (categoryFilter !== "all") items = items.filter((i) => i.category === categoryFilter);
+    if (statusFilter !== "all") items = items.filter((i) => i.status === statusFilter);
+    return items;
+  }, [inventory, selectedTab, isStaff, userBranch, categoryFilter, statusFilter]);
 
   // Reset to page 1 when filter changes
   const handleTabChange = (tab: string) => {
@@ -325,6 +331,8 @@ export default function PredictiveInventoryPage() {
     setTablePage(1);
     setAlertsPage(1);
     setNarrativePage(1);
+    setCategoryFilter("all");
+    setStatusFilter("all");
   };
 
   // Paginated table rows
@@ -649,16 +657,16 @@ export default function PredictiveInventoryPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-2">
                       <span className="text-sm font-bold text-foreground">{item.product} — {item.branch}</span>
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${cfg.dotColor} text-white`}>{card.badge}</span>
+                      <span className={`text-[12px] font-semibold px-2 py-0.5 rounded-full ${cfg.dotColor} text-white`}>{card.badge}</span>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mb-2 text-[11px]">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mb-2 text-[12px]">
                       <div><span className="text-muted-foreground">Current stock:</span> <span className="font-semibold text-foreground">{item.currentStock} {item.unit}</span></div>
                       <div><span className="text-muted-foreground">Est. use (7d):</span> <span className="font-semibold text-foreground">{estUse7 !== null ? `${estUse7} ${item.unit}` : "No data"}</span></div>
                       <div><span className="text-muted-foreground">After 7 days:</span> <span className={`font-semibold ${stockAfter !== null && stockAfter < 0 ? "text-destructive" : "text-foreground"}`}>{stockAfter !== null ? `${stockAfter} ${item.unit}` : "No data"}</span></div>
                       <div><span className="text-muted-foreground">Reorder level:</span> <span className="font-semibold text-foreground">{item.reorderLevel} {item.unit}</span></div>
                     </div>
-                    <p className={`text-xs font-semibold mb-1 ${cfg.textColor}`}>{card.subtitle}</p>
-                    <p className="text-xs text-foreground/80 leading-relaxed">{card.text}</p>
+                    <p className={`text-[13px] font-semibold mb-1 ${cfg.textColor}`}>{card.subtitle}</p>
+                    <p className="text-[13px] text-foreground/80 leading-relaxed">{card.text}</p>
                   </div>
                 </div>
               </div>
@@ -667,6 +675,44 @@ export default function PredictiveInventoryPage() {
 
           {narrativeCards.length > NARRATIVE_PAGE_SIZE && (
             <Paginator page={narrativePage} total={narrativeCards.length} pageSize={NARRATIVE_PAGE_SIZE} onPage={setNarrativePage} />
+          )}
+        </motion.div>
+      )}
+
+      {/* Category + Status filters */}
+      {!loading && (
+        <motion.div variants={anim} className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v as typeof categoryFilter); setTablePage(1); }}>
+              <SelectTrigger className="h-9 w-[180px] text-sm rounded-lg">
+                <SelectValue placeholder="Category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                <SelectItem value="Detergent">Detergent</SelectItem>
+                <SelectItem value="Fabric Conditioner">Fabric Conditioner</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as typeof statusFilter); setTablePage(1); }}>
+            <SelectTrigger className="h-9 w-[160px] text-sm rounded-lg">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="Critical">Critical</SelectItem>
+              <SelectItem value="Low Stock">Low Stock</SelectItem>
+              <SelectItem value="Healthy">Healthy</SelectItem>
+            </SelectContent>
+          </Select>
+          {(categoryFilter !== "all" || statusFilter !== "all") && (
+            <button
+              onClick={() => { setCategoryFilter("all"); setStatusFilter("all"); setTablePage(1); }}
+              className="text-xs font-semibold text-primary hover:underline"
+            >
+              Clear filters
+            </button>
           )}
         </motion.div>
       )}
@@ -701,7 +747,7 @@ export default function PredictiveInventoryPage() {
                       )}
                     </span>
                     {"tip" in h && h.tip && (
-                      <span className="pointer-events-none absolute top-full left-0 mt-1 hidden group-hover/th:block z-50 max-w-[260px] w-max text-xs font-normal text-foreground bg-popover border border-border shadow-xl rounded-xl px-3 py-2 leading-relaxed whitespace-normal">
+                      <span className="pointer-events-none absolute top-full left-0 mt-1 hidden group-hover/th:block z-50 max-w-[280px] w-max text-xs font-normal text-foreground bg-popover border border-border shadow-xl rounded-xl px-3 py-2 leading-relaxed whitespace-normal">
                         {h.tip}
                       </span>
                     )}

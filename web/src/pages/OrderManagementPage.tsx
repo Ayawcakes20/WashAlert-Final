@@ -1822,8 +1822,8 @@ export default function OrderManagementPage() {
                   <h2 className="text-xl font-black tracking-tight truncate">{selectedOrder.orderId}</h2>
                   <p className="text-slate-400 text-[11px] font-medium mt-0.5">{formatDateTime(selectedOrder.createdAt)}</p>
                 </div>
-                <div className="flex flex-col items-end gap-2 shrink-0">
-                  <Badge className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide border-none whitespace-nowrap ${selectedOrder.status === 'READY' || selectedOrder.status === 'PRICE_CONFIRMED' ? 'bg-emerald-500 text-white' :
+                <div className="flex flex-col items-end gap-2 shrink-0 mr-8">
+                  <Badge className={`px-3 py-1.5 rounded-lg text-[12px] font-black uppercase tracking-wide border-none whitespace-nowrap ${selectedOrder.status === 'READY' || selectedOrder.status === 'PRICE_CONFIRMED' ? 'bg-emerald-500 text-white' :
                       selectedOrder.status === 'AWAITING_PRICE_CONFIRMATION' ? 'bg-amber-500 text-white' :
                         selectedOrder.status === 'WASHING' || selectedOrder.status === 'DRYING' ? 'bg-blue-600 text-white' :
                           selectedOrder.status === 'CANCELLED' ? 'bg-red-500 text-white' :
