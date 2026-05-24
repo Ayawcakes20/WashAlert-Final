@@ -1823,7 +1823,7 @@ export default function OrderManagementPage() {
                   <p className="text-slate-400 text-[11px] font-medium mt-0.5">{formatDateTime(selectedOrder.createdAt)}</p>
                 </div>
                 <div className="flex max-w-[220px] flex-col items-end gap-2 shrink-0 text-right">
-                  <Badge className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide border-none whitespace-nowrap ${selectedOrder.status === 'READY' || selectedOrder.status === 'PRICE_CONFIRMED' ? 'bg-emerald-500 text-white' :
+                  <Badge className={`px-3 py-1.5 rounded-lg text-[12px] font-black uppercase tracking-wide border-none whitespace-nowrap ${selectedOrder.status === 'READY' || selectedOrder.status === 'PRICE_CONFIRMED' ? 'bg-emerald-500 text-white' :
                       selectedOrder.status === 'AWAITING_PRICE_CONFIRMATION' ? 'bg-amber-500 text-white' :
                         selectedOrder.status === 'WASHING' || selectedOrder.status === 'DRYING' ? 'bg-blue-600 text-white' :
                           selectedOrder.status === 'CANCELLED' ? 'bg-red-500 text-white' :

@@ -243,6 +243,8 @@ export default function PredictiveInventoryPage() {
   const [selectedTab, setSelectedTab] = useState("All");
   const [branches, setBranches] = useState<string[]>([]);
   const [dynamicBranches, setDynamicBranches] = useState<string[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState<"all" | "Detergent" | "Fabric Conditioner">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "Critical" | "Low Stock" | "Healthy">("all");
   const [tablePage, setTablePage] = useState(1);
   const [tablePageSize, setTablePageSize] = useState(DEFAULT_TABLE_PAGE_SIZE);
   const [showAllAttention, setShowAllAttention] = useState(false);
@@ -340,10 +342,14 @@ export default function PredictiveInventoryPage() {
   }, []);
 
   const filteredInventory = useMemo(() => {
-    if (isStaff) return inventory;
-    if (selectedTab === "All") return inventory;
-    return inventory.filter((i) => i.branch === selectedTab);
-  }, [inventory, selectedTab, isStaff]);
+    let items: InventoryItem[];
+    if (isStaff) items = inventory;
+    else if (selectedTab === "All") items = inventory;
+    else items = inventory.filter((i) => i.branch === selectedTab);
+    if (categoryFilter !== "all") items = items.filter((i) => i.category === categoryFilter);
+    if (statusFilter !== "all") items = items.filter((i) => i.status === statusFilter);
+    return items;
+  }, [inventory, selectedTab, isStaff, categoryFilter, statusFilter]);
 
   const summary = useMemo(() => {
     const critical = filteredInventory.filter((i) => i.status === "Critical").length;
@@ -747,6 +753,44 @@ export default function PredictiveInventoryPage() {
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Category + Status filters */}
+      {!loading && (
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-muted-foreground">Filter:</span>
+            <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v as typeof categoryFilter); setTablePage(1); }}>
+              <SelectTrigger className="h-9 w-[180px] text-sm rounded-lg">
+                <SelectValue placeholder="Category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                <SelectItem value="Detergent">Detergent</SelectItem>
+                <SelectItem value="Fabric Conditioner">Fabric Conditioner</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as typeof statusFilter); setTablePage(1); }}>
+            <SelectTrigger className="h-9 w-[160px] text-sm rounded-lg">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="Critical">Critical</SelectItem>
+              <SelectItem value="Low Stock">Low Stock</SelectItem>
+              <SelectItem value="Healthy">Healthy</SelectItem>
+            </SelectContent>
+          </Select>
+          {(categoryFilter !== "all" || statusFilter !== "all") && (
+            <button
+              onClick={() => { setCategoryFilter("all"); setStatusFilter("all"); setTablePage(1); }}
+              className="text-sm font-semibold text-primary hover:underline"
+            >
+              Clear filters
+            </button>
           )}
         </div>
       )}

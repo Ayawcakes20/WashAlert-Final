@@ -1017,18 +1017,15 @@ export default function BookingScreen({ route, navigation }) {
               {payMethod==='cod'&&<Ionicons name="checkmark-circle" size={18} color="#fff"/>}
             </TouchableOpacity>
 
-            {/* GCash - selectable for test mode */}
-            <TouchableOpacity style={[S.payCard,payMethod==='gcash'&&S.payCardOn]} onPress={()=>setPay('gcash')}>
+            {/* GCash — selectable for testing; saves paymentMethod: 'gcash' only, does not call PayMongo */}
+            <TouchableOpacity style={[S.payCard,payMethod==='gcash'&&S.payCardOn]} onPress={()=>setPay('gcash')} activeOpacity={0.8}>
               <MaterialCommunityIcons name="cellphone-wireless" size={22} color={payMethod==='gcash'?'#fff':colors.primary}/>
               <View style={{flex:1}}>
                 <Text style={[S.payName,payMethod==='gcash'&&S.payNameOn]}>GCash</Text>
-                <Text style={{fontSize:11,color:payMethod==='gcash'?'rgba(255,255,255,0.7)':colors.textSecondary}}>
-                  GCash via PayMongo - Test Mode
-                </Text>
+                <Text style={{fontSize:11,color:payMethod==='gcash'?'rgba(255,255,255,0.7)':colors.textSecondary}}>Testing mode — payment activation pending business permit</Text>
               </View>
               {payMethod==='gcash'&&<Ionicons name="checkmark-circle" size={18} color="#fff"/>}
             </TouchableOpacity>
-            <Text style={S.hint}>GCash testing is enabled; live activation is pending business verification.</Text>
           </View>
         )}
 
@@ -1269,7 +1266,7 @@ const S = StyleSheet.create({
   sumTotalVal:{fontSize:20,fontWeight:'900',color:colors.primary},
   payCard:{flexDirection:'row',alignItems:'center',gap:12,backgroundColor:colors.surface,borderRadius:14,padding:14,marginBottom:10,borderWidth:1.5,borderColor:colors.border},
   payCardOn:{borderColor:colors.primary,backgroundColor:colors.primary},
-  payName:{fontSize:14,fontWeight:'700',color:colors.text,flex:1},
+  payName:{fontSize:14,fontWeight:'700',color:colors.text,flex:1,flexShrink:1},
   payNameOn:{color:'#fff'},
   footer:{backgroundColor:colors.surface,borderTopWidth:1,borderTopColor:colors.border,paddingHorizontal:20,paddingTop:14,gap:12},
   footerTop:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',backgroundColor:colors.primaryLight,borderRadius:14,paddingHorizontal:14,paddingVertical:10},
