@@ -26,8 +26,8 @@ const FAB_OPTS = [
   { id: 'charm', label: 'Charm Fabcon (Basic)',         price: 15 },
   { id: 'downy', label: 'Downy (Premium)',              price: 25 },
 ];
-const VIS_STEPS = ['Location','Service','Extras','Schedule','Confirm'];
-const VIS_MAP   = { 1:1, 2:1, 3:2, 4:3, 5:4, 6:5 };
+const VIS_STEPS = ['Package','Location','Extras','Schedule','Payment','Confirm'];
+const VIS_MAP   = { 1:1, 2:2, 3:2, 4:3, 5:4, 6:5, 7:6 };
 
 // ── Accurate Pricing Engine ──────────────────────────────────────────────────
 // Wash (7kg)=₱80 · Dry (7kg)=₱90 · Ecowash Full (5kg)=₱220
@@ -138,7 +138,7 @@ export default function BookingScreen({ route, navigation }) {
   const [slotsLoad, setSlotsLoad] = useState(false);
   const [rush, setRush]           = useState(false);
   const [notes, setNotes]         = useState('');
-  const [payMethod, setPay]       = useState('gcash');
+  const [payMethod, setPay]       = useState('cod'); // default COD; GCash pending activation
   const [loadSize, setLoadSize]   = useState('SMALL'); // SMALL or LARGE
   const dates                     = useMemo(() => mkDates(14), []);
   const mode                      = SERVICE_MODES.find(m=>m.id===svcMode)||SERVICE_MODES[0];
@@ -323,19 +323,20 @@ export default function BookingScreen({ route, navigation }) {
   };
 
   const ok = ()=>{
-    if(step===1) return !!branch;
-    if(step===2) return !!address?.address;
-    if(step===3) return !!service;
+    if(step===1) return !!service;            // Package
+    if(step===2) return !!branch;             // Service Type + Branch
+    if(step===3) return !!address?.address;   // Address
     // Block Continue while there is a confirmed inventory error from a previous attempt.
-    if(step===4) return !stockError;
-    if(step===5) return !!schTime&&!!slots.find(s=>s.label===schTime&&s.available);
+    if(step===4) return !stockError;          // Extras
+    if(step===5) return !!schTime&&!!slots.find(s=>s.label===schTime&&s.available); // Schedule
+    if(step===6) return !!payMethod;          // Payment Method
     return true;
   };
 
   const next = async ()=>{
-    if(step===1){ if(!branch) return; setStep(needsAddr?2:3); }
-    else if(step===2){ if(!address?.address){ setAddrSheet(true); return; } setStep(3); }
-    else if(step===3){ if(!service) return; setStep(4); }
+    if(step===1){ if(!service) return; setStep(2); }                                     // Package → Location
+    else if(step===2){ if(!branch) return; setStep(needsAddr?3:4); }                    // Location → Address or Extras
+    else if(step===3){ if(!address?.address){ setAddrSheet(true); return; } setStep(4); } // Address → Extras
     else if(step===4){
       // Hard gate: if a stock error was set by a previous attempt, block until selection changes.
       if(stockError){ showToast('Stock unavailable — please adjust your extras before continuing.'); return; }
@@ -360,18 +361,19 @@ export default function BookingScreen({ route, navigation }) {
         setChecking(false);
       }
     }
-    else if(step===5){ if(!ok()) return; setStep(6); }
-    else if(step===6) confirm_();
+    else if(step===5){ if(!ok()) return; setStep(6); }   // Schedule → Payment
+    else if(step===6){ setStep(7); }                      // Payment → Confirm
+    else if(step===7) confirm_();
   };
   const back = ()=>{
     if(step===1){ navigation.goBack(); return; }
-    if(step===3&&!needsAddr){ setStep(1); return; }
+    if(step===4&&!needsAddr){ setStep(2); return; }  // Extras → Location (skip Address)
     setStep(s=>s-1);
   };
 
   const confirm_ = async()=>{
     if(submittingRef.current) return;
-    if(needsAddr&&!address?.address){ Alert.alert('Address Required','Please set an address.',[{text:'Set',onPress:()=>{setStep(2);setAddrSheet(true);}},{text:'Cancel',style:'cancel'}]); return; }
+    if(needsAddr&&!address?.address){ Alert.alert('Address Required','Please set an address.',[{text:'Set',onPress:()=>{setStep(3);setAddrSheet(true);}},{text:'Cancel',style:'cancel'}]); return; }
     // Check if any selected supply is out of stock; ask user to confirm or cancel.
     let submitDet = det, submitFab = fab;
     if(branch?.name && (det!=='none' || fab!=='none')){
@@ -465,7 +467,7 @@ export default function BookingScreen({ route, navigation }) {
         // Set inline banner AND show toast so the user gets immediate feedback
         setStockError(msg);
         showToast(msg); // toast tells the user which item failed
-        setStep(4); // return to Extras — ok() now blocks Continue until selection changes
+        setStep(4); // return to Extras (step 4) — ok() now blocks Continue until selection changes
       } else {
         Alert.alert('Booking Failed', msg);
       }
@@ -504,8 +506,8 @@ export default function BookingScreen({ route, navigation }) {
           {(submitting||checking)
             ?<ActivityIndicator color="#fff" size="small"/>
             :<View style={{flexDirection:'row',alignItems:'center',gap:8}}>
-                <Text style={S.contTxt}>{step===6?'Confirm Booking':'Continue'}</Text>
-                {step!==6&&<Ionicons name="arrow-forward" size={16} color="#fff"/>}
+                <Text style={S.contTxt}>{step===7?'Confirm Booking':'Continue'}</Text>
+                {step!==7&&<Ionicons name="arrow-forward" size={16} color="#fff"/>}
               </View>}
         </TouchableOpacity>
       </View>
@@ -516,12 +518,12 @@ export default function BookingScreen({ route, navigation }) {
 
   return(
     <SafeAreaView style={S.container} edges={['top']}>
-      <AddressPickerSheet visible={addrSheet} title="Pickup & Delivery Address" onConfirm={a=>{setAddrSheet(false);setAddress(a);if(step===2)setStep(3);}} onClose={()=>setAddrSheet(false)} initialValue={address} fallbackCoordinate={branch?.latitude?{latitude:Number(branch.latitude),longitude:Number(branch.longitude)}:null}/>
+      <AddressPickerSheet visible={addrSheet} title="Pickup & Delivery Address" onConfirm={a=>{setAddrSheet(false);setAddress(a);if(step===3)setStep(4);}} onClose={()=>setAddrSheet(false)} initialValue={address} fallbackCoordinate={branch?.latitude?{latitude:Number(branch.latitude),longitude:Number(branch.longitude)}:null}/>
       <View style={S.hdr}><Text style={S.hdrTitle}>New Booking</Text><Text style={S.hdrSub}>Step {vis} of {VIS_STEPS.length}</Text></View>
       <Stepper/>
       <ScrollView ref={scrollRef} style={{flex:1}} contentContainerStyle={S.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
-        {step===1&&(
+        {step===2&&(
           <View>
             <Text style={S.q}>{"Let's start your booking"}</Text>
             <Text style={S.hint}>Select how you want the service and choose a branch near you.</Text>
@@ -544,7 +546,7 @@ export default function BookingScreen({ route, navigation }) {
           </View>
         )}
 
-        {step===2&&(
+        {step===3&&(
           <View>
             <Text style={S.q}>What is your address?</Text>
             <Text style={S.hint}>We will pick up your laundry from here and deliver it back clean.</Text>
@@ -568,9 +570,9 @@ export default function BookingScreen({ route, navigation }) {
           </View>
         )}
 
-        {step===3&&(
+        {step===1&&(
           <View>
-            <Text style={S.q}>Choose a service</Text>
+            <Text style={S.q}>Choose a package</Text>
             <Text style={S.hint}>Select the laundry package that fits your needs.</Text>
 
             <Text style={S.sec}>Laundry Package</Text>
@@ -944,6 +946,35 @@ export default function BookingScreen({ route, navigation }) {
 
         {step===6&&(
           <View style={{gap:16}}>
+            <Text style={S.q}>Payment Method</Text>
+            <Text style={S.hint}>Choose how you will pay for your laundry service.</Text>
+
+            {/* COD — available */}
+            <TouchableOpacity style={[S.payCard,payMethod==='cod'&&S.payCardOn]} onPress={()=>setPay('cod')}>
+              <MaterialCommunityIcons name="cash" size={22} color={payMethod==='cod'?'#fff':colors.primary}/>
+              <View style={{flex:1}}>
+                <Text style={[S.payName,payMethod==='cod'&&S.payNameOn]}>Cash on Delivery / Pick Up</Text>
+                <Text style={{fontSize:11,color:payMethod==='cod'?'rgba(255,255,255,0.7)':colors.textSecondary}}>Pay when your laundry is delivered or at the branch</Text>
+              </View>
+              {payMethod==='cod'&&<Ionicons name="checkmark-circle" size={18} color="#fff"/>}
+            </TouchableOpacity>
+
+            {/* GCash — coming soon, not selectable */}
+            <View style={[S.payCard,{opacity:0.5}]}>
+              <MaterialCommunityIcons name="cellphone-wireless" size={22} color={colors.textSecondary}/>
+              <View style={{flex:1}}>
+                <Text style={[S.payName,{color:colors.textSecondary}]}>GCash</Text>
+                <Text style={{fontSize:11,color:colors.textSecondary}}>Coming soon — pending payment activation</Text>
+              </View>
+              <View style={{backgroundColor:'#F3F4F6',borderRadius:8,paddingHorizontal:8,paddingVertical:3}}>
+                <Text style={{fontSize:10,fontWeight:'700',color:colors.textSecondary}}>Soon</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {step===7&&(
+          <View style={{gap:16}}>
             <Text style={S.q}>Review & Confirm</Text>
             <Text style={S.hint}>Check your booking before submitting. Final price will be confirmed at the branch.</Text>
             
@@ -994,17 +1025,14 @@ export default function BookingScreen({ route, navigation }) {
               <Text style={[S.pricingInfoText,{flex:1}]}>Final amount confirmed after weighing at branch. You will receive a notification to approve before washing begins.</Text>
             </View>
 
-            <Text style={S.sec}>Payment Method</Text>
-            {['gcash','cod'].map(p=>(
-              <TouchableOpacity key={p} style={[S.payCard,payMethod===p&&S.payCardOn]} onPress={()=>setPay(p)}>
-                <MaterialCommunityIcons name={p==='gcash'?'cellphone-wireless':'cash'} size={22} color={payMethod===p?'#fff':colors.primary}/>
-                <View style={{flex:1}}>
-                  <Text style={[S.payName,payMethod===p&&S.payNameOn]}>{p==='gcash'?'GCash (Via PayMongo)':'Cash on Delivery'}</Text>
-                  {p==='gcash' && <Text style={{fontSize:10, color:payMethod===p?'rgba(255,255,255,0.7)':colors.textTertiary}}>Pay after staff confirms weight</Text>}
-                </View>
-                {payMethod===p&&<Ionicons name="checkmark-circle" size={18} color={payMethod===p?'#fff':colors.primary}/>}
-              </TouchableOpacity>
-            ))}
+            {/* Payment Method — read-only summary (selected on previous step) */}
+            <View style={S.summarySection}>
+              <View style={S.summaryHeader}>
+                <Ionicons name="cash-outline" size={14} color={colors.primary}/>
+                <Text style={S.summaryTitle}>PAYMENT</Text>
+              </View>
+              <Row label="Method" value={payMethod==='cod'?'Cash on Delivery / Pick Up':'GCash'}/>
+            </View>
           </View>
         )}
 

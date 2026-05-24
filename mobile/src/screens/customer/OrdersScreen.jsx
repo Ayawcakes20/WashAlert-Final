@@ -25,35 +25,22 @@ const FILTER_TO_API_STATUS = {
   Cancelled: 'cancelled',
 };
 
-const getStatusColor = (status) => {
-  switch (status) {
-    case 'pending': return colors.warning;
-    case 'washing':
-    case 'drying':
-    case 'received': return colors.primary;
-    case 'ready': return colors.accent;
-    case 'delivering': return colors.info;
-    case 'delivered':
-    case 'completed': return colors.success;
-    case 'cancelled': return colors.error;
-    default: return colors.textSecondary;
-  }
+const STATUS_STYLES = {
+  pending:        { bg: '#FEF3C7', text: '#92400E', label: 'Pending' },
+  received:       { bg: '#DBEAFE', text: '#1E40AF', label: 'Received' },
+  awaiting_price: { bg: '#FFF7ED', text: '#C2410C', label: 'Awaiting Confirmation' },
+  washing:        { bg: '#CFFAFE', text: '#155E75', label: 'Washing' },
+  drying:         { bg: '#E0F2FE', text: '#075985', label: 'Drying' },
+  ready:          { bg: '#F0FDF4', text: '#166534', label: 'Ready' },
+  delivering:     { bg: '#FEF9C3', text: '#713F12', label: 'Out for Delivery' },
+  delivered:      { bg: '#DCFCE7', text: '#14532D', label: 'Delivered' },
+  completed:      { bg: '#F0FDF4', text: '#14532D', label: 'Completed' },
+  cancelled:      { bg: '#FEE2E2', text: '#991B1B', label: 'Cancelled' },
 };
 
-const getStatusLabel = (status) => {
-  const labels = {
-    pending: 'Pending',
-    received: 'Received',
-    washing: 'Washing',
-    drying: 'Drying',
-    ready: 'Ready',
-    delivering: 'Delivering',
-    delivered: 'Completed',
-    completed: 'Completed',
-    cancelled: 'Cancelled',
-  };
-  return labels[status] || status;
-};
+const getStatusStyle = (status) =>
+  STATUS_STYLES[String(status || '').toLowerCase()] ??
+  { bg: '#F3F4F6', text: '#374151', label: String(status || 'Unknown') };
 
 const formatDateTimeLabel = (value) => {
   const parsed = value ? new Date(value) : null;
@@ -67,7 +54,7 @@ const formatDateTimeLabel = (value) => {
     hour: 'numeric',
     minute: '2-digit',
   });
-  return `${dateLabel} • ${timeLabel}`;
+  return `${dateLabel} ï¿½ ${timeLabel}`;
 };
 
 const OrdersScreen = ({ navigation }) => {
@@ -136,16 +123,16 @@ const OrdersScreen = ({ navigation }) => {
     <TouchableOpacity
       onPress={() => navigation.navigate('OrderDetail', { orderId: item.id })}
       activeOpacity={0.7}
-      style={[styles.orderCard, { borderLeftColor: getStatusColor(item.status) }]}
+      style={[styles.orderCard, { borderLeftColor: getStatusStyle(item.status).text }]}
     >
       <View style={styles.orderHeader}>
         <View style={{ flex: 1 }}>
           <Text style={styles.trackingNumber}>{item.trackingNumber}</Text>
           <Text style={styles.branchName}>{item.branchName}</Text>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(item.status)}1A` }]}>
-          <Text style={[styles.statusBadgeText, { color: getStatusColor(item.status) }]}>
-            {getStatusLabel(item.status)}
+        <View style={[styles.statusBadge, { backgroundColor: getStatusStyle(item.status).bg }]}>
+          <Text style={[styles.statusBadgeText, { color: getStatusStyle(item.status).text }]}>
+            {getStatusStyle(item.status).label}
           </Text>
         </View>
       </View>
@@ -153,11 +140,15 @@ const OrdersScreen = ({ navigation }) => {
       <View style={styles.orderDetails}>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Service</Text>
-          <Text style={styles.detailValue}>{item.serviceType}</Text>
+          <Text style={styles.detailValue}>{item.serviceName || item.serviceType || 'â€”'}</Text>
+        </View>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Type</Text>
+          <Text style={styles.detailValue}>{item.serviceMode === 'PICKUP_DELIVERY' ? 'Delivery' : 'Pick Up'}</Text>
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Amount</Text>
-          <Text style={styles.detailValue}>PHP {item.amountPaid || item.amount}</Text>
+          <Text style={styles.detailValue}>PHP {(item.finalPrice ?? item.amountPaid ?? item.amount ?? 0).toLocaleString()}</Text>
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Date</Text>
