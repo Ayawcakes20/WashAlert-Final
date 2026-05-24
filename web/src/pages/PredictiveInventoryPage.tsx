@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Package, AlertTriangle, TrendingUp, Droplets, Sparkles,
   Plus, Pencil, Trash2, Loader2, MapPin, CalendarClock, RefreshCw,
@@ -66,6 +66,8 @@ interface InventoryItem {
   daysUntilEmpty: number | null;
   projectedAfter7Days: number;
   status: "Healthy" | "Low Stock" | "Critical";
+  historicalDailyUsage: number;
+  confirmedDemand7D: number;
 }
 
 interface NarrativeCard {
@@ -74,6 +76,7 @@ interface NarrativeCard {
   text: string;
   badge: string;
   subtitle: string;
+  basis: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -89,9 +92,28 @@ function getStatus(currentStock: number, reorderLevel: number, stockAfter7Days: 
   return "Healthy";
 }
 
+// Builds the mandatory "Forecast basis" line shown on every narrative card.
+// Makes the two-layer model transparent: 60% history + 40% confirmed bookings.
+function buildBasis(item: InventoryItem): string {
+  const { unit, historicalDailyUsage: hist, confirmedDemand7D: confirmed, forecastedUsage: projected } = item;
+  const hasHist = hist > 0.001;
+  const hasFuture = confirmed > 0.001;
+  if (hasHist && hasFuture) {
+    return `Forecast basis: ${hist.toFixed(1)} ${unit}/day from the last 30 days of completed orders (60% weight) + ${confirmed.toFixed(0)} ${unit} already requested in upcoming confirmed bookings (40% weight) = projected ${projected.toFixed(1)} ${unit}/day.`;
+  }
+  if (hasHist) {
+    return `Forecast basis: ${hist.toFixed(1)} ${unit}/day average from the last 30 days of completed orders. No upcoming bookings yet for this item.`;
+  }
+  if (hasFuture) {
+    return `Forecast basis: ${confirmed.toFixed(0)} ${unit} already requested in upcoming confirmed bookings (next 7 days). No historical usage data yet.`;
+  }
+  return `No forecast basis available — no completed orders or upcoming bookings recorded for this item yet.`;
+}
+
 function generateNarrative(item: InventoryItem): NarrativeCard {
   const { currentStock, unit, forecastedUsage: avgDailyUsage, reorderLevel, daysUntilEmpty } = item;
   const stockAfter7 = currentStock - avgDailyUsage * 7;
+  const basis = buildBasis(item);
 
   if (currentStock <= reorderLevel || stockAfter7 < 0) {
     return {
@@ -100,6 +122,7 @@ function generateNarrative(item: InventoryItem): NarrativeCard {
       text: `Current stock is ${currentStock} ${unit}. Your reorder level is ${reorderLevel} ${unit}. Stock has already reached or will cross the reorder level within 7 days. Recommended immediate restock: reorder at least ${reorderLevel} units now.`,
       badge: currentStock <= reorderLevel ? "Already at reorder level" : `Runs out in ~${Math.max(0, Math.floor(currentStock / (avgDailyUsage || 1)))} day(s)`,
       subtitle: "Reorder immediately",
+      basis,
     };
   }
 
@@ -110,6 +133,7 @@ function generateNarrative(item: InventoryItem): NarrativeCard {
       text: `Current stock is ${currentStock} ${unit}. No recent usage data is available for this item at this branch. No restock calculation can be made — monitor manually.`,
       badge: "No usage data",
       subtitle: "No action needed",
+      basis,
     };
   }
 
@@ -117,18 +141,20 @@ function generateNarrative(item: InventoryItem): NarrativeCard {
     return {
       item,
       tier: "monitor",
-      text: `Current stock is ${currentStock} ${unit}. Average daily usage is ${avgDailyUsage.toFixed(1)} ${unit}/day based on historical order data. At this rate, stock will last approximately ${daysUntilEmpty} more days before reaching the reorder level of ${reorderLevel} ${unit}. Plan a restock within the next 1–2 weeks.`,
+      text: `Current stock is ${currentStock} ${unit}. Projected daily usage is ${avgDailyUsage.toFixed(1)} ${unit}/day. At this rate, stock will last approximately ${daysUntilEmpty} more days before reaching the reorder level of ${reorderLevel} ${unit}. Plan a restock within the next 1–2 weeks.`,
       badge: `~${daysUntilEmpty} days before reorder level`,
       subtitle: "Plan restock soon",
+      basis,
     };
   }
 
   return {
     item,
     tier: "healthy",
-    text: `Current stock is ${currentStock} ${unit}. Average daily usage is ${avgDailyUsage.toFixed(1)} ${unit}/day. Stock will last approximately ${daysUntilEmpty} days — well above the reorder level of ${reorderLevel} ${unit}. No restocking action required.`,
+    text: `Current stock is ${currentStock} ${unit}. Projected daily usage is ${avgDailyUsage.toFixed(1)} ${unit}/day. Stock will last approximately ${daysUntilEmpty} days — well above the reorder level of ${reorderLevel} ${unit}. No restocking action required.`,
     badge: `${daysUntilEmpty} days — sufficient stock`,
     subtitle: "No action needed",
+    basis,
   };
 }
 
@@ -184,7 +210,6 @@ export default function PredictiveInventoryPage() {
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [forecast, setForecast] = useState<Array<{ itemId: number; itemName: string; branch: string; narrative?: string; estimatedDaysUntilStockout?: number }>>([]);
-  const [forecastData, setForecastData] = useState<Array<{ branch: string; detergent: number; conditioner: number }>>([]);
   const [pendingConsumption, setPendingConsumption] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -243,14 +268,15 @@ export default function PredictiveInventoryPage() {
       setPendingConsumption(pending || {});
 
       const lowStockIds = new Set((alerts || []).map((a) => a.id));
-      const forecastMap = new Map<number, { usage: number; daysLeft: number | null; narrative?: string }>();
+      const forecastMap = new Map<number, { usage: number; daysLeft: number | null; narrative?: string; historical: number; confirmed7D: number }>();
       (forecastResp || []).forEach((f) => {
-        const usage = Number(f.estimatedDailyUsage || 0);
-        const rawDays = Number(f.estimatedDaysUntilStockout || 0);
+        const usage = Number(f.projectedDailyUsage ?? f.estimatedDailyUsage ?? 0);
         forecastMap.set(f.itemId, {
           usage,
           daysLeft: calcDaysRemaining(Number(f.currentStock || 0), usage),
           narrative: f.narrative,
+          historical: Number(f.historicalDailyUsage ?? f.estimatedDailyUsage ?? 0),
+          confirmed7D: Number(f.confirmedDemand7D ?? 0),
         });
       });
       setForecast(forecastResp || []);
@@ -268,26 +294,10 @@ export default function PredictiveInventoryPage() {
       const uniqueBranches = Array.from(new Set(mappedInventory.map((i) => i.branch))).sort();
       setBranches(uniqueBranches);
 
-      const grouped = new Map<string, { detergent: number; conditioner: number }>();
-      mappedInventory.forEach((row) => {
-        if (!grouped.has(row.branch)) grouped.set(row.branch, { detergent: 0, conditioner: 0 });
-        const cur = grouped.get(row.branch)!;
-        if (row.type === "Detergent") cur.detergent += row.forecastedUsage;
-        if (row.type === "Fabric Conditioner") cur.conditioner += row.forecastedUsage;
-      });
-
       setInventory(mappedInventory);
-      setForecastData(
-        Array.from(grouped.entries()).map(([branch, v]) => ({
-          branch,
-          detergent: Number(v.detergent.toFixed(2)),
-          conditioner: Number(v.conditioner.toFixed(2)),
-        }))
-      );
     } catch (err: any) {
       setError(err?.message || "Unable to load inventory data.");
       setInventory([]);
-      setForecastData([]);
     }
   };
 
@@ -382,6 +392,20 @@ export default function PredictiveInventoryPage() {
 
     return { perItemData: data, chartLines: lines };
   }, [filteredInventory]);
+
+  // Branch comparison: products as row groups, branches as columns
+  const branchComparison = useMemo(() => {
+    const source = isStaff ? inventory.filter((i) => i.branch === userBranch) : inventory;
+    const branchCols = Array.from(new Set(source.map((i) => i.branch))).sort();
+    const productNames = Array.from(new Set(source.map((i) => i.product))).sort();
+    const lookup = new Map<string, InventoryItem>();
+    source.forEach((i) => lookup.set(`${i.product}||${i.branch}`, i));
+    const products = productNames.map((product) => ({
+      product,
+      cells: branchCols.map((branch) => lookup.get(`${product}||${branch}`) ?? null),
+    }));
+    return { branchCols, products };
+  }, [inventory, isStaff, userBranch]);
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
 
@@ -483,6 +507,28 @@ export default function PredictiveInventoryPage() {
         </div>
       </motion.div>
 
+      {/* How the forecast is calculated — always visible (two-layer model) */}
+      <motion.div variants={anim} className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <TrendingUp className="h-4 w-4 text-primary" />
+          <span className="text-sm font-semibold text-foreground">How the forecast is calculated</span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="rounded-xl bg-background/70 border border-border/30 p-3">
+            <p className="text-xs font-semibold text-foreground mb-1">Layer 1 — Historical usage</p>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">Average daily consumption from the past 30 days of completed orders. Shows how fast stock is actually being used.</p>
+          </div>
+          <div className="rounded-xl bg-background/70 border border-border/30 p-3">
+            <p className="text-xs font-semibold text-foreground mb-1">Layer 2 — Confirmed bookings</p>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">Customers choose their detergent/fabric conditioner when they book. We sum that demand for the next 7 days — known before it happens.</p>
+          </div>
+          <div className="rounded-xl bg-background/70 border border-border/30 p-3">
+            <p className="text-xs font-semibold text-foreground mb-1">Combined projection</p>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">60% historical trend + 40% confirmed demand = projected daily usage → days until each item reaches its reorder level.</p>
+          </div>
+        </div>
+      </motion.div>
+
       {/* How to Read This Page */}
       <motion.div variants={anim} className="rounded-2xl border border-border/40 overflow-hidden">
         <button
@@ -518,11 +564,12 @@ export default function PredictiveInventoryPage() {
               ))}
             </div>
             <div className="rounded-lg bg-primary/5 border border-primary/10 p-3 text-xs text-foreground/80 space-y-1">
-              <p className="font-semibold text-foreground">Basis for the forecast:</p>
-              <p>· <strong>Average daily usage</strong> = Total used in last 30 days ÷ 30</p>
-              <p>· <strong>Days remaining</strong> = Current stock ÷ Average daily usage</p>
-              <p>· <strong>Forecast line</strong> = Current stock − (Average daily usage × Day number)</p>
-              <p className="text-muted-foreground pt-1">All forecasts are based on actual completed order data from your branch. If an item shows "No data", it means no usage has been logged yet.</p>
+              <p className="font-semibold text-foreground">Basis for the forecast (two-layer model):</p>
+              <p>· <strong>Historical daily usage</strong> = Total used in last 30 days ÷ 30</p>
+              <p>· <strong>Confirmed demand (7d)</strong> = detergent/fabcon already requested in upcoming bookings</p>
+              <p>· <strong>Projected daily usage</strong> = 60% historical + 40% (confirmed demand ÷ 7)</p>
+              <p>· <strong>Days remaining</strong> = Current stock ÷ Projected daily usage</p>
+              <p className="text-muted-foreground pt-1">If an item shows "No data", neither completed orders nor upcoming bookings have been recorded for it yet.</p>
             </div>
           </div>
         )}
@@ -627,10 +674,13 @@ export default function PredictiveInventoryPage() {
       {/* Forecast Narrative — tiered cards (above 7-day table per Issue 5) */}
       {!loading && narrativeCards.length > 0 && (
         <motion.div variants={anim} className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-              <Info className="h-4 w-4" /> Inventory Recommendations
+              <Info className="h-4 w-4" /> Inventory Forecast Narrative
             </h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Plain-language explanation of each item's forecast — what the numbers mean, where they come from, and what action to take.
+            </p>
           </div>
 
           {pagedNarrative.map((card, idx) => {
@@ -651,14 +701,26 @@ export default function PredictiveInventoryPage() {
                       <span className="text-sm font-bold text-foreground">{item.product} — {item.branch}</span>
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${cfg.dotColor} text-white`}>{card.badge}</span>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mb-2 text-[11px]">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-x-4 gap-y-1 mb-2 text-[11px]">
                       <div><span className="text-muted-foreground">Current stock:</span> <span className="font-semibold text-foreground">{item.currentStock} {item.unit}</span></div>
-                      <div><span className="text-muted-foreground">Est. use (7d):</span> <span className="font-semibold text-foreground">{estUse7 !== null ? `${estUse7} ${item.unit}` : "No data"}</span></div>
+                      <div><span className="text-muted-foreground">Confirmed (7d):</span> <span className="font-semibold text-foreground">{item.confirmedDemand7D > 0 ? `${item.confirmedDemand7D} ${item.unit}` : "—"}</span></div>
+                      <div><span className="text-muted-foreground">Proj. use (7d):</span> <span className="font-semibold text-foreground">{estUse7 !== null ? `${estUse7} ${item.unit}` : "No data"}</span></div>
                       <div><span className="text-muted-foreground">After 7 days:</span> <span className={`font-semibold ${stockAfter !== null && stockAfter < 0 ? "text-destructive" : "text-foreground"}`}>{stockAfter !== null ? `${stockAfter} ${item.unit}` : "No data"}</span></div>
                       <div><span className="text-muted-foreground">Reorder level:</span> <span className="font-semibold text-foreground">{item.reorderLevel} {item.unit}</span></div>
                     </div>
                     <p className={`text-xs font-semibold mb-1 ${cfg.textColor}`}>{card.subtitle}</p>
-                    <p className="text-xs text-foreground/80 leading-relaxed">{card.text}</p>
+                    <p className="text-xs text-foreground/80 leading-relaxed mb-2">{card.text}</p>
+                    {/* Forecast basis — mandatory transparency line */}
+                    <div className="flex items-start gap-1.5 rounded-lg bg-background/60 border border-border/30 px-2.5 py-1.5">
+                      <TrendingUp className="h-3.5 w-3.5 text-primary flex-shrink-0 mt-0.5" />
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">{card.basis}</p>
+                    </div>
+                    <button
+                      onClick={() => scrollToChartAndHighlight(item.id)}
+                      className="mt-2 text-[11px] font-semibold text-primary hover:underline"
+                    >
+                      See in chart →
+                    </button>
                   </div>
                 </div>
               </div>
@@ -686,8 +748,9 @@ export default function PredictiveInventoryPage() {
                   { label: "Category" },
                   { label: "Current Stock", tip: "The total quantity of this item currently available at this branch, including any pending incoming stock." },
                   { label: "Pending Orders", tip: "Stock that has been ordered but not yet received. This is added to Current Stock to show the full expected quantity." },
+                  { label: "Confirmed Bookings (7D)", tip: "Total detergent/fabric conditioner already requested by customers in confirmed bookings scheduled for the next 7 days. This is known future demand that feeds Layer 2 of the forecast." },
                   { label: "Unit" },
-                  { label: "Est. Usage (7 Days)", tip: "Estimated consumption over the next 7 days, calculated from your branch's average daily usage over the past 30 days of completed orders." },
+                  { label: "Projected Use (7 Days)", tip: "Estimated consumption over the next 7 days, combining the 30-day historical average (60%) and confirmed upcoming booking demand (40%)." },
                   { label: "Stock After 7 Days", tip: "Predicted remaining stock after 7 days of normal usage. A negative number (shown in red) means the item will run out before 7 days are up." },
                   { label: "Reorder Level", tip: "The minimum stock quantity at which a restock should be triggered. When Current Stock falls to or below this level, the item is marked Critical." },
                   { label: "Status", tip: "Healthy: stock is well above reorder level. Low Stock: stock is approaching reorder level (within 1.5×). Critical: stock is at or below reorder level." },
@@ -713,7 +776,7 @@ export default function PredictiveInventoryPage() {
               {loading
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i} className="border-b border-border/20">
-                      {Array.from({ length: 10 }).map((_, j) => (
+                      {Array.from({ length: 11 }).map((_, j) => (
                         <td key={j} className="p-4"><Skeleton className="h-4 w-full rounded" /></td>
                       ))}
                     </tr>
@@ -759,6 +822,11 @@ export default function PredictiveInventoryPage() {
                         <td className="p-4">
                           {(pendingConsumption[inv.product] ?? 0) > 0
                             ? <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">{pendingConsumption[inv.product]} expected</span>
+                            : <span className="text-xs text-muted-foreground">—</span>}
+                        </td>
+                        <td className="p-4">
+                          {inv.confirmedDemand7D > 0
+                            ? <span className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 bg-sky-500/10 px-2 py-0.5 rounded-full"><CalendarClock className="h-3 w-3" />{inv.confirmedDemand7D} {inv.unit}</span>
                             : <span className="text-xs text-muted-foreground">—</span>}
                         </td>
                         <td className="p-4 text-muted-foreground">{inv.unit}</td>
@@ -820,7 +888,7 @@ export default function PredictiveInventoryPage() {
                     );
                   })}
               {!loading && filteredInventory.length === 0 && (
-                <tr><td colSpan={10} className="p-8 text-center text-sm text-muted-foreground">No inventory items found.</td></tr>
+                <tr><td colSpan={11} className="p-8 text-center text-sm text-muted-foreground">No inventory items found.</td></tr>
               )}
             </tbody>
           </table>
@@ -901,15 +969,15 @@ export default function PredictiveInventoryPage() {
           <h2 className="text-lg font-semibold text-foreground mb-0.5">30-Day Stock Forecast — Same Items as Table Above</h2>
           <p className="text-xs text-muted-foreground mb-3">Each line below corresponds to one row in the 7-Day Forecast table. The dashed lines show each item's reorder level.</p>
           <div className="rounded-lg bg-blue-50 border border-blue-100 p-3 mb-4 text-xs text-blue-800 leading-relaxed">
-            Each line shows how much stock is predicted to remain each day. The <strong>dashed lines</strong> are reorder thresholds — when a colored line crosses its dashed line, that item needs restocking. Based on: average daily usage × number of days projected.
+            Each line shows how much stock is predicted to remain each day. The <strong>dashed lines</strong> are reorder thresholds — when a colored line crosses its dashed line, that item needs restocking. Steeper downward slope = faster consumption = restock sooner. Basis: 60% from 30-day usage history + 40% from confirmed upcoming bookings (customers already chose their detergent/fabcon when they booked — we know this demand before it happens).
             {selectedTab === "All" && <span className="block mt-1 font-medium">Showing top 5 most critical items across all branches.</span>}
           </div>
           {loading ? (
-            <Skeleton className="h-[400px] w-full rounded-xl" />
+            <Skeleton className="h-[450px] w-full rounded-xl" />
           ) : chartLines.length === 0 ? (
-            <div className="h-[400px] flex items-center justify-center text-sm text-muted-foreground">No usage data available for the selected filter.</div>
+            <div className="h-[450px] flex items-center justify-center text-sm text-muted-foreground">No usage data available for the selected filter.</div>
           ) : (
-            <ResponsiveContainer width="100%" height={400}>
+            <ResponsiveContainer width="100%" height={450}>
               <LineChart data={perItemData} margin={{ top: 10, right: 20, left: 15, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(214, 25%, 90%)" />
                 <XAxis dataKey="day" tick={{ fontSize: 9, fill: "hsl(215, 16%, 47%)" }} interval={4} />
@@ -951,52 +1019,71 @@ export default function PredictiveInventoryPage() {
           )}
         </motion.div>
 
-        {/* Branch Consumption Comparison Table */}
-        {(isAdmin || isStaff) && forecastData.length > 0 && (
+        {/* Branch Consumption Comparison Table — per item, branches as columns */}
+        {(isAdmin || isStaff) && branchComparison.products.length > 0 && (
           <motion.div variants={anim} className="glass-card rounded-2xl p-6">
             <h2 className="text-lg font-semibold text-foreground mb-1">Branch Consumption Comparison</h2>
-            <p className="text-xs text-muted-foreground mb-4">Estimated daily usage of detergent and fabric conditioner per branch. Color indicates consumption intensity.</p>
+            <p className="text-xs text-muted-foreground mb-1">Per-item comparison across branches, based on 30-day historical usage + confirmed upcoming bookings.</p>
+            <p className="text-[11px] text-muted-foreground mb-4 flex flex-wrap gap-x-4 gap-y-1">
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500 flex-shrink-0" /> Healthy</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-500 flex-shrink-0" /> Low Stock</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-destructive flex-shrink-0" /> Critical</span>
+            </p>
             {loading ? (
-              <Skeleton className="h-[180px] w-full rounded-xl" />
+              <Skeleton className="h-[220px] w-full rounded-xl" />
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm border-collapse">
+                <table className="w-full text-sm border-collapse min-w-[640px]">
                   <thead>
                     <tr className="border-b border-border/30 bg-muted/20">
-                      <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Supply Type</th>
-                      {forecastData.map((row) => (
-                        <th key={row.branch} className="text-center p-3 font-medium text-muted-foreground whitespace-nowrap">{row.branch}</th>
+                      <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Item / Metric</th>
+                      {branchComparison.branchCols.map((b) => (
+                        <th key={b} className="text-center p-3 font-medium text-muted-foreground whitespace-nowrap">{b}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {(["detergent", "conditioner"] as const).map((key) => {
-                      const label = key === "detergent" ? "Detergent" : "Fabric Conditioner";
-                      const values = forecastData.map((r) => r[key]);
-                      const max = Math.max(...values, 0.001);
-                      return (
-                        <tr key={key} className="border-b border-border/20 hover:bg-muted/20 transition-colors">
-                          <td className="p-3 font-medium text-foreground">{label}</td>
-                          {forecastData.map((row) => {
-                            const val = row[key];
-                            const ratio = val / max;
-                            const bgClass = val === 0 ? "bg-muted/30 text-muted-foreground" : ratio >= 0.8 ? "bg-destructive/15 text-destructive font-semibold" : ratio >= 0.5 ? "bg-amber-500/15 text-amber-700 font-semibold" : "bg-emerald-500/10 text-emerald-700 font-semibold";
-                            return (
-                              <td key={row.branch} className={`p-3 text-center rounded-sm ${bgClass}`}>
-                                {val > 0 ? `${val} units/day` : "—"}
-                              </td>
-                            );
-                          })}
+                    {branchComparison.products.map(({ product, cells }) => (
+                      <Fragment key={product}>
+                        <tr key={`${product}-head`} className="bg-muted/10 border-b border-border/20">
+                          <td colSpan={branchComparison.branchCols.length + 1} className="p-2.5 px-3 font-semibold text-foreground text-[13px]">{product}</td>
                         </tr>
-                      );
-                    })}
+                        <tr key={`${product}-stock`} className="border-b border-border/10">
+                          <td className="p-2.5 px-3 pl-6 text-muted-foreground text-[13px]">Current Stock</td>
+                          {cells.map((c, i) => (
+                            <td key={i} className="p-2.5 text-center text-[13px] text-foreground">{c ? `${c.currentStock} ${c.unit}` : "—"}</td>
+                          ))}
+                        </tr>
+                        <tr key={`${product}-use`} className="border-b border-border/10">
+                          <td className="p-2.5 px-3 pl-6 text-muted-foreground text-[13px]">Proj. Daily Use</td>
+                          {cells.map((c, i) => (
+                            <td key={i} className="p-2.5 text-center text-[13px] text-foreground">{c && c.forecastedUsage > 0.001 ? `${c.forecastedUsage.toFixed(1)}/day` : "No data"}</td>
+                          ))}
+                        </tr>
+                        <tr key={`${product}-confirmed`} className="border-b border-border/10">
+                          <td className="p-2.5 px-3 pl-6 text-muted-foreground text-[13px]"><span className="inline-flex items-center gap-1"><CalendarClock className="h-3 w-3" /> Confirmed (7d)</span></td>
+                          {cells.map((c, i) => (
+                            <td key={i} className="p-2.5 text-center text-[13px] text-foreground">{c && c.confirmedDemand7D > 0 ? `${c.confirmedDemand7D} ${c.unit}` : "—"}</td>
+                          ))}
+                        </tr>
+                        <tr key={`${product}-days`} className="border-b border-border/10">
+                          <td className="p-2.5 px-3 pl-6 text-muted-foreground text-[13px]">Days Remaining</td>
+                          {cells.map((c, i) => (
+                            <td key={i} className={`p-2.5 text-center text-[13px] ${c && c.daysUntilEmpty !== null && c.daysUntilEmpty <= 7 ? "text-destructive font-semibold" : "text-foreground"}`}>{c && c.daysUntilEmpty !== null ? `${c.daysUntilEmpty} days` : "No data"}</td>
+                          ))}
+                        </tr>
+                        <tr key={`${product}-status`} className="border-b border-border/20">
+                          <td className="p-2.5 px-3 pl-6 text-muted-foreground text-[13px]">Status</td>
+                          {cells.map((c, i) => (
+                            <td key={i} className="p-2.5 text-center">
+                              {c ? <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${statusStyle[c.status]}`}>{c.status}</span> : <span className="text-[13px] text-muted-foreground">—</span>}
+                            </td>
+                          ))}
+                        </tr>
+                      </Fragment>
+                    ))}
                   </tbody>
                 </table>
-                <p className="text-[11px] text-muted-foreground mt-3 flex flex-wrap gap-x-4 gap-y-1 px-1">
-                  <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-destructive flex-shrink-0" /> High usage (&ge;80% of max)</span>
-                  <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-500 flex-shrink-0" /> Moderate usage (50–79%)</span>
-                  <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500 flex-shrink-0" /> Low usage (&lt;50%)</span>
-                </p>
               </div>
             )}
           </motion.div>
@@ -1159,7 +1246,7 @@ export default function PredictiveInventoryPage() {
 function mapInventoryRecord(
   i: InventoryRecord,
   lowStockIds: Set<number>,
-  forecastMap: Map<number, { usage: number; daysLeft: number | null; narrative?: string }>,
+  forecastMap: Map<number, { usage: number; daysLeft: number | null; narrative?: string; historical: number; confirmed7D: number }>,
 ): InventoryItem {
   const itemForecast = forecastMap.get(i.id);
   const dailyUsage = itemForecast?.usage ?? 0;
@@ -1180,5 +1267,7 @@ function mapInventoryRecord(
     daysUntilEmpty: calcDaysRemaining(Number(i.currentStock || 0), dailyUsage),
     projectedAfter7Days: stockAfter7,
     status,
+    historicalDailyUsage: itemForecast?.historical ?? 0,
+    confirmedDemand7D: itemForecast?.confirmed7D ?? 0,
   };
 }
