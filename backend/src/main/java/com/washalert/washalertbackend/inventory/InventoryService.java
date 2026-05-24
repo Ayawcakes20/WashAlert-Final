@@ -254,6 +254,50 @@ public class InventoryService {
         return result;
     }
 
+    /**
+     * Layer 2 of the forecast: confirmed future demand from upcoming bookings within {@code horizonDays}.
+     * Returns a map keyed by "{branchLower}||{canonicalItemName}" → total units already requested by
+     * customers in scheduled bookings that have not yet entered the wash cycle.
+     */
+    private Map<String, BigDecimal> computeConfirmedDemand(String effectiveBranch, int horizonDays) {
+        java.util.List<JobOrderStatus> upcomingStatuses = java.util.List.of(
+                JobOrderStatus.PENDING,
+                JobOrderStatus.ASSIGNED_FOR_PICKUP,
+                JobOrderStatus.EN_ROUTE_TO_CUSTOMER,
+                JobOrderStatus.LAUNDRY_COLLECTED,
+                JobOrderStatus.EN_ROUTE_TO_BRANCH,
+                JobOrderStatus.ORDER_RECEIVED,
+                JobOrderStatus.AWAITING_PRICE_CONFIRMATION,
+                JobOrderStatus.PRICE_CONFIRMED
+        );
+        List<JobOrder> candidates = effectiveBranch == null
+                ? jobOrderRepository.findByStatusInAndCreatedAtAfter(upcomingStatuses, LocalDateTime.now().minusDays(60))
+                : jobOrderRepository.findByBranchIgnoreCaseAndStatusIn(effectiveBranch, upcomingStatuses);
+
+        java.time.LocalDate today = java.time.LocalDate.now();
+        java.time.LocalDate horizon = today.plusDays(horizonDays);
+        Map<String, BigDecimal> demand = new java.util.LinkedHashMap<>();
+
+        for (JobOrder jo : candidates) {
+            java.time.LocalDate booked = jo.getBookingDate();
+            if (booked == null || booked.isBefore(today) || booked.isAfter(horizon)) continue;
+            if (jo.getBranch() == null || jo.getBranch().isBlank()) continue;
+            String branchKey = jo.getBranch().trim().toLowerCase(Locale.ROOT);
+
+            String det = jo.getDetergentPreference();
+            if (hasConsumableSelection(det)) {
+                int qty = (jo.getDetergentQuantity() != null && jo.getDetergentQuantity() > 0) ? jo.getDetergentQuantity() : 1;
+                demand.merge(branchKey + "||" + normalizeItemName(det), BigDecimal.valueOf(qty), BigDecimal::add);
+            }
+            String fab = jo.getFabricConditionerPreference();
+            if (hasConsumableSelection(fab)) {
+                int qty = (jo.getConditionerQuantity() != null && jo.getConditionerQuantity() > 0) ? jo.getConditionerQuantity() : 1;
+                demand.merge(branchKey + "||" + normalizeItemName(fab), BigDecimal.valueOf(qty), BigDecimal::add);
+            }
+        }
+        return demand;
+    }
+
     @Transactional
     public InventoryItemResponse create(CreateInventoryItemRequest req) {
         log.info("[INVENTORY] Attempting to create item: {} in branch: {}", req.itemName(), req.branch());
@@ -517,31 +561,59 @@ public class InventoryService {
                 LocalDateTime.now()
         );
         Map<String, BranchConsumableUsage> usageByBranch = buildBranchConsumableUsage(scopedOrders);
+        Map<String, BigDecimal> confirmedDemandByItem = computeConfirmedDemand(effectiveBranch, horizonDays);
 
         return list(branch, principal).stream().map(item -> {
-            BigDecimal dailyUsage = estimateOrderBackedDailyUsage(item, usageByBranch);
-            if (dailyUsage.compareTo(BigDecimal.ZERO) == 0 && item.id() != null) {
-                dailyUsage = movementBasedDailyUsage(item.id(), since);
+            // Layer 1 — historical daily average (30-day window of completed/active orders)
+            BigDecimal historical = estimateOrderBackedDailyUsage(item, usageByBranch);
+            if (historical.compareTo(BigDecimal.ZERO) == 0 && item.id() != null) {
+                historical = movementBasedDailyUsage(item.id(), since);
             }
-            BigDecimal projected = item.currentStock().subtract(dailyUsage.multiply(BigDecimal.valueOf(horizonDays)));
+
+            // Layer 2 — confirmed future demand from upcoming bookings, expressed as a daily rate
+            BigDecimal confirmedDemand7D = BigDecimal.ZERO;
+            if (item.branch() != null && item.itemName() != null) {
+                String key = item.branch().trim().toLowerCase(Locale.ROOT) + "||" + normalizeItemName(item.itemName());
+                confirmedDemand7D = confirmedDemandByItem.getOrDefault(key, BigDecimal.ZERO);
+            }
+            BigDecimal confirmedDailyRate = confirmedDemand7D.compareTo(BigDecimal.ZERO) > 0
+                    ? confirmedDemand7D.divide(BigDecimal.valueOf(horizonDays), 4, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+
+            // Combined — 60% historical trend + 40% confirmed future demand; fall back to whichever signal exists
+            BigDecimal projectedDaily;
+            if (historical.compareTo(BigDecimal.ZERO) > 0 && confirmedDailyRate.compareTo(BigDecimal.ZERO) > 0) {
+                projectedDaily = historical.multiply(new BigDecimal("0.6"))
+                        .add(confirmedDailyRate.multiply(new BigDecimal("0.4")))
+                        .setScale(4, RoundingMode.HALF_UP);
+            } else if (historical.compareTo(BigDecimal.ZERO) > 0) {
+                projectedDaily = historical;
+            } else {
+                projectedDaily = confirmedDailyRate;
+            }
+
+            BigDecimal projected = item.currentStock().subtract(projectedDaily.multiply(BigDecimal.valueOf(horizonDays)));
             if (projected.compareTo(BigDecimal.ZERO) < 0) projected = BigDecimal.ZERO;
 
             BigDecimal daysUntilStockout = null;
-            if (dailyUsage.compareTo(BigDecimal.ZERO) > 0) {
-                daysUntilStockout = item.currentStock().divide(dailyUsage, 2, RoundingMode.HALF_UP);
+            if (projectedDaily.compareTo(BigDecimal.ZERO) > 0) {
+                daysUntilStockout = item.currentStock().divide(projectedDaily, 2, RoundingMode.HALF_UP);
             }
 
             String narrative = buildForecastNarrative(item.itemName(), item.branch(), item.currentStock(),
-                    item.reorderLevel(), dailyUsage, daysUntilStockout, horizonDays);
+                    item.reorderLevel(), projectedDaily, daysUntilStockout, horizonDays);
             return new InventoryForecastResponse(
                     item.id(),
                     item.branch(),
                     item.itemName(),
                     item.currentStock(),
-                    dailyUsage,
+                    projectedDaily,
                     projected,
                     daysUntilStockout,
-                    narrative
+                    narrative,
+                    historical,
+                    confirmedDemand7D,
+                    projectedDaily
             );
         }).toList();
     }
