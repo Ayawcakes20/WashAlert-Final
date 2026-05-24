@@ -896,12 +896,21 @@ export const createOrder = async (orderData) => {
   const userRaw = await AsyncStorage.getItem(USER_STORAGE_KEY);
   const user = userRaw ? JSON.parse(userRaw) : null;
   const branch = BRANCH_CATALOG.find((item) => item.id === orderData.branchId);
+  const customerPhone = String(user?.phone || "").trim();
+  const preferredDate = toIsoDate(orderData.scheduleDate);
+  const preferredSlotStartTime = toSlotStartTime(orderData.scheduleTime);
 
   if (!user?.fullName?.trim()) {
     throw new Error('Your name is not available. Please update your profile before placing a booking.');
   }
+  if (!customerPhone) {
+    throw new Error('Your contact number is required before placing a booking. Please update your profile.');
+  }
   if (!branch?.name?.trim()) {
     throw new Error('Selected branch not found. Please go back and select a branch.');
+  }
+  if (!preferredDate || !preferredSlotStartTime) {
+    throw new Error('Please select a valid booking schedule.');
   }
   if (orderData.delivery && !orderData.deliveryAddress?.trim()) {
     throw new Error('A delivery address is required for pickup and delivery orders.');
@@ -920,11 +929,11 @@ export const createOrder = async (orderData) => {
     customerName: user.fullName,
     branch: branch.name,
     branchId: Number(orderData.branchId || branch?.id || 0) || null,
-    customerPhone: user?.phone || '',
+    customerPhone,
     customerEmail: user?.email || '',
     serviceType: serviceTypeBackend,
-    preferredDate: toIsoDate(orderData.scheduleDate),
-    preferredSlotStartTime: toSlotStartTime(orderData.scheduleTime),
+    preferredDate,
+    preferredSlotStartTime,
     detergentPreference: orderData.detergent || 'None',
     fabricConditionerPreference: orderData.conditioner || 'None',
     loadSize: orderData.loadSize || getLoadSize(Number(orderData.loadKg || 0)),
@@ -1300,6 +1309,22 @@ export const deliveries = {
         throw error;
       }
       const fallback = DEMO_DELIVERIES.find((d) => String(d.id) === String(id));
+      return fallback ? mapDelivery(fallback) : null;
+    }
+  },
+
+  trackByTrackingNumber: async (trackingNumber) => {
+    if (!isNonEmpty(trackingNumber)) return null;
+    try {
+      const payload = await apiRequest(`/api/deliveries/track/${encodeURIComponent(String(trackingNumber).trim())}`);
+      return mapDelivery(payload);
+    } catch (error) {
+      if (!DEMO_MODE_ENABLED) {
+        return null;
+      }
+      const fallback = DEMO_DELIVERIES.find((d) =>
+        String(d.trackingNumber || "").toUpperCase() === String(trackingNumber || "").trim().toUpperCase()
+      );
       return fallback ? mapDelivery(fallback) : null;
     }
   },

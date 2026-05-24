@@ -9,7 +9,7 @@ import { MapView, Marker, PROVIDER_GOOGLE, AnimatedRegion, MapViewDirections } f
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { colors } from '../../theme/colors';
-import { bookings as bookingsApi } from '../../services/api';
+import { bookings as bookingsApi, deliveries as deliveriesApi } from '../../services/api';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyAzAGBAijqpEZki3ZZBYe-9rxtzjF55RSY';
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -92,15 +92,15 @@ export default function TrackingScreen({ route, navigation }) {
   useEffect(() => { loadOrder(); }, [orderId]);
 
   useEffect(() => {
-    const trackingNumber = String(order?.trackingNumber || '').trim();
-    if (!trackingNumber) return;
+    const trackingDocId = String(delivData?.id || order?.trackingNumber || '').trim();
+    if (!trackingDocId) return;
     if (!db) {
       setTrackingWarning('Tracking unavailable right now. Please try again later.');
       return;
     }
-    console.log('[Tracking] Listening for:', trackingNumber);
+    console.log('[Tracking] Listening for:', trackingDocId);
     try {
-      const trackingRef = doc(db, 'delivery_tracking', trackingNumber);
+      const trackingRef = doc(db, 'delivery_tracking', trackingDocId);
       const unsub = onSnapshot(
         trackingRef,
         (snap) => {
@@ -108,12 +108,15 @@ export default function TrackingScreen({ route, navigation }) {
             // Document missing = driver not yet broadcasting GPS.
             // If the order status shows driver assigned, give a friendly message.
             const s = String(order?.status || '').toUpperCase();
-            const driverAssigned = [
+            const statusUpper = String(order?.status || '').toUpperCase();
+            const driverAssigned =
+              Boolean(order?.assignedDriverId || delivData?.assignedDriverId || order?.assignedDriverName || delivData?.driverName) ||
+              [
               'ASSIGNED_FOR_PICKUP', 'ASSIGNED_FOR_DELIVERY'
-            ].includes(s);
+            ].includes(statusUpper);
             setTrackingWarning(
               driverAssigned
-                ? 'Driver assigned. Live tracking starts when pickup or delivery begins.'
+                ? 'Driver assigned. Live tracking starts when the driver begins pickup/delivery.'
                 : 'Driver location not available yet.'
             );
             return;
@@ -140,7 +143,7 @@ export default function TrackingScreen({ route, navigation }) {
       setTrackingWarning('Tracking unavailable right now. Please check again later.');
       return undefined;
     }
-  }, [order?.trackingNumber]);
+  }, [order?.trackingNumber, order?.status, order?.assignedDriverId, order?.assignedDriverName, delivData?.id, delivData?.assignedDriverId, delivData?.driverName]);
 
   const loadOrder = async () => {
     if (!orderId) {
@@ -153,6 +156,26 @@ export default function TrackingScreen({ route, navigation }) {
       setLoading(true);
       const d = await bookingsApi.getById(orderId);
       setOrder(d);
+      if (d?.trackingNumber) {
+        const delivery = await deliveriesApi.trackByTrackingNumber(d.trackingNumber);
+        if (delivery) {
+          setDelivData((prev) => ({ ...(prev || {}), ...delivery }));
+          const lat = Number(delivery.currentLatitude);
+          const lng = Number(delivery.currentLongitude);
+          if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            const c = { latitude: lat, longitude: lng };
+            setDriverLoc(c);
+            setTrackingWarning('');
+            driverCoord.timing({ ...c, duration: 800, useNativeDriver: false }).start();
+          } else if (
+            delivery.assignedDriverId ||
+            delivery.driverName ||
+            ['ASSIGNED_FOR_PICKUP', 'ASSIGNED_FOR_DELIVERY'].includes(String(delivery.workflowStatus || '').toUpperCase())
+          ) {
+            setTrackingWarning('Driver assigned. Live tracking starts when the driver begins pickup/delivery.');
+          }
+        }
+      }
     } catch (e) {
       console.error(e);
       setTrackingWarning('Tracking unavailable right now. Please try again later.');
@@ -231,6 +254,9 @@ export default function TrackingScreen({ route, navigation }) {
   const destLoc = isLegToBranch 
     ? { latitude: order.branchLatitude || 14.5995, longitude: order.branchLongitude || 120.9842 }
     : { latitude: order.deliveryLatitude || 14.5995, longitude: order.deliveryLongitude || 120.9842 };
+  const topOffset = insets.top + 10;
+  const navBannerTop = topOffset + 56;
+  const etaBannerTop = navBannerTop + (trackingWarning ? 84 : 0);
 
   return (
     <View style={S.root}>
@@ -309,7 +335,7 @@ export default function TrackingScreen({ route, navigation }) {
         )}
 
         {trackingWarning ? (
-          <View style={[S.navOverlay, { top: insets.top + 16, backgroundColor: '#FEF3C7', borderColor: '#FCD34D' }]}>
+          <View style={[S.navOverlay, { top: navBannerTop, backgroundColor: '#FEF3C7', borderColor: '#FCD34D' }]}>
             <View style={S.navTextBox}>
               <Text style={[S.navSubText, { color: '#92400E' }]}>Tracking unavailable</Text>
               <Text style={[S.navMainText, { color: '#92400E', fontSize: 12 }]}>{trackingWarning}</Text>
@@ -319,7 +345,7 @@ export default function TrackingScreen({ route, navigation }) {
 
         {/* Premium Navigation Instructions for Customer */}
         {isTrackingRider && etaData.duration && (
-          <View style={[S.navOverlay, { top: insets.top + 70 }]}>
+          <View style={[S.navOverlay, { top: etaBannerTop }]}>
             <View style={S.navIconBox}>
               <MaterialCommunityIcons name="navigation-variant" size={20} color="#FFF" />
             </View>
@@ -332,7 +358,7 @@ export default function TrackingScreen({ route, navigation }) {
 
         {/* Floating back */}
         <TouchableOpacity
-          style={[S.fabBack, { top: insets.top + 10 }]}
+          style={[S.fabBack, { top: topOffset }]}
           onPress={() => navigation.goBack()}
           activeOpacity={0.85}
         >
@@ -341,7 +367,7 @@ export default function TrackingScreen({ route, navigation }) {
         </TouchableOpacity>
 
         {/* Floating order tag */}
-        <View style={[S.fabTag, { top: insets.top + 10 }]}>
+        <View style={[S.fabTag, { top: topOffset }]}>
           <Ionicons name="receipt-outline" size={12} color={colors.primary} />
           <Text style={S.fabTagText}>{order.trackingNumber || `#${order.id}`}</Text>
         </View>

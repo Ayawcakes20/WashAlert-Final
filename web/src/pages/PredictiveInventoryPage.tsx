@@ -1,14 +1,31 @@
-import { motion } from "framer-motion";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  Package, AlertTriangle, TrendingUp, Droplets, Sparkles,
-  Plus, Pencil, Trash2, Loader2, MapPin, CalendarClock, RefreshCw,
-  Info, ChevronDown, ChevronUp, BookOpen, ChevronLeft, ChevronRight,
-  AlertCircle,
+  Package,
+  AlertTriangle,
+  TrendingUp,
+  Droplets,
+  Sparkles,
+  Plus,
+  Pencil,
+  Trash2,
+  Loader2,
+  CalendarClock,
+  RefreshCw,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleHelp,
 } from "lucide-react";
 import {
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line, Legend, ReferenceLine,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ReferenceLine,
 } from "recharts";
 import { inventoryApi, branchesApi, type InventoryRecord } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
@@ -17,40 +34,45 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { getSessionUser } from "@/lib/session";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-// ─── Constants ────────────────────────────────────────────────────────────────
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const INVENTORY_CATALOG = [
-  { name: "Surf Detergent",            category: "Detergent",          unit: "packs" },
-  { name: "Ariel Detergent",           category: "Detergent",          unit: "packs" },
-  { name: "Charm Fabric Conditioner",  category: "Fabric Conditioner", unit: "packs" },
-  { name: "Downy Fabric Conditioner",  category: "Fabric Conditioner", unit: "packs" },
+  { name: "Surf Detergent", category: "Detergent", unit: "packs" },
+  { name: "Ariel Detergent", category: "Detergent", unit: "packs" },
+  { name: "Charm Fabric Conditioner", category: "Fabric Conditioner", unit: "packs" },
+  { name: "Downy Fabric Conditioner", category: "Fabric Conditioner", unit: "packs" },
 ] as const;
 
 const INVENTORY_CATEGORIES = ["Detergent", "Fabric Conditioner"] as const;
 const INVENTORY_UNITS = ["packs", "liters", "kg", "bottles", "pieces"] as const;
 
-const TABLE_PAGE_SIZE = 10;
-const ALERTS_PAGE_SIZE = 5;
-const NARRATIVE_PAGE_SIZE = 5;
-
-const CHART_COLORS = [
-  "hsl(218,58%,20%)",
-  "hsl(168,55%,40%)",
-  "hsl(25,80%,50%)",
-  "hsl(280,60%,50%)",
-  "hsl(0,72%,50%)",
-];
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+const DEFAULT_TABLE_PAGE_SIZE = 10;
+const TABLE_PAGE_SIZES = [10, 25, 50] as const;
+const ATTENTION_DEFAULT_LIMIT = 5;
 
 interface InventoryItem {
   id: number;
@@ -58,7 +80,6 @@ interface InventoryItem {
   type: "Detergent" | "Fabric Conditioner";
   branch: string;
   currentStock: number;
-  maxStock: number;
   reorderLevel: number;
   unit: string;
   category: string;
@@ -66,17 +87,9 @@ interface InventoryItem {
   daysUntilEmpty: number | null;
   projectedAfter7Days: number;
   status: "Healthy" | "Low Stock" | "Critical";
+  historicalDailyUsage: number;
+  confirmedDemand7D: number;
 }
-
-interface NarrativeCard {
-  item: InventoryItem;
-  tier: "critical" | "monitor" | "healthy";
-  text: string;
-  badge: string;
-  subtitle: string;
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function calcDaysRemaining(currentStock: number, avgDailyUsage: number): number | null {
   if (avgDailyUsage < 0.001) return null;
@@ -89,154 +102,191 @@ function getStatus(currentStock: number, reorderLevel: number, stockAfter7Days: 
   return "Healthy";
 }
 
-function generateNarrative(item: InventoryItem): NarrativeCard {
-  const { currentStock, unit, forecastedUsage: avgDailyUsage, reorderLevel, daysUntilEmpty } = item;
-  const stockAfter7 = currentStock - avgDailyUsage * 7;
-
-  if (currentStock <= reorderLevel || stockAfter7 < 0) {
-    return {
-      item,
-      tier: "critical",
-      text: `Current stock is ${currentStock} ${unit}. Your reorder level is ${reorderLevel} ${unit}. Stock has already reached or will cross the reorder level within 7 days. Recommended immediate restock: reorder at least ${reorderLevel} units now.`,
-      badge: currentStock <= reorderLevel ? "Already at reorder level" : `Runs out in ~${Math.max(0, Math.floor(currentStock / (avgDailyUsage || 1)))} day(s)`,
-      subtitle: "Reorder immediately",
-    };
-  }
-
-  if (daysUntilEmpty === null || avgDailyUsage < 0.001) {
-    return {
-      item,
-      tier: "healthy",
-      text: `Current stock is ${currentStock} ${unit}. No recent usage data is available for this item at this branch. No restock calculation can be made — monitor manually.`,
-      badge: "No usage data",
-      subtitle: "No action needed",
-    };
-  }
-
-  if (daysUntilEmpty <= 30) {
-    return {
-      item,
-      tier: "monitor",
-      text: `Current stock is ${currentStock} ${unit}. Average daily usage is ${avgDailyUsage.toFixed(1)} ${unit}/day based on historical order data. At this rate, stock will last approximately ${daysUntilEmpty} more days before reaching the reorder level of ${reorderLevel} ${unit}. Plan a restock within the next 1–2 weeks.`,
-      badge: `~${daysUntilEmpty} days before reorder level`,
-      subtitle: "Plan restock soon",
-    };
-  }
-
-  return {
-    item,
-    tier: "healthy",
-    text: `Current stock is ${currentStock} ${unit}. Average daily usage is ${avgDailyUsage.toFixed(1)} ${unit}/day. Stock will last approximately ${daysUntilEmpty} days — well above the reorder level of ${reorderLevel} ${unit}. No restocking action required.`,
-    badge: `${daysUntilEmpty} days — sufficient stock`,
-    subtitle: "No action needed",
-  };
+function normalizeBranchName(branch?: string): string {
+  return (branch ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-// Normalize "JP Rizal" → "JP Rizal Branch" to prevent display duplication
-function normalizeBranch(branch: string): string {
-  return branch.trim() === "JP Rizal" ? "JP Rizal Branch" : branch;
+function getCanonicalBranchName(branch?: string): string {
+  const normalized = normalizeBranchName(branch);
+  const aliases: Record<string, string> = {
+    "triplets - makati": "Makati Branch",
+    makati: "Makati Branch",
+    "makati branch": "Makati Branch",
+    "jp rizal": "JP Rizal Branch",
+  };
+  if (aliases[normalized]) return aliases[normalized];
+  const cleaned = (branch ?? "").trim();
+  return cleaned || "Unknown Branch";
+}
+
+function getRecommendedAction(item: InventoryItem): string {
+  if (item.status === "Critical") return "Restock now";
+  if (item.status === "Low Stock") return "Plan restock";
+  return "Healthy";
+}
+
+function formatQuantity(value: number | null | undefined, unit?: string, emptyText = "Not enough data"): string {
+  if (typeof value !== "number" || Number.isNaN(value)) return emptyText;
+  const rawUnit = unit?.trim() ?? "";
+  const safeUnit = rawUnit && !/^\d+$/.test(rawUnit) ? rawUnit : "units";
+  const normalized = Number.isInteger(value) ? `${value}` : `${value.toFixed(1)}`;
+  return `${normalized} ${safeUnit}`;
+}
+
+function formatExpectedUse7D(item: InventoryItem): string {
+  if (item.forecastedUsage <= 0.001) return "No recent usage";
+  return formatQuantity(item.forecastedUsage * 7, item.unit);
+}
+
+function buildForecastBasis(item: InventoryItem): string {
+  const hasHist = item.historicalDailyUsage > 0.001;
+  const hasDemand = item.confirmedDemand7D > 0.001;
+  if (hasHist && hasDemand) {
+    return `Forecast basis: ${item.historicalDailyUsage.toFixed(1)} ${item.unit}/day historical usage plus ${item.confirmedDemand7D.toFixed(0)} ${item.unit} confirmed demand in 7 days.`;
+  }
+  if (hasHist) return `Forecast basis: ${item.historicalDailyUsage.toFixed(1)} ${item.unit}/day historical usage. No upcoming confirmed demand yet.`;
+  if (hasDemand) return `Forecast basis: ${item.confirmedDemand7D.toFixed(0)} ${item.unit} confirmed demand in 7 days. No historical usage yet.`;
+  return "Forecast basis: no recent usage and no upcoming confirmed demand yet.";
+}
+
+function buildNarrative(item: InventoryItem): string {
+  const days = item.daysUntilEmpty !== null ? `${item.daysUntilEmpty} day(s)` : "not enough data yet";
+  return `${item.product} at ${item.branch} has ${item.currentStock} ${item.unit} in stock with ${days} remaining. Recommended action: ${getRecommendedAction(item)}.`;
 }
 
 const statusStyle: Record<string, string> = {
-  Healthy: "bg-emerald-500/15 text-emerald-600",
-  "Low Stock": "bg-amber-500/15 text-amber-600",
-  Critical: "bg-destructive/10 text-destructive",
+  Healthy: "bg-emerald-100 text-emerald-700",
+  "Low Stock": "bg-amber-100 text-amber-700",
+  Critical: "bg-red-100 text-red-700",
 };
 
-const anim = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
-
-// ─── Pagination ───────────────────────────────────────────────────────────────
-
 function Paginator({
-  page, total, pageSize, onPage,
-}: { page: number; total: number; pageSize: number; onPage: (p: number) => void }) {
+  page,
+  total,
+  pageSize,
+  pageSizes,
+  onPageSizeChange,
+  onPage,
+}: {
+  page: number;
+  total: number;
+  pageSize: number;
+  pageSizes: readonly number[];
+  onPageSizeChange: (size: number) => void;
+  onPage: (p: number) => void;
+}) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   return (
-    <div className="flex items-center justify-between px-4 py-2.5 border-t border-border/20 bg-muted/10 text-xs text-muted-foreground">
-      <span>Page {page} of {pages} ({total} item{total !== 1 ? "s" : ""})</span>
-      <div className="flex gap-1">
+    <div className="flex items-center justify-between px-4 py-3 border-t border-border/20 bg-muted/10 text-sm text-muted-foreground">
+      <span className="text-sm">
+        Page {page} of {pages} ({total} item{total !== 1 ? "s" : ""})
+      </span>
+      <div className="flex items-center gap-2">
+        <label className="text-sm text-muted-foreground">Rows:</label>
+        <select
+          value={pageSize}
+          onChange={(e) => onPageSizeChange(Number(e.target.value))}
+          className="h-8 rounded-md border border-border bg-background px-2 text-sm text-foreground"
+        >
+          {pageSizes.map((size) => (
+            <option key={size} value={size}>
+              {size}
+            </option>
+          ))}
+        </select>
         <button
           disabled={page <= 1}
           onClick={() => onPage(page - 1)}
           className="px-2 py-1 rounded border border-border disabled:opacity-40 hover:bg-muted transition-colors"
         >
-          <ChevronLeft className="h-3 w-3" />
+          <ChevronLeft className="h-4 w-4" />
         </button>
         <button
           disabled={page >= pages}
           onClick={() => onPage(page + 1)}
           className="px-2 py-1 rounded border border-border disabled:opacity-40 hover:bg-muted transition-colors"
         >
-          <ChevronRight className="h-3 w-3" />
+          <ChevronRight className="h-4 w-4" />
         </button>
       </div>
     </div>
   );
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+function InfoHint({ text }: { text: string }) {
+  return (
+    <span className="relative inline-flex items-center group">
+      <button
+        type="button"
+        className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        aria-label={text}
+      >
+        <CircleHelp className="h-3.5 w-3.5" />
+      </button>
+      <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 hidden w-72 -translate-x-1/2 rounded-lg border border-slate-300 bg-slate-900 px-3 py-2 text-[13px] font-medium leading-relaxed text-white shadow-xl group-hover:block group-focus-within:block">
+        {text}
+      </span>
+    </span>
+  );
+}
 
 export default function PredictiveInventoryPage() {
   const user = getSessionUser();
   const isAdmin = user?.role === "ADMIN";
   const isStaff = user?.role === "STAFF";
-  const userBranch = user?.branch || "";
+  const userBranch = getCanonicalBranchName(user?.branch || "");
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [forecast, setForecast] = useState<Array<{ itemId: number; itemName: string; branch: string; narrative?: string; estimatedDaysUntilStockout?: number }>>([]);
-  const [forecastData, setForecastData] = useState<Array<{ branch: string; detergent: number; conditioner: number }>>([]);
   const [pendingConsumption, setPendingConsumption] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-
-  const [guideOpen, setGuideOpen] = useState<boolean>(() => {
-    try { return localStorage.getItem("inv_guide_open") !== "false"; } catch { return true; }
-  });
   const [selectedTab, setSelectedTab] = useState("All");
   const [branches, setBranches] = useState<string[]>([]);
   const [dynamicBranches, setDynamicBranches] = useState<string[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<"all" | "Detergent" | "Fabric Conditioner">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "Critical" | "Low Stock" | "Healthy">("all");
-
-  // Pagination
   const [tablePage, setTablePage] = useState(1);
-  const [alertsPage, setAlertsPage] = useState(1);
-  const [narrativePage, setNarrativePage] = useState(1);
+  const [tablePageSize, setTablePageSize] = useState(DEFAULT_TABLE_PAGE_SIZE);
+  const [showAllAttention, setShowAllAttention] = useState(false);
+  const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
 
-  // Chart connection
-  const chartRef = useRef<HTMLDivElement>(null);
-  const [hoveredItem, setHoveredItem] = useState<number | null>(null);
-  const [highlightedItem, setHighlightedItem] = useState<number | null>(null);
-
-  const scrollToChartAndHighlight = (itemId: number) => {
-    chartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    setHighlightedItem(itemId);
-    setTimeout(() => setHighlightedItem(null), 2000);
-  };
-
-  // Dialogs
   const [createOpen, setCreateOpen] = useState(false);
   const [createSubmitting, setCreateSubmitting] = useState(false);
-  const [createForm, setCreateForm] = useState({ branch: "", itemName: "", category: "", unit: "", currentStock: "0", reorderLevel: "0" });
+  const [createForm, setCreateForm] = useState({
+    branch: "",
+    itemName: "",
+    category: "",
+    unit: "",
+    currentStock: "0",
+    reorderLevel: "0",
+  });
 
   const [editOpen, setEditOpen] = useState(false);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
-  const [editForm, setEditForm] = useState({ branch: "", itemName: "", category: "", unit: "", reorderLevel: "0" });
+  const [editForm, setEditForm] = useState({
+    branch: "",
+    itemName: "",
+    category: "",
+    unit: "",
+    reorderLevel: "0",
+  });
 
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [adjustSubmitting, setAdjustSubmitting] = useState(false);
-  const [adjustForm, setAdjustForm] = useState({ quantityDelta: "0", direction: "OUT" as "IN" | "OUT", reason: "" });
+  const [adjustForm, setAdjustForm] = useState({
+    quantityDelta: "0",
+    direction: "OUT" as "IN" | "OUT",
+    reason: "",
+  });
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
-  // ─── Data loading ──────────────────────────────────────────────────────────
-
   const loadInventory = async () => {
     try {
       setError("");
-      const [items, alerts, forecastResp, pending] = await Promise.all([
+      const [items, _alerts, forecastResp, pending] = await Promise.all([
         inventoryApi.list(),
         inventoryApi.alerts(),
         inventoryApi.forecast(7),
@@ -244,212 +294,268 @@ export default function PredictiveInventoryPage() {
       ]);
       setPendingConsumption(pending || {});
 
-      const lowStockIds = new Set((alerts || []).map((a) => a.id));
-      const forecastMap = new Map<number, { usage: number; daysLeft: number | null; narrative?: string }>();
+      const forecastMap = new Map<number, { usage: number; historical: number; confirmed7D: number }>();
       (forecastResp || []).forEach((f) => {
-        const usage = Number(f.estimatedDailyUsage || 0);
-        const rawDays = Number(f.estimatedDaysUntilStockout || 0);
+        const usage = Number(f.projectedDailyUsage ?? f.estimatedDailyUsage ?? 0);
         forecastMap.set(f.itemId, {
           usage,
-          daysLeft: calcDaysRemaining(Number(f.currentStock || 0), usage),
-          narrative: f.narrative,
+          historical: Number(f.historicalDailyUsage ?? f.estimatedDailyUsage ?? 0),
+          confirmed7D: Number(f.confirmedDemand7D ?? 0),
         });
       });
-      setForecast(forecastResp || []);
 
-      const rawInventory = (items || []).map((i) => mapInventoryRecord(i, lowStockIds, forecastMap));
-      // Deduplicate: same item at same normalized branch should appear only once
-      const seenKeys = new Set<string>();
-      const mappedInventory = rawInventory.filter((i) => {
-        const key = `${i.product}||${i.branch}`;
-        if (seenKeys.has(key)) return false;
-        seenKeys.add(key);
+      const mapped = (items || []).map((i) => mapInventoryRecord(i, forecastMap));
+      const dedupedMap = new Map<string, InventoryItem>();
+      mapped.forEach((item) => {
+        const key = `${item.product}||${normalizeBranchName(item.branch)}`;
+        if (!dedupedMap.has(key)) dedupedMap.set(key, item);
+      });
+      const deduped = Array.from(dedupedMap.values()).filter((item) => {
+        if (isStaff) return normalizeBranchName(item.branch) === normalizeBranchName(userBranch);
         return true;
       });
 
-      const uniqueBranches = Array.from(new Set(mappedInventory.map((i) => i.branch))).sort();
-      setBranches(uniqueBranches);
-
-      const grouped = new Map<string, { detergent: number; conditioner: number }>();
-      mappedInventory.forEach((row) => {
-        if (!grouped.has(row.branch)) grouped.set(row.branch, { detergent: 0, conditioner: 0 });
-        const cur = grouped.get(row.branch)!;
-        if (row.type === "Detergent") cur.detergent += row.forecastedUsage;
-        if (row.type === "Fabric Conditioner") cur.conditioner += row.forecastedUsage;
-      });
-
-      setInventory(mappedInventory);
-      setForecastData(
-        Array.from(grouped.entries()).map(([branch, v]) => ({
-          branch,
-          detergent: Number(v.detergent.toFixed(2)),
-          conditioner: Number(v.conditioner.toFixed(2)),
-        }))
-      );
+      setInventory(deduped);
+      setBranches(Array.from(new Set(deduped.map((i) => i.branch))).sort());
     } catch (err: any) {
       setError(err?.message || "Unable to load inventory data.");
       setInventory([]);
-      setForecastData([]);
     }
   };
 
   useEffect(() => {
-    const run = async () => { setLoading(true); await loadInventory(); setLoading(false); };
+    const run = async () => {
+      setLoading(true);
+      await loadInventory();
+      setLoading(false);
+    };
     void run();
-    branchesApi.list().then(setDynamicBranches).catch(() => setDynamicBranches([]));
+    branchesApi
+      .list()
+      .then((list) => {
+        setDynamicBranches(
+          Array.from(new Set(list.map((b) => getCanonicalBranchName(b)))).sort(),
+        );
+      })
+      .catch(() => setDynamicBranches([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // ─── Derived data ─────────────────────────────────────────────────────────
-
-  const criticalCount = useMemo(() => inventory.filter((i) => i.status === "Critical").length, [inventory]);
-  const lowStockCount = useMemo(() => inventory.filter((i) => i.status === "Low Stock").length, [inventory]);
-
-  const nextRestockItem = useMemo(() => {
-    const items = inventory.filter((i) => i.status !== "Healthy" && i.daysUntilEmpty !== null && i.daysUntilEmpty > 0);
-    if (!items.length) return null;
-    return items.reduce((min, i) => (i.daysUntilEmpty! < min.daysUntilEmpty! ? i : min));
-  }, [inventory]);
-
-  const branchesWithAlerts = useMemo(
-    () => new Set(inventory.filter((i) => i.status !== "Healthy").map((i) => i.branch)).size,
-    [inventory]
-  );
 
   const filteredInventory = useMemo(() => {
     let items: InventoryItem[];
-    if (isStaff) items = inventory.filter((i) => i.branch === userBranch);
+    if (isStaff) items = inventory;
     else if (selectedTab === "All") items = inventory;
     else items = inventory.filter((i) => i.branch === selectedTab);
     if (categoryFilter !== "all") items = items.filter((i) => i.category === categoryFilter);
     if (statusFilter !== "all") items = items.filter((i) => i.status === statusFilter);
     return items;
-  }, [inventory, selectedTab, isStaff, userBranch, categoryFilter, statusFilter]);
+  }, [inventory, selectedTab, isStaff, categoryFilter, statusFilter]);
 
-  // Reset to page 1 when filter changes
-  const handleTabChange = (tab: string) => {
-    setSelectedTab(tab);
-    setTablePage(1);
-    setAlertsPage(1);
-    setNarrativePage(1);
-    setCategoryFilter("all");
-    setStatusFilter("all");
-  };
-
-  // Paginated table rows
-  const pagedTable = useMemo(() => {
-    const start = (tablePage - 1) * TABLE_PAGE_SIZE;
-    return filteredInventory.slice(start, start + TABLE_PAGE_SIZE);
-  }, [filteredInventory, tablePage]);
-
-  // Critical-only alerts
-  const criticalItems = useMemo(() => filteredInventory.filter((i) => i.status === "Critical"), [filteredInventory]);
-  const pagedAlerts = useMemo(() => {
-    const start = (alertsPage - 1) * ALERTS_PAGE_SIZE;
-    return criticalItems.slice(start, start + ALERTS_PAGE_SIZE);
-  }, [criticalItems, alertsPage]);
-
-  // Narrative cards (tiered)
-  const narrativeCards = useMemo<NarrativeCard[]>(() => {
-    const all = filteredInventory.map(generateNarrative);
-    const tier1 = all.filter((c) => c.tier === "critical");
-    const tier2 = all.filter((c) => c.tier === "monitor");
-    const tier3 = all.filter((c) => c.tier === "healthy");
-    return [...tier1, ...tier2, ...tier3];
-  }, [filteredInventory]);
-
-  const pagedNarrative = useMemo(() => {
-    const start = (narrativePage - 1) * NARRATIVE_PAGE_SIZE;
-    return narrativeCards.slice(start, start + NARRATIVE_PAGE_SIZE);
-  }, [narrativeCards, narrativePage]);
-
-  // Per-item 30-day chart
-  const { perItemData, chartLines } = useMemo(() => {
-    const candidates = filteredInventory
-      .filter((i) => i.forecastedUsage > 0.001)
+  const summary = useMemo(() => {
+    const critical = filteredInventory.filter((i) => i.status === "Critical").length;
+    const low = filteredInventory.filter((i) => i.status === "Low Stock").length;
+    const healthy = filteredInventory.filter((i) => i.status === "Healthy").length;
+    const urgent = filteredInventory
+      .filter((i) => i.status !== "Healthy")
       .sort((a, b) => {
         if (a.daysUntilEmpty === null) return 1;
         if (b.daysUntilEmpty === null) return -1;
         return a.daysUntilEmpty - b.daysUntilEmpty;
-      })
-      .slice(0, 5);
-
-    const lines = candidates.map((inv, idx) => ({
-      key: `item_${inv.id}`,
-      label: `${inv.product} (${inv.branch})`,
-      color: CHART_COLORS[idx % CHART_COLORS.length],
-      reorderLevel: inv.reorderLevel,
-    }));
-
-    const data = Array.from({ length: 30 }, (_, d) => {
-      const pt: Record<string, number | string> = { day: `Day ${d + 1}` };
-      candidates.forEach((inv) => {
-        pt[`item_${inv.id}`] = Math.max(0, Math.round((inv.currentStock - inv.forecastedUsage * (d + 1)) * 10) / 10);
-      });
-      return pt;
-    });
-
-    return { perItemData: data, chartLines: lines };
+      })[0] ?? null;
+    return { critical, low, healthy, urgent };
   }, [filteredInventory]);
 
-  // ─── Handlers ─────────────────────────────────────────────────────────────
+  const needsAttention = useMemo(() => {
+    return filteredInventory
+      .filter((i) => i.status === "Critical" || i.status === "Low Stock")
+      .sort((a, b) => {
+        const scoreA = a.status === "Critical" ? 0 : 1;
+        const scoreB = b.status === "Critical" ? 0 : 1;
+        if (scoreA !== scoreB) return scoreA - scoreB;
+        if (a.daysUntilEmpty === null) return 1;
+        if (b.daysUntilEmpty === null) return -1;
+        return a.daysUntilEmpty - b.daysUntilEmpty;
+      });
+  }, [filteredInventory]);
+
+  const visibleAttention = showAllAttention
+    ? needsAttention
+    : needsAttention.slice(0, ATTENTION_DEFAULT_LIMIT);
+
+  const pagedTable = useMemo(() => {
+    const start = (tablePage - 1) * tablePageSize;
+    return filteredInventory.slice(start, start + tablePageSize);
+  }, [filteredInventory, tablePage, tablePageSize]);
+
+  const branchOverview = useMemo(() => {
+    const grouped = new Map<string, InventoryItem[]>();
+    inventory.forEach((item) => {
+      if (!grouped.has(item.branch)) grouped.set(item.branch, []);
+      grouped.get(item.branch)?.push(item);
+    });
+
+    return Array.from(grouped.entries())
+      .map(([branch, items]) => {
+        const critical = items.filter((i) => i.status === "Critical").length;
+        const low = items.filter((i) => i.status === "Low Stock").length;
+        const healthy = items.filter((i) => i.status === "Healthy").length;
+        const urgent = items
+          .filter((i) => i.status !== "Healthy")
+          .sort((a, b) => {
+            if (a.daysUntilEmpty === null) return 1;
+            if (b.daysUntilEmpty === null) return -1;
+            return a.daysUntilEmpty - b.daysUntilEmpty;
+          })[0] ?? null;
+        return {
+          branch,
+          critical,
+          low,
+          healthy,
+          urgentItem: urgent?.product ?? "No urgent item",
+          action: urgent ? getRecommendedAction(urgent) : "Healthy",
+        };
+      })
+      .sort((a, b) => a.branch.localeCompare(b.branch));
+  }, [inventory]);
+
+  const selectedExpandedItem = useMemo(
+    () => filteredInventory.find((item) => item.id === expandedRowId) ?? null,
+    [expandedRowId, filteredInventory],
+  );
+
+  const selectedItemChart = useMemo(() => {
+    if (!selectedExpandedItem || selectedExpandedItem.forecastedUsage < 0.001) {
+      return [] as Array<{ day: string; stock: number; reorderLevel: number }>;
+    }
+    return Array.from({ length: 30 }, (_, idx) => ({
+      day: `Day ${idx + 1}`,
+      stock: Math.max(
+        0,
+        Math.round(
+          (selectedExpandedItem.currentStock -
+            selectedExpandedItem.forecastedUsage * (idx + 1)) * 10,
+        ) / 10,
+      ),
+      reorderLevel: selectedExpandedItem.reorderLevel,
+    }));
+  }, [selectedExpandedItem]);
+
+  const handleTabChange = (branch: string) => {
+    setSelectedTab(branch);
+    setTablePage(1);
+    setExpandedRowId(null);
+  };
+
+  useEffect(() => {
+    setTablePage(1);
+  }, [selectedTab, tablePageSize]);
 
   const openCreate = () => {
-    setCreateForm({ branch: isAdmin ? "" : userBranch, itemName: "", category: "", unit: "", currentStock: "0", reorderLevel: "0" });
+    setCreateForm({
+      branch: isAdmin ? "" : userBranch,
+      itemName: "",
+      category: "",
+      unit: "",
+      currentStock: "0",
+      reorderLevel: "0",
+    });
     setCreateOpen(true);
   };
+
   const openEdit = (row: InventoryItem) => {
     setSelectedItem(row);
-    setEditForm({ branch: row.branch, itemName: row.product, category: row.category, unit: row.unit, reorderLevel: String(row.reorderLevel) });
+    setEditForm({
+      branch: row.branch,
+      itemName: row.product,
+      category: row.category,
+      unit: row.unit,
+      reorderLevel: String(row.reorderLevel),
+    });
     setEditOpen(true);
   };
+
   const openAdjust = (row: InventoryItem) => {
     setSelectedItem(row);
     setAdjustForm({ quantityDelta: "0", direction: "IN", reason: "Restock" });
     setAdjustOpen(true);
   };
-  const openDelete = (row: InventoryItem) => { setSelectedItem(row); setDeleteOpen(true); };
+
+  const openDelete = (row: InventoryItem) => {
+    setSelectedItem(row);
+    setDeleteOpen(true);
+  };
 
   const submitCreate = async () => {
     if (!createForm.branch.trim() || !createForm.itemName.trim() || !createForm.category.trim() || !createForm.unit.trim()) {
-      toast.error("Branch, item name, category, and unit are required."); return;
+      toast.error("Branch, item name, category, and unit are required.");
+      return;
     }
     setCreateSubmitting(true);
     try {
-      await inventoryApi.create({ branch: createForm.branch.trim(), itemName: createForm.itemName.trim(), category: createForm.category.trim(), unit: createForm.unit.trim(), currentStock: Number(createForm.currentStock || 0), reorderLevel: Number(createForm.reorderLevel || 0) });
+      await inventoryApi.create({
+        branch: createForm.branch.trim(),
+        itemName: createForm.itemName.trim(),
+        category: createForm.category.trim(),
+        unit: createForm.unit.trim(),
+        currentStock: Number(createForm.currentStock || 0),
+        reorderLevel: Number(createForm.reorderLevel || 0),
+      });
       toast.success("Inventory item created.");
       setCreateOpen(false);
-      setCreateForm({ branch: "", itemName: "", category: "", unit: "", currentStock: "0", reorderLevel: "0" });
       await loadInventory();
-    } catch (err: any) { toast.error(err?.message || "Unable to create inventory item."); }
-    finally { setCreateSubmitting(false); }
+    } catch (err: any) {
+      toast.error(err?.message || "Unable to create inventory item.");
+    } finally {
+      setCreateSubmitting(false);
+    }
   };
 
   const submitEdit = async () => {
     if (!selectedItem) return;
     if (!editForm.branch.trim() || !editForm.itemName.trim() || !editForm.category.trim() || !editForm.unit.trim()) {
-      toast.error("Branch, item name, category, and unit are required."); return;
+      toast.error("Branch, item name, category, and unit are required.");
+      return;
     }
     setEditSubmitting(true);
     try {
-      await inventoryApi.update(selectedItem.id, { branch: editForm.branch.trim(), itemName: editForm.itemName.trim(), category: editForm.category.trim(), unit: editForm.unit.trim(), reorderLevel: Number(editForm.reorderLevel || 0) });
+      await inventoryApi.update(selectedItem.id, {
+        branch: editForm.branch.trim(),
+        itemName: editForm.itemName.trim(),
+        category: editForm.category.trim(),
+        unit: editForm.unit.trim(),
+        reorderLevel: Number(editForm.reorderLevel || 0),
+      });
       toast.success("Inventory item updated.");
       setEditOpen(false);
       await loadInventory();
-    } catch (err: any) { toast.error(err?.message || "Unable to update inventory item."); }
-    finally { setEditSubmitting(false); }
+    } catch (err: any) {
+      toast.error(err?.message || "Unable to update inventory item.");
+    } finally {
+      setEditSubmitting(false);
+    }
   };
 
   const submitAdjust = async () => {
     if (!selectedItem) return;
-    if (!adjustForm.reason.trim()) { toast.error("Adjustment reason is required."); return; }
+    if (!adjustForm.reason.trim()) {
+      toast.error("Adjustment reason is required.");
+      return;
+    }
     setAdjustSubmitting(true);
     try {
-      await inventoryApi.adjust(selectedItem.id, { quantityDelta: Number(adjustForm.quantityDelta || 0), direction: adjustForm.direction, reason: adjustForm.reason.trim() });
+      await inventoryApi.adjust(selectedItem.id, {
+        quantityDelta: Number(adjustForm.quantityDelta || 0),
+        direction: adjustForm.direction,
+        reason: adjustForm.reason.trim(),
+      });
       toast.success("Stock updated successfully.");
       setAdjustOpen(false);
       await loadInventory();
-    } catch (err: any) { toast.error(err?.message || "Unable to adjust stock."); }
-    finally { setAdjustSubmitting(false); }
+    } catch (err: any) {
+      toast.error(err?.message || "Unable to adjust stock.");
+    } finally {
+      setAdjustSubmitting(false);
+    }
   };
 
   const submitDelete = async () => {
@@ -460,27 +566,35 @@ export default function PredictiveInventoryPage() {
       toast.success("Inventory item deleted.");
       setDeleteOpen(false);
       await loadInventory();
-    } catch (err: any) { toast.error(err?.message || "Unable to delete inventory item."); }
-    finally { setDeleteSubmitting(false); }
+    } catch (err: any) {
+      toast.error(err?.message || "Unable to delete inventory item.");
+    } finally {
+      setDeleteSubmitting(false);
+    }
   };
 
-  // ─── Render ───────────────────────────────────────────────────────────────
-
   return (
-    <motion.div initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.06 } } }} className="space-y-8">
-
-      {/* Header */}
-      <motion.div variants={anim} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Predictive Inventory</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <h1 className="text-3xl font-bold text-foreground tracking-tight">
+            Predictive Inventory
+          </h1>
+          <p className="text-base text-muted-foreground mt-1">
             {isStaff
               ? `Viewing inventory for ${userBranch || "your branch"}`
-              : "Monitor stock levels, forecast consumption, and manage inventory across branches"}
+              : "Actionable restock dashboard for all branches."}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" className="h-10 px-4 rounded-xl" onClick={() => { setLoading(true); loadInventory().finally(() => setLoading(false)); }}>
+          <Button
+            variant="outline"
+            className="h-10 px-4 rounded-xl"
+            onClick={() => {
+              setLoading(true);
+              loadInventory().finally(() => setLoading(false));
+            }}
+          >
             <RefreshCw className="h-4 w-4" />
           </Button>
           {(isAdmin || isStaff) && (
@@ -489,201 +603,165 @@ export default function PredictiveInventoryPage() {
             </Button>
           )}
         </div>
-      </motion.div>
+      </div>
 
-      {/* How to Read This Page */}
-      <motion.div variants={anim} className="rounded-2xl border border-border/40 overflow-hidden">
-        <button
-          onClick={() => {
-            const next = !guideOpen;
-            setGuideOpen(next);
-            try { localStorage.setItem("inv_guide_open", String(next)); } catch {}
-          }}
-          className="w-full flex items-center justify-between px-5 py-3.5 bg-primary/5 hover:bg-primary/10 transition-colors"
-        >
-          <div className="flex items-center gap-2.5">
-            <BookOpen className="h-4 w-4 text-primary" />
-            <span className="text-sm font-semibold text-foreground">How to Read This Page</span>
-            <span className="text-xs text-muted-foreground">(click to {guideOpen ? "hide" : "show"})</span>
+      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-6">
+        <div className="flex items-center gap-2 mb-3">
+          <TrendingUp className="h-5 w-5 text-primary" />
+          <span className="text-lg font-semibold text-foreground">
+            How forecast is calculated
+          </span>
+        </div>
+        <ul className="space-y-1 text-sm text-foreground/90 leading-relaxed">
+          <li>- Historical usage from completed orders</li>
+          <li>- Confirmed upcoming bookings demand</li>
+          <li>- Current stock and reorder level</li>
+          <li>- Result: days left and restock priority</li>
+        </ul>
+      </div>
+
+      <div className="rounded-xl border border-border/30 bg-white p-4">
+        <p className="text-base text-foreground">
+          Use this page to see which supplies need restocking first. The forecast uses current stock, completed order history, and confirmed upcoming bookings. Click View Details to see the calculation for each item.
+        </p>
+      </div>
+
+      {isStaff && (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+          <p className="text-base text-foreground">
+            This forecast uses completed orders and confirmed upcoming bookings to estimate which supplies may need restocking for your branch.
+          </p>
+        </div>
+      )}
+
+      {error && <p className="text-base text-destructive">{error}</p>}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {loading
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="glass-card rounded-2xl p-6 space-y-3">
+                <Skeleton className="h-10 w-10 rounded-xl" />
+                <Skeleton className="h-8 w-20" />
+                <Skeleton className="h-4 w-36" />
+              </div>
+            ))
+          : [
+              {
+                label: "Critical Items",
+                value: summary.critical,
+                icon: AlertTriangle,
+                color: "bg-red-100 text-red-700",
+              },
+              {
+                label: "Low Stock Items",
+                value: summary.low,
+                icon: CalendarClock,
+                color: "bg-amber-100 text-amber-700",
+              },
+              {
+                label: "Healthy Items",
+                value: summary.healthy,
+                icon: TrendingUp,
+                color: "bg-emerald-100 text-emerald-700",
+              },
+              {
+                label: "Next Restock Priority",
+                value: summary.urgent
+                  ? `${summary.urgent.product} (${summary.urgent.branch})`
+                  : "None",
+                icon: Package,
+                color: "bg-primary/10 text-primary",
+              },
+            ].map((s) => (
+              <div key={s.label} className="glass-card rounded-2xl p-6">
+                <div className={`p-2.5 rounded-xl ${s.color} w-fit mb-3`}>
+                  <s.icon className="h-5 w-5" />
+                </div>
+                <p className="text-2xl font-bold text-foreground break-words">
+                  {s.value}
+                </p>
+                <p className="text-base text-muted-foreground mt-1">{s.label}</p>
+              </div>
+            ))}
+      </div>
+
+      {isAdmin && branches.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {["All", ...branches].map((branch) => (
+            <button
+              key={branch}
+              onClick={() => handleTabChange(branch)}
+              className={`px-4 py-2 rounded-lg text-base font-medium transition-colors ${
+                selectedTab === branch
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background text-foreground border border-border hover:bg-muted"
+              }`}
+            >
+              {branch}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!loading && (
+        <div className="rounded-2xl border border-border/30 bg-white p-6">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <h2 className="text-xl font-semibold text-foreground">Needs Attention</h2>
+            {needsAttention.length > ATTENTION_DEFAULT_LIMIT && (
+              <Button variant="outline" onClick={() => setShowAllAttention((v) => !v)}>
+                {showAllAttention ? "Show top 5" : "View all"}
+              </Button>
+            )}
           </div>
-          {guideOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-        </button>
-        {guideOpen && (
-          <div className="px-5 py-4 space-y-4 bg-muted/20 border-t border-border/30">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-              {[
-                { icon: "📋", title: "7-Day Forecast Table", desc: "Shows your current stock and estimates how much will be left after 7 days based on actual usage from completed orders. Each row matches one line in the 30-Day Chart below." },
-                { icon: "⚠️", title: "Inventory Recommendations", desc: "Explains each item in plain language — the same numbers from the table, with a clear action: restock now, plan soon, or no action needed." },
-                { icon: "📈", title: "30-Day Chart", desc: "Shows the same items plotted over 30 days. Each colored line matches one row in the table above. Where a line crosses its dashed threshold, that item will hit its reorder level." },
-              ].map((g) => (
-                <div key={g.title} className="flex gap-3 items-start">
-                  <span className="text-xl leading-none mt-0.5 flex-shrink-0">{g.icon}</span>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{g.title}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{g.desc}</p>
+          {visibleAttention.length === 0 ? (
+            <p className="text-base text-muted-foreground">
+              All supplies are healthy based on current stock and expected use.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {visibleAttention.map((item) => (
+                <div key={item.id} className="rounded-xl border border-border/30 p-4 bg-muted/10">
+                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-lg font-semibold text-foreground">{item.product}</p>
+                      <p className="text-sm text-muted-foreground">{item.branch}</p>
+                      <p className="text-sm text-foreground">
+                        Current stock: {formatQuantity(item.currentStock, item.unit)} | Expected use 7D:{" "}
+                        {formatExpectedUse7D(item)} | Days left:{" "}
+                        {item.daysUntilEmpty !== null ? `${item.daysUntilEmpty} day(s)` : "Not enough data yet"}
+                      </p>
+                      <p className="text-sm text-foreground">
+                        Recommended action: {getRecommendedAction(item)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm font-semibold px-3 py-1 rounded-full ${statusStyle[item.status]}`}>
+                        {item.status}
+                      </span>
+                      <Button size="sm" onClick={() => openAdjust(item)}>
+                        Add Stock
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setExpandedRowId((v) => (v === item.id ? null : item.id))}
+                      >
+                        View Details
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
-            <div className="rounded-lg bg-primary/5 border border-primary/10 p-3 text-xs text-foreground/80 space-y-1">
-              <p className="font-semibold text-foreground">Basis for the forecast:</p>
-              <p>· <strong>Average daily usage</strong> = Total used in last 30 days ÷ 30</p>
-              <p>· <strong>Days remaining</strong> = Current stock ÷ Average daily usage</p>
-              <p>· <strong>Forecast line</strong> = Current stock − (Average daily usage × Day number)</p>
-              <p className="text-muted-foreground pt-1">All forecasts are based on actual completed order data from your branch. If an item shows "No data", it means no usage has been logged yet.</p>
-            </div>
-          </div>
-        )}
-      </motion.div>
-
-      {/* Alert banner — red, lists critical items by name */}
-      {criticalCount > 0 && !loading && (() => {
-        const critList = inventory.filter((i) => i.status === "Critical");
-        const shown = critList.slice(0, 3);
-        const extra = critList.length - 3;
-        return (
-          <motion.div variants={anim} className="bg-destructive/10 border border-destructive/25 rounded-xl p-4">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-destructive mb-1.5">
-                  {criticalCount} item(s) need immediate restocking:
-                </p>
-                <ul className="space-y-0.5">
-                  {shown.map((i) => (
-                    <li key={i.id} className="text-xs text-foreground">
-                      · <span className="font-medium">{i.product}</span> — {i.branch}{" "}
-                      <span className="text-muted-foreground">({i.currentStock} {i.unit}, reorder level: {i.reorderLevel})</span>
-                    </li>
-                  ))}
-                  {extra > 0 && (
-                    <li className="text-xs text-destructive font-medium cursor-pointer hover:underline" onClick={() => document.getElementById("stock-alerts-section")?.scrollIntoView({ behavior: "smooth" })}>
-                      ...and {extra} more — View all critical items ↓
-                    </li>
-                  )}
-                </ul>
-              </div>
-            </div>
-          </motion.div>
-        );
-      })()}
-      {error && <p className="text-sm text-destructive">{error}</p>}
-
-      {/* Stats — skeleton while loading */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {loading
-          ? Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="glass-card rounded-2xl p-5 space-y-3">
-                <Skeleton className="h-9 w-9 rounded-xl" />
-                <Skeleton className="h-7 w-12" />
-                <Skeleton className="h-3 w-28" />
-              </div>
-            ))
-          : [
-              { label: "Total Items Tracked", value: inventory.length, icon: Package, color: "bg-primary/10 text-primary" },
-              { label: "Healthy Stock", value: inventory.filter((i) => i.status === "Healthy").length, icon: TrendingUp, color: "bg-emerald-500/15 text-emerald-600" },
-              { label: "Branches With Alerts", value: branchesWithAlerts, icon: MapPin, color: "bg-destructive/10 text-destructive" },
-              {
-                label: "Next Restock Due",
-                value: nextRestockItem ? `~${Math.ceil(nextRestockItem.daysUntilEmpty!)}d` : "OK",
-                icon: CalendarClock,
-                color: nextRestockItem ? "bg-amber-500/15 text-amber-600" : "bg-emerald-500/15 text-emerald-600",
-              },
-            ].map((s) => (
-              <motion.div key={s.label} variants={anim} className="glass-card rounded-2xl p-5">
-                <div className={`p-2.5 rounded-xl ${s.color} w-fit mb-3`}><s.icon className="h-5 w-5" /></div>
-                <p className="text-2xl font-bold text-foreground">{s.value}</p>
-                <p className="text-xs text-muted-foreground mt-1">{s.label}</p>
-              </motion.div>
-            ))}
-      </div>
-
-      {/* Branch filter tabs (admin only) */}
-      {isAdmin && branches.length > 0 && (
-        <motion.div variants={anim} className="flex flex-wrap gap-2">
-          {["All", ...branches].map((b) => (
-            <button
-              key={b}
-              onClick={() => handleTabChange(b)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                selectedTab === b ? "bg-primary text-primary-foreground" : "bg-background text-foreground border border-border hover:bg-muted"
-              }`}
-            >
-              {b}
-            </button>
-          ))}
-        </motion.div>
-      )}
-
-      {/* Status legend — above table (Issue 5A) */}
-      {!loading && (
-        <motion.div variants={anim} className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs px-1 py-1">
-          <span className="font-semibold text-muted-foreground">Status guide:</span>
-          {[
-            { color: "bg-emerald-500", label: "Healthy", desc: "above reorder level" },
-            { color: "bg-amber-500",   label: "Low Stock", desc: "within 1.5× reorder level" },
-            { color: "bg-destructive", label: "Critical", desc: "at or below reorder level" },
-          ].map((s) => (
-            <span key={s.label} className="inline-flex items-center gap-1.5 text-foreground">
-              <span className={`h-2.5 w-2.5 rounded-full ${s.color} flex-shrink-0`} />
-              <strong>{s.label}</strong> — {s.desc}
-            </span>
-          ))}
-        </motion.div>
-      )}
-
-      {/* Forecast Narrative — tiered cards (above 7-day table per Issue 5) */}
-      {!loading && narrativeCards.length > 0 && (
-        <motion.div variants={anim} className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-              <Info className="h-4 w-4" /> Inventory Recommendations
-            </h3>
-          </div>
-
-          {pagedNarrative.map((card, idx) => {
-            const cfg = {
-              critical: { accent: "border-l-4 border-l-destructive bg-destructive/5",   dotColor: "bg-destructive",   textColor: "text-destructive" },
-              monitor:  { accent: "border-l-4 border-l-amber-500 bg-amber-500/5",        dotColor: "bg-amber-500",     textColor: "text-amber-600" },
-              healthy:  { accent: "border-l-4 border-l-emerald-500 bg-emerald-500/5",   dotColor: "bg-emerald-500",   textColor: "text-emerald-600" },
-            }[card.tier];
-            const { item } = card;
-            const estUse7 = item.forecastedUsage < 0.001 ? null : +(item.forecastedUsage * 7).toFixed(1);
-            const stockAfter = item.forecastedUsage < 0.001 ? null : +(item.currentStock - item.forecastedUsage * 7).toFixed(1);
-            return (
-              <div key={idx} className={`rounded-xl border border-border/20 p-4 ${cfg.accent}`}>
-                <div className="flex items-start gap-3">
-                  <span className={`mt-1 h-3 w-3 rounded-full flex-shrink-0 ${cfg.dotColor}`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-2">
-                      <span className="text-sm font-bold text-foreground">{item.product} — {item.branch}</span>
-                      <span className={`text-[12px] font-semibold px-2 py-0.5 rounded-full ${cfg.dotColor} text-white`}>{card.badge}</span>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mb-2 text-[12px]">
-                      <div><span className="text-muted-foreground">Current stock:</span> <span className="font-semibold text-foreground">{item.currentStock} {item.unit}</span></div>
-                      <div><span className="text-muted-foreground">Est. use (7d):</span> <span className="font-semibold text-foreground">{estUse7 !== null ? `${estUse7} ${item.unit}` : "No data"}</span></div>
-                      <div><span className="text-muted-foreground">After 7 days:</span> <span className={`font-semibold ${stockAfter !== null && stockAfter < 0 ? "text-destructive" : "text-foreground"}`}>{stockAfter !== null ? `${stockAfter} ${item.unit}` : "No data"}</span></div>
-                      <div><span className="text-muted-foreground">Reorder level:</span> <span className="font-semibold text-foreground">{item.reorderLevel} {item.unit}</span></div>
-                    </div>
-                    <p className={`text-[13px] font-semibold mb-1 ${cfg.textColor}`}>{card.subtitle}</p>
-                    <p className="text-[13px] text-foreground/80 leading-relaxed">{card.text}</p>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-
-          {narrativeCards.length > NARRATIVE_PAGE_SIZE && (
-            <Paginator page={narrativePage} total={narrativeCards.length} pageSize={NARRATIVE_PAGE_SIZE} onPage={setNarrativePage} />
           )}
-        </motion.div>
+        </div>
       )}
 
       {/* Category + Status filters */}
       {!loading && (
-        <motion.div variants={anim} className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <span className="text-sm font-medium text-muted-foreground">Filter:</span>
             <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v as typeof categoryFilter); setTablePage(1); }}>
               <SelectTrigger className="h-9 w-[180px] text-sm rounded-lg">
                 <SelectValue placeholder="Category" />
@@ -709,48 +787,57 @@ export default function PredictiveInventoryPage() {
           {(categoryFilter !== "all" || statusFilter !== "all") && (
             <button
               onClick={() => { setCategoryFilter("all"); setStatusFilter("all"); setTablePage(1); }}
-              className="text-xs font-semibold text-primary hover:underline"
+              className="text-sm font-semibold text-primary hover:underline"
             >
               Clear filters
             </button>
           )}
-        </motion.div>
+        </div>
       )}
 
-      {/* 7-Day Forecast Table */}
-      <motion.div variants={anim} className="glass-card rounded-2xl overflow-hidden">
-        <div className="p-5 border-b border-border/30">
-          <h2 className="text-lg font-semibold text-foreground">7-Day Inventory Forecast</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Projected usage and stock levels based on historical movement data</p>
+      <div className="glass-card rounded-2xl overflow-hidden">
+        <div className="p-6 border-b border-border/30">
+          <h2 className="text-xl font-semibold text-foreground">Inventory Forecast Table</h2>
+          <p className="text-base text-muted-foreground mt-1">
+            Focus view for branch-level restock decisions.
+          </p>
         </div>
-        <div className="overflow-x-scroll">
-          <table className="w-full text-sm">
+
+        <div className="px-6 py-3 border-b border-border/20 bg-muted/10 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+          <span className="font-semibold text-muted-foreground">Status legend:</span>
+          <span className="inline-flex items-center gap-1.5 text-foreground">
+            <span className="h-3 w-3 rounded-full bg-red-500" /> Critical = at or below reorder level
+          </span>
+          <span className="inline-flex items-center gap-1.5 text-foreground">
+            <span className="h-3 w-3 rounded-full bg-amber-500" /> Low Stock = reaches reorder level soon
+          </span>
+          <span className="inline-flex items-center gap-1.5 text-foreground">
+            <span className="h-3 w-3 rounded-full bg-emerald-500" /> Healthy = enough stock for expected use
+          </span>
+        </div>
+
+        <div className="overflow-x-auto overflow-y-visible">
+          <table className="w-full min-w-[980px] text-sm">
             <thead>
               <tr className="border-b border-border/30 bg-muted/20">
                 {[
-                  { label: "Item" },
-                  { label: "Category" },
-                  { label: "Current Stock", tip: "The total quantity of this item currently available at this branch, including any pending incoming stock." },
-                  { label: "Pending Orders", tip: "Stock that has been ordered but not yet received. This is added to Current Stock to show the full expected quantity." },
-                  { label: "Unit" },
-                  { label: "Est. Usage (7 Days)", tip: "Estimated consumption over the next 7 days, calculated from your branch's average daily usage over the past 30 days of completed orders." },
-                  { label: "Stock After 7 Days", tip: "Predicted remaining stock after 7 days of normal usage. A negative number (shown in red) means the item will run out before 7 days are up." },
-                  { label: "Reorder Level", tip: "The minimum stock quantity at which a restock should be triggered. When Current Stock falls to or below this level, the item is marked Critical." },
-                  { label: "Status", tip: "Healthy: stock is well above reorder level. Low Stock: stock is approaching reorder level (within 1.5×). Critical: stock is at or below reorder level." },
-                  { label: "Actions" },
-                ].map((h) => (
-                  <th key={h.label} className="text-left p-4 font-medium text-muted-foreground whitespace-nowrap group/th relative">
-                    <span className="inline-flex items-center gap-1.5 cursor-default select-none">
-                      {h.label}
-                      {"tip" in h && h.tip && (
-                        <Info className="h-3 w-3 text-muted-foreground/40 group-hover/th:text-primary transition-colors" />
-                      )}
+                  { label: "Item", hint: "Inventory item name." },
+                  { label: "Branch", hint: "Branch where this stock is tracked." },
+                  { label: "Current Stock", hint: "Quantity currently available in this branch." },
+                  { label: "Expected Use 7D", hint: "Estimated amount that may be used in the next 7 days based on historical usage and confirmed bookings." },
+                  { label: "Reorder Level", hint: "Minimum stock level before restocking is recommended." },
+                  { label: "Days Left", hint: "Estimated days before this item reaches its reorder level." },
+                  { label: "Status", hint: "Critical, Low Stock, or Healthy based on stock level and expected use." },
+                  { label: "Action", hint: "Add stock or open details for this item." },
+                ].map((col) => (
+                  <th
+                    key={col.label}
+                    className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap"
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <span>{col.label}</span>
+                      <InfoHint text={col.hint} />
                     </span>
-                    {"tip" in h && h.tip && (
-                      <span className="pointer-events-none absolute top-full left-0 mt-1 hidden group-hover/th:block z-50 max-w-[280px] w-max text-xs font-normal text-foreground bg-popover border border-border shadow-xl rounded-xl px-3 py-2 leading-relaxed whitespace-normal">
-                        {h.tip}
-                      </span>
-                    )}
                   </th>
                 ))}
               </tr>
@@ -759,309 +846,285 @@ export default function PredictiveInventoryPage() {
               {loading
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i} className="border-b border-border/20">
-                      {Array.from({ length: 10 }).map((_, j) => (
-                        <td key={j} className="p-4"><Skeleton className="h-4 w-full rounded" /></td>
+                      {Array.from({ length: 8 }).map((__, j) => (
+                        <td key={j} className="p-4">
+                          <Skeleton className="h-5 w-full rounded" />
+                        </td>
                       ))}
                     </tr>
                   ))
                 : pagedTable.map((inv) => {
-                    const after7 = inv.currentStock - inv.forecastedUsage * 7;
-                    const isNeg = after7 < 0;
-                    const noUsage = inv.forecastedUsage < 0.001;
+                    const isExpanded = expandedRowId === inv.id;
+                    const expectedUse = formatExpectedUse7D(inv);
+                    const daysLeft =
+                      inv.daysUntilEmpty !== null
+                        ? `${inv.daysUntilEmpty} day(s)`
+                        : "Not enough data yet";
                     return (
-                      <tr
-                        key={inv.id}
-                        className="border-b border-border/20 hover:bg-muted/30 transition-colors group/row"
-                        onMouseEnter={() => setHoveredItem(inv.id)}
-                        onMouseLeave={() => setHoveredItem(null)}
-                      >
-                        <td className="p-4">
-                          <div className="flex items-center gap-2">
-                            {inv.type === "Detergent" ? <Droplets className="h-4 w-4 text-primary flex-shrink-0" /> : <Sparkles className="h-4 w-4 text-secondary flex-shrink-0" />}
-                            <span className="font-medium text-foreground">{inv.product}</span>
-                          </div>
-                          <span className="text-xs text-muted-foreground ml-6">{inv.branch}</span>
-                          {hoveredItem === inv.id && (
-                            <button
-                              onClick={() => scrollToChartAndHighlight(inv.id)}
-                              className="ml-6 text-[10px] font-semibold text-primary hover:underline block mt-0.5"
-                            >
-                              See forecast →
-                            </button>
-                          )}
-                        </td>
-                        <td className="p-4 text-muted-foreground">{inv.category}</td>
-                        <td className="p-4">
-                          <div className="flex flex-col gap-1.5 min-w-[110px]">
-                            <span className="font-semibold text-foreground text-sm">{inv.currentStock} <span className="text-xs font-normal text-muted-foreground">{inv.unit}</span></span>
-                            <div className="h-3 rounded-full bg-muted w-full overflow-hidden">
-                              <div
-                                className={`h-3 rounded-full transition-all duration-500 ${inv.status === "Critical" ? "bg-destructive" : inv.status === "Low Stock" ? "bg-amber-500" : "bg-emerald-500"}`}
-                                style={{ width: `${Math.min(100, inv.reorderLevel > 0 ? (inv.currentStock / (inv.reorderLevel * 2)) * 100 : 100)}%` }}
-                              />
+                      <>
+                        <tr key={inv.id} className="border-b border-border/20 hover:bg-muted/20 align-top">
+                          <td className="p-4">
+                            <div className="flex items-center gap-2">
+                              {inv.type === "Detergent" ? (
+                                <Droplets className="h-4 w-4 text-primary" />
+                              ) : (
+                                <Sparkles className="h-4 w-4 text-secondary" />
+                              )}
+                              <span className="text-base font-semibold text-foreground">{inv.product}</span>
                             </div>
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          {(pendingConsumption[inv.product] ?? 0) > 0
-                            ? <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">{pendingConsumption[inv.product]} expected</span>
-                            : <span className="text-xs text-muted-foreground">—</span>}
-                        </td>
-                        <td className="p-4 text-muted-foreground">{inv.unit}</td>
-                        <td className="p-4 text-muted-foreground">
-                          {noUsage ? (
-                            <span className="group/nd relative inline-block">
-                              <span className="text-xs text-muted-foreground italic cursor-help">No data</span>
-                              <span className="pointer-events-none absolute bottom-full left-0 mb-1 hidden group-hover/nd:block z-50 w-[220px] text-xs font-normal text-foreground bg-popover border border-border shadow-xl rounded-xl px-3 py-2 leading-relaxed whitespace-normal">
-                                No completed orders have been recorded for this item yet. Forecast cannot be calculated without usage history.
-                              </span>
+                          </td>
+                          <td className="p-4 text-base text-foreground">{inv.branch}</td>
+                          <td className="p-4 text-base text-foreground">
+                            {formatQuantity(inv.currentStock, inv.unit)}
+                          </td>
+                          <td className="p-4 text-base text-foreground">{expectedUse}</td>
+                          <td className="p-4 text-base text-foreground">
+                            {formatQuantity(inv.reorderLevel, inv.unit)}
+                          </td>
+                          <td className="p-4 text-base text-foreground">{daysLeft}</td>
+                          <td className="p-4">
+                            <span className={`text-sm font-semibold px-3 py-1 rounded-full ${statusStyle[inv.status]}`}>
+                              {inv.status}
                             </span>
-                          ) : (inv.forecastedUsage * 7).toFixed(1)}
-                        </td>
-                        <td className={`p-4 font-medium relative group/neg ${isNeg ? "text-destructive bg-red-50 dark:bg-red-950/20" : "text-foreground"}`}>
-                          <span className="inline-flex items-center gap-1">
-                            {isNeg && <AlertCircle className="h-3.5 w-3.5 text-destructive" />}
-                            {noUsage ? (
-                              <span className="group/nd2 relative inline-block">
-                                <span className="text-xs text-muted-foreground italic cursor-help">No data</span>
-                                <span className="pointer-events-none absolute bottom-full left-0 mb-1 hidden group-hover/nd2:block z-50 w-[220px] text-xs font-normal text-foreground bg-popover border border-border shadow-xl rounded-xl px-3 py-2 leading-relaxed whitespace-normal">
-                                  No completed orders have been recorded for this item yet.
-                                </span>
-                              </span>
-                            ) : after7.toFixed(1)}
-                          </span>
-                          {isNeg && (
-                            <span className="pointer-events-none absolute bottom-full left-0 mb-1 hidden group-hover/neg:block z-50 w-[220px] text-xs font-normal text-foreground bg-popover border border-border shadow-xl rounded-xl px-3 py-2 leading-relaxed whitespace-normal">
-                              This item will run out before 7 days are up at current usage rate.
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-4 text-muted-foreground">{inv.reorderLevel}</td>
-                        <td className="p-4">
-                          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusStyle[inv.status]}`}>{inv.status}</span>
-                        </td>
-                        <td className="p-4">
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              onClick={() => openAdjust(inv)}
-                              className="text-xs font-semibold text-white bg-primary hover:bg-primary/80 transition-colors px-2.5 py-1 rounded-lg whitespace-nowrap"
-                            >
-                              + Add Stock
-                            </button>
-                            {(isAdmin || isStaff) && (
-                              <>
-                                <span className="text-border">·</span>
-                                <button onClick={() => openEdit(inv)} className="text-xs text-muted-foreground hover:text-foreground"><Pencil className="h-3 w-3" /></button>
-                              </>
-                            )}
-                            {isAdmin && (
-                              <>
-                                <span className="text-border">·</span>
-                                <button onClick={() => openDelete(inv)} className="text-xs text-destructive hover:text-destructive/80"><Trash2 className="h-3 w-3" /></button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
+                          </td>
+                          <td className="p-4">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Button size="sm" onClick={() => openAdjust(inv)}>
+                                Add Stock
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setExpandedRowId((v) => (v === inv.id ? null : inv.id))}
+                              >
+                                {isExpanded ? "Hide Details" : "View Details"}
+                                <ChevronDown
+                                  className={`h-4 w-4 ml-1 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                                />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="border-b border-border/20 bg-muted/10">
+                            <td colSpan={8} className="p-5">
+                              <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+                                <div className="xl:col-span-1 rounded-xl border border-border/30 bg-white p-4 space-y-2">
+                                  <h3 className="text-lg font-semibold text-foreground">Forecast Details</h3>
+                                  <p className="text-base text-foreground leading-relaxed">
+                                    Recommendation: <strong>{buildNarrative(inv)}</strong>
+                                  </p>
+                                  <div className="flex items-start gap-2">
+                                    <InfoHint text="Shows whether the forecast is based on completed orders, upcoming bookings, or both." />
+                                    <p className="text-sm text-muted-foreground leading-relaxed">{buildForecastBasis(inv)}</p>
+                                  </div>
+                                  <p className="text-sm text-foreground">
+                                    Current stock: <strong>{formatQuantity(inv.currentStock, inv.unit)}</strong>
+                                  </p>
+                                  <p className="text-sm text-foreground">
+                                    Reorder level: <strong>{formatQuantity(inv.reorderLevel, inv.unit)}</strong>
+                                  </p>
+                                  <div className="flex items-start gap-2">
+                                    <InfoHint text="Average usage from completed orders over the selected historical period." />
+                                    <p className="text-sm text-foreground">
+                                      Historical usage: <strong>{formatQuantity(inv.historicalDailyUsage, inv.unit, "No recent usage")}/day</strong>
+                                    </p>
+                                  </div>
+                                  <div className="flex items-start gap-2">
+                                    <InfoHint text="Supplies already expected from confirmed upcoming bookings in the next 7 days." />
+                                    <p className="text-sm text-foreground">
+                                      Confirmed orders 7D:{" "}
+                                      <strong>{inv.confirmedDemand7D > 0 ? formatQuantity(inv.confirmedDemand7D, inv.unit) : "No upcoming orders"}</strong>
+                                    </p>
+                                  </div>
+                                  <div className="flex items-start gap-2">
+                                    <InfoHint text="Supply quantity already expected from active or pending bookings." />
+                                    <p className="text-sm text-foreground">
+                                      Pending demand:{" "}
+                                      <strong>{pendingConsumption[inv.product] ? formatQuantity(pendingConsumption[inv.product], inv.unit) : "No pending demand"}</strong>
+                                    </p>
+                                  </div>
+                                  <p className="text-sm text-foreground">
+                                    Expected use 7D: <strong>{formatExpectedUse7D(inv)}</strong>
+                                  </p>
+                                  <p className="text-sm text-foreground">
+                                    Days left: <strong>{inv.daysUntilEmpty ?? "Not enough data yet"}</strong>
+                                  </p>
+                                  <p className="text-sm text-muted-foreground leading-relaxed">
+                                    This forecast uses completed order history and confirmed upcoming bookings to estimate stock usage.
+                                  </p>
+                                  {(isAdmin || isStaff) && (
+                                    <div className="flex items-center gap-2 pt-2">
+                                      <Button size="sm" variant="outline" onClick={() => openEdit(inv)}>
+                                        <Pencil className="h-4 w-4 mr-1" />Edit
+                                      </Button>
+                                      {isAdmin && (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="text-destructive border-destructive/30"
+                                          onClick={() => openDelete(inv)}
+                                        >
+                                          <Trash2 className="h-4 w-4 mr-1" />Delete
+                                        </Button>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="xl:col-span-2 rounded-xl border border-border/30 bg-white p-4">
+                                  <h3 className="text-lg font-semibold text-foreground mb-2">
+                                    30-Day Forecast for {inv.product}
+                                  </h3>
+                                  <p className="text-sm text-muted-foreground mb-3">
+                                    How to read this chart: if the projected stock line reaches the reorder level, the item should be restocked.
+                                  </p>
+                                  <div className="mb-3 flex flex-wrap gap-4 text-sm text-foreground">
+                                    <span className="inline-flex items-center gap-2">
+                                      <span className="h-0.5 w-8 bg-[hsl(218,58%,20%)]" />
+                                      Solid line = projected stock remaining
+                                    </span>
+                                    <span className="inline-flex items-center gap-2">
+                                      <span className="h-0.5 w-8 border-t-2 border-dashed border-[hsl(12,76%,61%)]" />
+                                      Dashed line = reorder level
+                                    </span>
+                                  </div>
+                                  {selectedItemChart.length === 0 ? (
+                                    <div className="h-[260px] flex items-center justify-center text-sm text-muted-foreground">
+                                      No recent usage yet for chart projection.
+                                    </div>
+                                  ) : (
+                                    <ResponsiveContainer width="100%" height={260}>
+                                      <LineChart data={selectedItemChart} margin={{ top: 10, right: 16, left: 12, bottom: 8 }}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(214, 25%, 90%)" />
+                                        <XAxis
+                                          dataKey="day"
+                                          tick={{ fontSize: 13, fill: "hsl(215, 20%, 35%)" }}
+                                          interval={4}
+                                          label={{ value: "Forecast days", position: "insideBottom", offset: -4, fontSize: 13, fill: "hsl(215, 20%, 35%)" }}
+                                        />
+                                        <YAxis
+                                          tick={{ fontSize: 13, fill: "hsl(215, 20%, 35%)" }}
+                                          width={80}
+                                          label={{ value: "Stock remaining", angle: -90, position: "insideLeft", fontSize: 13, fill: "hsl(215, 20%, 35%)" }}
+                                        />
+                                        <Tooltip contentStyle={{ fontSize: 13, borderRadius: 10 }} />
+                                        <Legend wrapperStyle={{ fontSize: 13 }} />
+                                        <ReferenceLine
+                                          y={inv.reorderLevel}
+                                          stroke="hsl(12,76%,61%)"
+                                          strokeDasharray="6 4"
+                                          strokeWidth={2}
+                                          ifOverflow="extendDomain"
+                                          label={{ value: "Reorder level", position: "right", fontSize: 12, fill: "hsl(12,76%,40%)" }}
+                                        />
+                                        <Line type="monotone" dataKey="stock" stroke="hsl(218,58%,20%)" strokeWidth={3} dot={false} />
+                                      </LineChart>
+                                    </ResponsiveContainer>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
                     );
                   })}
               {!loading && filteredInventory.length === 0 && (
-                <tr><td colSpan={10} className="p-8 text-center text-sm text-muted-foreground">No inventory items found.</td></tr>
+                <tr>
+                  <td colSpan={8} className="p-8 text-center text-base text-muted-foreground">
+                    No inventory items found.
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
-        {/* Status key legend */}
-        <div className="px-5 py-3 border-t border-border/20 flex flex-wrap items-center gap-x-6 gap-y-2 bg-muted/10">
-          <span className="text-xs font-semibold text-muted-foreground">Status key:</span>
-          {[
-            { color: "bg-emerald-500", label: "Healthy", desc: "above reorder level" },
-            { color: "bg-amber-500", label: "Low Stock", desc: "approaching reorder level" },
-            { color: "bg-destructive", label: "Critical", desc: "below reorder level" },
-          ].map((s) => (
-            <span key={s.label} className="inline-flex items-center gap-1.5 text-xs text-foreground">
-              <span className={`h-2.5 w-2.5 rounded-full ${s.color} flex-shrink-0`} />
-              <strong>{s.label}</strong> — {s.desc}
-            </span>
-          ))}
-          <span className="text-xs text-muted-foreground">A <span className="text-destructive font-bold">red ⚠</span> "Stock After 7 Days" means the item will run out within a week.</span>
-        </div>
-        {/* Pagination */}
-        {!loading && filteredInventory.length > TABLE_PAGE_SIZE && (
-          <Paginator page={tablePage} total={filteredInventory.length} pageSize={TABLE_PAGE_SIZE} onPage={setTablePage} />
-        )}
-      </motion.div>
 
-      {/* Stock Alerts — Critical only */}
-      {!loading && criticalItems.length > 0 && (
-        <motion.div id="stock-alerts-section" variants={anim} className="glass-card rounded-2xl p-6 border-l-4 border-destructive">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-destructive" /> Stock Alerts
-            </h2>
-            <span className="text-xs font-semibold bg-destructive/10 text-destructive px-3 py-1 rounded-full">
-              {criticalItems.length} item(s) need attention
-            </span>
-          </div>
-          <div className="space-y-3">
-            {pagedAlerts.map((inv) => (
-              <div key={inv.id} className="flex items-center justify-between p-3 rounded-xl bg-destructive/5">
-                <div className="flex items-center gap-3">
-                  {inv.type === "Detergent" ? <Droplets className="h-4 w-4 text-primary" /> : <Sparkles className="h-4 w-4 text-secondary" />}
-                  <div>
-                    <span className="text-sm font-medium text-foreground">{inv.product}</span>
-                    <span className="text-xs text-muted-foreground ml-2">— {inv.branch}</span>
-                    <div className="flex items-center gap-2 mt-1">
-                      <div className="flex-1 h-1.5 rounded-full bg-muted w-32">
-                        <div className="h-1.5 rounded-full bg-destructive" style={{ width: `${Math.min(100, (inv.currentStock / (inv.maxStock || 1)) * 100)}%` }} />
-                      </div>
-                      <span className="text-[10px] text-muted-foreground">{inv.currentStock} / {inv.reorderLevel} {inv.unit}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="text-right flex flex-col items-end gap-1">
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${statusStyle[inv.status]}`}>{inv.status}</span>
-                  <p className="text-[10px] text-muted-foreground">
-                    {inv.daysUntilEmpty !== null ? `~${inv.daysUntilEmpty.toFixed(1)} day(s) left` : "N/A"}
-                  </p>
-                  {(isAdmin || isStaff) && (
-                    <button onClick={() => openAdjust(inv)} className="text-[10px] font-semibold text-primary hover:underline">Restock</button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-          {criticalItems.length > ALERTS_PAGE_SIZE && (
-            <div className="mt-3">
-              <Paginator page={alertsPage} total={criticalItems.length} pageSize={ALERTS_PAGE_SIZE} onPage={setAlertsPage} />
-            </div>
-          )}
-        </motion.div>
-      )}
-
-      {/* Charts */}
-      <div className="flex flex-col gap-6">
-
-        {/* 30-day per-item line chart */}
-        <motion.div variants={anim} ref={chartRef} className="glass-card rounded-2xl p-6 scroll-mt-24">
-          <h2 className="text-lg font-semibold text-foreground mb-0.5">30-Day Stock Forecast — Same Items as Table Above</h2>
-          <p className="text-xs text-muted-foreground mb-3">Each line below corresponds to one row in the 7-Day Forecast table. The dashed lines show each item's reorder level.</p>
-          <div className="rounded-lg bg-blue-50 border border-blue-100 p-3 mb-4 text-xs text-blue-800 leading-relaxed">
-            Each line shows how much stock is predicted to remain each day. The <strong>dashed lines</strong> are reorder thresholds — when a colored line crosses its dashed line, that item needs restocking. Based on: average daily usage × number of days projected.
-            {selectedTab === "All" && <span className="block mt-1 font-medium">Showing top 5 most critical items across all branches.</span>}
-          </div>
-          {loading ? (
-            <Skeleton className="h-[400px] w-full rounded-xl" />
-          ) : chartLines.length === 0 ? (
-            <div className="h-[400px] flex items-center justify-center text-sm text-muted-foreground">No usage data available for the selected filter.</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={400}>
-              <LineChart data={perItemData} margin={{ top: 10, right: 20, left: 15, bottom: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(214, 25%, 90%)" />
-                <XAxis dataKey="day" tick={{ fontSize: 9, fill: "hsl(215, 16%, 47%)" }} interval={4} />
-                <YAxis tick={{ fontSize: 10, fill: "hsl(215, 16%, 47%)" }} label={{ value: "Quantity remaining", angle: -90, position: "insideLeft", offset: -5, fontSize: 10, fill: "hsl(215, 16%, 47%)" }} width={65} />
-                <Tooltip
-                  formatter={(v: number, name: string) => {
-                    const line = chartLines.find((l) => l.key === name);
-                    return [`${v} ${filteredInventory.find((i) => `item_${i.id}` === name)?.unit ?? "units"}`, line?.label ?? name];
-                  }}
-                  contentStyle={{ fontSize: 11, borderRadius: 8 }}
-                />
-                <Legend
-                  verticalAlign="bottom"
-                  align="center"
-                  wrapperStyle={{ fontSize: 10, paddingTop: 10 }}
-                  formatter={(key: string) => chartLines.find((l) => l.key === key)?.label ?? key}
-                />
-                {chartLines.map((line) => (
-                  <ReferenceLine key={`ref_${line.key}`} y={line.reorderLevel} stroke={line.color} strokeDasharray="5 4" strokeWidth={1} label={{ value: `Reorder`, position: "insideTopLeft", fontSize: 9, fill: line.color }} />
-                ))}
-                {chartLines.map((line) => {
-                  const isHighlighted = highlightedItem !== null && line.key === `item_${highlightedItem}`;
-                  return (
-                    <Line
-                      key={line.key}
-                      type="monotone"
-                      dataKey={line.key}
-                      name={line.key}
-                      stroke={line.color}
-                      strokeWidth={isHighlighted ? 4 : 2}
-                      strokeOpacity={highlightedItem !== null && !isHighlighted ? 0.3 : 1}
-                      dot={false}
-                      activeDot={{ r: 4 }}
-                    />
-                  );
-                })}
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-        </motion.div>
-
-        {/* Branch Consumption Comparison Table */}
-        {(isAdmin || isStaff) && forecastData.length > 0 && (
-          <motion.div variants={anim} className="glass-card rounded-2xl p-6">
-            <h2 className="text-lg font-semibold text-foreground mb-1">Branch Consumption Comparison</h2>
-            <p className="text-xs text-muted-foreground mb-4">Estimated daily usage of detergent and fabric conditioner per branch. Color indicates consumption intensity.</p>
-            {loading ? (
-              <Skeleton className="h-[180px] w-full rounded-xl" />
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr className="border-b border-border/30 bg-muted/20">
-                      <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Supply Type</th>
-                      {forecastData.map((row) => (
-                        <th key={row.branch} className="text-center p-3 font-medium text-muted-foreground whitespace-nowrap">{row.branch}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(["detergent", "conditioner"] as const).map((key) => {
-                      const label = key === "detergent" ? "Detergent" : "Fabric Conditioner";
-                      const values = forecastData.map((r) => r[key]);
-                      const max = Math.max(...values, 0.001);
-                      return (
-                        <tr key={key} className="border-b border-border/20 hover:bg-muted/20 transition-colors">
-                          <td className="p-3 font-medium text-foreground">{label}</td>
-                          {forecastData.map((row) => {
-                            const val = row[key];
-                            const ratio = val / max;
-                            const bgClass = val === 0 ? "bg-muted/30 text-muted-foreground" : ratio >= 0.8 ? "bg-destructive/15 text-destructive font-semibold" : ratio >= 0.5 ? "bg-amber-500/15 text-amber-700 font-semibold" : "bg-emerald-500/10 text-emerald-700 font-semibold";
-                            return (
-                              <td key={row.branch} className={`p-3 text-center rounded-sm ${bgClass}`}>
-                                {val > 0 ? `${val} units/day` : "—"}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                <p className="text-[11px] text-muted-foreground mt-3 flex flex-wrap gap-x-4 gap-y-1 px-1">
-                  <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-destructive flex-shrink-0" /> High usage (&ge;80% of max)</span>
-                  <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-500 flex-shrink-0" /> Moderate usage (50–79%)</span>
-                  <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500 flex-shrink-0" /> Low usage (&lt;50%)</span>
-                </p>
-              </div>
-            )}
-          </motion.div>
+        {!loading && filteredInventory.length > tablePageSize && (
+          <Paginator
+            page={tablePage}
+            total={filteredInventory.length}
+            pageSize={tablePageSize}
+            pageSizes={TABLE_PAGE_SIZES}
+            onPageSizeChange={setTablePageSize}
+            onPage={setTablePage}
+          />
         )}
       </div>
 
-      {/* ── Dialogs (admin only) ──────────────────────────────────────────────── */}
+      {isAdmin && branchOverview.length > 0 && (
+        <div className="glass-card rounded-2xl overflow-hidden">
+          <div className="p-6 border-b border-border/30">
+            <h2 className="text-xl font-semibold text-foreground">Branch Restock Overview</h2>
+            <p className="text-base text-muted-foreground mt-1">
+              This compares branches by restocking urgency. Click View Branch to filter the forecast table.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px]">
+              <thead>
+                <tr className="border-b border-border/30 bg-muted/20">
+                  {[
+                    "Branch",
+                    "Critical Items",
+                    "Low Stock Items",
+                    "Healthy Items",
+                    "Most Urgent Item",
+                    "Recommended Action",
+                    "View Branch",
+                  ].map((h) => (
+                    <th key={h} className="text-left p-4 font-semibold text-[15px] text-foreground">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {branchOverview.map((row) => (
+                  <tr key={row.branch} className="border-b border-border/20">
+                    <td className="p-4 text-base font-medium text-foreground">{row.branch}</td>
+                    <td className="p-4 text-base text-foreground">{row.critical}</td>
+                    <td className="p-4 text-base text-foreground">{row.low}</td>
+                    <td className="p-4 text-base text-foreground">{row.healthy}</td>
+                    <td className="p-4 text-base text-foreground break-words">{row.urgentItem}</td>
+                    <td className="p-4 text-base text-foreground">{row.action}</td>
+                    <td className="p-4">
+                      <Button size="sm" variant="outline" onClick={() => handleTabChange(row.branch)}>
+                        View Branch
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
-      {/* Create */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Create Inventory Item</DialogTitle><DialogDescription>Add a new inventory item to track.</DialogDescription></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Create Inventory Item</DialogTitle>
+            <DialogDescription>Add a new inventory item to track.</DialogDescription>
+          </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Branch</Label>
               {isAdmin ? (
-                <Select value={createForm.branch} onValueChange={(val) => setCreateForm((p) => ({ ...p, branch: val }))}>
-                  <SelectTrigger className="w-full text-foreground"><SelectValue placeholder={dynamicBranches.length ? "Select a branch" : "No branches available"} /></SelectTrigger>
-                  <SelectContent>{dynamicBranches.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
+                <Select
+                  value={createForm.branch}
+                  onValueChange={(val) => setCreateForm((p) => ({ ...p, branch: val }))}
+                >
+                  <SelectTrigger className="w-full text-foreground">
+                    <SelectValue placeholder={dynamicBranches.length ? "Select a branch" : "No branches available"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {dynamicBranches.map((b) => (
+                      <SelectItem key={b} value={b}>
+                        {b}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               ) : (
                 <Input value={createForm.branch} readOnly className="bg-muted text-muted-foreground" />
@@ -1069,50 +1132,127 @@ export default function PredictiveInventoryPage() {
             </div>
             <div className="space-y-2">
               <Label>Item Name</Label>
-              <Select value={createForm.itemName} onValueChange={(val) => { const e = INVENTORY_CATALOG.find((c) => c.name === val); setCreateForm((p) => ({ ...p, itemName: val, category: e?.category ?? p.category, unit: e?.unit ?? p.unit })); }}>
-                <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select an item" /></SelectTrigger>
-                <SelectContent>{INVENTORY_CATALOG.map((c) => <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>)}</SelectContent>
+              <Select
+                value={createForm.itemName}
+                onValueChange={(val) => {
+                  const entry = INVENTORY_CATALOG.find((c) => c.name === val);
+                  setCreateForm((p) => ({
+                    ...p,
+                    itemName: val,
+                    category: entry?.category ?? p.category,
+                    unit: entry?.unit ?? p.unit,
+                  }));
+                }}
+              >
+                <SelectTrigger className="w-full text-foreground">
+                  <SelectValue placeholder="Select an item" />
+                </SelectTrigger>
+                <SelectContent>
+                  {INVENTORY_CATALOG.map((c) => (
+                    <SelectItem key={c.name} value={c.name}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label>Category</Label>
-                <Select value={createForm.category} onValueChange={(val) => setCreateForm((p) => ({ ...p, category: val }))}>
-                  <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select category" /></SelectTrigger>
-                  <SelectContent>{INVENTORY_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                <Select
+                  value={createForm.category}
+                  onValueChange={(val) => setCreateForm((p) => ({ ...p, category: val }))}
+                >
+                  <SelectTrigger className="w-full text-foreground">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INVENTORY_CATEGORIES.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label>Unit</Label>
-                <Select value={createForm.unit} onValueChange={(val) => setCreateForm((p) => ({ ...p, unit: val }))}>
-                  <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select unit" /></SelectTrigger>
-                  <SelectContent>{INVENTORY_UNITS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
+                <Select
+                  value={createForm.unit}
+                  onValueChange={(val) => setCreateForm((p) => ({ ...p, unit: val }))}
+                >
+                  <SelectTrigger className="w-full text-foreground">
+                    <SelectValue placeholder="Select unit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INVENTORY_UNITS.map((u) => (
+                      <SelectItem key={u} value={u}>
+                        {u}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2"><Label>Current Stock</Label><Input type="number" min="0" step="0.01" value={createForm.currentStock} onChange={(e) => setCreateForm((p) => ({ ...p, currentStock: e.target.value }))} /></div>
-              <div className="space-y-2"><Label>Reorder Level</Label><Input type="number" min="0" step="0.01" value={createForm.reorderLevel} onChange={(e) => setCreateForm((p) => ({ ...p, reorderLevel: e.target.value }))} /></div>
+              <div className="space-y-2">
+                <Label>Current Stock</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={createForm.currentStock}
+                  onChange={(e) => setCreateForm((p) => ({ ...p, currentStock: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Reorder Level</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={createForm.reorderLevel}
+                  onChange={(e) => setCreateForm((p) => ({ ...p, reorderLevel: e.target.value }))}
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={createSubmitting}>Cancel</Button>
-            <Button onClick={() => void submitCreate()} disabled={createSubmitting}>{createSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Plus className="h-4 w-4 mr-1" />}{createSubmitting ? "Creating..." : "Create Item"}</Button>
+            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={createSubmitting}>
+              Cancel
+            </Button>
+            <Button onClick={() => void submitCreate()} disabled={createSubmitting}>
+              {createSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Plus className="h-4 w-4 mr-1" />}
+              {createSubmitting ? "Creating..." : "Create Item"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Edit */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Edit Inventory Item</DialogTitle><DialogDescription>Update item details and reorder threshold.</DialogDescription></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Edit Inventory Item</DialogTitle>
+            <DialogDescription>Update item details and reorder threshold.</DialogDescription>
+          </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Branch</Label>
               {isAdmin ? (
-                <Select value={editForm.branch} onValueChange={(val) => setEditForm((p) => ({ ...p, branch: val }))}>
-                  <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select a branch" /></SelectTrigger>
-                  <SelectContent>{dynamicBranches.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
+                <Select
+                  value={editForm.branch}
+                  onValueChange={(val) => setEditForm((p) => ({ ...p, branch: val }))}
+                >
+                  <SelectTrigger className="w-full text-foreground">
+                    <SelectValue placeholder="Select a branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {dynamicBranches.map((b) => (
+                      <SelectItem key={b} value={b}>
+                        {b}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               ) : (
                 <Input value={editForm.branch} readOnly className="bg-muted text-muted-foreground" />
@@ -1120,111 +1260,209 @@ export default function PredictiveInventoryPage() {
             </div>
             <div className="space-y-2">
               <Label>Item Name</Label>
-              <Select value={editForm.itemName} onValueChange={(val) => { const e = INVENTORY_CATALOG.find((c) => c.name === val); setEditForm((p) => ({ ...p, itemName: val, category: e?.category ?? p.category, unit: e?.unit ?? p.unit })); }}>
-                <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select an item" /></SelectTrigger>
-                <SelectContent>{INVENTORY_CATALOG.map((c) => <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>)}</SelectContent>
+              <Select
+                value={editForm.itemName}
+                onValueChange={(val) => {
+                  const entry = INVENTORY_CATALOG.find((c) => c.name === val);
+                  setEditForm((p) => ({
+                    ...p,
+                    itemName: val,
+                    category: entry?.category ?? p.category,
+                    unit: entry?.unit ?? p.unit,
+                  }));
+                }}
+              >
+                <SelectTrigger className="w-full text-foreground">
+                  <SelectValue placeholder="Select an item" />
+                </SelectTrigger>
+                <SelectContent>
+                  {INVENTORY_CATALOG.map((c) => (
+                    <SelectItem key={c.name} value={c.name}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label>Category</Label>
-                <Select value={editForm.category} onValueChange={(val) => setEditForm((p) => ({ ...p, category: val }))}>
-                  <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select category" /></SelectTrigger>
-                  <SelectContent>{INVENTORY_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                <Select
+                  value={editForm.category}
+                  onValueChange={(val) => setEditForm((p) => ({ ...p, category: val }))}
+                >
+                  <SelectTrigger className="w-full text-foreground">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INVENTORY_CATEGORIES.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label>Unit</Label>
-                <Select value={editForm.unit} onValueChange={(val) => setEditForm((p) => ({ ...p, unit: val }))}>
-                  <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select unit" /></SelectTrigger>
-                  <SelectContent>{INVENTORY_UNITS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
+                <Select
+                  value={editForm.unit}
+                  onValueChange={(val) => setEditForm((p) => ({ ...p, unit: val }))}
+                >
+                  <SelectTrigger className="w-full text-foreground">
+                    <SelectValue placeholder="Select unit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INVENTORY_UNITS.map((u) => (
+                      <SelectItem key={u} value={u}>
+                        {u}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
             </div>
-            <div className="space-y-2"><Label>Reorder Level</Label><Input type="number" min="0" step="0.01" value={editForm.reorderLevel} onChange={(e) => setEditForm((p) => ({ ...p, reorderLevel: e.target.value }))} /></div>
+            <div className="space-y-2">
+              <Label>Reorder Level</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={editForm.reorderLevel}
+                onChange={(e) => setEditForm((p) => ({ ...p, reorderLevel: e.target.value }))}
+              />
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={editSubmitting}>Cancel</Button>
-            <Button onClick={() => void submitEdit()} disabled={editSubmitting}>{editSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Pencil className="h-4 w-4 mr-1" />}{editSubmitting ? "Saving..." : "Save Changes"}</Button>
+            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={editSubmitting}>
+              Cancel
+            </Button>
+            <Button onClick={() => void submitEdit()} disabled={editSubmitting}>
+              {editSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Pencil className="h-4 w-4 mr-1" />}
+              {editSubmitting ? "Saving..." : "Save Changes"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Adjust */}
       <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Update Stock — {selectedItem?.product}</DialogTitle>
+            <DialogTitle>Update Stock - {selectedItem?.product}</DialogTitle>
             <DialogDescription>
-              <span className="text-foreground font-medium">Current: {selectedItem?.currentStock} {selectedItem?.unit}</span>
-              {" · "}Select <strong>IN</strong> to add received stock, or <strong>OUT</strong> to record usage.
+              <span className="text-foreground font-medium">
+                Current: {selectedItem?.currentStock} {selectedItem?.unit}
+              </span>
+              {" | "}Select <strong>IN</strong> to add received stock, or <strong>OUT</strong> to record usage.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2"><Label>Quantity</Label><Input type="number" min="0.01" step="0.01" value={adjustForm.quantityDelta} onChange={(e) => setAdjustForm((p) => ({ ...p, quantityDelta: e.target.value }))} /></div>
+              <div className="space-y-2">
+                <Label>Quantity</Label>
+                <Input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={adjustForm.quantityDelta}
+                  onChange={(e) => setAdjustForm((p) => ({ ...p, quantityDelta: e.target.value }))}
+                />
+              </div>
               <div className="space-y-2">
                 <Label>Direction</Label>
-                <select value={adjustForm.direction} onChange={(e) => setAdjustForm((p) => ({ ...p, direction: e.target.value as "IN" | "OUT" }))} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+                <select
+                  value={adjustForm.direction}
+                  onChange={(e) =>
+                    setAdjustForm((p) => ({
+                      ...p,
+                      direction: e.target.value as "IN" | "OUT",
+                    }))
+                  }
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
                   <option value="IN">IN (Restock)</option>
                   <option value="OUT">OUT (Usage)</option>
                 </select>
               </div>
             </div>
-            <div className="space-y-2"><Label>Reason</Label><Input placeholder="e.g. Weekly restock, Manual usage" value={adjustForm.reason} onChange={(e) => setAdjustForm((p) => ({ ...p, reason: e.target.value }))} /></div>
+            <div className="space-y-2">
+              <Label>Reason</Label>
+              <Input
+                placeholder="e.g. Weekly restock, Manual usage"
+                value={adjustForm.reason}
+                onChange={(e) => setAdjustForm((p) => ({ ...p, reason: e.target.value }))}
+              />
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAdjustOpen(false)} disabled={adjustSubmitting}>Cancel</Button>
-            <Button onClick={() => void submitAdjust()} disabled={adjustSubmitting}>{adjustSubmitting ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Applying...</> : "Apply Adjustment"}</Button>
+            <Button variant="outline" onClick={() => setAdjustOpen(false)} disabled={adjustSubmitting}>
+              Cancel
+            </Button>
+            <Button onClick={() => void submitAdjust()} disabled={adjustSubmitting}>
+              {adjustSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                  Applying...
+                </>
+              ) : (
+                "Apply Adjustment"
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete */}
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete inventory item?</AlertDialogTitle>
-            <AlertDialogDescription>This will permanently remove {selectedItem?.product || "this item"} and its stock movement history.</AlertDialogDescription>
+            <AlertDialogDescription>
+              This will permanently remove {selectedItem?.product || "this item"} and its stock movement history.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteSubmitting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={(e) => { e.preventDefault(); void submitDelete(); }} disabled={deleteSubmitting}>
-              {deleteSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}{deleteSubmitting ? "Deleting..." : "Delete"}
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              onClick={(e) => {
+                e.preventDefault();
+                void submitDelete();
+              }}
+              disabled={deleteSubmitting}
+            >
+              {deleteSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              {deleteSubmitting ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-    </motion.div>
+    </div>
   );
 }
 
-// ─── Record → InventoryItem ───────────────────────────────────────────────────
-
 function mapInventoryRecord(
-  i: InventoryRecord,
-  lowStockIds: Set<number>,
-  forecastMap: Map<number, { usage: number; daysLeft: number | null; narrative?: string }>,
+  record: InventoryRecord,
+  forecastMap: Map<number, { usage: number; historical: number; confirmed7D: number }>,
 ): InventoryItem {
-  const itemForecast = forecastMap.get(i.id);
+  const itemForecast = forecastMap.get(record.id);
   const dailyUsage = itemForecast?.usage ?? 0;
-  const stockAfter7 = Number(i.currentStock || 0) - dailyUsage * 7;
-  const status = getStatus(Number(i.currentStock || 0), Number(i.reorderLevel || 0), stockAfter7);
+  const stockAfter7 = Number(record.currentStock || 0) - dailyUsage * 7;
+  const status = getStatus(Number(record.currentStock || 0), Number(record.reorderLevel || 0), stockAfter7);
 
   return {
-    id: i.id,
-    product: i.itemName,
-    type: i.category?.toLowerCase().includes("conditioner") ? "Fabric Conditioner" : "Detergent",
-    branch: normalizeBranch(i.branch),
-    currentStock: Number(i.currentStock || 0),
-    maxStock: Number(i.reorderLevel || 0) * 2 || 100,
-    reorderLevel: Number(i.reorderLevel || 0),
-    unit: i.unit || "packs",
-    category: i.category || "General",
+    id: record.id,
+    product: record.itemName,
+    type: record.category?.toLowerCase().includes("conditioner") ? "Fabric Conditioner" : "Detergent",
+    branch: getCanonicalBranchName(record.branch),
+    currentStock: Number(record.currentStock || 0),
+    reorderLevel: Number(record.reorderLevel || 0),
+    unit: record.unit || "packs",
+    category: record.category || "General",
     forecastedUsage: dailyUsage,
-    daysUntilEmpty: calcDaysRemaining(Number(i.currentStock || 0), dailyUsage),
+    daysUntilEmpty: calcDaysRemaining(Number(record.currentStock || 0), dailyUsage),
     projectedAfter7Days: stockAfter7,
     status,
+    historicalDailyUsage: itemForecast?.historical ?? 0,
+    confirmedDemand7D: itemForecast?.confirmed7D ?? 0,
   };
 }

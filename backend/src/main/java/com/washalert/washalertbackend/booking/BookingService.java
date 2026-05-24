@@ -17,6 +17,7 @@ import com.washalert.washalertbackend.notification.NotificationService;
 import com.washalert.washalertbackend.payment.PaymentStatus;
 import com.washalert.washalertbackend.user.Role;
 import jakarta.transaction.Transactional;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -33,6 +34,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Service
+@Slf4j
 public class BookingService {
     private static final BigDecimal MACHINE_ABSOLUTE_MAX_LOAD_KG = new BigDecimal("9.0");
     private static final BigDecimal PURE_CLOTHES_MAX_LOAD_KG = new BigDecimal("8.0");
@@ -113,8 +115,13 @@ public class BookingService {
     public JobOrderResponse createBooking(CreateBookingRequest req) {
         String cleanBranch = normalizeBranch(req.branch());
         String paymentMethod = normalizePaymentMethod(req.paymentMethod());
+        String customerPhone = trimToNull(req.customerPhone());
         validateDate(req.preferredDate());
         validateLoadSize(req.serviceName(), req.estimatedWeightKg(), req.containsBulkyItems());
+
+        if (customerPhone == null) {
+            throw new IllegalArgumentException("Customer phone is required. Please update your profile before booking.");
+        }
 
         if (req.serviceType() == ServiceType.PICKUP_DELIVERY
                 && (req.deliveryAddress() == null || req.deliveryAddress().isBlank())) {
@@ -207,7 +214,7 @@ public class BookingService {
                 .customerName(req.customerName().trim())
                 .branch(cleanBranch)
                 .branchId(req.branchId())
-                .customerPhone(req.customerPhone().trim())
+                .customerPhone(customerPhone)
                 .customerEmail(trimToNull(req.customerEmail()))
                 .serviceType(req.serviceType())
                 .deliveryAddress(trimToNull(req.deliveryAddress()))
@@ -243,47 +250,57 @@ public class BookingService {
         order.setTrackingNumber(formatTrackingNumber(order.getId()));
         JobOrder saved = jobOrderRepository.save(order);
         inventoryService.deductAtBooking(saved);
-        timelineService.log(saved, saved.getStatus(), "customer", "Booking created");
-        notificationService.enqueueEmail(
-                saved.getCustomerEmail(),
-                "WashAlert Booking Confirmed",
-                "Your booking is confirmed.\nTracking Number: %s\nBranch: %s\nScheduled: %s %s"
-                        .formatted(
-                                saved.getTrackingNumber(),
-                                saved.getBranch(),
-                                saved.getBookingDate(),
-                                saved.getSlotStartTime()
-                        ),
-                "BOOKING",
-                String.valueOf(saved.getId())
-        );
-        notificationService.enqueuePushToUserEmail(
-                saved.getCustomerEmail(),
-                "Booking Confirmed",
-                "Your booking %s is confirmed for %s %s."
-                        .formatted(saved.getTrackingNumber(), saved.getBookingDate(), saved.getSlotStartTime()),
-                "BOOKING_CONFIRMED",
-                saved.getTrackingNumber() + ":confirmed"
-        );
-        notificationService.enqueuePushToRoles(
-                List.of(Role.ADMIN, Role.STAFF),
-                saved.getBranch(),
-                "New Booking Received",
-                "Order %s was booked for branch %s."
-                        .formatted(saved.getTrackingNumber(), saved.getBranch()),
-                "BOOKING_NEW",
-                saved.getTrackingNumber() + ":new"
-        );
-        if (saved.getServiceType() == ServiceType.PICKUP_DELIVERY) {
-            notificationService.enqueuePushToRoles(
-                    List.of(Role.DRIVER),
-                    saved.getBranch(),
-                    "New Booking Available",
-                    "Order %s in %s is ready for driver acceptance."
-                            .formatted(saved.getTrackingNumber(), saved.getBranch()),
-                    "BOOKING_AVAILABLE_DRIVER",
-                    saved.getTrackingNumber() + ":driver-pool"
+
+        try {
+            timelineService.log(saved, saved.getStatus(), "customer", "Booking created");
+        } catch (Exception ex) {
+            log.warn("[BookingService] Timeline log failed for {}: {}", saved.getTrackingNumber(), ex.getMessage());
+        }
+
+        try {
+            notificationService.enqueueEmail(
+                    saved.getCustomerEmail(),
+                    "WashAlert Booking Confirmed",
+                    "Your booking is confirmed.\nTracking Number: %s\nBranch: %s\nScheduled: %s %s"
+                            .formatted(
+                                    saved.getTrackingNumber(),
+                                    saved.getBranch(),
+                                    saved.getBookingDate(),
+                                    saved.getSlotStartTime()
+                            ),
+                    "BOOKING",
+                    String.valueOf(saved.getId())
             );
+            notificationService.enqueuePushToUserEmail(
+                    saved.getCustomerEmail(),
+                    "Booking Confirmed",
+                    "Your booking %s is confirmed for %s %s."
+                            .formatted(saved.getTrackingNumber(), saved.getBookingDate(), saved.getSlotStartTime()),
+                    "BOOKING_CONFIRMED",
+                    saved.getTrackingNumber() + ":confirmed"
+            );
+            notificationService.enqueuePushToRoles(
+                    List.of(Role.ADMIN, Role.STAFF),
+                    saved.getBranch(),
+                    "New Booking Received",
+                    "Order %s was booked for branch %s."
+                            .formatted(saved.getTrackingNumber(), saved.getBranch()),
+                    "BOOKING_NEW",
+                    saved.getTrackingNumber() + ":new"
+            );
+            if (saved.getServiceType() == ServiceType.PICKUP_DELIVERY) {
+                notificationService.enqueuePushToRoles(
+                        List.of(Role.DRIVER),
+                        saved.getBranch(),
+                        "New Booking Available",
+                        "Order %s in %s is ready for driver acceptance."
+                                .formatted(saved.getTrackingNumber(), saved.getBranch()),
+                        "BOOKING_AVAILABLE_DRIVER",
+                        saved.getTrackingNumber() + ":driver-pool"
+                );
+            }
+        } catch (Exception ex) {
+            log.warn("[BookingService] Notification enqueue failed for {}: {}", saved.getTrackingNumber(), ex.getMessage());
         }
         return toResponse(saved);
     }

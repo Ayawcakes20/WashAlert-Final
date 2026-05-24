@@ -668,6 +668,9 @@ export const inventoryApi = {
         projectedStockAfterDays: number;
         estimatedDaysUntilStockout: number;
         narrative?: string;
+        historicalDailyUsage?: number;
+        confirmedDemand7D?: number;
+        projectedDailyUsage?: number;
       }>
     >(`/api/inventory/forecast?days=${days}`),
   pendingConsumption: (branch?: string) => {

@@ -138,7 +138,7 @@ export default function BookingScreen({ route, navigation }) {
   const [slotsLoad, setSlotsLoad] = useState(false);
   const [rush, setRush]           = useState(false);
   const [notes, setNotes]         = useState('');
-  const [payMethod, setPay]       = useState('cod'); // default COD; GCash pending activation
+  const [payMethod, setPay]       = useState('cod');
   const [loadSize, setLoadSize]   = useState('SMALL'); // SMALL or LARGE
   const dates                     = useMemo(() => mkDates(14), []);
   const mode                      = SERVICE_MODES.find(m=>m.id===svcMode)||SERVICE_MODES[0];
@@ -489,7 +489,8 @@ export default function BookingScreen({ route, navigation }) {
 
       Alert.alert('Confirmed', successMsg, [{text:'View Order',onPress:()=>{ setStep(1); navigation.navigate('Orders'); }}]);
     }catch(err){
-      const msg = err?.message || 'Failed to place booking. Please try again.';
+      const rawMessage = String(err?.message || '').trim();
+      const msg = rawMessage || 'Failed to place booking. Please try again.';
       const isStockError = msg.toLowerCase().includes('insufficient') || msg.toLowerCase().includes('inventory') || msg.toLowerCase().includes('stock');
       if(isStockError){
         // Set inline banner AND show toast so the user gets immediate feedback
@@ -497,7 +498,11 @@ export default function BookingScreen({ route, navigation }) {
         showToast(msg); // toast tells the user which item failed
         setStep(4); // return to Extras (step 4) — ok() now blocks Continue until selection changes
       } else {
-        Alert.alert('Booking Failed', msg);
+        const friendlyMessage =
+          /internal server error/i.test(msg)
+            ? 'We could not place your booking right now. Please check your details and try again in a moment.'
+            : msg;
+        Alert.alert('Booking Failed', friendlyMessage);
       }
     }finally{ submittingRef.current = false; setSub(false); }
   };
@@ -1002,7 +1007,7 @@ export default function BookingScreen({ route, navigation }) {
             <Text style={S.q}>Payment Method</Text>
             <Text style={S.hint}>Choose how you will pay for your laundry service.</Text>
 
-            {/* COD — available */}
+            {/* COD - available */}
             <TouchableOpacity style={[S.payCard,payMethod==='cod'&&S.payCardOn]} onPress={()=>setPay('cod')}>
               <MaterialCommunityIcons name="cash" size={22} color={payMethod==='cod'?'#fff':colors.primary}/>
               <View style={{flex:1}}>
@@ -1012,7 +1017,7 @@ export default function BookingScreen({ route, navigation }) {
               {payMethod==='cod'&&<Ionicons name="checkmark-circle" size={18} color="#fff"/>}
             </TouchableOpacity>
 
-            {/* GCash — selectable for testing; saves paymentMethod: 'gcash' only */}
+            {/* GCash — selectable for testing; saves paymentMethod: 'gcash' only, does not call PayMongo */}
             <TouchableOpacity style={[S.payCard,payMethod==='gcash'&&S.payCardOn]} onPress={()=>setPay('gcash')} activeOpacity={0.8}>
               <MaterialCommunityIcons name="cellphone-wireless" size={22} color={payMethod==='gcash'?'#fff':colors.primary}/>
               <View style={{flex:1}}>
