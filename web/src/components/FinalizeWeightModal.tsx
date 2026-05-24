@@ -365,6 +365,13 @@ export function FinalizeWeightModal({
       return;
     }
 
+    if (!actualKg || actualKg === 0) {
+      setDetQty(0);
+      setConQty(0);
+      prevLoadsRef.current = 0;
+      return;
+    }
+
     // Only scale if weight is valid
     if (!weightValid) {
       return;
@@ -373,7 +380,19 @@ export function FinalizeWeightModal({
     const currentLoads = calculatedLoads;
 
     // Initialize prevLoadsRef on first valid load calculation
-    if (prevLoadsRef.current === null) {
+    if (prevLoadsRef.current === null || prevLoadsRef.current === 0) {
+      if (prevLoadsRef.current === 0) {
+        // Came from 0 weight, auto-scale now
+        const detMax = getAvailQty(order.detergent);
+        const conMax = getAvailQty(order.conditioner);
+
+        if (order.detergent && order.detergent.toLowerCase() !== "none") {
+          setDetQty(Math.min(detMax, currentLoads));
+        }
+        if (order.conditioner && order.conditioner.toLowerCase() !== "none") {
+          setConQty(Math.min(conMax, currentLoads));
+        }
+      }
       prevLoadsRef.current = currentLoads;
       return;
     }
@@ -392,7 +411,7 @@ export function FinalizeWeightModal({
 
       prevLoadsRef.current = currentLoads;
     }
-  }, [open, order, weightValid, calculatedLoads, getAvailQty]);
+  }, [open, order, weightValid, calculatedLoads, getAvailQty, actualKg]);
 
   if (!order) return null;
 
