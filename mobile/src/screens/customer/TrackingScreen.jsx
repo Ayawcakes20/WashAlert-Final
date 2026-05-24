@@ -12,8 +12,10 @@ import { colors } from '../../theme/colors';
 import { bookings as bookingsApi, deliveries as deliveriesApi } from '../../services/api';
 
 const GOOGLE_MAPS_API_KEY = 'AIzaSyAzAGBAijqpEZki3ZZBYe-9rxtzjF55RSY';
-const { width: SCREEN_W } = Dimensions.get('window');
-const SHEET_H = 310; // fixed px — never clips content
+const { width: SCREEN_W, height: SCREEN_H_DIM } = Dimensions.get('window');
+// Keep the live map the dominant visual (Grab/Lalamove style): compact, responsive
+// sheet height that still fits the milestone tracker + rider card without clipping.
+const SHEET_H = Math.max(260, Math.min(296, Math.round(SCREEN_H_DIM * 0.37)));
 
 const MAP_STYLE = [
   { elementType: 'geometry', stylers: [{ color: '#e8edf2' }] },
@@ -215,30 +217,35 @@ export default function TrackingScreen({ route, navigation }) {
   // But we need driverLoc to show the Car and Route
   const isTrackingRider = isTrackingPhase;
   
-  const driverPhone   = delivData?.driverPhone || order?.delivery?.phone || order?.assignedDriverPhone || '';
+  // Use the driver's number only — order.delivery.phone is the CUSTOMER's contact, not the driver's.
+  const driverPhone   = delivData?.driverPhone || order?.delivery?.driverPhone || order?.assignedDriverPhone || '';
   const driverName    = delivData?.driverName || order?.delivery?.driver || order?.assignedDriverName || 'Assigned Driver';
   const driverPhoto   = delivData?.driverPhotoUrl || order?.delivery?.driverPhotoUrl || order?.assignedDriverPhotoUrl || null;
 
+  // Normalize PH numbers; do NOT gate tel:/sms: on canOpenURL (Android returns
+  // false for tel: without CALL_PHONE permission, which blocked the dialer).
+  const normalizeDial = (value) => {
+    let raw = String(value || '').replace(/[^0-9+]/g, '');
+    if (raw.startsWith('0')) raw = '+63' + raw.slice(1);
+    else if (raw && !raw.startsWith('+')) raw = '+63' + raw;
+    return raw;
+  };
   const callDriver = async () => {
+    const p = normalizeDial(driverPhone);
+    if (!p) { Alert.alert('Phone number is not available yet.', "The driver's contact number is not on record yet."); return; }
     try {
-      const p = driverPhone.replace(/[^0-9+]/g, '');
-      if (!p) { Alert.alert('No Contact', 'No contact number available.'); return; }
-      const url = `tel:${p}`;
-      if (await Linking.canOpenURL(url)) await Linking.openURL(url);
-      else Alert.alert('Error', 'Your device cannot open this action.');
+      await Linking.openURL(`tel:${p}`);
     } catch {
-      Alert.alert('Error', 'Your device cannot open this action.');
+      Alert.alert('Open Dialer Manually', `Could not open the dialer automatically.\nPlease call: ${p}`);
     }
   };
   const smsDriver = async () => {
+    const p = normalizeDial(driverPhone);
+    if (!p) { Alert.alert('Phone number is not available yet.', "The driver's contact number is not on record yet."); return; }
     try {
-      const p = driverPhone.replace(/[^0-9+]/g, '');
-      if (!p) { Alert.alert('No Contact', 'No contact number available.'); return; }
-      const url = `sms:${p}`;
-      if (await Linking.canOpenURL(url)) await Linking.openURL(url);
-      else Alert.alert('Error', 'Your device cannot open this action.');
+      await Linking.openURL(`sms:${p}`);
     } catch {
-      Alert.alert('Error', 'Your device cannot open this action.');
+      Alert.alert('Unable to open messaging app.', 'Please try again later.');
     }
   };
   const headline =

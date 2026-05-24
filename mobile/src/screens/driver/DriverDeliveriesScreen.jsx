@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -85,6 +85,7 @@ const DriverDeliveriesScreen = ({ navigation }) => {
   const [deliveries, setDeliveries] = useState([]);
   const [availableOrders, setAvailableOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [tabLoading, setTabLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [acceptingTracking, setAcceptingTracking] = useState('');
@@ -138,12 +139,34 @@ const DriverDeliveriesScreen = ({ navigation }) => {
     }
   }, [tab]);
 
+  const hasLoadedRef = useRef(false);
+  const loadDeliveriesRef = useRef(loadDeliveries);
+  useEffect(() => {
+    loadDeliveriesRef.current = loadDeliveries;
+  }, [loadDeliveries]);
+
+  // Initial load shows the full-screen loader once; refocus refreshes silently
+  // so the existing list never blanks out.
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
-      loadDeliveries(0, true);
-    }, [loadDeliveries]),
+      if (!hasLoadedRef.current) {
+        hasLoadedRef.current = true;
+        loadDeliveriesRef.current(0, true);
+      } else {
+        loadDeliveriesRef.current(0, false);
+      }
+    }, []),
   );
+
+  // Tab switch → reload silently (keep current list visible with an inline
+  // indicator) instead of triggering the full-screen loader.
+  useEffect(() => {
+    if (!hasLoadedRef.current) return;
+    setCurrentPage(1);
+    setTabLoading(true);
+    Promise.resolve(loadDeliveries(0, false)).finally(() => setTabLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -152,12 +175,7 @@ const DriverDeliveriesScreen = ({ navigation }) => {
 
   const onChangeTab = useCallback((nextTab) => {
     setTab(nextTab);
-    setCurrentPage(1);
   }, []);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [tab]);
 
   const handleAcceptBooking = useCallback((trackingNumber) => {
     if (!trackingNumber || acceptingTracking) return;
@@ -197,7 +215,10 @@ const DriverDeliveriesScreen = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.scrollContent}>
-        <Text style={styles.headerTitle}>My Deliveries</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.headerTitle}>My Deliveries</Text>
+          {tabLoading ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+        </View>
 
         <View style={styles.tabsContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsScroll}>
@@ -288,11 +309,14 @@ const DriverDeliveriesScreen = ({ navigation }) => {
                         <TouchableOpacity
                           style={styles.viewBtn}
                           onPress={() => {
-                            if (!delivery?.id) {
+                            // The detail screen loads via /api/orders/driver/task/{id}, which
+                            // expects the JobOrder id (delivery.orderId), NOT the Delivery row id.
+                            const orderRef = delivery?.orderId ?? delivery?.id;
+                            if (!orderRef) {
                               Alert.alert('Unavailable', 'Delivery detail is missing an ID. Please refresh.');
                               return;
                             }
-                            navigation.navigate('DeliveryDetail', { deliveryId: delivery.id });
+                            navigation.navigate('DeliveryDetail', { deliveryId: orderRef });
                           }}
                         >
                           <Text style={styles.viewBtnText}>{getPrimaryActionLabel(delivery.status)}</Text>
@@ -334,7 +358,8 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   scrollContent: { flex: 1, paddingHorizontal: 20, paddingTop: 16 },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: colors.text, marginBottom: 16 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  headerTitle: { fontSize: 20, fontWeight: 'bold', color: colors.text },
   errorText: { color: colors.error, fontSize: 12, marginBottom: 12 },
 
   tabsContainer: { marginBottom: 20 },
