@@ -314,8 +314,13 @@ public class InventoryService {
                     .unit(req.unit().trim())
                     .currentStock(req.currentStock())
                     .reorderLevel(req.reorderLevel())
-                    .lowStockWarning(false) // Explicitly set default
-                    .projectedDaysRemaining(null) // Initially null
+                    .lowStockWarning(false)
+                    .projectedDaysRemaining(null)
+                    .assetType(req.assetType())
+                    .purchaseDate(req.purchaseDate())
+                    .lastServicedDate(req.lastServicedDate())
+                    .maintenanceIntervalDays(req.maintenanceIntervalDays())
+                    .assetStatus(req.assetStatus())
                     .build();
 
             InventoryItem saved = itemRepository.save(item);
@@ -359,6 +364,11 @@ public class InventoryService {
         item.setCategory(req.category().trim());
         item.setUnit(req.unit().trim());
         item.setReorderLevel(req.reorderLevel());
+        if (req.assetType() != null) item.setAssetType(req.assetType());
+        if (req.purchaseDate() != null) item.setPurchaseDate(req.purchaseDate());
+        if (req.lastServicedDate() != null) item.setLastServicedDate(req.lastServicedDate());
+        if (req.maintenanceIntervalDays() != null) item.setMaintenanceIntervalDays(req.maintenanceIntervalDays());
+        if (req.assetStatus() != null) item.setAssetStatus(req.assetStatus());
 
         InventoryItem saved = itemRepository.save(item);
         firestoreSyncService.upsert("inventory", String.valueOf(saved.getId()), toResponse(saved));
@@ -848,8 +858,26 @@ public class InventoryService {
                 item.getCurrentStock().compareTo(item.getReorderLevel()) <= 0,
                 item.getProjectedDaysRemaining(),
                 item.isLowStockWarning(),
-                item.getUpdatedAt()
+                item.getUpdatedAt(),
+                item.getAssetType(),
+                item.getPurchaseDate(),
+                item.getLastServicedDate(),
+                item.getMaintenanceIntervalDays(),
+                item.getAssetStatus()
         );
+    }
+
+    @Transactional
+    public InventoryItemResponse markServiced(Long itemId) {
+        InventoryItem item = itemRepository.findById(itemId)
+                .orElseThrow(() -> new IllegalArgumentException("Inventory item not found."));
+        item.setLastServicedDate(java.time.LocalDate.now());
+        if (item.getAssetStatus() == null || "Under Maintenance".equals(item.getAssetStatus())) {
+            item.setAssetStatus("Active");
+        }
+        InventoryItem saved = itemRepository.save(item);
+        firestoreSyncService.upsert("inventory", String.valueOf(saved.getId()), toResponse(saved));
+        return toResponse(saved);
     }
 
     private BigDecimal toSignedDelta(BigDecimal quantityDelta, StockDirection direction) {

@@ -16,6 +16,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -68,6 +69,26 @@ public class InventoryItem {
     @Builder.Default
     @Column(name = "low_stock_warning", nullable = false)
     private boolean lowStockWarning = false;
+
+    /** "Consumable" or "Asset" — null means Consumable for legacy rows */
+    @Column(name = "asset_type", length = 30)
+    private String assetType;
+
+    /** ISO date of purchase (assets only) */
+    @Column(name = "purchase_date")
+    private LocalDate purchaseDate;
+
+    /** Date the asset was last serviced */
+    @Column(name = "last_serviced_date")
+    private LocalDate lastServicedDate;
+
+    /** How many days between scheduled maintenance intervals */
+    @Column(name = "maintenance_interval_days")
+    private Integer maintenanceIntervalDays;
+
+    /** "Active", "Under Maintenance", "Decommissioned" */
+    @Column(name = "asset_status", length = 30)
+    private String assetStatus;
 
     @PrePersist
     void onCreate() {

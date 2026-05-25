@@ -198,7 +198,12 @@ public class FirestoreReadService {
                 currentStock.compareTo(reorderLevel) <= 0,
                 asLong(data.get("projectedDaysRemaining")) != null ? asLong(data.get("projectedDaysRemaining")).intValue() : null,
                 asBoolean(data.get("lowStockWarning")) != null && asBoolean(data.get("lowStockWarning")),
-                asLocalDateTime(data.get("updatedAt"))
+                asLocalDateTime(data.get("updatedAt")),
+                asString(data.get("assetType")),
+                asLocalDate(data.get("purchaseDate")),
+                asLocalDate(data.get("lastServicedDate")),
+                asLong(data.get("maintenanceIntervalDays")) != null ? asLong(data.get("maintenanceIntervalDays")).intValue() : null,
+                asString(data.get("assetStatus"))
         );
     }
 

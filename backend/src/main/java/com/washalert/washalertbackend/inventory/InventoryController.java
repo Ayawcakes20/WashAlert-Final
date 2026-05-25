@@ -117,6 +117,12 @@ public class InventoryController {
         return inventoryService.getPendingConsumption(branch, principal);
     }
 
+    @PatchMapping("/items/{itemId}/mark-serviced")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public InventoryItemResponse markServiced(@PathVariable Long itemId) {
+        return inventoryService.markServiced(itemId);
+    }
+
     @DeleteMapping("/items/{itemId}")
     @PreAuthorize("hasRole('ADMIN')")
     public void delete(@PathVariable Long itemId) {

@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 public record UpdateInventoryItemRequest(
         @NotBlank(message = "Branch is required.")
@@ -26,6 +27,12 @@ public record UpdateInventoryItemRequest(
 
         @NotNull(message = "Reorder level is required.")
         @DecimalMin(value = "0.00", message = "Reorder level cannot be negative.")
-        BigDecimal reorderLevel
+        BigDecimal reorderLevel,
+
+        String assetType,
+        LocalDate purchaseDate,
+        LocalDate lastServicedDate,
+        Integer maintenanceIntervalDays,
+        String assetStatus
 ) {
 }
