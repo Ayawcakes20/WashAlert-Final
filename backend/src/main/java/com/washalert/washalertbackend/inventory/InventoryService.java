@@ -23,16 +23,21 @@ import com.washalert.washalertbackend.common.dto.PagedResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import com.washalert.washalertbackend.inventory.dto.DailyConsumptionResponse;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 
 @Service
 @Slf4j
@@ -922,5 +927,55 @@ public class InventoryService {
                 "LOW_STOCK",
                 item.getId() + ":" + changeType
         );
+    }
+
+    /**
+     * Returns per-day OUT (consumption) totals per item for the requested lookback period.
+     * Only negative quantityDelta movements (stock consumed/adjusted out) are counted.
+     */
+    public List<DailyConsumptionResponse> dailyStats(int daysBack, String branchParam, AuthUserDetails principal) {
+        int effectiveDays = (daysBack > 0 && daysBack <= 365) ? daysBack : 60;
+        LocalDateTime since = LocalDateTime.now().minusDays(effectiveDays);
+
+        List<InventoryMovement> movements;
+        if (principal.getUser().getRole() == Role.STAFF) {
+            String branch = principal.getUser().getBranch();
+            movements = movementRepository.findOutMovementsByBranchSince(branch, since);
+        } else if (branchParam != null && !branchParam.isBlank()) {
+            movements = movementRepository.findOutMovementsByBranchSince(branchParam.trim(), since);
+        } else {
+            movements = movementRepository.findAllOutMovementsSince(since);
+        }
+
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        List<String> allDates = Stream.iterate(
+                LocalDate.now().minusDays(effectiveDays - 1L), d -> d.plusDays(1))
+                .limit(effectiveDays)
+                .map(d -> d.format(fmt))
+                .toList();
+
+        // key = "branch||itemName"
+        Map<String, Map<String, Double>> grouped = new LinkedHashMap<>();
+        Map<String, String> keyToUnit = new LinkedHashMap<>();
+
+        for (InventoryMovement m : movements) {
+            String key = m.getInventoryItem().getBranch() + "||" + m.getInventoryItem().getItemName();
+            String dateKey = m.getCreatedAt().format(fmt);
+            grouped.computeIfAbsent(key, k -> new LinkedHashMap<>())
+                   .merge(dateKey, m.getQuantityDelta().abs().doubleValue(), Double::sum);
+            keyToUnit.putIfAbsent(key, m.getInventoryItem().getUnit());
+        }
+
+        return grouped.entrySet().stream().map(entry -> {
+            String[] parts = entry.getKey().split("\\|\\|", 2);
+            String branch = parts[0];
+            String itemName = parts.length > 1 ? parts[1] : "";
+            String unit = keyToUnit.getOrDefault(entry.getKey(), "units");
+            List<DailyConsumptionResponse.DailyUsage> days = allDates.stream()
+                    .map(date -> new DailyConsumptionResponse.DailyUsage(
+                            date, entry.getValue().getOrDefault(date, 0.0)))
+                    .toList();
+            return new DailyConsumptionResponse(itemName, branch, unit, days);
+        }).toList();
     }
 }

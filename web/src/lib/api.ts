@@ -691,6 +691,10 @@ export const inventoryApi = {
       method: "PATCH",
       body: {},
     }),
+  dailyStats: (days = 60) =>
+    apiRequest<Array<{ itemName: string; branch: string; unit: string; days: Array<{ date: string; consumed: number }> }>>(
+      `/api/inventory/daily-stats?days=${days}`,
+    ),
 };
 
 export const notificationsApi = {
