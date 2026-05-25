@@ -173,6 +173,12 @@ export type InventoryRecord = {
   lastServicedDate?: string | null;
   maintenanceIntervalDays?: number | null;
   assetStatus?: string | null;
+  supplierLeadTimeDays?: number | null;
+};
+
+export type BookingPipelineRecord = {
+  itemName: string;
+  upcoming: Array<{ date: string; dayLabel: string; quantity: number }>;
 };
 
 export type AppNotification = {
@@ -699,6 +705,8 @@ export const inventoryApi = {
     apiRequest<Array<{ itemName: string; branch: string; unit: string; days: Array<{ date: string; consumed: number }> }>>(
       `/api/inventory/order-activity-stats?days=${days}`,
     ),
+  bookingPipeline: (days = 14) =>
+    apiRequest<BookingPipelineRecord[]>(`/api/inventory/booking-pipeline?days=${days}`),
 };
 
 export const notificationsApi = {

@@ -1,6 +1,7 @@
 package com.washalert.washalertbackend.inventory;
 
 import com.washalert.washalertbackend.inventory.dto.AdjustInventoryRequest;
+import com.washalert.washalertbackend.inventory.dto.BookingPipelineResponse;
 import com.washalert.washalertbackend.inventory.dto.CreateInventoryItemRequest;
 import com.washalert.washalertbackend.inventory.dto.DailyConsumptionResponse;
 import com.washalert.washalertbackend.inventory.dto.InventoryForecastResponse;
@@ -132,6 +133,16 @@ public class InventoryController {
             @AuthenticationPrincipal AuthUserDetails principal
     ) {
         return inventoryService.orderActivityStats(days, branch, principal);
+    }
+
+    @GetMapping("/booking-pipeline")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public List<BookingPipelineResponse> bookingPipeline(
+            @RequestParam(required = false) String branch,
+            @RequestParam(defaultValue = "14") int days,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return inventoryService.bookingPipeline(branch, days, principal);
     }
 
     @GetMapping("/daily-stats")

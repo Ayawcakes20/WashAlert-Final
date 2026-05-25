@@ -64,6 +64,9 @@ public interface JobOrderRepository extends JpaRepository<JobOrder, Long> {
 
     List<JobOrder> findByStatusAndServiceTypeOrderByCreatedAtDesc(JobOrderStatus status, ServiceType serviceType);
 
+    List<JobOrder> findByStatusInAndBookingDateBetween(Collection<JobOrderStatus> statuses, LocalDate start, LocalDate end);
+    List<JobOrder> findByBranchIgnoreCaseAndStatusInAndBookingDateBetween(String branch, Collection<JobOrderStatus> statuses, LocalDate start, LocalDate end);
+
     @Query(
             value = """
                     select jo

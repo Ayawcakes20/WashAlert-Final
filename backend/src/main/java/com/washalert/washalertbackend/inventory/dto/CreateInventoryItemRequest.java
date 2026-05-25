@@ -37,6 +37,7 @@ public record CreateInventoryItemRequest(
         LocalDate purchaseDate,
         LocalDate lastServicedDate,
         Integer maintenanceIntervalDays,
-        String assetStatus
+        String assetStatus,
+        Integer supplierLeadTimeDays
 ) {
 }
