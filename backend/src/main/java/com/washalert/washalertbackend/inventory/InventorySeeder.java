@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 
 @Component
 @Slf4j
@@ -16,15 +17,43 @@ public class InventorySeeder {
 
     private static final String BRANCH = "Triplets - Makati";
 
-    private final InventoryItemRepository repository;
+    private static final Set<String> VALID_CONSUMABLE_NAMES = Set.of(
+            "Surf Detergent", "Ariel Detergent", "Charm Fabric Conditioner", "Downy Fabric Conditioner"
+    );
+    private static final Set<String> VALID_ASSET_CATEGORIES = Set.of(
+            "Washing Machine", "Dryer", "Aircon", "Electric Fan"
+    );
 
-    public InventorySeeder(InventoryItemRepository repository) {
+    private final InventoryItemRepository repository;
+    private final InventoryMovementRepository movementRepository;
+
+    public InventorySeeder(InventoryItemRepository repository, InventoryMovementRepository movementRepository) {
         this.repository = repository;
+        this.movementRepository = movementRepository;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void seed() {
+        // ── Cleanup: remove any items that are not in the approved catalog ──────
+        // Equivalent SQL:
+        //   DELETE FROM inventory_movements WHERE inventory_item_id IN (SELECT id FROM inventory_items WHERE ...)
+        //   DELETE FROM inventory_items WHERE (asset_type='Consumable' AND item_name NOT IN (...approved 4...))
+        //                                  OR (asset_type='Asset' AND category NOT IN (...approved 4 types...))
+        List<InventoryItem> allItems = repository.findAll();
+        for (InventoryItem item : allItems) {
+            boolean isAsset = "Asset".equalsIgnoreCase(item.getAssetType());
+            boolean invalid = isAsset
+                    ? !VALID_ASSET_CATEGORIES.contains(item.getCategory())
+                    : !VALID_CONSUMABLE_NAMES.contains(item.getItemName());
+            if (invalid) {
+                movementRepository.deleteByInventoryItem_Id(item.getId());
+                repository.delete(item);
+                log.info("[INVENTORY SEEDER] Removed invalid item '{}' (branch: '{}')", item.getItemName(), item.getBranch());
+            }
+        }
+
+        // ── Seed approved items if not already present ───────────────────────
         LocalDate today = LocalDate.now();
 
         List<SeedItem> items = List.of(

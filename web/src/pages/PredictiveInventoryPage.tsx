@@ -119,6 +119,22 @@ const CONSUMABLE_NAMES = [
   "Downy Fabric Conditioner",
 ];
 
+const CONSUMABLE_DEFAULTS: Record<string, { category: string; unit: string; reorderLevel: number }> = {
+  "Surf Detergent":           { category: "Detergent",          unit: "packs", reorderLevel: 2 },
+  "Ariel Detergent":          { category: "Detergent",          unit: "packs", reorderLevel: 5 },
+  "Charm Fabric Conditioner": { category: "Fabric Conditioner", unit: "packs", reorderLevel: 1 },
+  "Downy Fabric Conditioner": { category: "Fabric Conditioner", unit: "packs", reorderLevel: 10 },
+};
+
+const ASSET_TYPES = ["Washing Machine", "Dryer", "Aircon", "Electric Fan"] as const;
+
+const ASSET_MAINTENANCE_INTERVALS: Record<string, number> = {
+  "Washing Machine": 90,
+  "Dryer": 90,
+  "Aircon": 180,
+  "Electric Fan": 365,
+};
+
 // ── InventoryItem type ────────────────────────────────────────────────────────
 
 interface InventoryItem {
@@ -162,9 +178,10 @@ function calcDaysUntilService(
   return Math.floor((next.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
 }
 
-function getStatus(currentStock: number, reorderLevel: number, stockAfter7Days: number): "Healthy" | "Low" | "Critical" {
-  if (currentStock <= reorderLevel || stockAfter7Days < 0) return "Critical";
-  if (currentStock <= reorderLevel * 1.5) return "Low";
+function getStatus(daysRemaining: number | null): "Healthy" | "Low" | "Critical" {
+  if (daysRemaining === null) return "Healthy";
+  if (daysRemaining <= 7) return "Critical";
+  if (daysRemaining <= 14) return "Low";
   return "Healthy";
 }
 
@@ -359,11 +376,11 @@ function mapInventoryRecord(
   const isAsset = record.assetType === "Asset";
   const itemForecast = isAsset ? undefined : forecastMap.get(record.id);
   const dailyUsage = itemForecast?.usage ?? 0;
-  const stockAfter7 = Number(record.currentStock || 0) - dailyUsage * 7;
   const catLower = (record.category ?? "").toLowerCase();
   const type: InventoryItem["type"] = catLower.includes("conditioner") ? "Fabric Conditioner"
     : catLower.includes("detergent") ? "Detergent" : isAsset ? "Asset" : "Other";
-  const status = isAsset ? "Healthy" : getStatus(Number(record.currentStock || 0), Number(record.reorderLevel || 0), stockAfter7);
+  const daysRemaining = isAsset ? null : calcDaysRemaining(Number(record.currentStock || 0), dailyUsage);
+  const status = isAsset ? "Healthy" : getStatus(daysRemaining);
   const daysUntilService = calcDaysUntilService(record.lastServicedDate, record.maintenanceIntervalDays);
   return {
     id: record.id,
@@ -375,9 +392,9 @@ function mapInventoryRecord(
     unit: record.unit || "packs",
     category: record.category || "General",
     forecastedUsage: dailyUsage,
-    daysUntilEmpty: isAsset ? null : calcDaysRemaining(Number(record.currentStock || 0), dailyUsage),
-    projectedAfter7Days: stockAfter7,
+    projectedAfter7Days: Math.max(0, Number(record.currentStock || 0) - dailyUsage * 7),
     status,
+    daysUntilEmpty: isAsset ? null : daysRemaining,
     historicalDailyUsage: itemForecast?.historical ?? 0,
     confirmedDemand7D: itemForecast?.confirmed7D ?? 0,
     isAsset,
@@ -422,7 +439,7 @@ export default function PredictiveInventoryPage() {
   const [createSubmitting, setCreateSubmitting] = useState(false);
   const [createForm, setCreateForm] = useState({
     branch: "", itemName: "", category: "", unit: "", currentStock: "0", reorderLevel: "0",
-    assetType: "Consumable", purchaseDate: "", lastServicedDate: "", maintenanceIntervalDays: "", assetStatus: "Active",
+    assetType: "Consumable", brand: "", purchaseDate: "", lastServicedDate: "", maintenanceIntervalDays: "", assetStatus: "Active",
   });
 
   const [editOpen, setEditOpen] = useState(false);
@@ -430,7 +447,7 @@ export default function PredictiveInventoryPage() {
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [editForm, setEditForm] = useState({
     branch: "", itemName: "", category: "", unit: "", reorderLevel: "0",
-    assetType: "Consumable", purchaseDate: "", lastServicedDate: "", maintenanceIntervalDays: "", assetStatus: "Active",
+    assetType: "Consumable", brand: "", purchaseDate: "", lastServicedDate: "", maintenanceIntervalDays: "", assetStatus: "Active",
   });
 
   const [adjustOpen, setAdjustOpen] = useState(false);
@@ -710,7 +727,7 @@ export default function PredictiveInventoryPage() {
     setCreateForm({
       branch: isAdmin ? "" : userBranch, itemName: "", category: "", unit: "",
       currentStock: "0", reorderLevel: "0", assetType: "Consumable",
-      purchaseDate: "", lastServicedDate: "", maintenanceIntervalDays: "", assetStatus: "Active",
+      brand: "", purchaseDate: "", lastServicedDate: "", maintenanceIntervalDays: "", assetStatus: "Active",
     });
     setCreateOpen(true);
   };
@@ -719,7 +736,8 @@ export default function PredictiveInventoryPage() {
     setSelectedItem(row);
     setEditForm({
       branch: row.branch, itemName: row.product, category: row.category, unit: row.unit, reorderLevel: String(row.reorderLevel),
-      assetType: row.assetType || "Consumable", purchaseDate: row.purchaseDate || "", lastServicedDate: row.lastServicedDate || "",
+      assetType: row.assetType || "Consumable", brand: "",
+      purchaseDate: row.purchaseDate || "", lastServicedDate: row.lastServicedDate || "",
       maintenanceIntervalDays: row.maintenanceIntervalDays != null ? String(row.maintenanceIntervalDays) : "", assetStatus: row.assetStatus || "Active",
     });
     setEditOpen(true);
@@ -734,20 +752,24 @@ export default function PredictiveInventoryPage() {
   const openDelete = (row: InventoryItem) => { setSelectedItem(row); setDeleteOpen(true); };
 
   const submitCreate = async () => {
-    if (!createForm.branch.trim() || !createForm.itemName.trim() || !createForm.category.trim() || !createForm.unit.trim()) {
-      toast.error("Branch, item name, category, and unit are required."); return;
+    const isAssetCreate = createForm.assetType === "Asset";
+    const computedItemName = isAssetCreate
+      ? `${createForm.brand.trim()} ${createForm.category.trim()}`.trim()
+      : createForm.itemName.trim();
+    if (!createForm.branch.trim() || !computedItemName || !createForm.category.trim() || !createForm.unit.trim()) {
+      toast.error(isAssetCreate ? "Branch, asset type, and brand are required." : "Branch, item name, category, and unit are required."); return;
     }
     setCreateSubmitting(true);
     try {
       await inventoryApi.create({
-        branch: createForm.branch.trim(), itemName: createForm.itemName.trim(),
+        branch: createForm.branch.trim(), itemName: computedItemName,
         category: createForm.category.trim(), unit: createForm.unit.trim(),
         currentStock: Number(createForm.currentStock || 0), reorderLevel: Number(createForm.reorderLevel || 0),
         assetType: createForm.assetType || null,
         purchaseDate: createForm.purchaseDate || null,
         lastServicedDate: createForm.lastServicedDate || null,
         maintenanceIntervalDays: createForm.maintenanceIntervalDays ? Number(createForm.maintenanceIntervalDays) : null,
-        assetStatus: createForm.assetType === "Asset" ? (createForm.assetStatus || "Active") : null,
+        assetStatus: isAssetCreate ? (createForm.assetStatus || "Active") : null,
       } as any);
       toast.success("Inventory item created.");
       setCreateOpen(false);
@@ -770,6 +792,7 @@ export default function PredictiveInventoryPage() {
         branch: editForm.branch.trim(), itemName: editForm.itemName.trim(),
         category: editForm.category.trim(), unit: editForm.unit.trim(), reorderLevel: Number(editForm.reorderLevel || 0),
         assetType: editForm.assetType || null,
+
         purchaseDate: editForm.purchaseDate || null,
         lastServicedDate: editForm.lastServicedDate || null,
         maintenanceIntervalDays: editForm.maintenanceIntervalDays ? Number(editForm.maintenanceIntervalDays) : null,
@@ -938,11 +961,13 @@ export default function PredictiveInventoryPage() {
                 </p>
                 {item.recommended > 0 ? (
                   <p className="text-sm font-semibold text-foreground">
-                    Recommended reorder: <span className={item.status === "Critical" ? "text-red-700" : "text-amber-700"}>{item.recommended} {item.unit}</span>
-                    <span className="text-xs text-muted-foreground font-normal ml-1">(30-day buffer)</span>
+                    Reorder <span className={item.status === "Critical" ? "text-red-700" : "text-amber-700"}>{item.recommended} {item.unit}</span>
+                    <span className="text-xs text-muted-foreground font-normal ml-1">to maintain 30-day supply</span>
                   </p>
+                ) : item.historicalDailyUsage < 0.001 ? (
+                  <p className="text-sm text-muted-foreground">Enable usage tracking to get reorder quantity suggestion</p>
                 ) : (
-                  <p className="text-sm text-emerald-700 font-medium">Stock sufficient for 30 days — no reorder needed</p>
+                  <p className="text-sm text-muted-foreground">Reorder quantity calculation pending</p>
                 )}
                 <div className="flex gap-2 pt-1">
                   <Button size="sm" onClick={() => openAdjust(item)}>Add Stock</Button>
@@ -1062,9 +1087,9 @@ export default function PredictiveInventoryPage() {
         </div>
         <div className="px-6 py-3 border-b border-border/20 bg-muted/10 flex flex-wrap gap-x-6 gap-y-2 text-sm">
           <span className="font-semibold text-muted-foreground">Status legend:</span>
-          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-red-500" /> Critical = at or below reorder level</span>
-          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-amber-500" /> Low = approaching reorder level</span>
-          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-emerald-500" /> Healthy = enough stock</span>
+          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-red-500" /> Critical = ≤7 days remaining</span>
+          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-amber-500" /> Low = 8–14 days remaining</span>
+          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-emerald-500" /> Healthy = &gt;14 days remaining</span>
         </div>
 
         {/* Desktop table — hidden on small screens */}
@@ -1807,20 +1832,25 @@ function CreateEditForm({
   mode: "create" | "edit";
 }) {
   const isAsset = form.assetType === "Asset";
-  const catalog = isAsset ? ASSET_CATALOG : CONSUMABLE_CATALOG;
 
   return (
     <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+      {/* Item Type */}
       <div className="space-y-2">
         <Label>Item Type</Label>
-        <Select value={form.assetType} onValueChange={(v) => setForm((p: any) => ({ ...p, assetType: v, itemName: "", category: "", unit: "" }))}>
+        <Select value={form.assetType} onValueChange={(v) => setForm((p: any) => ({
+          ...p, assetType: v, itemName: "", category: "", unit: "", brand: "",
+          maintenanceIntervalDays: "",
+        }))}>
           <SelectTrigger className="w-full text-foreground"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="Consumable">Consumable (Detergent, Fabric Conditioner, etc.)</SelectItem>
-            <SelectItem value="Asset">Asset (Washing Machine, Dryer, etc.)</SelectItem>
+            <SelectItem value="Consumable">Consumable (Detergent, Fabric Conditioner)</SelectItem>
+            <SelectItem value="Asset">Asset (Washing Machine, Dryer, Aircon, Fan)</SelectItem>
           </SelectContent>
         </Select>
       </div>
+
+      {/* Branch */}
       <div className="space-y-2">
         <Label>Branch</Label>
         {isAdmin ? (
@@ -1832,58 +1862,100 @@ function CreateEditForm({
           <Input value={form.branch || userBranch} readOnly className="bg-muted text-muted-foreground" />
         )}
       </div>
-      <div className="space-y-2">
-        <Label>Item Name</Label>
-        <Select value={form.itemName} onValueChange={(v) => {
-          const entry = (catalog as readonly { name: string; category: string; unit: string }[]).find((c) => c.name === v);
-          setForm((p: any) => ({ ...p, itemName: v, category: entry?.category ?? p.category, unit: entry?.unit ?? p.unit }));
-        }}>
-          <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select an item" /></SelectTrigger>
-          <SelectContent>{(catalog as readonly { name: string }[]).map((c) => <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>)}</SelectContent>
-        </Select>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label>Category</Label>
-          <Select value={form.category} onValueChange={(v) => setForm((p: any) => ({ ...p, category: v }))}>
-            <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select category" /></SelectTrigger>
-            <SelectContent>{INVENTORY_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Unit</Label>
-          <Select value={form.unit} onValueChange={(v) => setForm((p: any) => ({ ...p, unit: v }))}>
-            <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select unit" /></SelectTrigger>
-            <SelectContent>{INVENTORY_UNITS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-      </div>
-      {mode === "create" && (
-        <div className="space-y-2">
-          <Label>Current Stock</Label>
-          <Input type="number" min="0" step="0.01" value={form.currentStock} onChange={(e) => setForm((p: any) => ({ ...p, currentStock: e.target.value }))} />
-        </div>
+
+      {/* ── Consumable fields ── */}
+      {!isAsset && (
+        <>
+          <div className="space-y-2">
+            <Label>Item Name</Label>
+            <Select value={form.itemName} onValueChange={(v) => {
+              const def = CONSUMABLE_DEFAULTS[v];
+              setForm((p: any) => ({
+                ...p, itemName: v,
+                category: def?.category ?? p.category,
+                unit: def?.unit ?? p.unit,
+                reorderLevel: String(def?.reorderLevel ?? p.reorderLevel),
+              }));
+            }}>
+              <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select an item" /></SelectTrigger>
+              <SelectContent>
+                {CONSUMABLE_CATALOG.map((c) => <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Input value={form.category} readOnly className="bg-muted text-muted-foreground" placeholder="Auto-filled" />
+            </div>
+            <div className="space-y-2">
+              <Label>Unit</Label>
+              <Input value={form.unit} readOnly className="bg-muted text-muted-foreground" placeholder="Auto-filled" />
+            </div>
+          </div>
+          {mode === "create" && (
+            <div className="space-y-2">
+              <Label>Current Stock</Label>
+              <Input type="number" min="0" step="0.01" value={form.currentStock}
+                onChange={(e) => setForm((p: any) => ({ ...p, currentStock: e.target.value }))} />
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label>Reorder Level <span className="text-xs text-muted-foreground">(auto-filled, editable)</span></Label>
+            <Input type="number" min="0" step="0.01" value={form.reorderLevel}
+              onChange={(e) => setForm((p: any) => ({ ...p, reorderLevel: e.target.value }))} />
+          </div>
+        </>
       )}
-      <div className="space-y-2">
-        <Label>Reorder Level {isAsset && <span className="text-xs text-muted-foreground">(set 0 for assets)</span>}</Label>
-        <Input type="number" min="0" step="0.01" value={form.reorderLevel} onChange={(e) => setForm((p: any) => ({ ...p, reorderLevel: e.target.value }))} />
-      </div>
+
+      {/* ── Asset fields ── */}
       {isAsset && (
         <>
+          <div className="space-y-2">
+            <Label>Asset Type</Label>
+            <Select value={form.category} onValueChange={(v) => {
+              const interval = ASSET_MAINTENANCE_INTERVALS[v] ?? "";
+              setForm((p: any) => ({ ...p, category: v, unit: "units", maintenanceIntervalDays: String(interval) }));
+            }}>
+              <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select asset type" /></SelectTrigger>
+              <SelectContent>
+                {ASSET_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Brand <span className="text-xs text-muted-foreground">(e.g. LG, Samsung, Panasonic)</span></Label>
+            <Input value={form.brand} placeholder="Enter brand name"
+              onChange={(e) => setForm((p: any) => ({ ...p, brand: e.target.value }))} />
+            {form.brand && form.category && (
+              <p className="text-xs text-muted-foreground">Item will be saved as: <strong>{form.brand} {form.category}</strong></p>
+            )}
+          </div>
+          {mode === "create" && (
+            <div className="space-y-2">
+              <Label>Quantity (units in service)</Label>
+              <Input type="number" min="0" value={form.currentStock}
+                onChange={(e) => setForm((p: any) => ({ ...p, currentStock: e.target.value }))} />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Purchase Date</Label>
-              <Input type="date" value={form.purchaseDate} onChange={(e) => setForm((p: any) => ({ ...p, purchaseDate: e.target.value }))} />
+              <Input type="date" value={form.purchaseDate}
+                onChange={(e) => setForm((p: any) => ({ ...p, purchaseDate: e.target.value }))} />
             </div>
             <div className="space-y-2">
               <Label>Last Serviced Date</Label>
-              <Input type="date" value={form.lastServicedDate} onChange={(e) => setForm((p: any) => ({ ...p, lastServicedDate: e.target.value }))} />
+              <Input type="date" value={form.lastServicedDate}
+                onChange={(e) => setForm((p: any) => ({ ...p, lastServicedDate: e.target.value }))} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>Maintenance Interval (days)</Label>
-              <Input type="number" min="1" value={form.maintenanceIntervalDays} onChange={(e) => setForm((p: any) => ({ ...p, maintenanceIntervalDays: e.target.value }))} placeholder="e.g. 180" />
+              <Label>Maintenance Interval <span className="text-xs text-muted-foreground">(auto-filled)</span></Label>
+              <Input type="number" min="1" value={form.maintenanceIntervalDays}
+                onChange={(e) => setForm((p: any) => ({ ...p, maintenanceIntervalDays: e.target.value }))}
+                placeholder="days" />
             </div>
             <div className="space-y-2">
               <Label>Asset Status</Label>
