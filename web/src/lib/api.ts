@@ -168,6 +168,11 @@ export type InventoryRecord = {
   reorderLevel: number;
   lowStock: boolean;
   updatedAt: string;
+  assetType?: string | null;
+  purchaseDate?: string | null;
+  lastServicedDate?: string | null;
+  maintenanceIntervalDays?: number | null;
+  assetStatus?: string | null;
 };
 
 export type AppNotification = {
@@ -681,6 +686,11 @@ export const inventoryApi = {
     const query = branch ? `?branch=${encodeURIComponent(branch)}` : "";
     return apiRequest<Record<string, number>>(`/api/inventory/pending-consumption${query}`);
   },
+  markServiced: (id: number) =>
+    apiRequest<InventoryRecord>(`/api/inventory/items/${id}/mark-serviced`, {
+      method: "PATCH",
+      body: {},
+    }),
 };
 
 export const notificationsApi = {

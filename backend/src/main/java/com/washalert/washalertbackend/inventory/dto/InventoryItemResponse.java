@@ -1,6 +1,7 @@
 package com.washalert.washalertbackend.inventory.dto;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 public record InventoryItemResponse(
@@ -14,6 +15,11 @@ public record InventoryItemResponse(
         boolean lowStock,
         Integer projectedDaysRemaining,
         boolean lowStockWarning,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        String assetType,
+        LocalDate purchaseDate,
+        LocalDate lastServicedDate,
+        Integer maintenanceIntervalDays,
+        String assetStatus
 ) {
 }
