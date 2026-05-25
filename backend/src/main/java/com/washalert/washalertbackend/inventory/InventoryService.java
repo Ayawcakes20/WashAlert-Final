@@ -968,25 +968,46 @@ public class InventoryService {
 
             // Detergent
             String rawDet = order.getDetergentPreference();
-            if (rawDet != null && !NO_SUPPLY_LABELS.contains(rawDet.trim().toLowerCase(Locale.ROOT))) {
+            if (rawDet != null && !rawDet.isBlank()
+                    && !NO_SUPPLY_LABELS.contains(rawDet.trim().toLowerCase(Locale.ROOT))) {
                 String detName = normalizeItemName(rawDet);
+                int qty = order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0
+                        ? order.getDetergentQuantity() : 1;
                 if (CANONICAL_ITEM_NAMES.containsValue(detName) && detName.contains("Detergent")) {
-                    int qty = order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0
-                            ? order.getDetergentQuantity() : 1;
+                    // Specific brand selected — count exactly for that item
                     grouped.computeIfAbsent(branch + "||" + detName, k -> new LinkedHashMap<>())
                            .merge(dateKey, (double) qty, Double::sum);
+                } else if (!detName.toLowerCase(Locale.ROOT).contains("conditioner")
+                        && !detName.toLowerCase(Locale.ROOT).contains("fabric")) {
+                    // Generic / unrecognized detergent — distribute evenly across canonical detergents
+                    double half = qty / 2.0;
+                    grouped.computeIfAbsent(branch + "||Surf Detergent", k -> new LinkedHashMap<>())
+                           .merge(dateKey, half, Double::sum);
+                    grouped.computeIfAbsent(branch + "||Ariel Detergent", k -> new LinkedHashMap<>())
+                           .merge(dateKey, half, Double::sum);
                 }
             }
 
             // Fabric conditioner
             String rawFab = order.getFabricConditionerPreference();
-            if (rawFab != null && !NO_SUPPLY_LABELS.contains(rawFab.trim().toLowerCase(Locale.ROOT))) {
+            if (rawFab != null && !rawFab.isBlank()
+                    && !NO_SUPPLY_LABELS.contains(rawFab.trim().toLowerCase(Locale.ROOT))) {
                 String fabName = normalizeItemName(rawFab);
+                int qty = order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0
+                        ? order.getConditionerQuantity() : 1;
                 if (CANONICAL_ITEM_NAMES.containsValue(fabName) && fabName.contains("Conditioner")) {
-                    int qty = order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0
-                            ? order.getConditionerQuantity() : 1;
+                    // Specific brand selected — count exactly
                     grouped.computeIfAbsent(branch + "||" + fabName, k -> new LinkedHashMap<>())
                            .merge(dateKey, (double) qty, Double::sum);
+                } else if (!fabName.toLowerCase(Locale.ROOT).contains("detergent")
+                        && !fabName.toLowerCase(Locale.ROOT).contains("surf")
+                        && !fabName.toLowerCase(Locale.ROOT).contains("ariel")) {
+                    // Generic / unrecognized conditioner — distribute evenly across canonical conditioners
+                    double half = qty / 2.0;
+                    grouped.computeIfAbsent(branch + "||Charm Fabric Conditioner", k -> new LinkedHashMap<>())
+                           .merge(dateKey, half, Double::sum);
+                    grouped.computeIfAbsent(branch + "||Downy Fabric Conditioner", k -> new LinkedHashMap<>())
+                           .merge(dateKey, half, Double::sum);
                 }
             }
         }

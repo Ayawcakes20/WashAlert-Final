@@ -642,11 +642,28 @@ export default function PredictiveInventoryPage() {
   }, [allConsumables]);
 
   // Effective stats: order activity is primary (has data as soon as orders start processing),
-  // fall back to dailyStats (movement-based) for any item not covered by orderStats
+  // fall back to dailyStats (movement-based) for any item not covered by orderStats.
+  // When multiple branches have data for the same item (admin "All" view), sum them.
   const effectiveStats = useMemo<DailyStatsRecord[]>(() => {
     const merged = new Map<string, DailyStatsRecord>();
-    orderStats.forEach((r) => merged.set(r.itemName, r));
-    dailyStats.forEach((r) => { if (!merged.has(r.itemName)) merged.set(r.itemName, r); });
+
+    const mergeRecord = (r: DailyStatsRecord) => {
+      const existing = merged.get(r.itemName);
+      if (!existing) {
+        merged.set(r.itemName, { ...r, days: r.days.map((d) => ({ ...d })) });
+        return;
+      }
+      const dayMap = new Map(existing.days.map((d) => [d.date, d.consumed]));
+      r.days.forEach((d) => { dayMap.set(d.date, (dayMap.get(d.date) ?? 0) + d.consumed); });
+      merged.set(r.itemName, {
+        ...existing,
+        days: existing.days.map((d) => ({ date: d.date, consumed: dayMap.get(d.date) ?? 0 })),
+      });
+    };
+
+    orderStats.forEach(mergeRecord);
+    // dailyStats is only a fallback for items with no order-activity data at all
+    dailyStats.forEach((r) => { if (!merged.has(r.itemName)) mergeRecord(r); });
     return Array.from(merged.values());
   }, [orderStats, dailyStats]);
 
