@@ -23,6 +23,7 @@ import com.washalert.washalertbackend.common.dto.PagedResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import com.washalert.washalertbackend.inventory.dto.BookingPipelineResponse;
 import com.washalert.washalertbackend.inventory.dto.DailyConsumptionResponse;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -326,6 +327,7 @@ public class InventoryService {
                     .lastServicedDate(req.lastServicedDate())
                     .maintenanceIntervalDays(req.maintenanceIntervalDays())
                     .assetStatus(req.assetStatus())
+                    .supplierLeadTimeDays(req.supplierLeadTimeDays() != null ? req.supplierLeadTimeDays() : 3)
                     .build();
 
             InventoryItem saved = itemRepository.save(item);
@@ -374,6 +376,7 @@ public class InventoryService {
         if (req.lastServicedDate() != null) item.setLastServicedDate(req.lastServicedDate());
         if (req.maintenanceIntervalDays() != null) item.setMaintenanceIntervalDays(req.maintenanceIntervalDays());
         if (req.assetStatus() != null) item.setAssetStatus(req.assetStatus());
+        if (req.supplierLeadTimeDays() != null) item.setSupplierLeadTimeDays(req.supplierLeadTimeDays());
 
         InventoryItem saved = itemRepository.save(item);
         firestoreSyncService.upsert("inventory", String.valueOf(saved.getId()), toResponse(saved));
@@ -868,7 +871,8 @@ public class InventoryService {
                 item.getPurchaseDate(),
                 item.getLastServicedDate(),
                 item.getMaintenanceIntervalDays(),
-                item.getAssetStatus()
+                item.getAssetStatus(),
+                item.getSupplierLeadTimeDays()
         );
     }
 
@@ -1004,6 +1008,76 @@ public class InventoryService {
                             date, entry.getValue().getOrDefault(date, 0.0)))
                     .toList();
             return new DailyConsumptionResponse(itemName, branch, "packs", days);
+        }).toList();
+    }
+
+    /**
+     * Returns upcoming confirmed demand from scheduled bookings within the next {@code horizonDays}.
+     * Groups by canonical supply name and date so the frontend can plot a pipeline bar chart.
+     */
+    public List<BookingPipelineResponse> bookingPipeline(String branchParam, int horizonDays, AuthUserDetails principal) {
+        int effectiveDays = (horizonDays > 0 && horizonDays <= 30) ? horizonDays : 14;
+        String effectiveBranch = resolveEffectiveBranch(branchParam, principal.getUser());
+
+        List<JobOrderStatus> pipelineStatuses = List.of(
+                JobOrderStatus.PENDING,
+                JobOrderStatus.ASSIGNED_FOR_PICKUP,
+                JobOrderStatus.EN_ROUTE_TO_CUSTOMER,
+                JobOrderStatus.LAUNDRY_COLLECTED,
+                JobOrderStatus.EN_ROUTE_TO_BRANCH,
+                JobOrderStatus.ORDER_RECEIVED
+        );
+
+        LocalDate today = LocalDate.now();
+        LocalDate horizon = today.plusDays(effectiveDays);
+
+        List<JobOrder> orders = effectiveBranch == null
+                ? jobOrderRepository.findByStatusInAndBookingDateBetween(pipelineStatuses, today, horizon)
+                : jobOrderRepository.findByBranchIgnoreCaseAndStatusInAndBookingDateBetween(effectiveBranch, pipelineStatuses, today, horizon);
+
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        Map<String, Map<String, Double>> itemDayDemand = new LinkedHashMap<>();
+
+        for (JobOrder jo : orders) {
+            LocalDate bookingDate = jo.getBookingDate();
+            if (bookingDate == null) continue;
+            String dateKey = bookingDate.format(fmt);
+
+            String det = jo.getDetergentPreference();
+            if (hasConsumableSelection(det)) {
+                String name = normalizeItemName(det);
+                int qty = (jo.getDetergentQuantity() != null && jo.getDetergentQuantity() > 0) ? jo.getDetergentQuantity() : 1;
+                itemDayDemand.computeIfAbsent(name, k -> new LinkedHashMap<>()).merge(dateKey, (double) qty, Double::sum);
+            }
+
+            String fab = jo.getFabricConditionerPreference();
+            if (hasConsumableSelection(fab)) {
+                String name = normalizeItemName(fab);
+                int qty = (jo.getConditionerQuantity() != null && jo.getConditionerQuantity() > 0) ? jo.getConditionerQuantity() : 1;
+                itemDayDemand.computeIfAbsent(name, k -> new LinkedHashMap<>()).merge(dateKey, (double) qty, Double::sum);
+            }
+        }
+
+        if (itemDayDemand.isEmpty()) return List.of();
+
+        List<LocalDate> dates = Stream.iterate(today, d -> d.plusDays(1))
+                .limit(effectiveDays)
+                .toList();
+
+        String[] dowNames = { "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN" };
+
+        return itemDayDemand.entrySet().stream().map(entry -> {
+            String itemName = entry.getKey();
+            Map<String, Double> dayMap = entry.getValue();
+            List<BookingPipelineResponse.DailyDemand> upcoming = dates.stream()
+                    .map(d -> {
+                        String dk = d.format(fmt);
+                        int dowIdx = d.getDayOfWeek().getValue() - 1; // Mon=0, Sun=6
+                        String dayLabel = dowNames[dowIdx];
+                        double qty = dayMap.getOrDefault(dk, 0.0);
+                        return new BookingPipelineResponse.DailyDemand(dk, dayLabel, qty);
+                    }).toList();
+            return new BookingPipelineResponse(itemName, upcoming);
         }).toList();
     }
 

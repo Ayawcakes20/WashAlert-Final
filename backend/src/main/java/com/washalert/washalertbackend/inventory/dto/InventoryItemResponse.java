@@ -20,6 +20,7 @@ public record InventoryItemResponse(
         LocalDate purchaseDate,
         LocalDate lastServicedDate,
         Integer maintenanceIntervalDays,
-        String assetStatus
+        String assetStatus,
+        Integer supplierLeadTimeDays
 ) {
 }

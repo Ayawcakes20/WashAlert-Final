@@ -203,7 +203,8 @@ public class FirestoreReadService {
                 asLocalDate(data.get("purchaseDate")),
                 asLocalDate(data.get("lastServicedDate")),
                 asLong(data.get("maintenanceIntervalDays")) != null ? asLong(data.get("maintenanceIntervalDays")).intValue() : null,
-                asString(data.get("assetStatus"))
+                asString(data.get("assetStatus")),
+                asLong(data.get("supplierLeadTimeDays")) != null ? asLong(data.get("supplierLeadTimeDays")).intValue() : 3
         );
     }
 

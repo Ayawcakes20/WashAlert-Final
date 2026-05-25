@@ -90,6 +90,11 @@ public class InventoryItem {
     @Column(name = "asset_status", length = 30)
     private String assetStatus;
 
+    /** Estimated supplier lead time in days (default 3). Used for runway/risk calculations. */
+    @Builder.Default
+    @Column(name = "supplier_lead_time_days")
+    private Integer supplierLeadTimeDays = 3;
+
     @PrePersist
     void onCreate() {
         LocalDateTime now = LocalDateTime.now();
