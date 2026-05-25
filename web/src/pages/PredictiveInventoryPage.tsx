@@ -34,6 +34,7 @@ import {
   Cell,
   BarChart,
   Bar,
+  Legend,
 } from "recharts";
 import { inventoryApi, branchesApi, type InventoryRecord } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
@@ -119,6 +120,22 @@ const CONSUMABLE_NAMES = [
   "Downy Fabric Conditioner",
 ];
 
+const CONSUMABLE_DEFAULTS: Record<string, { category: string; unit: string; reorderLevel: number }> = {
+  "Surf Detergent":           { category: "Detergent",          unit: "packs", reorderLevel: 2 },
+  "Ariel Detergent":          { category: "Detergent",          unit: "packs", reorderLevel: 5 },
+  "Charm Fabric Conditioner": { category: "Fabric Conditioner", unit: "packs", reorderLevel: 1 },
+  "Downy Fabric Conditioner": { category: "Fabric Conditioner", unit: "packs", reorderLevel: 10 },
+};
+
+const ASSET_TYPES = ["Washing Machine", "Dryer", "Aircon", "Electric Fan"] as const;
+
+const ASSET_MAINTENANCE_INTERVALS: Record<string, number> = {
+  "Washing Machine": 90,
+  "Dryer": 90,
+  "Aircon": 180,
+  "Electric Fan": 365,
+};
+
 // ── InventoryItem type ────────────────────────────────────────────────────────
 
 interface InventoryItem {
@@ -162,9 +179,10 @@ function calcDaysUntilService(
   return Math.floor((next.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
 }
 
-function getStatus(currentStock: number, reorderLevel: number, stockAfter7Days: number): "Healthy" | "Low" | "Critical" {
-  if (currentStock <= reorderLevel || stockAfter7Days < 0) return "Critical";
-  if (currentStock <= reorderLevel * 1.5) return "Low";
+function getStatus(daysRemaining: number | null): "Healthy" | "Low" | "Critical" {
+  if (daysRemaining === null) return "Healthy";
+  if (daysRemaining <= 7) return "Critical";
+  if (daysRemaining <= 14) return "Low";
   return "Healthy";
 }
 
@@ -359,11 +377,11 @@ function mapInventoryRecord(
   const isAsset = record.assetType === "Asset";
   const itemForecast = isAsset ? undefined : forecastMap.get(record.id);
   const dailyUsage = itemForecast?.usage ?? 0;
-  const stockAfter7 = Number(record.currentStock || 0) - dailyUsage * 7;
   const catLower = (record.category ?? "").toLowerCase();
   const type: InventoryItem["type"] = catLower.includes("conditioner") ? "Fabric Conditioner"
     : catLower.includes("detergent") ? "Detergent" : isAsset ? "Asset" : "Other";
-  const status = isAsset ? "Healthy" : getStatus(Number(record.currentStock || 0), Number(record.reorderLevel || 0), stockAfter7);
+  const daysRemaining = isAsset ? null : calcDaysRemaining(Number(record.currentStock || 0), dailyUsage);
+  const status = isAsset ? "Healthy" : getStatus(daysRemaining);
   const daysUntilService = calcDaysUntilService(record.lastServicedDate, record.maintenanceIntervalDays);
   return {
     id: record.id,
@@ -375,9 +393,9 @@ function mapInventoryRecord(
     unit: record.unit || "packs",
     category: record.category || "General",
     forecastedUsage: dailyUsage,
-    daysUntilEmpty: isAsset ? null : calcDaysRemaining(Number(record.currentStock || 0), dailyUsage),
-    projectedAfter7Days: stockAfter7,
+    projectedAfter7Days: Math.max(0, Number(record.currentStock || 0) - dailyUsage * 7),
     status,
+    daysUntilEmpty: isAsset ? null : daysRemaining,
     historicalDailyUsage: itemForecast?.historical ?? 0,
     confirmedDemand7D: itemForecast?.confirmed7D ?? 0,
     isAsset,
@@ -400,6 +418,7 @@ export default function PredictiveInventoryPage() {
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [dailyStats, setDailyStats] = useState<DailyStatsRecord[]>([]);
+  const [orderStats, setOrderStats] = useState<DailyStatsRecord[]>([]);
   const [pendingConsumption, setPendingConsumption] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -414,7 +433,7 @@ export default function PredictiveInventoryPage() {
   const [showAllAttention, setShowAllAttention] = useState(false);
   const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
   const [showDetails, setShowDetails] = useState(false);
-  const [activeVizTab, setActiveVizTab] = useState<"donut" | "yesterday" | "history7d" | "heatmap" | "maintenance">("donut");
+  const [activeVizTab, setActiveVizTab] = useState<"donut" | "trend14d" | "history7d" | "heatmap" | "maintenance">("donut");
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [donutSegmentFilter, setDonutSegmentFilter] = useState<"all" | "Critical" | "Low" | "Healthy">("all");
 
@@ -422,7 +441,7 @@ export default function PredictiveInventoryPage() {
   const [createSubmitting, setCreateSubmitting] = useState(false);
   const [createForm, setCreateForm] = useState({
     branch: "", itemName: "", category: "", unit: "", currentStock: "0", reorderLevel: "0",
-    assetType: "Consumable", purchaseDate: "", lastServicedDate: "", maintenanceIntervalDays: "", assetStatus: "Active",
+    assetType: "Consumable", brand: "", purchaseDate: "", lastServicedDate: "", maintenanceIntervalDays: "", assetStatus: "Active",
   });
 
   const [editOpen, setEditOpen] = useState(false);
@@ -430,7 +449,7 @@ export default function PredictiveInventoryPage() {
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [editForm, setEditForm] = useState({
     branch: "", itemName: "", category: "", unit: "", reorderLevel: "0",
-    assetType: "Consumable", purchaseDate: "", lastServicedDate: "", maintenanceIntervalDays: "", assetStatus: "Active",
+    assetType: "Consumable", brand: "", purchaseDate: "", lastServicedDate: "", maintenanceIntervalDays: "", assetStatus: "Active",
   });
 
   const [adjustOpen, setAdjustOpen] = useState(false);
@@ -448,15 +467,17 @@ export default function PredictiveInventoryPage() {
   const loadInventory = async () => {
     try {
       setError("");
-      const [items, _alerts, forecastResp, pending, stats] = await Promise.all([
+      const [items, _alerts, forecastResp, pending, stats, activityStats] = await Promise.all([
         inventoryApi.list(),
         inventoryApi.alerts(),
         inventoryApi.forecast(7),
         inventoryApi.pendingConsumption().catch(() => ({})),
         inventoryApi.dailyStats(60).catch(() => [] as DailyStatsRecord[]),
+        inventoryApi.orderActivityStats(60).catch(() => [] as DailyStatsRecord[]),
       ]);
       setPendingConsumption(pending || {});
       setDailyStats((stats as DailyStatsRecord[]) || []);
+      setOrderStats((activityStats as DailyStatsRecord[]) || []);
       const forecastMap = new Map<number, { usage: number; historical: number; confirmed7D: number }>();
       (forecastResp || []).forEach((f) => {
         const usage = Number(f.projectedDailyUsage ?? f.estimatedDailyUsage ?? 0);
@@ -613,23 +634,67 @@ export default function PredictiveInventoryPage() {
     ];
   }, [allConsumables]);
 
-  // Yesterday vs Today from dailyStats
-  const yesterdayTodayData = useMemo(() => {
-    const today = toYMD(new Date());
-    const yesterday = toYMD(offsetDate(new Date(), -1));
-    return CONSUMABLE_NAMES.map((name) => {
-      const record = dailyStats.find((r) => r.itemName === name);
-      const yest = record?.days.find((d) => d.date === yesterday)?.consumed ?? 0;
-      const tod = record?.days.find((d) => d.date === today)?.consumed ?? 0;
-      const shortName = name.replace(" Detergent", "").replace(" Fabric Conditioner", "");
-      return { item: shortName, yesterday: yest, today: tod };
-    });
-  }, [dailyStats]);
+  // Effective stats: order activity is primary (has data as soon as orders start processing),
+  // fall back to dailyStats (movement-based) for any item not covered by orderStats
+  const effectiveStats = useMemo<DailyStatsRecord[]>(() => {
+    const merged = new Map<string, DailyStatsRecord>();
+    orderStats.forEach((r) => merged.set(r.itemName, r));
+    dailyStats.forEach((r) => { if (!merged.has(r.itemName)) merged.set(r.itemName, r); });
+    return Array.from(merged.values());
+  }, [orderStats, dailyStats]);
 
-  const hasYesterdayTodayData = useMemo(
-    () => yesterdayTodayData.some((r) => r.yesterday > 0 || r.today > 0),
-    [yesterdayTodayData],
+  // 14-Day Consumption Trend — line chart per item with real dates
+  const trend14dData = useMemo(() => {
+    const today = new Date();
+    return Array.from({ length: 14 }, (_, i) => {
+      const d = offsetDate(today, -(13 - i));
+      const dateStr = toYMD(d);
+      const label = d.toLocaleDateString("en-PH", { month: "short", day: "numeric" });
+      const row: Record<string, number | string> = { date: label };
+      CONSUMABLE_NAMES.forEach((name) => {
+        const record = effectiveStats.find((r) => r.itemName === name);
+        const shortName = name.replace(" Detergent", "").replace(" Fabric Conditioner", "");
+        row[shortName] = record?.days.find((dd) => dd.date === dateStr)?.consumed ?? 0;
+      });
+      return row;
+    });
+  }, [effectiveStats]);
+
+  const hasTrend14dData = useMemo(
+    () => trend14dData.some((row) => CONSUMABLE_NAMES.some((n) => {
+      const k = n.replace(" Detergent", "").replace(" Fabric Conditioner", "");
+      return (row[k] as number) > 0;
+    })),
+    [trend14dData],
   );
+
+  const trend14dKeys = CONSUMABLE_NAMES.map((n) => n.replace(" Detergent", "").replace(" Fabric Conditioner", ""));
+  const LINE_COLORS = ["hsl(218,58%,30%)", "#16a34a", "#d97706", "#7c3aed"];
+
+  // Weekly comparison insight for 14-day trend
+  const trendInsights = useMemo(() => {
+    if (!hasTrend14dData) return [];
+    const insights: string[] = [];
+    CONSUMABLE_NAMES.forEach((name) => {
+      const record = effectiveStats.find((r) => r.itemName === name);
+      if (!record) return;
+      const today = new Date();
+      const thisWeek = Array.from({ length: 7 }, (_, i) => toYMD(offsetDate(today, -(6 - i))));
+      const lastWeek = Array.from({ length: 7 }, (_, i) => toYMD(offsetDate(today, -(13 - i))));
+      const thisSum = thisWeek.reduce((s, d) => s + (record.days.find((dd) => dd.date === d)?.consumed ?? 0), 0);
+      const lastSum = lastWeek.reduce((s, d) => s + (record.days.find((dd) => dd.date === d)?.consumed ?? 0), 0);
+      const shortName = name.replace(" Detergent", "").replace(" Fabric Conditioner", "");
+      if (thisSum === 0 && lastSum === 0) return;
+      if (lastSum === 0) {
+        insights.push(`📦 ${shortName}: ${thisSum.toFixed(0)} packs used this week (no prior week data)`);
+      } else {
+        const pct = Math.round(((thisSum - lastSum) / lastSum) * 100);
+        const arrow = pct > 0 ? "📈" : pct < 0 ? "📉" : "➡";
+        insights.push(`${arrow} ${shortName}: ${thisSum.toFixed(0)} packs this week vs ${lastSum.toFixed(0)} last week (${pct > 0 ? "+" : ""}${pct}%)`);
+      }
+    });
+    return insights;
+  }, [effectiveStats, hasTrend14dData]);
 
   // 7-Day History stacked bar
   const history7dData = useMemo(() => {
@@ -641,13 +706,13 @@ export default function PredictiveInventoryPage() {
     return last7.map(({ date, label }) => {
       const row: Record<string, number | string> = { day: label };
       CONSUMABLE_NAMES.forEach((name) => {
-        const record = dailyStats.find((r) => r.itemName === name);
+        const record = effectiveStats.find((r) => r.itemName === name);
         const shortName = name.replace(" Detergent", "").replace(" Fabric Conditioner", "");
         row[shortName] = record?.days.find((d) => d.date === date)?.consumed ?? 0;
       });
       return row;
     });
-  }, [dailyStats]);
+  }, [effectiveStats]);
 
   const history7dKeys = CONSUMABLE_NAMES.map((n) => n.replace(" Detergent", "").replace(" Fabric Conditioner", ""));
 
@@ -658,14 +723,15 @@ export default function PredictiveInventoryPage() {
 
   // Peak Heatmap — avg by day-of-week from last 60 days
   const heatmapData = useMemo(() => {
-    // display columns: Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6, Sun=0
     const jsDowForCol = [1, 2, 3, 4, 5, 6, 0];
     return CONSUMABLE_NAMES.map((name) => {
-      const record = dailyStats.find((r) => r.itemName === name);
+      const record = effectiveStats.find((r) => r.itemName === name);
       const buckets: Record<number, number[]> = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
       record?.days.forEach(({ date, consumed }) => {
-        const dow = new Date(date + "T00:00:00").getDay();
-        buckets[dow].push(consumed);
+        if (consumed > 0) {
+          const dow = new Date(date + "T00:00:00").getDay();
+          buckets[dow].push(consumed);
+        }
       });
       const avgs = jsDowForCol.map((dow) => {
         const arr = buckets[dow];
@@ -674,7 +740,7 @@ export default function PredictiveInventoryPage() {
       const shortName = name.replace(" Detergent", "").replace(" Fabric Conditioner", "");
       return { name: shortName, avgs };
     });
-  }, [dailyStats]);
+  }, [effectiveStats]);
 
   const hasHeatmapData = useMemo(
     () => heatmapData.some((r) => r.avgs.some((v) => v > 0)),
@@ -683,17 +749,34 @@ export default function PredictiveInventoryPage() {
 
   const heatmapMax = useMemo(() => Math.max(...heatmapData.flatMap((r) => r.avgs), 0.001), [heatmapData]);
 
-  const heatmapInsight = useMemo(() => {
-    if (!hasHeatmapData) return null;
-    let bestItem = "";
-    let bestDay = "";
-    let bestVal = -1;
+  const heatmapInsights = useMemo(() => {
+    if (!hasHeatmapData) return [];
+    const jsDowForCol = [1, 2, 3, 4, 5, 6, 0];
+    const insights: string[] = [];
+    // Overall busiest day
+    const dayTotals = HEATMAP_DAYS_LABELS.map((_, ci) =>
+      heatmapData.reduce((s, row) => s + row.avgs[ci], 0));
+    const maxDayIdx = dayTotals.indexOf(Math.max(...dayTotals));
+    const minDayIdx = dayTotals.indexOf(Math.min(...dayTotals.filter((v) => v > 0)));
+    insights.push(`📌 Busiest day overall: ${HEATMAP_DAYS_LABELS[maxDayIdx]} — prepare stock before ${HEATMAP_DAYS_LABELS[(maxDayIdx - 1 + 7) % 7]}`);
+    if (minDayIdx >= 0 && minDayIdx !== maxDayIdx) {
+      insights.push(`📌 Slowest day: ${HEATMAP_DAYS_LABELS[minDayIdx]} — good time for inventory counts`);
+    }
+    // Weekend vs weekday
+    const weekdayTotal = [0, 1, 2, 3, 4].reduce((s, i) => s + dayTotals[i], 0) / 5;
+    const weekendTotal = [5, 6].reduce((s, i) => s + dayTotals[i], 0) / 2;
+    if (weekdayTotal > 0) {
+      const diff = Math.round(((weekendTotal - weekdayTotal) / weekdayTotal) * 100);
+      insights.push(`📌 Weekend usage is ${Math.abs(diff)}% ${diff >= 0 ? "higher" : "lower"} than weekdays`);
+    }
+    // Per-item peak day
     heatmapData.forEach((row) => {
-      row.avgs.forEach((v, ci) => {
-        if (v > bestVal) { bestVal = v; bestItem = row.name; bestDay = HEATMAP_DAYS_LABELS[ci]; }
-      });
+      const peakIdx = row.avgs.indexOf(Math.max(...row.avgs));
+      if (row.avgs[peakIdx] > 0) {
+        insights.push(`📌 ${row.name} peaks on ${HEATMAP_DAYS_LABELS[peakIdx]} (avg ${row.avgs[peakIdx].toFixed(1)} packs)`);
+      }
     });
-    return `Highest usage: ${bestDay} (${bestItem} — ${bestVal.toFixed(1)} packs avg)`;
+    return insights;
   }, [heatmapData, hasHeatmapData]);
 
   const handleTabChange = (branch: string) => {
@@ -710,7 +793,7 @@ export default function PredictiveInventoryPage() {
     setCreateForm({
       branch: isAdmin ? "" : userBranch, itemName: "", category: "", unit: "",
       currentStock: "0", reorderLevel: "0", assetType: "Consumable",
-      purchaseDate: "", lastServicedDate: "", maintenanceIntervalDays: "", assetStatus: "Active",
+      brand: "", purchaseDate: "", lastServicedDate: "", maintenanceIntervalDays: "", assetStatus: "Active",
     });
     setCreateOpen(true);
   };
@@ -719,7 +802,8 @@ export default function PredictiveInventoryPage() {
     setSelectedItem(row);
     setEditForm({
       branch: row.branch, itemName: row.product, category: row.category, unit: row.unit, reorderLevel: String(row.reorderLevel),
-      assetType: row.assetType || "Consumable", purchaseDate: row.purchaseDate || "", lastServicedDate: row.lastServicedDate || "",
+      assetType: row.assetType || "Consumable", brand: "",
+      purchaseDate: row.purchaseDate || "", lastServicedDate: row.lastServicedDate || "",
       maintenanceIntervalDays: row.maintenanceIntervalDays != null ? String(row.maintenanceIntervalDays) : "", assetStatus: row.assetStatus || "Active",
     });
     setEditOpen(true);
@@ -734,20 +818,24 @@ export default function PredictiveInventoryPage() {
   const openDelete = (row: InventoryItem) => { setSelectedItem(row); setDeleteOpen(true); };
 
   const submitCreate = async () => {
-    if (!createForm.branch.trim() || !createForm.itemName.trim() || !createForm.category.trim() || !createForm.unit.trim()) {
-      toast.error("Branch, item name, category, and unit are required."); return;
+    const isAssetCreate = createForm.assetType === "Asset";
+    const computedItemName = isAssetCreate
+      ? `${createForm.brand.trim()} ${createForm.category.trim()}`.trim()
+      : createForm.itemName.trim();
+    if (!createForm.branch.trim() || !computedItemName || !createForm.category.trim() || !createForm.unit.trim()) {
+      toast.error(isAssetCreate ? "Branch, asset type, and brand are required." : "Branch, item name, category, and unit are required."); return;
     }
     setCreateSubmitting(true);
     try {
       await inventoryApi.create({
-        branch: createForm.branch.trim(), itemName: createForm.itemName.trim(),
+        branch: createForm.branch.trim(), itemName: computedItemName,
         category: createForm.category.trim(), unit: createForm.unit.trim(),
         currentStock: Number(createForm.currentStock || 0), reorderLevel: Number(createForm.reorderLevel || 0),
         assetType: createForm.assetType || null,
         purchaseDate: createForm.purchaseDate || null,
         lastServicedDate: createForm.lastServicedDate || null,
         maintenanceIntervalDays: createForm.maintenanceIntervalDays ? Number(createForm.maintenanceIntervalDays) : null,
-        assetStatus: createForm.assetType === "Asset" ? (createForm.assetStatus || "Active") : null,
+        assetStatus: isAssetCreate ? (createForm.assetStatus || "Active") : null,
       } as any);
       toast.success("Inventory item created.");
       setCreateOpen(false);
@@ -770,6 +858,7 @@ export default function PredictiveInventoryPage() {
         branch: editForm.branch.trim(), itemName: editForm.itemName.trim(),
         category: editForm.category.trim(), unit: editForm.unit.trim(), reorderLevel: Number(editForm.reorderLevel || 0),
         assetType: editForm.assetType || null,
+
         purchaseDate: editForm.purchaseDate || null,
         lastServicedDate: editForm.lastServicedDate || null,
         maintenanceIntervalDays: editForm.maintenanceIntervalDays ? Number(editForm.maintenanceIntervalDays) : null,
@@ -938,11 +1027,13 @@ export default function PredictiveInventoryPage() {
                 </p>
                 {item.recommended > 0 ? (
                   <p className="text-sm font-semibold text-foreground">
-                    Recommended reorder: <span className={item.status === "Critical" ? "text-red-700" : "text-amber-700"}>{item.recommended} {item.unit}</span>
-                    <span className="text-xs text-muted-foreground font-normal ml-1">(30-day buffer)</span>
+                    Reorder <span className={item.status === "Critical" ? "text-red-700" : "text-amber-700"}>{item.recommended} {item.unit}</span>
+                    <span className="text-xs text-muted-foreground font-normal ml-1">to maintain 30-day supply</span>
                   </p>
+                ) : item.historicalDailyUsage < 0.001 ? (
+                  <p className="text-sm text-muted-foreground">Enable usage tracking to get reorder quantity suggestion</p>
                 ) : (
-                  <p className="text-sm text-emerald-700 font-medium">Stock sufficient for 30 days — no reorder needed</p>
+                  <p className="text-sm text-muted-foreground">Reorder quantity calculation pending</p>
                 )}
                 <div className="flex gap-2 pt-1">
                   <Button size="sm" onClick={() => openAdjust(item)}>Add Stock</Button>
@@ -1062,9 +1153,9 @@ export default function PredictiveInventoryPage() {
         </div>
         <div className="px-6 py-3 border-b border-border/20 bg-muted/10 flex flex-wrap gap-x-6 gap-y-2 text-sm">
           <span className="font-semibold text-muted-foreground">Status legend:</span>
-          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-red-500" /> Critical = at or below reorder level</span>
-          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-amber-500" /> Low = approaching reorder level</span>
-          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-emerald-500" /> Healthy = enough stock</span>
+          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-red-500" /> Critical = ≤7 days remaining</span>
+          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-amber-500" /> Low = 8–14 days remaining</span>
+          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-emerald-500" /> Healthy = &gt;14 days remaining</span>
         </div>
 
         {/* Desktop table — hidden on small screens */}
@@ -1247,7 +1338,7 @@ export default function PredictiveInventoryPage() {
           <div className="flex flex-wrap gap-2 px-5 pt-4">
             {([
               { key: "donut", label: "Stock Health" },
-              { key: "yesterday", label: "Yesterday vs Today" },
+              { key: "trend14d", label: "14-Day Trend" },
               { key: "history7d", label: "7-Day History" },
               { key: "heatmap", label: "Peak Heatmap" },
               { key: "maintenance", label: "Maintenance" },
@@ -1326,31 +1417,39 @@ export default function PredictiveInventoryPage() {
               </div>
             )}
 
-            {/* Tab 2: Yesterday vs Today */}
-            {activeVizTab === "yesterday" && (
+            {/* Tab 2: 14-Day Consumption Trend */}
+            {activeVizTab === "trend14d" && (
               <div>
-                <h3 className="text-lg font-semibold text-foreground mb-1">Yesterday vs Today</h3>
-                <p className="text-sm text-muted-foreground mb-4">Units consumed per consumable item — yesterday and today.</p>
-                {!hasYesterdayTodayData ? (
+                <h3 className="text-lg font-semibold text-foreground mb-1">Consumption History — Last 14 Days</h3>
+                <p className="text-sm text-muted-foreground mb-4">Based on completed and in-progress orders. Each line shows daily packs used per item.</p>
+                {!hasTrend14dData ? (
                   <div className="flex items-center justify-center h-48 text-sm text-muted-foreground text-center px-8">
-                    No consumption recorded yet — data appears after completed orders.
+                    No order activity recorded yet — chart appears once orders reach Washing status.
                   </div>
                 ) : (
                   <>
                     <ResponsiveContainer width="100%" height={300}>
-                      <BarChart data={yesterdayTodayData} margin={{ top: 8, right: 16, left: 8, bottom: 40 }}>
+                      <LineChart data={trend14dData} margin={{ top: 8, right: 24, left: 8, bottom: 50 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,25%,90%)" />
-                        <XAxis dataKey="item" tick={{ fontSize: 12 }} angle={-20} textAnchor="end" interval={0} />
-                        <YAxis tick={{ fontSize: 12 }} label={{ value: "Units consumed", angle: -90, position: "insideLeft", offset: 8, fontSize: 12 }} allowDecimals={false} />
-                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                        <Bar dataKey="yesterday" name="Yesterday" fill={BAR_COLORS[0]} />
-                        <Bar dataKey="today" name="Today" fill={BAR_COLORS[2]} />
-                      </BarChart>
+                        <XAxis dataKey="date" tick={{ fontSize: 11 }} angle={-30} textAnchor="end" interval={0} />
+                        <YAxis tick={{ fontSize: 12 }} allowDecimals={false}
+                          label={{ value: "Packs used", angle: -90, position: "insideLeft", offset: 8, fontSize: 12 }} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                          formatter={(value: number, name: string) => [`${value} packs`, name]} />
+                        <Legend verticalAlign="top" iconType="line" wrapperStyle={{ fontSize: 12, paddingBottom: 4 }} />
+                        {trend14dKeys.map((key, i) => (
+                          <Line key={key} type="monotone" dataKey={key} stroke={LINE_COLORS[i % LINE_COLORS.length]}
+                            strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={false} />
+                        ))}
+                      </LineChart>
                     </ResponsiveContainer>
-                    <div className="flex flex-wrap gap-4 mt-2 text-sm">
-                      <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm" style={{ background: BAR_COLORS[0] }} />Yesterday</span>
-                      <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm" style={{ background: BAR_COLORS[2] }} />Today</span>
-                    </div>
+                    {trendInsights.length > 0 && (
+                      <div className="mt-4 space-y-1">
+                        {trendInsights.map((insight, i) => (
+                          <p key={i} className="text-sm text-foreground">{insight}</p>
+                        ))}
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -1393,11 +1492,12 @@ export default function PredictiveInventoryPage() {
             {/* Tab 4: Peak Heatmap */}
             {activeVizTab === "heatmap" && (
               <div>
-                <h3 className="text-lg font-semibold text-foreground mb-1">Peak Day Heatmap</h3>
-                <p className="text-sm text-muted-foreground mb-4">Average consumption per day of week (last 60 days). Darker = higher average.</p>
+                <h3 className="text-lg font-semibold text-foreground mb-1">Busiest Days Per Item — Last 60 Days</h3>
+                <p className="text-sm text-muted-foreground mb-1">Average packs consumed per day of week based on completed orders. Darker cell = higher average.</p>
+                <p className="text-xs text-muted-foreground mb-4">Numbers show avg packs used. "—" means no orders recorded on that day.</p>
                 {!hasHeatmapData ? (
                   <div className="flex items-center justify-center h-48 text-sm text-muted-foreground text-center px-8">
-                    No consumption data available yet — heatmap populates after order history is recorded.
+                    No order history yet — heatmap appears once orders have been completed.
                   </div>
                 ) : (
                   <>
@@ -1418,13 +1518,13 @@ export default function PredictiveInventoryPage() {
                               {row.avgs.map((val, ci) => {
                                 const intensity = heatmapMax > 0 ? val / heatmapMax : 0;
                                 const lightness = Math.round(95 - intensity * 75);
-                                const bg = intensity < 0.05 ? "#FFFFFF" : `hsl(218,58%,${lightness}%)`;
+                                const bg = intensity < 0.05 ? "#f8fafc" : `hsl(218,58%,${lightness}%)`;
                                 const textColor = lightness < 55 ? "#FFFFFF" : "#1e293b";
                                 return (
                                   <td key={ci} className="px-1 py-1">
-                                    <div title={`${HEATMAP_DAYS_LABELS[ci]}: ${val.toFixed(1)} packs avg`}
-                                      style={{ background: bg, color: textColor, width: 44, height: 36, borderRadius: 6 }}
-                                      className="flex items-center justify-center text-xs font-medium cursor-default">
+                                    <div title={`${HEATMAP_DAYS_LABELS[ci]}: ${val > 0 ? val.toFixed(2) + " packs avg" : "no data"}`}
+                                      style={{ background: bg, color: textColor, width: 44, height: 40, borderRadius: 6, border: "1px solid #e2e8f0" }}
+                                      className="flex items-center justify-center text-xs font-semibold cursor-default">
                                       {val > 0 ? val.toFixed(1) : "—"}
                                     </div>
                                   </td>
@@ -1435,8 +1535,20 @@ export default function PredictiveInventoryPage() {
                         </tbody>
                       </table>
                     </div>
-                    {heatmapInsight && (
-                      <p className="mt-4 text-sm text-foreground"><strong>Insight:</strong> {heatmapInsight}</p>
+                    <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>Less</span>
+                      {[95, 80, 65, 50, 35, 20].map((l) => (
+                        <span key={l} style={{ background: `hsl(218,58%,${l}%)`, width: 16, height: 16, borderRadius: 3, display: "inline-block" }} />
+                      ))}
+                      <span>More</span>
+                    </div>
+                    {heatmapInsights.length > 0 && (
+                      <div className="mt-4 space-y-1.5 rounded-xl bg-muted/30 p-4">
+                        <p className="text-sm font-semibold text-foreground mb-2">Insights</p>
+                        {heatmapInsights.map((insight, i) => (
+                          <p key={i} className="text-sm text-foreground">{insight}</p>
+                        ))}
+                      </div>
                     )}
                   </>
                 )}
@@ -1807,20 +1919,25 @@ function CreateEditForm({
   mode: "create" | "edit";
 }) {
   const isAsset = form.assetType === "Asset";
-  const catalog = isAsset ? ASSET_CATALOG : CONSUMABLE_CATALOG;
 
   return (
     <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+      {/* Item Type */}
       <div className="space-y-2">
         <Label>Item Type</Label>
-        <Select value={form.assetType} onValueChange={(v) => setForm((p: any) => ({ ...p, assetType: v, itemName: "", category: "", unit: "" }))}>
+        <Select value={form.assetType} onValueChange={(v) => setForm((p: any) => ({
+          ...p, assetType: v, itemName: "", category: "", unit: "", brand: "",
+          maintenanceIntervalDays: "",
+        }))}>
           <SelectTrigger className="w-full text-foreground"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="Consumable">Consumable (Detergent, Fabric Conditioner, etc.)</SelectItem>
-            <SelectItem value="Asset">Asset (Washing Machine, Dryer, etc.)</SelectItem>
+            <SelectItem value="Consumable">Consumable (Detergent, Fabric Conditioner)</SelectItem>
+            <SelectItem value="Asset">Asset (Washing Machine, Dryer, Aircon, Fan)</SelectItem>
           </SelectContent>
         </Select>
       </div>
+
+      {/* Branch */}
       <div className="space-y-2">
         <Label>Branch</Label>
         {isAdmin ? (
@@ -1832,58 +1949,100 @@ function CreateEditForm({
           <Input value={form.branch || userBranch} readOnly className="bg-muted text-muted-foreground" />
         )}
       </div>
-      <div className="space-y-2">
-        <Label>Item Name</Label>
-        <Select value={form.itemName} onValueChange={(v) => {
-          const entry = (catalog as readonly { name: string; category: string; unit: string }[]).find((c) => c.name === v);
-          setForm((p: any) => ({ ...p, itemName: v, category: entry?.category ?? p.category, unit: entry?.unit ?? p.unit }));
-        }}>
-          <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select an item" /></SelectTrigger>
-          <SelectContent>{(catalog as readonly { name: string }[]).map((c) => <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>)}</SelectContent>
-        </Select>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label>Category</Label>
-          <Select value={form.category} onValueChange={(v) => setForm((p: any) => ({ ...p, category: v }))}>
-            <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select category" /></SelectTrigger>
-            <SelectContent>{INVENTORY_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Unit</Label>
-          <Select value={form.unit} onValueChange={(v) => setForm((p: any) => ({ ...p, unit: v }))}>
-            <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select unit" /></SelectTrigger>
-            <SelectContent>{INVENTORY_UNITS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-      </div>
-      {mode === "create" && (
-        <div className="space-y-2">
-          <Label>Current Stock</Label>
-          <Input type="number" min="0" step="0.01" value={form.currentStock} onChange={(e) => setForm((p: any) => ({ ...p, currentStock: e.target.value }))} />
-        </div>
+
+      {/* ── Consumable fields ── */}
+      {!isAsset && (
+        <>
+          <div className="space-y-2">
+            <Label>Item Name</Label>
+            <Select value={form.itemName} onValueChange={(v) => {
+              const def = CONSUMABLE_DEFAULTS[v];
+              setForm((p: any) => ({
+                ...p, itemName: v,
+                category: def?.category ?? p.category,
+                unit: def?.unit ?? p.unit,
+                reorderLevel: String(def?.reorderLevel ?? p.reorderLevel),
+              }));
+            }}>
+              <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select an item" /></SelectTrigger>
+              <SelectContent>
+                {CONSUMABLE_CATALOG.map((c) => <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Input value={form.category} readOnly className="bg-muted text-muted-foreground" placeholder="Auto-filled" />
+            </div>
+            <div className="space-y-2">
+              <Label>Unit</Label>
+              <Input value={form.unit} readOnly className="bg-muted text-muted-foreground" placeholder="Auto-filled" />
+            </div>
+          </div>
+          {mode === "create" && (
+            <div className="space-y-2">
+              <Label>Current Stock</Label>
+              <Input type="number" min="0" step="0.01" value={form.currentStock}
+                onChange={(e) => setForm((p: any) => ({ ...p, currentStock: e.target.value }))} />
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label>Reorder Level <span className="text-xs text-muted-foreground">(auto-filled, editable)</span></Label>
+            <Input type="number" min="0" step="0.01" value={form.reorderLevel}
+              onChange={(e) => setForm((p: any) => ({ ...p, reorderLevel: e.target.value }))} />
+          </div>
+        </>
       )}
-      <div className="space-y-2">
-        <Label>Reorder Level {isAsset && <span className="text-xs text-muted-foreground">(set 0 for assets)</span>}</Label>
-        <Input type="number" min="0" step="0.01" value={form.reorderLevel} onChange={(e) => setForm((p: any) => ({ ...p, reorderLevel: e.target.value }))} />
-      </div>
+
+      {/* ── Asset fields ── */}
       {isAsset && (
         <>
+          <div className="space-y-2">
+            <Label>Asset Type</Label>
+            <Select value={form.category} onValueChange={(v) => {
+              const interval = ASSET_MAINTENANCE_INTERVALS[v] ?? "";
+              setForm((p: any) => ({ ...p, category: v, unit: "units", maintenanceIntervalDays: String(interval) }));
+            }}>
+              <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select asset type" /></SelectTrigger>
+              <SelectContent>
+                {ASSET_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Brand <span className="text-xs text-muted-foreground">(e.g. LG, Samsung, Panasonic)</span></Label>
+            <Input value={form.brand} placeholder="Enter brand name"
+              onChange={(e) => setForm((p: any) => ({ ...p, brand: e.target.value }))} />
+            {form.brand && form.category && (
+              <p className="text-xs text-muted-foreground">Item will be saved as: <strong>{form.brand} {form.category}</strong></p>
+            )}
+          </div>
+          {mode === "create" && (
+            <div className="space-y-2">
+              <Label>Quantity (units in service)</Label>
+              <Input type="number" min="0" value={form.currentStock}
+                onChange={(e) => setForm((p: any) => ({ ...p, currentStock: e.target.value }))} />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Purchase Date</Label>
-              <Input type="date" value={form.purchaseDate} onChange={(e) => setForm((p: any) => ({ ...p, purchaseDate: e.target.value }))} />
+              <Input type="date" value={form.purchaseDate}
+                onChange={(e) => setForm((p: any) => ({ ...p, purchaseDate: e.target.value }))} />
             </div>
             <div className="space-y-2">
               <Label>Last Serviced Date</Label>
-              <Input type="date" value={form.lastServicedDate} onChange={(e) => setForm((p: any) => ({ ...p, lastServicedDate: e.target.value }))} />
+              <Input type="date" value={form.lastServicedDate}
+                onChange={(e) => setForm((p: any) => ({ ...p, lastServicedDate: e.target.value }))} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>Maintenance Interval (days)</Label>
-              <Input type="number" min="1" value={form.maintenanceIntervalDays} onChange={(e) => setForm((p: any) => ({ ...p, maintenanceIntervalDays: e.target.value }))} placeholder="e.g. 180" />
+              <Label>Maintenance Interval <span className="text-xs text-muted-foreground">(auto-filled)</span></Label>
+              <Input type="number" min="1" value={form.maintenanceIntervalDays}
+                onChange={(e) => setForm((p: any) => ({ ...p, maintenanceIntervalDays: e.target.value }))}
+                placeholder="days" />
             </div>
             <div className="space-y-2">
               <Label>Asset Status</Label>

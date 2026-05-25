@@ -695,6 +695,10 @@ export const inventoryApi = {
     apiRequest<Array<{ itemName: string; branch: string; unit: string; days: Array<{ date: string; consumed: number }> }>>(
       `/api/inventory/daily-stats?days=${days}`,
     ),
+  orderActivityStats: (days = 60) =>
+    apiRequest<Array<{ itemName: string; branch: string; unit: string; days: Array<{ date: string; consumed: number }> }>>(
+      `/api/inventory/order-activity-stats?days=${days}`,
+    ),
 };
 
 export const notificationsApi = {
