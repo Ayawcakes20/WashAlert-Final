@@ -124,6 +124,16 @@ public class InventoryController {
         return inventoryService.markServiced(itemId);
     }
 
+    @GetMapping("/order-activity-stats")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public List<DailyConsumptionResponse> orderActivityStats(
+            @RequestParam(defaultValue = "60") int days,
+            @RequestParam(required = false) String branch,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return inventoryService.orderActivityStats(days, branch, principal);
+    }
+
     @GetMapping("/daily-stats")
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public List<DailyConsumptionResponse> dailyStats(

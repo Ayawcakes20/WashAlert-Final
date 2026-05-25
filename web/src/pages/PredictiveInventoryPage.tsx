@@ -34,6 +34,7 @@ import {
   Cell,
   BarChart,
   Bar,
+  Legend,
 } from "recharts";
 import { inventoryApi, branchesApi, type InventoryRecord } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
@@ -417,6 +418,7 @@ export default function PredictiveInventoryPage() {
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [dailyStats, setDailyStats] = useState<DailyStatsRecord[]>([]);
+  const [orderStats, setOrderStats] = useState<DailyStatsRecord[]>([]);
   const [pendingConsumption, setPendingConsumption] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -431,7 +433,7 @@ export default function PredictiveInventoryPage() {
   const [showAllAttention, setShowAllAttention] = useState(false);
   const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
   const [showDetails, setShowDetails] = useState(false);
-  const [activeVizTab, setActiveVizTab] = useState<"donut" | "yesterday" | "history7d" | "heatmap" | "maintenance">("donut");
+  const [activeVizTab, setActiveVizTab] = useState<"donut" | "trend14d" | "history7d" | "heatmap" | "maintenance">("donut");
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [donutSegmentFilter, setDonutSegmentFilter] = useState<"all" | "Critical" | "Low" | "Healthy">("all");
 
@@ -465,15 +467,17 @@ export default function PredictiveInventoryPage() {
   const loadInventory = async () => {
     try {
       setError("");
-      const [items, _alerts, forecastResp, pending, stats] = await Promise.all([
+      const [items, _alerts, forecastResp, pending, stats, activityStats] = await Promise.all([
         inventoryApi.list(),
         inventoryApi.alerts(),
         inventoryApi.forecast(7),
         inventoryApi.pendingConsumption().catch(() => ({})),
         inventoryApi.dailyStats(60).catch(() => [] as DailyStatsRecord[]),
+        inventoryApi.orderActivityStats(60).catch(() => [] as DailyStatsRecord[]),
       ]);
       setPendingConsumption(pending || {});
       setDailyStats((stats as DailyStatsRecord[]) || []);
+      setOrderStats((activityStats as DailyStatsRecord[]) || []);
       const forecastMap = new Map<number, { usage: number; historical: number; confirmed7D: number }>();
       (forecastResp || []).forEach((f) => {
         const usage = Number(f.projectedDailyUsage ?? f.estimatedDailyUsage ?? 0);
@@ -630,23 +634,67 @@ export default function PredictiveInventoryPage() {
     ];
   }, [allConsumables]);
 
-  // Yesterday vs Today from dailyStats
-  const yesterdayTodayData = useMemo(() => {
-    const today = toYMD(new Date());
-    const yesterday = toYMD(offsetDate(new Date(), -1));
-    return CONSUMABLE_NAMES.map((name) => {
-      const record = dailyStats.find((r) => r.itemName === name);
-      const yest = record?.days.find((d) => d.date === yesterday)?.consumed ?? 0;
-      const tod = record?.days.find((d) => d.date === today)?.consumed ?? 0;
-      const shortName = name.replace(" Detergent", "").replace(" Fabric Conditioner", "");
-      return { item: shortName, yesterday: yest, today: tod };
-    });
-  }, [dailyStats]);
+  // Effective stats: order activity is primary (has data as soon as orders start processing),
+  // fall back to dailyStats (movement-based) for any item not covered by orderStats
+  const effectiveStats = useMemo<DailyStatsRecord[]>(() => {
+    const merged = new Map<string, DailyStatsRecord>();
+    orderStats.forEach((r) => merged.set(r.itemName, r));
+    dailyStats.forEach((r) => { if (!merged.has(r.itemName)) merged.set(r.itemName, r); });
+    return Array.from(merged.values());
+  }, [orderStats, dailyStats]);
 
-  const hasYesterdayTodayData = useMemo(
-    () => yesterdayTodayData.some((r) => r.yesterday > 0 || r.today > 0),
-    [yesterdayTodayData],
+  // 14-Day Consumption Trend — line chart per item with real dates
+  const trend14dData = useMemo(() => {
+    const today = new Date();
+    return Array.from({ length: 14 }, (_, i) => {
+      const d = offsetDate(today, -(13 - i));
+      const dateStr = toYMD(d);
+      const label = d.toLocaleDateString("en-PH", { month: "short", day: "numeric" });
+      const row: Record<string, number | string> = { date: label };
+      CONSUMABLE_NAMES.forEach((name) => {
+        const record = effectiveStats.find((r) => r.itemName === name);
+        const shortName = name.replace(" Detergent", "").replace(" Fabric Conditioner", "");
+        row[shortName] = record?.days.find((dd) => dd.date === dateStr)?.consumed ?? 0;
+      });
+      return row;
+    });
+  }, [effectiveStats]);
+
+  const hasTrend14dData = useMemo(
+    () => trend14dData.some((row) => CONSUMABLE_NAMES.some((n) => {
+      const k = n.replace(" Detergent", "").replace(" Fabric Conditioner", "");
+      return (row[k] as number) > 0;
+    })),
+    [trend14dData],
   );
+
+  const trend14dKeys = CONSUMABLE_NAMES.map((n) => n.replace(" Detergent", "").replace(" Fabric Conditioner", ""));
+  const LINE_COLORS = ["hsl(218,58%,30%)", "#16a34a", "#d97706", "#7c3aed"];
+
+  // Weekly comparison insight for 14-day trend
+  const trendInsights = useMemo(() => {
+    if (!hasTrend14dData) return [];
+    const insights: string[] = [];
+    CONSUMABLE_NAMES.forEach((name) => {
+      const record = effectiveStats.find((r) => r.itemName === name);
+      if (!record) return;
+      const today = new Date();
+      const thisWeek = Array.from({ length: 7 }, (_, i) => toYMD(offsetDate(today, -(6 - i))));
+      const lastWeek = Array.from({ length: 7 }, (_, i) => toYMD(offsetDate(today, -(13 - i))));
+      const thisSum = thisWeek.reduce((s, d) => s + (record.days.find((dd) => dd.date === d)?.consumed ?? 0), 0);
+      const lastSum = lastWeek.reduce((s, d) => s + (record.days.find((dd) => dd.date === d)?.consumed ?? 0), 0);
+      const shortName = name.replace(" Detergent", "").replace(" Fabric Conditioner", "");
+      if (thisSum === 0 && lastSum === 0) return;
+      if (lastSum === 0) {
+        insights.push(`📦 ${shortName}: ${thisSum.toFixed(0)} packs used this week (no prior week data)`);
+      } else {
+        const pct = Math.round(((thisSum - lastSum) / lastSum) * 100);
+        const arrow = pct > 0 ? "📈" : pct < 0 ? "📉" : "➡";
+        insights.push(`${arrow} ${shortName}: ${thisSum.toFixed(0)} packs this week vs ${lastSum.toFixed(0)} last week (${pct > 0 ? "+" : ""}${pct}%)`);
+      }
+    });
+    return insights;
+  }, [effectiveStats, hasTrend14dData]);
 
   // 7-Day History stacked bar
   const history7dData = useMemo(() => {
@@ -658,13 +706,13 @@ export default function PredictiveInventoryPage() {
     return last7.map(({ date, label }) => {
       const row: Record<string, number | string> = { day: label };
       CONSUMABLE_NAMES.forEach((name) => {
-        const record = dailyStats.find((r) => r.itemName === name);
+        const record = effectiveStats.find((r) => r.itemName === name);
         const shortName = name.replace(" Detergent", "").replace(" Fabric Conditioner", "");
         row[shortName] = record?.days.find((d) => d.date === date)?.consumed ?? 0;
       });
       return row;
     });
-  }, [dailyStats]);
+  }, [effectiveStats]);
 
   const history7dKeys = CONSUMABLE_NAMES.map((n) => n.replace(" Detergent", "").replace(" Fabric Conditioner", ""));
 
@@ -675,14 +723,15 @@ export default function PredictiveInventoryPage() {
 
   // Peak Heatmap — avg by day-of-week from last 60 days
   const heatmapData = useMemo(() => {
-    // display columns: Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6, Sun=0
     const jsDowForCol = [1, 2, 3, 4, 5, 6, 0];
     return CONSUMABLE_NAMES.map((name) => {
-      const record = dailyStats.find((r) => r.itemName === name);
+      const record = effectiveStats.find((r) => r.itemName === name);
       const buckets: Record<number, number[]> = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
       record?.days.forEach(({ date, consumed }) => {
-        const dow = new Date(date + "T00:00:00").getDay();
-        buckets[dow].push(consumed);
+        if (consumed > 0) {
+          const dow = new Date(date + "T00:00:00").getDay();
+          buckets[dow].push(consumed);
+        }
       });
       const avgs = jsDowForCol.map((dow) => {
         const arr = buckets[dow];
@@ -691,7 +740,7 @@ export default function PredictiveInventoryPage() {
       const shortName = name.replace(" Detergent", "").replace(" Fabric Conditioner", "");
       return { name: shortName, avgs };
     });
-  }, [dailyStats]);
+  }, [effectiveStats]);
 
   const hasHeatmapData = useMemo(
     () => heatmapData.some((r) => r.avgs.some((v) => v > 0)),
@@ -700,17 +749,34 @@ export default function PredictiveInventoryPage() {
 
   const heatmapMax = useMemo(() => Math.max(...heatmapData.flatMap((r) => r.avgs), 0.001), [heatmapData]);
 
-  const heatmapInsight = useMemo(() => {
-    if (!hasHeatmapData) return null;
-    let bestItem = "";
-    let bestDay = "";
-    let bestVal = -1;
+  const heatmapInsights = useMemo(() => {
+    if (!hasHeatmapData) return [];
+    const jsDowForCol = [1, 2, 3, 4, 5, 6, 0];
+    const insights: string[] = [];
+    // Overall busiest day
+    const dayTotals = HEATMAP_DAYS_LABELS.map((_, ci) =>
+      heatmapData.reduce((s, row) => s + row.avgs[ci], 0));
+    const maxDayIdx = dayTotals.indexOf(Math.max(...dayTotals));
+    const minDayIdx = dayTotals.indexOf(Math.min(...dayTotals.filter((v) => v > 0)));
+    insights.push(`📌 Busiest day overall: ${HEATMAP_DAYS_LABELS[maxDayIdx]} — prepare stock before ${HEATMAP_DAYS_LABELS[(maxDayIdx - 1 + 7) % 7]}`);
+    if (minDayIdx >= 0 && minDayIdx !== maxDayIdx) {
+      insights.push(`📌 Slowest day: ${HEATMAP_DAYS_LABELS[minDayIdx]} — good time for inventory counts`);
+    }
+    // Weekend vs weekday
+    const weekdayTotal = [0, 1, 2, 3, 4].reduce((s, i) => s + dayTotals[i], 0) / 5;
+    const weekendTotal = [5, 6].reduce((s, i) => s + dayTotals[i], 0) / 2;
+    if (weekdayTotal > 0) {
+      const diff = Math.round(((weekendTotal - weekdayTotal) / weekdayTotal) * 100);
+      insights.push(`📌 Weekend usage is ${Math.abs(diff)}% ${diff >= 0 ? "higher" : "lower"} than weekdays`);
+    }
+    // Per-item peak day
     heatmapData.forEach((row) => {
-      row.avgs.forEach((v, ci) => {
-        if (v > bestVal) { bestVal = v; bestItem = row.name; bestDay = HEATMAP_DAYS_LABELS[ci]; }
-      });
+      const peakIdx = row.avgs.indexOf(Math.max(...row.avgs));
+      if (row.avgs[peakIdx] > 0) {
+        insights.push(`📌 ${row.name} peaks on ${HEATMAP_DAYS_LABELS[peakIdx]} (avg ${row.avgs[peakIdx].toFixed(1)} packs)`);
+      }
     });
-    return `Highest usage: ${bestDay} (${bestItem} — ${bestVal.toFixed(1)} packs avg)`;
+    return insights;
   }, [heatmapData, hasHeatmapData]);
 
   const handleTabChange = (branch: string) => {
@@ -1272,7 +1338,7 @@ export default function PredictiveInventoryPage() {
           <div className="flex flex-wrap gap-2 px-5 pt-4">
             {([
               { key: "donut", label: "Stock Health" },
-              { key: "yesterday", label: "Yesterday vs Today" },
+              { key: "trend14d", label: "14-Day Trend" },
               { key: "history7d", label: "7-Day History" },
               { key: "heatmap", label: "Peak Heatmap" },
               { key: "maintenance", label: "Maintenance" },
@@ -1351,31 +1417,39 @@ export default function PredictiveInventoryPage() {
               </div>
             )}
 
-            {/* Tab 2: Yesterday vs Today */}
-            {activeVizTab === "yesterday" && (
+            {/* Tab 2: 14-Day Consumption Trend */}
+            {activeVizTab === "trend14d" && (
               <div>
-                <h3 className="text-lg font-semibold text-foreground mb-1">Yesterday vs Today</h3>
-                <p className="text-sm text-muted-foreground mb-4">Units consumed per consumable item — yesterday and today.</p>
-                {!hasYesterdayTodayData ? (
+                <h3 className="text-lg font-semibold text-foreground mb-1">Consumption History — Last 14 Days</h3>
+                <p className="text-sm text-muted-foreground mb-4">Based on completed and in-progress orders. Each line shows daily packs used per item.</p>
+                {!hasTrend14dData ? (
                   <div className="flex items-center justify-center h-48 text-sm text-muted-foreground text-center px-8">
-                    No consumption recorded yet — data appears after completed orders.
+                    No order activity recorded yet — chart appears once orders reach Washing status.
                   </div>
                 ) : (
                   <>
                     <ResponsiveContainer width="100%" height={300}>
-                      <BarChart data={yesterdayTodayData} margin={{ top: 8, right: 16, left: 8, bottom: 40 }}>
+                      <LineChart data={trend14dData} margin={{ top: 8, right: 24, left: 8, bottom: 50 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,25%,90%)" />
-                        <XAxis dataKey="item" tick={{ fontSize: 12 }} angle={-20} textAnchor="end" interval={0} />
-                        <YAxis tick={{ fontSize: 12 }} label={{ value: "Units consumed", angle: -90, position: "insideLeft", offset: 8, fontSize: 12 }} allowDecimals={false} />
-                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                        <Bar dataKey="yesterday" name="Yesterday" fill={BAR_COLORS[0]} />
-                        <Bar dataKey="today" name="Today" fill={BAR_COLORS[2]} />
-                      </BarChart>
+                        <XAxis dataKey="date" tick={{ fontSize: 11 }} angle={-30} textAnchor="end" interval={0} />
+                        <YAxis tick={{ fontSize: 12 }} allowDecimals={false}
+                          label={{ value: "Packs used", angle: -90, position: "insideLeft", offset: 8, fontSize: 12 }} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                          formatter={(value: number, name: string) => [`${value} packs`, name]} />
+                        <Legend verticalAlign="top" iconType="line" wrapperStyle={{ fontSize: 12, paddingBottom: 4 }} />
+                        {trend14dKeys.map((key, i) => (
+                          <Line key={key} type="monotone" dataKey={key} stroke={LINE_COLORS[i % LINE_COLORS.length]}
+                            strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={false} />
+                        ))}
+                      </LineChart>
                     </ResponsiveContainer>
-                    <div className="flex flex-wrap gap-4 mt-2 text-sm">
-                      <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm" style={{ background: BAR_COLORS[0] }} />Yesterday</span>
-                      <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm" style={{ background: BAR_COLORS[2] }} />Today</span>
-                    </div>
+                    {trendInsights.length > 0 && (
+                      <div className="mt-4 space-y-1">
+                        {trendInsights.map((insight, i) => (
+                          <p key={i} className="text-sm text-foreground">{insight}</p>
+                        ))}
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -1418,11 +1492,12 @@ export default function PredictiveInventoryPage() {
             {/* Tab 4: Peak Heatmap */}
             {activeVizTab === "heatmap" && (
               <div>
-                <h3 className="text-lg font-semibold text-foreground mb-1">Peak Day Heatmap</h3>
-                <p className="text-sm text-muted-foreground mb-4">Average consumption per day of week (last 60 days). Darker = higher average.</p>
+                <h3 className="text-lg font-semibold text-foreground mb-1">Busiest Days Per Item — Last 60 Days</h3>
+                <p className="text-sm text-muted-foreground mb-1">Average packs consumed per day of week based on completed orders. Darker cell = higher average.</p>
+                <p className="text-xs text-muted-foreground mb-4">Numbers show avg packs used. "—" means no orders recorded on that day.</p>
                 {!hasHeatmapData ? (
                   <div className="flex items-center justify-center h-48 text-sm text-muted-foreground text-center px-8">
-                    No consumption data available yet — heatmap populates after order history is recorded.
+                    No order history yet — heatmap appears once orders have been completed.
                   </div>
                 ) : (
                   <>
@@ -1443,13 +1518,13 @@ export default function PredictiveInventoryPage() {
                               {row.avgs.map((val, ci) => {
                                 const intensity = heatmapMax > 0 ? val / heatmapMax : 0;
                                 const lightness = Math.round(95 - intensity * 75);
-                                const bg = intensity < 0.05 ? "#FFFFFF" : `hsl(218,58%,${lightness}%)`;
+                                const bg = intensity < 0.05 ? "#f8fafc" : `hsl(218,58%,${lightness}%)`;
                                 const textColor = lightness < 55 ? "#FFFFFF" : "#1e293b";
                                 return (
                                   <td key={ci} className="px-1 py-1">
-                                    <div title={`${HEATMAP_DAYS_LABELS[ci]}: ${val.toFixed(1)} packs avg`}
-                                      style={{ background: bg, color: textColor, width: 44, height: 36, borderRadius: 6 }}
-                                      className="flex items-center justify-center text-xs font-medium cursor-default">
+                                    <div title={`${HEATMAP_DAYS_LABELS[ci]}: ${val > 0 ? val.toFixed(2) + " packs avg" : "no data"}`}
+                                      style={{ background: bg, color: textColor, width: 44, height: 40, borderRadius: 6, border: "1px solid #e2e8f0" }}
+                                      className="flex items-center justify-center text-xs font-semibold cursor-default">
                                       {val > 0 ? val.toFixed(1) : "—"}
                                     </div>
                                   </td>
@@ -1460,8 +1535,20 @@ export default function PredictiveInventoryPage() {
                         </tbody>
                       </table>
                     </div>
-                    {heatmapInsight && (
-                      <p className="mt-4 text-sm text-foreground"><strong>Insight:</strong> {heatmapInsight}</p>
+                    <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>Less</span>
+                      {[95, 80, 65, 50, 35, 20].map((l) => (
+                        <span key={l} style={{ background: `hsl(218,58%,${l}%)`, width: 16, height: 16, borderRadius: 3, display: "inline-block" }} />
+                      ))}
+                      <span>More</span>
+                    </div>
+                    {heatmapInsights.length > 0 && (
+                      <div className="mt-4 space-y-1.5 rounded-xl bg-muted/30 p-4">
+                        <p className="text-sm font-semibold text-foreground mb-2">Insights</p>
+                        {heatmapInsights.map((insight, i) => (
+                          <p key={i} className="text-sm text-foreground">{insight}</p>
+                        ))}
+                      </div>
                     )}
                   </>
                 )}

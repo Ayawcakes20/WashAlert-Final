@@ -929,6 +929,84 @@ public class InventoryService {
         );
     }
 
+    private static final Set<JobOrderStatus> CONSUMPTION_STATUSES = Set.of(
+            JobOrderStatus.WASHING, JobOrderStatus.DRYING, JobOrderStatus.READY,
+            JobOrderStatus.ASSIGNED_FOR_DELIVERY, JobOrderStatus.OUT_FOR_DELIVERY,
+            JobOrderStatus.DELIVERED);
+
+    /**
+     * Returns per-day consumption derived from order activity (detergent/fabcon preferences per booking).
+     * Uses orders in WASHING→DELIVERED statuses so data appears as soon as orders start processing.
+     */
+    public List<DailyConsumptionResponse> orderActivityStats(int daysBack, String branchParam, AuthUserDetails principal) {
+        int effectiveDays = (daysBack > 0 && daysBack <= 365) ? daysBack : 60;
+        LocalDateTime since = LocalDateTime.now().minusDays(effectiveDays);
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+        List<JobOrder> orders;
+        if (principal.getUser().getRole() == Role.STAFF) {
+            String staffBranch = principal.getUser().getBranch();
+            orders = jobOrderRepository.findByBranchIgnoreCaseAndStatusInAndCreatedAtAfter(staffBranch, CONSUMPTION_STATUSES, since);
+        } else if (branchParam != null && !branchParam.isBlank()) {
+            orders = jobOrderRepository.findByBranchIgnoreCaseAndStatusInAndCreatedAtAfter(branchParam.trim(), CONSUMPTION_STATUSES, since);
+        } else {
+            orders = jobOrderRepository.findByStatusInAndCreatedAtAfter(CONSUMPTION_STATUSES, since);
+        }
+
+        // key = "branch||itemName"
+        Map<String, Map<String, Double>> grouped = new LinkedHashMap<>();
+
+        for (JobOrder order : orders) {
+            String branch = order.getBranch() != null ? order.getBranch() : "Unknown";
+            String dateKey = (order.getBookingDate() != null
+                    ? order.getBookingDate()
+                    : order.getCreatedAt().toLocalDate()).format(fmt);
+
+            // Detergent
+            String rawDet = order.getDetergentPreference();
+            if (rawDet != null && !NO_SUPPLY_LABELS.contains(rawDet.trim().toLowerCase(Locale.ROOT))) {
+                String detName = normalizeItemName(rawDet);
+                if (CANONICAL_ITEM_NAMES.containsValue(detName) && detName.contains("Detergent")) {
+                    int qty = order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0
+                            ? order.getDetergentQuantity() : 1;
+                    grouped.computeIfAbsent(branch + "||" + detName, k -> new LinkedHashMap<>())
+                           .merge(dateKey, (double) qty, Double::sum);
+                }
+            }
+
+            // Fabric conditioner
+            String rawFab = order.getFabricConditionerPreference();
+            if (rawFab != null && !NO_SUPPLY_LABELS.contains(rawFab.trim().toLowerCase(Locale.ROOT))) {
+                String fabName = normalizeItemName(rawFab);
+                if (CANONICAL_ITEM_NAMES.containsValue(fabName) && fabName.contains("Conditioner")) {
+                    int qty = order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0
+                            ? order.getConditionerQuantity() : 1;
+                    grouped.computeIfAbsent(branch + "||" + fabName, k -> new LinkedHashMap<>())
+                           .merge(dateKey, (double) qty, Double::sum);
+                }
+            }
+        }
+
+        if (grouped.isEmpty()) return List.of();
+
+        List<String> allDates = Stream.iterate(
+                LocalDate.now().minusDays(effectiveDays - 1L), d -> d.plusDays(1))
+                .limit(effectiveDays)
+                .map(d -> d.format(fmt))
+                .toList();
+
+        return grouped.entrySet().stream().map(entry -> {
+            String[] parts = entry.getKey().split("\\|\\|", 2);
+            String branch = parts[0];
+            String itemName = parts.length > 1 ? parts[1] : "";
+            List<DailyConsumptionResponse.DailyUsage> days = allDates.stream()
+                    .map(date -> new DailyConsumptionResponse.DailyUsage(
+                            date, entry.getValue().getOrDefault(date, 0.0)))
+                    .toList();
+            return new DailyConsumptionResponse(itemName, branch, "packs", days);
+        }).toList();
+    }
+
     /**
      * Returns per-day OUT (consumption) totals per item for the requested lookback period.
      * Only negative quantityDelta movements (stock consumed/adjusted out) are counted.
