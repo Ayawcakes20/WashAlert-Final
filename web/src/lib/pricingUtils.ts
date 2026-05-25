@@ -87,18 +87,24 @@ export const computeOrderPricing = (
   const baseServiceLimit = getBaseServiceLimit(name, lt);
   const isHandwash = name.includes('handwash');
 
+  // Apply 5 kg minimum billing floor: if actual weight is below 5 kg,
+  // we still proceed but price the order as 5 kg per business rule.
+  const MIN_BILLING_KG = 5;
+  const billingKg = Math.max(MIN_BILLING_KG, actualKg);
+
   let numberOfLoads = 1;
   let pricePerLoad = 0;
   let serviceTotal = 0;
 
   if (isHandwash) {
     // Handwash: ₱150/kg for 1–3 kg, ₱90/kg for 3 kg+
-    pricePerLoad = actualKg <= 3 ? 150 : 90;
-    serviceTotal = pricePerLoad * actualKg;
+    // Handwash is per-kg so billing minimum still applies
+    pricePerLoad = billingKg <= 3 ? 150 : 90;
+    serviceTotal = pricePerLoad * billingKg;
     numberOfLoads = 1;
   } else {
-    // Standard Load Calculation (Based on 9kg PHYSICAL machine limit)
-    numberOfLoads = Math.ceil(actualKg / 9);
+    // Standard Load Calculation — uses billingKg (minimum 5 kg) for pricing
+    numberOfLoads = Math.ceil(billingKg / 9);
 
     // Service pricing per load based on specific client rules
     if (name.includes('ecowash')) {
@@ -123,8 +129,9 @@ export const computeOrderPricing = (
 
   // Madness surcharge — ₱50/kg over combined base capacity (Panel-Recommended Logic)
   // Total capacity = Loads * Service Limit (e.g., 2 loads @ 8kg = 16kg capacity)
+  // Uses billingKg so sub-5kg orders always price against the 5 kg minimum floor.
   const totalBaseCapacity = numberOfLoads * baseServiceLimit;
-  const madnessKg = Math.max(0, actualKg - totalBaseCapacity);
+  const madnessKg = Math.max(0, billingKg - totalBaseCapacity);
   const madnessFee = Math.round(madnessKg * 50);
 
   // Detergent & Conditioner

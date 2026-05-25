@@ -115,7 +115,7 @@ function ReceiptPreview({ order, actualKg, loadType, pricing: p, deliveryFee, ma
       {/* Customer summary */}
       <div className="py-3 space-y-1.5 border-b border-dashed border-slate-300">
         <ReceiptRow label="Customer" value={order.customerName} bold />
-        <ReceiptRow label="Actual weight" value={actualKg > 0 ? `${actualKg} kg` : "—"} bold />
+        <ReceiptRow label="Actual weight" value={actualKg > 0 ? `${actualKg} kg${actualKg < 5 ? ` (billed as 5 kg)` : ""}` : "—"} bold />
         <ReceiptRow
           label="Load type"
           value={loadType === "PURE_CLOTHES" ? "Pure clothes" : "With towels/beddings"}
@@ -237,8 +237,8 @@ function ReceiptPreview({ order, actualKg, loadType, pricing: p, deliveryFee, ma
       ) : (
         <div className="py-16 text-center">
           <Scale className="h-10 w-10 text-slate-200 mx-auto mb-3" />
-          <p className="text-[11px] font-black text-slate-300">Enter weight ≥ 5 kg</p>
-          <p className="text-[10px] text-slate-300 mt-0.5">to see full breakdown</p>
+          <p className="text-[11px] font-black text-slate-300">Enter actual weight</p>
+          <p className="text-[10px] text-slate-300 mt-0.5">Orders below 5 kg are billed at 5 kg minimum</p>
         </div>
       )}
     </div>
@@ -331,9 +331,12 @@ export function FinalizeWeightModal({
   const actualKg = parseFloat(actualWeightRaw) || 0;
   const deliveryFee = parseFloat(deliveryFeeRaw) || 0;
   const manualAdjustment = parseFloat(manualAdjustmentRaw) || 0;
-  const weightValid = actualKg >= 5;
-  const showWeightError = actualKg > 0 && !weightValid;
-  const calculatedLoads = isHandwash ? 1 : Math.ceil(actualKg / 9);
+  // Any positive weight is valid — pricing will apply a 5 kg minimum billing floor.
+  const weightValid = actualKg > 0;
+  const isBelowMinimum = actualKg > 0 && actualKg < 5;
+  // Use billing kg (min 5) for load calculation so quantities match invoice.
+  const billingKg = Math.max(5, actualKg);
+  const calculatedLoads = isHandwash ? 1 : Math.ceil(billingKg / 9);
 
   const prevLoadsRef = useRef<number | null>(null);
 
@@ -372,11 +375,7 @@ export function FinalizeWeightModal({
       return;
     }
 
-    // Only scale if weight is valid
-    if (!weightValid) {
-      return;
-    }
-
+    // Scale supplies for any positive weight (sub-5kg uses billing floor of 5kg).
     const currentLoads = calculatedLoads;
 
     // Initialize prevLoadsRef on first valid load calculation
@@ -398,7 +397,7 @@ export function FinalizeWeightModal({
     }
 
     if (prevLoadsRef.current !== currentLoads) {
-      // The number of loads has changed! Auto-adjust detergent and conditioner quantities if they are set (not "none")
+      // The number of loads has changed — auto-adjust quantities
       const detMax = getAvailQty(order.detergent);
       const conMax = getAvailQty(order.conditioner);
 
@@ -411,10 +410,11 @@ export function FinalizeWeightModal({
 
       prevLoadsRef.current = currentLoads;
     }
-  }, [open, order, weightValid, calculatedLoads, getAvailQty, actualKg]);
+  }, [open, order, calculatedLoads, getAvailQty, actualKg]);
 
   if (!order) return null;
 
+  // Pricing is computed for any positive weight; pricingUtils applies the 5 kg billing floor internally.
   const pricing: PricingResult | null =
     weightValid ? computeOrderPricing({
       ...order,
@@ -563,16 +563,16 @@ export function FinalizeWeightModal({
                         <input
                           ref={weightInputRef}
                           type="number"
-                          min="5"
+                          min="0.1"
                           step="0.1"
                           value={actualWeightRaw}
                           placeholder="0.0"
                           onChange={(e) => setActualWeightRaw(e.target.value)}
                           className={`w-full h-14 text-center text-3xl font-black border-2 rounded-xl bg-white focus:outline-none [appearance:textfield] transition-all ${
-                            showWeightError
-                              ? "border-red-400 focus:border-red-500 bg-red-50"
-                              : weightValid
-                              ? "border-blue-400 focus:border-blue-600"
+                            weightValid
+                              ? isBelowMinimum
+                                ? "border-amber-400 focus:border-amber-500 bg-amber-50"
+                                : "border-blue-400 focus:border-blue-600"
                               : "border-slate-200 focus:border-blue-500"
                           }`}
                         />
@@ -581,19 +581,19 @@ export function FinalizeWeightModal({
                         </span>
                       </div>
                       <AnimatePresence>
-                        {showWeightError && (
+                        {isBelowMinimum && (
                           <motion.p
                             initial={{ opacity: 0, y: -4 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -4 }}
-                            className="text-[10px] font-bold text-red-500 flex items-center gap-1"
+                            className="text-[10px] font-bold text-amber-600 flex items-center gap-1"
                           >
-                            <AlertCircle className="h-3 w-3 shrink-0" />
-                            Minimum 5 kg per order
+                            <Info className="h-3 w-3 shrink-0" />
+                            Below 5 kg — order will be billed at 5 kg minimum
                           </motion.p>
                         )}
-                        {!showWeightError && (
-                          <p className="text-[10px] text-slate-400">Minimum 5 kg per order</p>
+                        {!isBelowMinimum && (
+                          <p className="text-[10px] text-slate-400">Minimum billing: 5 kg per order</p>
                         )}
                       </AnimatePresence>
                     </div>
@@ -751,7 +751,8 @@ export function FinalizeWeightModal({
                       {pricing.numberOfLoads}
                     </p>
                     <p className="text-sm font-bold text-blue-200 mt-2 relative z-10">
-                      {actualKg} kg ÷ {pricing.maxKgPerLoad} kg/load
+                      {billingKg} kg ÷ {pricing.maxKgPerLoad} kg/load
+                      {isBelowMinimum && <span className="ml-1 text-amber-300">(5 kg min)</span>}
                     </p>
                     {pricing.madnessFee > 0 && (
                       <Badge className="mt-3 bg-orange-500 hover:bg-orange-500 text-white font-bold relative z-10">
