@@ -749,9 +749,6 @@ export default function BranchAssetsPage() {
               </span>
             );
           })}
-          <span className="ml-2 inline-flex items-center gap-1 text-amber-600">
-            <AlertCircle className="h-3 w-3" /> Last Inspected &gt;90 days ago
-          </span>
         </motion.div>
       )}
 
