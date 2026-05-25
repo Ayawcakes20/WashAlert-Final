@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Boxes, Plus, Trash2, Loader2, MapPin,
   CheckCircle2, AlertCircle, XCircle, RefreshCw, ClipboardList,
@@ -66,6 +66,107 @@ const ASSET_CATEGORIES = [
   "Electronics",
   "Other",
 ] as const;
+
+const CATEGORY_ITEMS_MAP: Record<string, string[]> = {
+  Appliance: [
+    "Washing Machine",
+    "Dryer",
+    "Air Conditioner",
+    "Refrigerator",
+    "Electric Fan",
+    "Television",
+    "Water Dispenser",
+    "Microwave",
+  ],
+  Furniture: [
+    "Folding Table",
+    "Plastic Chair",
+    "Metal Rack",
+    "Sofa / Couch",
+    "Laundry Basket Cart",
+    "Office Chair",
+    "Stool",
+    "Cabinet",
+  ],
+  Equipment: [
+    "Water Pump",
+    "Water Tank",
+    "Steam Iron",
+    "Dry Vacuum Cleaner",
+    "Weighing Scale",
+    "CCTV Camera System",
+    "POS Terminal",
+    "Pressure Washer",
+    "Generator",
+  ],
+  Electronics: [
+    "Tablet (POS)",
+    "Smart Phone",
+    "WiFi Router",
+    "Smart TV",
+    "Barcode Scanner",
+    "Thermal Printer",
+    "Bluetooth Speaker",
+  ],
+  Other: [
+    "Fire Extinguisher",
+    "First Aid Kit",
+    "Cleaning Cart",
+    "Step Ladder",
+  ],
+};
+
+const CATEGORY_BRANDS_MAP: Record<string, string[]> = {
+  Appliance: [
+    "Samsung",
+    "LG",
+    "Panasonic",
+    "Sharp",
+    "Toshiba",
+    "Fujidenzo",
+    "Carrier",
+    "Midea",
+    "Condura",
+    "Standard",
+    "LG Giant C",
+    "Whirlpool",
+    "Maytag",
+    "Speed Queen",
+  ],
+  Furniture: [
+    "Uratex",
+    "Orocan",
+    "San-Yang",
+    "IKEA",
+    "Mandaue Foam",
+    "Generic",
+  ],
+  Equipment: [
+    "Matrix",
+    "Karcher",
+    "Standard",
+    "Hikvision",
+    "Xiaomi",
+    "Imarflex",
+    "Asahi",
+    "Yamaha",
+    "Seco",
+  ],
+  Electronics: [
+    "Apple",
+    "Samsung",
+    "Xiaomi",
+    "TP-Link",
+    "Epson",
+    "Sunmi",
+    "Realme",
+  ],
+  Other: [
+    "First Alert",
+    "Falcon",
+    "Generic",
+  ],
+};
 
 const KNOWN_BRANCHES = [
   "Makati Branch",
@@ -951,6 +1052,42 @@ interface AssetFormFieldsProps {
 function AssetFormFields({
   form, setForm, adminBranch, branches, userBranch, assets, mode,
 }: AssetFormFieldsProps) {
+  const categoryItems = form.category ? (CATEGORY_ITEMS_MAP[form.category] || []) : [];
+  const categoryBrands = form.category ? (CATEGORY_BRANDS_MAP[form.category] || []) : [];
+
+  const [showCustomItem, setShowCustomItem] = useState(false);
+  const [showCustomBrand, setShowCustomBrand] = useState(false);
+
+  useEffect(() => {
+    if (!form.category) {
+      setShowCustomItem(false);
+      setShowCustomBrand(false);
+      return;
+    }
+    const items = CATEGORY_ITEMS_MAP[form.category] || [];
+    const brands = CATEGORY_BRANDS_MAP[form.category] || [];
+    
+    if (form.name && !items.includes(form.name)) {
+      setShowCustomItem(true);
+    } else if (!form.name) {
+      setShowCustomItem(false);
+    }
+    
+    if (form.brand && !brands.includes(form.brand)) {
+      setShowCustomBrand(true);
+    } else if (!form.brand) {
+      setShowCustomBrand(false);
+    }
+  }, [form.category, form.productId, mode]);
+
+  const selectedItemValue = showCustomItem
+    ? "__custom__"
+    : (categoryItems.includes(form.name) ? form.name : "");
+
+  const selectedBrandValue = showCustomBrand
+    ? "__custom__"
+    : (categoryBrands.includes(form.brand) ? form.brand : "");
+
   return (
     <div className="space-y-4">
       {/* Branch */}
@@ -980,7 +1117,17 @@ function AssetFormFields({
         <Label>Category</Label>
         <Select
           value={form.category}
-          onValueChange={(val) => setForm((p) => ({ ...p, category: val }))}
+          onValueChange={(val) => {
+            setForm((p) => ({
+              ...p,
+              category: val,
+              name: "",
+              brand: "",
+              productId: mode === "add" ? generateNextProductId(assets, "") : p.productId,
+            }));
+            setShowCustomItem(false);
+            setShowCustomBrand(false);
+          }}
         >
           <SelectTrigger className="w-full text-foreground">
             <SelectValue placeholder="Select a category" />
@@ -1008,25 +1155,90 @@ function AssetFormFields({
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label>Item Name <span className="text-destructive">*</span></Label>
-          <Input
-            placeholder="e.g. Electric Fan, Aircon..."
-            value={form.name}
-            onChange={(e) => {
-              const newName = e.target.value;
-              setForm((p) => {
-                const nextId = mode === "add" ? generateNextProductId(assets, newName) : p.productId;
-                return { ...p, name: newName, productId: nextId };
-              });
+          <Select
+            value={selectedItemValue}
+            disabled={!form.category}
+            onValueChange={(val) => {
+              if (val === "__custom__") {
+                setShowCustomItem(true);
+                setForm((p) => {
+                  const nextId = mode === "add" ? generateNextProductId(assets, "") : p.productId;
+                  return { ...p, name: "", productId: nextId };
+                });
+              } else {
+                setShowCustomItem(false);
+                setForm((p) => {
+                  const nextId = mode === "add" ? generateNextProductId(assets, val) : p.productId;
+                  return { ...p, name: val, productId: nextId };
+                });
+              }
             }}
-          />
+          >
+            <SelectTrigger className="w-full text-foreground">
+              <SelectValue placeholder={form.category ? "Select an item" : "Select category first"} />
+            </SelectTrigger>
+            <SelectContent>
+              {categoryItems.map((item) => (
+                <SelectItem key={item} value={item}>{item}</SelectItem>
+              ))}
+              {form.category && (
+                <SelectItem value="__custom__">Other (Specify Custom Name)</SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+
+          {showCustomItem && (
+            <Input
+              className="mt-2"
+              placeholder="Enter custom item name..."
+              value={form.name}
+              onChange={(e) => {
+                const newName = e.target.value;
+                setForm((p) => {
+                  const nextId = mode === "add" ? generateNextProductId(assets, newName) : p.productId;
+                  return { ...p, name: newName, productId: nextId };
+                });
+              }}
+            />
+          )}
         </div>
+
         <div className="space-y-2">
           <Label>Brand Name <span className="text-destructive">*</span></Label>
-          <Input
-            placeholder="e.g. Samsung, LG..."
-            value={form.brand}
-            onChange={(e) => setForm((p) => ({ ...p, brand: e.target.value }))}
-          />
+          <Select
+            value={selectedBrandValue}
+            disabled={!form.category}
+            onValueChange={(val) => {
+              if (val === "__custom__") {
+                setShowCustomBrand(true);
+                setForm((p) => ({ ...p, brand: "" }));
+              } else {
+                setShowCustomBrand(false);
+                setForm((p) => ({ ...p, brand: val }));
+              }
+            }}
+          >
+            <SelectTrigger className="w-full text-foreground">
+              <SelectValue placeholder={form.category ? "Select a brand" : "Select category first"} />
+            </SelectTrigger>
+            <SelectContent>
+              {categoryBrands.map((brand) => (
+                <SelectItem key={brand} value={brand}>{brand}</SelectItem>
+              ))}
+              {form.category && (
+                <SelectItem value="__custom__">Other (Specify Custom Brand)</SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+
+          {showCustomBrand && (
+            <Input
+              className="mt-2"
+              placeholder="Enter custom brand name..."
+              value={form.brand}
+              onChange={(e) => setForm((p) => ({ ...p, brand: e.target.value }))}
+            />
+          )}
         </div>
       </div>
 
