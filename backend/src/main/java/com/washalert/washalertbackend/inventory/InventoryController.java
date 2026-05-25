@@ -2,6 +2,7 @@ package com.washalert.washalertbackend.inventory;
 
 import com.washalert.washalertbackend.inventory.dto.AdjustInventoryRequest;
 import com.washalert.washalertbackend.inventory.dto.CreateInventoryItemRequest;
+import com.washalert.washalertbackend.inventory.dto.DailyConsumptionResponse;
 import com.washalert.washalertbackend.inventory.dto.InventoryForecastResponse;
 import com.washalert.washalertbackend.inventory.dto.InventoryItemResponse;
 import com.washalert.washalertbackend.inventory.dto.UpdateInventoryItemRequest;
@@ -121,6 +122,16 @@ public class InventoryController {
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public InventoryItemResponse markServiced(@PathVariable Long itemId) {
         return inventoryService.markServiced(itemId);
+    }
+
+    @GetMapping("/daily-stats")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public List<DailyConsumptionResponse> dailyStats(
+            @RequestParam(defaultValue = "60") int days,
+            @RequestParam(required = false) String branch,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return inventoryService.dailyStats(days, branch, principal);
     }
 
     @DeleteMapping("/items/{itemId}")
