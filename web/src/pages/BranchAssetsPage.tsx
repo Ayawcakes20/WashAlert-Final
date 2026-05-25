@@ -1064,15 +1064,6 @@ function AssetFormFields({
         </div>
       </div>
 
-      {/* Unit */}
-      <div className="space-y-2">
-        <Label>Unit <span className="text-muted-foreground text-xs">(default: units)</span></Label>
-        <Input
-          placeholder="e.g. units, pieces, sets"
-          value={form.unit}
-          onChange={(e) => setForm((p) => ({ ...p, unit: e.target.value }))}
-        />
-      </div>
 
       {/* Purchase Date + Purchase Price */}
       <div className="grid grid-cols-2 gap-3">
