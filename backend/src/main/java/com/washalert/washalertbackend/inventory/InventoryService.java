@@ -25,6 +25,8 @@ import org.springframework.data.domain.Pageable;
 
 import com.washalert.washalertbackend.inventory.dto.BookingPipelineResponse;
 import com.washalert.washalertbackend.inventory.dto.DailyConsumptionResponse;
+import com.washalert.washalertbackend.inventory.dto.DailyOrderVolumeResponse;
+import com.washalert.washalertbackend.inventory.dto.OperationsKpiResponse;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -1029,6 +1031,91 @@ public class InventoryService {
                             date, entry.getValue().getOrDefault(date, 0.0)))
                     .toList();
             return new DailyConsumptionResponse(itemName, branch, "packs", days);
+        }).toList();
+    }
+
+    /** KPI summary derived from job_orders: orders today, this week, avg weight, peak day. */
+    public OperationsKpiResponse operationsKpi(String branchParam, AuthUserDetails principal) {
+        String effectiveBranch = resolveEffectiveBranch(branchParam, principal.getUser());
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime since30 = now.minusDays(30);
+
+        List<JobOrder> last30 = effectiveBranch == null
+                ? jobOrderRepository.findByCreatedAtBetween(since30, now)
+                : jobOrderRepository.findByBranchIgnoreCaseAndCreatedAtBetween(effectiveBranch, since30, now);
+
+        LocalDate today = LocalDate.now();
+        java.time.LocalDate startOfWeek = today.with(java.time.DayOfWeek.MONDAY);
+
+        long ordersToday = last30.stream()
+                .filter(jo -> jo.getStatus() != JobOrderStatus.CANCELLED)
+                .filter(jo -> jo.getCreatedAt().toLocalDate().isEqual(today))
+                .count();
+
+        long ordersThisWeek = last30.stream()
+                .filter(jo -> jo.getStatus() != JobOrderStatus.CANCELLED)
+                .filter(jo -> !jo.getCreatedAt().toLocalDate().isBefore(startOfWeek))
+                .count();
+
+        double avgKg = last30.stream()
+                .filter(jo -> jo.getStatus() != JobOrderStatus.CANCELLED)
+                .filter(jo -> jo.getEstimatedWeightKg() != null)
+                .mapToDouble(jo -> jo.getEstimatedWeightKg().doubleValue())
+                .average().orElse(0.0);
+
+        int[] dayCount = new int[7];
+        last30.stream()
+                .filter(jo -> jo.getStatus() != JobOrderStatus.CANCELLED)
+                .forEach(jo -> dayCount[jo.getCreatedAt().getDayOfWeek().getValue() - 1]++);
+
+        String[] dayNames = { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" };
+        int peakIdx = 0;
+        for (int i = 1; i < 7; i++) if (dayCount[i] > dayCount[peakIdx]) peakIdx = i;
+
+        return new OperationsKpiResponse(
+                (int) ordersToday,
+                (int) ordersThisWeek,
+                Math.round(avgKg * 10.0) / 10.0,
+                dayNames[peakIdx],
+                dayCount[peakIdx]
+        );
+    }
+
+    /** Daily order count for last {@code daysBack} days with rolling 7-day average. */
+    public List<DailyOrderVolumeResponse> dailyOrderVolume(int daysBack, String branchParam, AuthUserDetails principal) {
+        int effectiveDays = (daysBack > 0 && daysBack <= 90) ? daysBack : 30;
+        String effectiveBranch = resolveEffectiveBranch(branchParam, principal.getUser());
+        LocalDateTime since = LocalDateTime.now().minusDays(effectiveDays);
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        DateTimeFormatter labelFmt = DateTimeFormatter.ofPattern("MMM d");
+
+        List<JobOrder> orders = effectiveBranch == null
+                ? jobOrderRepository.findByCreatedAtBetween(since, LocalDateTime.now())
+                : jobOrderRepository.findByBranchIgnoreCaseAndCreatedAtBetween(effectiveBranch, since, LocalDateTime.now());
+
+        Map<String, Integer> dailyCount = new LinkedHashMap<>();
+        orders.stream()
+                .filter(jo -> jo.getStatus() != JobOrderStatus.CANCELLED)
+                .forEach(jo -> dailyCount.merge(jo.getCreatedAt().toLocalDate().format(fmt), 1, Integer::sum));
+
+        List<LocalDate> dates = Stream.iterate(
+                LocalDate.now().minusDays(effectiveDays - 1L), d -> d.plusDays(1))
+                .limit(effectiveDays).toList();
+
+        List<Integer> counts = dates.stream()
+                .map(d -> dailyCount.getOrDefault(d.format(fmt), 0))
+                .toList();
+
+        return java.util.stream.IntStream.range(0, dates.size()).mapToObj(i -> {
+            LocalDate d = dates.get(i);
+            int start = Math.max(0, i - 6);
+            double rolling = counts.subList(start, i + 1).stream().mapToInt(Integer::intValue).average().orElse(0.0);
+            return new DailyOrderVolumeResponse(
+                    d.format(fmt),
+                    d.format(labelFmt),
+                    counts.get(i),
+                    Math.round(rolling * 10.0) / 10.0
+            );
         }).toList();
     }
 

@@ -4,8 +4,10 @@ import com.washalert.washalertbackend.inventory.dto.AdjustInventoryRequest;
 import com.washalert.washalertbackend.inventory.dto.BookingPipelineResponse;
 import com.washalert.washalertbackend.inventory.dto.CreateInventoryItemRequest;
 import com.washalert.washalertbackend.inventory.dto.DailyConsumptionResponse;
+import com.washalert.washalertbackend.inventory.dto.DailyOrderVolumeResponse;
 import com.washalert.washalertbackend.inventory.dto.InventoryForecastResponse;
 import com.washalert.washalertbackend.inventory.dto.InventoryItemResponse;
+import com.washalert.washalertbackend.inventory.dto.OperationsKpiResponse;
 import com.washalert.washalertbackend.inventory.dto.UpdateInventoryItemRequest;
 import com.washalert.washalertbackend.common.dto.PagedResponse;
 import com.washalert.washalertbackend.security.AuthUserDetails;
@@ -133,6 +135,25 @@ public class InventoryController {
             @AuthenticationPrincipal AuthUserDetails principal
     ) {
         return inventoryService.orderActivityStats(days, branch, principal);
+    }
+
+    @GetMapping("/operations-kpi")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public OperationsKpiResponse operationsKpi(
+            @RequestParam(required = false) String branch,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return inventoryService.operationsKpi(branch, principal);
+    }
+
+    @GetMapping("/daily-order-volume")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    public List<DailyOrderVolumeResponse> dailyOrderVolume(
+            @RequestParam(defaultValue = "30") int days,
+            @RequestParam(required = false) String branch,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return inventoryService.dailyOrderVolume(days, branch, principal);
     }
 
     @GetMapping("/booking-pipeline")
