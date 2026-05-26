@@ -594,10 +594,10 @@ export default function PredictiveInventoryPage() {
 
   const visibleAttention = showAllAttention ? needsAttention : needsAttention.slice(0, ATTENTION_DEFAULT_LIMIT);
 
-  const pagedTable = useMemo(() => {
+  const pagedConsumables = useMemo(() => {
     const start = (tablePage - 1) * tablePageSize;
-    return filteredInventory.slice(start, start + tablePageSize);
-  }, [filteredInventory, tablePage, tablePageSize]);
+    return consumableItems.slice(start, start + tablePageSize);
+  }, [consumableItems, tablePage, tablePageSize]);
 
   const branchOverview = useMemo(() => {
     const grouped = new Map<string, InventoryItem[]>();
@@ -930,6 +930,16 @@ export default function PredictiveInventoryPage() {
         }
       }
       return { ...item, stockoutDate, mustOrderBy, urgencyStatus, leadTime };
+    });
+  }, [allConsumables]);
+
+  // Supply vs. 30-Day Demand overview
+  const supplyDemandData = useMemo(() => {
+    return allConsumables.map((item) => {
+      const demand30d = Math.round(item.forecastedUsage * 30 * 10) / 10;
+      const shortName = item.product.replace(" Detergent", "").replace(" Fabric Conditioner", "");
+      const coverage = demand30d > 0 ? Math.min(200, Math.round((item.currentStock / demand30d) * 100)) : null;
+      return { name: shortName, currentStock: item.currentStock, demand30d, coverage, unit: item.unit, status: item.status };
     });
   }, [allConsumables]);
 
@@ -1281,30 +1291,10 @@ export default function PredictiveInventoryPage() {
         </div>
       )}
 
-      {/* Filters */}
-      {!loading && (
+      {/* Filters — consumable table only */}
+      {!loading && consumableItems.length > 0 && (
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-muted-foreground">Type:</span>
-            <Select value={itemTypeFilter} onValueChange={(v) => setItemTypeFilter(v as typeof itemTypeFilter)}>
-              <SelectTrigger className="h-9 w-[160px] text-sm rounded-lg"><SelectValue placeholder="All Types" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="consumable">Consumables</SelectItem>
-                <SelectItem value="asset">Assets</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-muted-foreground">Category:</span>
-            <Select value={categoryFilter} onValueChange={(v) => setCategoryFilter(v)}>
-              <SelectTrigger className="h-9 w-[200px] text-sm rounded-lg"><SelectValue placeholder="All Categories" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {INVENTORY_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
+          <span className="text-sm font-medium text-muted-foreground">Filter supplies:</span>
           <Select
             value={donutSegmentFilter !== "all" ? donutSegmentFilter : statusFilter}
             onValueChange={(v) => {
@@ -1314,24 +1304,24 @@ export default function PredictiveInventoryPage() {
             <SelectTrigger className="h-9 w-[160px] text-sm rounded-lg"><SelectValue placeholder="All Statuses" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="Critical">Critical</SelectItem>
-              <SelectItem value="Low">Low</SelectItem>
-              <SelectItem value="Healthy">Healthy</SelectItem>
+              <SelectItem value="Critical">Critical (≤7 days)</SelectItem>
+              <SelectItem value="Low">Low (8–14 days)</SelectItem>
+              <SelectItem value="Healthy">Healthy (&gt;14 days)</SelectItem>
             </SelectContent>
           </Select>
-          {(itemTypeFilter !== "all" || categoryFilter !== "all" || statusFilter !== "all" || donutSegmentFilter !== "all") && (
-            <button onClick={() => { setItemTypeFilter("all"); setCategoryFilter("all"); setStatusFilter("all"); setDonutSegmentFilter("all"); }}
-              className="text-sm font-semibold text-primary hover:underline">Clear filters</button>
+          {(statusFilter !== "all" || donutSegmentFilter !== "all") && (
+            <button onClick={() => { setStatusFilter("all"); setDonutSegmentFilter("all"); }}
+              className="text-sm font-semibold text-primary hover:underline">Clear filter</button>
           )}
         </div>
       )}
 
-      {/* Main Inventory Table */}
+      {/* ── Consumable Supplies Table ── */}
       <div className="glass-card rounded-2xl overflow-hidden">
         <div className="p-6 border-b border-border/30 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold text-foreground">Inventory Forecast Table</h2>
-            <p className="text-base text-muted-foreground mt-1">Sorted by urgency: Critical → Low → Healthy.</p>
+            <h2 className="text-xl font-semibold text-foreground">Consumable Supplies — Stock Forecast</h2>
+            <p className="text-sm text-muted-foreground mt-1">Detergent and fabric conditioner only. Sorted by urgency: Critical → Low → Healthy. Does not include equipment assets.</p>
           </div>
           <button onClick={() => setShowDetails((v) => !v)}
             className="text-sm font-medium text-primary hover:underline self-start sm:self-auto">
@@ -1339,36 +1329,37 @@ export default function PredictiveInventoryPage() {
           </button>
         </div>
         <div className="px-6 py-3 border-b border-border/20 bg-muted/10 flex flex-wrap gap-x-6 gap-y-2 text-sm">
-          <span className="font-semibold text-muted-foreground">Status legend:</span>
-          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-red-500" /> Critical = ≤7 days remaining</span>
+          <span className="font-semibold text-muted-foreground">Status:</span>
+          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-red-500" /> Critical = ≤7 days stock remaining</span>
           <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-amber-500" /> Low = 8–14 days remaining</span>
           <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-emerald-500" /> Healthy = &gt;14 days remaining</span>
+          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-slate-400" /> No Data = no order history yet</span>
         </div>
 
-        {/* Desktop table — hidden on small screens */}
+        {/* Desktop table */}
         <div className="overflow-x-auto overflow-y-visible hidden md:block">
-          <table className="w-full min-w-[700px] text-sm">
+          <table className="w-full min-w-[680px] text-sm">
             <thead>
               <tr className="border-b border-border/30 bg-muted/20">
                 <th className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap">
-                  <span className="inline-flex items-center gap-1.5">Item <InfoHint text="Inventory item name." /></span>
+                  <span className="inline-flex items-center gap-1.5">Supply Item <InfoHint text="Consumable supply name — detergent or fabric conditioner." /></span>
                 </th>
                 <th className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap">
-                  <span className="inline-flex items-center gap-1.5">Current Stock <InfoHint text="Quantity currently available." /></span>
+                  <span className="inline-flex items-center gap-1.5">Current Stock <InfoHint text="Packs currently on hand." /></span>
                 </th>
                 <th className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap">
-                  <span className="inline-flex items-center gap-1.5">Days Left <InfoHint text="Estimated days before reaching reorder level." /></span>
+                  <span className="inline-flex items-center gap-1.5">Est. Days Left <InfoHint text="Projected days before stock hits reorder level, based on avg daily usage from completed orders." /></span>
                 </th>
                 <th className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap">
-                  <span className="inline-flex items-center gap-1.5">Status <InfoHint text="Critical, Low, or Healthy." /></span>
+                  <span className="inline-flex items-center gap-1.5">Status <InfoHint text="Critical ≤7d, Low 8–14d, Healthy >14d, No Data if no order history." /></span>
                 </th>
                 {showDetails && (
                   <>
                     <th className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1.5">Expected Use 7D <InfoHint text="Estimated use in next 7 days from history and confirmed bookings." /></span>
+                      <span className="inline-flex items-center gap-1.5">Expected Use 7D <InfoHint text="Estimated consumption next 7 days from order history and confirmed bookings." /></span>
                     </th>
                     <th className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1.5">Reorder Level <InfoHint text="Stock level at which reordering is recommended." /></span>
+                      <span className="inline-flex items-center gap-1.5">Reorder Level <InfoHint text="Minimum stock before reordering is recommended." /></span>
                     </th>
                   </>
                 )}
@@ -1377,54 +1368,41 @@ export default function PredictiveInventoryPage() {
             </thead>
             <tbody>
               {loading
-                ? Array.from({ length: 5 }).map((_, i) => (
+                ? Array.from({ length: 4 }).map((_, i) => (
                     <tr key={i} className="border-b border-border/20">
                       {Array.from({ length: showDetails ? 7 : 5 }).map((__, j) => <td key={j} className="p-4"><Skeleton className="h-5 w-full rounded" /></td>)}
                     </tr>
                   ))
-                : pagedTable.map((inv) => {
+                : pagedConsumables.map((inv) => {
                     const isExpanded = expandedRowId === inv.id;
-                    const daysLeft = inv.daysUntilEmpty !== null ? `${inv.daysUntilEmpty} day(s)` : "Not enough data";
+                    const daysLeft = inv.daysUntilEmpty !== null ? `${inv.daysUntilEmpty} day(s)` : "No usage data yet";
                     const maxStock = Math.max(inv.reorderLevel * 3, inv.currentStock, 1);
+                    const itemIcon = inv.type === "Detergent" ? <Droplets className="h-4 w-4 text-primary" /> : <Sparkles className="h-4 w-4 text-secondary" />;
                     return (
                       <>
                         <tr key={inv.id} className="border-b border-border/20 hover:bg-muted/20 align-top">
                           <td className="p-4">
                             <div className="flex items-center gap-2">
-                              {inv.isAsset ? <Wrench className="h-4 w-4 text-primary" /> : inv.type === "Detergent" ? <Droplets className="h-4 w-4 text-primary" /> : <Sparkles className="h-4 w-4 text-secondary" />}
+                              {itemIcon}
                               <span className="text-base font-semibold text-foreground">{inv.product}</span>
                             </div>
-                            <div className="ml-6 text-xs text-muted-foreground">{inv.branch} · {inv.isAsset ? "Asset" : "Consumable"}</div>
+                            <div className="ml-6 text-xs text-muted-foreground">{inv.branch} · {inv.category}</div>
                             <div className="ml-6 mt-1"><StockBar current={inv.currentStock} reorder={inv.reorderLevel} max={maxStock} /></div>
                           </td>
-                          <td className="p-4 text-base text-foreground">{inv.isAsset ? `${inv.currentStock} ${inv.unit}` : formatQuantity(inv.currentStock, inv.unit)}</td>
-                          <td className="p-4 text-base text-foreground">{inv.isAsset ? "—" : daysLeft}</td>
+                          <td className="p-4 text-base text-foreground">{formatQuantity(inv.currentStock, inv.unit)}</td>
+                          <td className="p-4 text-base text-foreground">{daysLeft}</td>
                           <td className="p-4">
-                            {inv.isAsset ? (
-                              <span className={`text-sm font-semibold px-3 py-1 rounded-full ${assetStatusStyle[inv.assetStatus || "Active"] ?? assetStatusStyle["Active"]}`}>
-                                {inv.assetStatus || "Active"}
-                              </span>
-                            ) : (
-                              <span className={`text-sm font-semibold px-3 py-1 rounded-full ${statusStyle[inv.status]}`}>{inv.status}</span>
-                            )}
+                            <span className={`text-sm font-semibold px-3 py-1 rounded-full ${statusStyle[inv.status]}`}>{inv.status}</span>
                           </td>
                           {showDetails && (
                             <>
-                              <td className="p-4 text-base text-foreground">{inv.isAsset ? "—" : formatExpectedUse7D(inv)}</td>
-                              <td className="p-4 text-base text-foreground">{inv.isAsset ? "—" : formatQuantity(inv.reorderLevel, inv.unit)}</td>
+                              <td className="p-4 text-base text-foreground">{formatExpectedUse7D(inv)}</td>
+                              <td className="p-4 text-base text-foreground">{formatQuantity(inv.reorderLevel, inv.unit)}</td>
                             </>
                           )}
                           <td className="p-4">
                             <div className="flex flex-wrap items-center gap-2">
-                              {!inv.isAsset && <Button size="sm" onClick={() => openAdjust(inv)}>Add Stock</Button>}
-                              {inv.isAsset && (
-                                <Button size="sm" variant="outline" className="text-primary border-primary/30"
-                                  disabled={markServicedLoading && markServicedId === inv.id}
-                                  onClick={() => void handleMarkServiced(inv.id)}>
-                                  {markServicedLoading && markServicedId === inv.id ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                                  Mark Serviced
-                                </Button>
-                              )}
+                              <Button size="sm" onClick={() => openAdjust(inv)}>Add Stock</Button>
                               <Button size="sm" variant="outline"
                                 onClick={() => setExpandedRowId((v) => (v === inv.id ? null : inv.id))}>
                                 {isExpanded ? "Hide" : "Details"}
@@ -1436,25 +1414,21 @@ export default function PredictiveInventoryPage() {
                         {isExpanded && (
                           <tr className="border-b border-border/20 bg-muted/10">
                             <td colSpan={showDetails ? 7 : 5} className="p-5">
-                              {inv.isAsset ? (
-                                <AssetDetailPanel item={inv} onEdit={openEdit} onDelete={openDelete} onServiced={handleMarkServiced} markServicedLoading={markServicedLoading} markServicedId={markServicedId} isAdmin={isAdmin} isStaff={isStaff} />
-                              ) : (
-                                <ConsumableDetailPanel item={inv} chartData={selectedItemChart} pendingConsumption={pendingConsumption} onEdit={openEdit} onDelete={openDelete} isAdmin={isAdmin} isStaff={isStaff} />
-                              )}
+                              <ConsumableDetailPanel item={inv} chartData={selectedItemChart} pendingConsumption={pendingConsumption} onEdit={openEdit} onDelete={openDelete} isAdmin={isAdmin} isStaff={isStaff} />
                             </td>
                           </tr>
                         )}
                       </>
                     );
                   })}
-              {!loading && filteredInventory.length === 0 && (
-                <tr><td colSpan={showDetails ? 7 : 5} className="p-8 text-center text-base text-muted-foreground">No inventory items found.</td></tr>
+              {!loading && consumableItems.length === 0 && (
+                <tr><td colSpan={showDetails ? 7 : 5} className="p-8 text-center text-base text-muted-foreground">No consumable supplies found. Use "Create Item" to add Surf, Ariel, Charm, or Downy.</td></tr>
               )}
             </tbody>
           </table>
         </div>
 
-        {/* Mobile card view */}
+        {/* Mobile card view — consumables only */}
         <div className="md:hidden divide-y divide-border/20">
           {loading
             ? Array.from({ length: 4 }).map((_, i) => (
@@ -1464,7 +1438,7 @@ export default function PredictiveInventoryPage() {
                   <Skeleton className="h-2 w-full" />
                 </div>
               ))
-            : pagedTable.map((inv) => {
+            : pagedConsumables.map((inv) => {
                 const maxStock = Math.max(inv.reorderLevel * 3, inv.currentStock, 1);
                 const isExpanded = expandedRowId === inv.id;
                 return (
@@ -1472,48 +1446,228 @@ export default function PredictiveInventoryPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="font-semibold text-foreground text-base">{inv.product}</p>
-                        <p className="text-xs text-muted-foreground">{inv.branch} · {inv.isAsset ? "Asset" : "Consumable"}</p>
+                        <p className="text-xs text-muted-foreground">{inv.branch} · {inv.category}</p>
                       </div>
-                      {inv.isAsset ? (
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${assetStatusStyle[inv.assetStatus || "Active"] ?? assetStatusStyle["Active"]}`}>
-                          {inv.assetStatus || "Active"}
-                        </span>
-                      ) : (
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${statusStyle[inv.status]}`}>{inv.status}</span>
-                      )}
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${statusStyle[inv.status]}`}>{inv.status}</span>
                     </div>
                     <p className="text-sm text-foreground">
                       {formatQuantity(inv.currentStock, inv.unit)}
-                      {!inv.isAsset && inv.daysUntilEmpty !== null && ` · ${inv.daysUntilEmpty}d left`}
+                      {inv.daysUntilEmpty !== null && ` · ${inv.daysUntilEmpty}d left`}
                     </p>
                     <StockBar current={inv.currentStock} reorder={inv.reorderLevel} max={maxStock} />
                     <div className="flex gap-2 pt-1">
-                      {!inv.isAsset && <Button size="sm" onClick={() => openAdjust(inv)}>Add Stock</Button>}
+                      <Button size="sm" onClick={() => openAdjust(inv)}>Add Stock</Button>
                       <Button size="sm" variant="outline" onClick={() => setExpandedRowId((v) => (v === inv.id ? null : inv.id))}>
                         {isExpanded ? "Hide" : "Details"}
                       </Button>
                     </div>
                     {isExpanded && (
                       <div className="pt-2">
-                        {inv.isAsset ? (
-                          <AssetDetailPanel item={inv} onEdit={openEdit} onDelete={openDelete} onServiced={handleMarkServiced} markServicedLoading={markServicedLoading} markServicedId={markServicedId} isAdmin={isAdmin} isStaff={isStaff} />
-                        ) : (
-                          <ConsumableDetailPanel item={inv} chartData={selectedItemChart} pendingConsumption={pendingConsumption} onEdit={openEdit} onDelete={openDelete} isAdmin={isAdmin} isStaff={isStaff} />
-                        )}
+                        <ConsumableDetailPanel item={inv} chartData={selectedItemChart} pendingConsumption={pendingConsumption} onEdit={openEdit} onDelete={openDelete} isAdmin={isAdmin} isStaff={isStaff} />
                       </div>
                     )}
                   </div>
                 );
               })}
-          {!loading && filteredInventory.length === 0 && (
-            <div className="p-8 text-center text-base text-muted-foreground">No inventory items found.</div>
+          {!loading && consumableItems.length === 0 && (
+            <div className="p-8 text-center text-base text-muted-foreground">No consumable supplies found.</div>
           )}
         </div>
 
-        {!loading && filteredInventory.length > tablePageSize && (
-          <Paginator page={tablePage} total={filteredInventory.length} pageSize={tablePageSize} pageSizes={TABLE_PAGE_SIZES} onPageSizeChange={setTablePageSize} onPage={setTablePage} />
+        {!loading && consumableItems.length > tablePageSize && (
+          <Paginator page={tablePage} total={consumableItems.length} pageSize={tablePageSize} pageSizes={TABLE_PAGE_SIZES} onPageSizeChange={setTablePageSize} onPage={setTablePage} />
         )}
       </div>
+
+      {/* ── Branch Equipment Register ── */}
+      {!loading && assetItems.length > 0 && (
+        <div className="glass-card rounded-2xl overflow-hidden">
+          <div className="p-6 border-b border-border/30 flex items-center gap-3">
+            <Wrench className="h-5 w-5 text-primary" />
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">Branch Equipment Register</h2>
+              <p className="text-sm text-muted-foreground mt-0.5">Physical equipment tracked by maintenance schedule — washing machines, dryers, aircon, fans. No stock level applies.</p>
+            </div>
+          </div>
+          {/* Asset summary banner */}
+          {(() => {
+            const overdue = assetItems.filter((a) => a.daysUntilService !== null && a.daysUntilService !== undefined && a.daysUntilService < 0).length;
+            const dueSoon = assetItems.filter((a) => a.daysUntilService !== null && a.daysUntilService !== undefined && a.daysUntilService >= 0 && a.daysUntilService <= 14).length;
+            const onTrack = assetItems.length - overdue - dueSoon;
+            return (
+              <div className="px-6 py-3 bg-muted/10 border-b border-border/20 flex flex-wrap gap-5 text-sm">
+                {overdue > 0 && <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-500 shrink-0" /><strong className="text-red-700">{overdue}</strong><span className="text-muted-foreground">overdue for service</span></span>}
+                {dueSoon > 0 && <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-500 shrink-0" /><strong className="text-amber-700">{dueSoon}</strong><span className="text-muted-foreground">service due within 14 days</span></span>}
+                <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500 shrink-0" /><strong className="text-emerald-700">{onTrack}</strong><span className="text-muted-foreground">on track</span></span>
+                <span className="text-muted-foreground ml-auto">{assetItems.length} total equipment unit{assetItems.length !== 1 ? "s" : ""}</span>
+              </div>
+            );
+          })()}
+
+          {/* Desktop table */}
+          <div className="overflow-x-auto hidden md:block">
+            <table className="w-full min-w-[860px] text-sm">
+              <thead>
+                <tr className="border-b border-border/30 bg-muted/20">
+                  <th className="text-left p-4 font-semibold text-[15px] text-foreground">Equipment</th>
+                  <th className="text-left p-4 font-semibold text-[15px] text-foreground">Condition</th>
+                  <th className="text-left p-4 font-semibold text-[15px] text-foreground">
+                    <span className="inline-flex items-center gap-1">Service Status <InfoHint text="Based on days until next scheduled service. Overdue = past due date, Due Soon = within 14 days." /></span>
+                  </th>
+                  <th className="text-left p-4 font-semibold text-[15px] text-foreground">Last Serviced</th>
+                  <th className="text-left p-4 font-semibold text-[15px] text-foreground">Next Service Due</th>
+                  <th className="text-left p-4 font-semibold text-[15px] text-foreground">
+                    <span className="inline-flex items-center gap-1">Maintenance Cycle <InfoHint text="How far through the current service interval this equipment is. Red bar = overdue." /></span>
+                  </th>
+                  <th className="text-left p-4 font-semibold text-[15px] text-foreground">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {assetItems.map((asset) => {
+                  const isExpanded = expandedRowId === asset.id;
+                  const days = asset.daysUntilService;
+                  const svcStatus = days === null
+                    ? { label: "No Schedule", cls: "bg-slate-100 text-slate-500" }
+                    : days < 0
+                    ? { label: `Overdue ${Math.abs(days)}d`, cls: "bg-red-100 text-red-700" }
+                    : days <= 7
+                    ? { label: `Due in ${days}d`, cls: "bg-red-100 text-red-700" }
+                    : days <= 14
+                    ? { label: `Due in ${days}d`, cls: "bg-amber-100 text-amber-700" }
+                    : { label: `In ${days}d`, cls: "bg-emerald-100 text-emerald-700" };
+                  const nextSvc = asset.lastServicedDate && asset.maintenanceIntervalDays
+                    ? new Date(new Date(asset.lastServicedDate).getTime() + asset.maintenanceIntervalDays * 86400000)
+                    : null;
+                  let cyclePct = 0;
+                  let cycleColor = "#10B981";
+                  if (asset.lastServicedDate && asset.maintenanceIntervalDays) {
+                    const daysSince = Math.floor((Date.now() - new Date(asset.lastServicedDate).getTime()) / 86400000);
+                    cyclePct = Math.min(100, Math.round((daysSince / asset.maintenanceIntervalDays) * 100));
+                    cycleColor = cyclePct >= 100 ? "#EF4444" : cyclePct >= 80 ? "#F59E0B" : "#10B981";
+                  }
+                  return (
+                    <>
+                      <tr key={asset.id} className="border-b border-border/20 hover:bg-muted/20 align-middle">
+                        <td className="p-4">
+                          <div className="flex items-center gap-2">
+                            <Wrench className="h-4 w-4 text-primary shrink-0" />
+                            <div>
+                              <p className="font-semibold text-foreground text-base">{asset.product}</p>
+                              <p className="text-xs text-muted-foreground">{asset.branch} · {asset.category}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <span className={`text-sm font-semibold px-3 py-1 rounded-full ${assetStatusStyle[asset.assetStatus || "Active"] ?? assetStatusStyle["Active"]}`}>
+                            {asset.assetStatus || "Active"}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <span className={`text-sm font-semibold px-2 py-0.5 rounded-full ${svcStatus.cls}`}>{svcStatus.label}</span>
+                        </td>
+                        <td className="p-4 text-sm text-foreground">
+                          {asset.lastServicedDate
+                            ? new Date(asset.lastServicedDate).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
+                            : <span className="text-muted-foreground text-xs">Not recorded</span>}
+                        </td>
+                        <td className="p-4 text-sm text-foreground">
+                          {nextSvc
+                            ? nextSvc.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
+                            : <span className="text-muted-foreground text-xs">No schedule</span>}
+                        </td>
+                        <td className="p-4 min-w-[160px]">
+                          {asset.maintenanceIntervalDays ? (
+                            <div className="space-y-1">
+                              <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                                <div style={{ width: `${cyclePct}%`, background: cycleColor }} className="h-full rounded-full transition-all" />
+                              </div>
+                              <p className="text-xs text-muted-foreground">{cyclePct}% of {asset.maintenanceIntervalDays}-day cycle</p>
+                            </div>
+                          ) : <span className="text-xs text-muted-foreground">No interval set</span>}
+                        </td>
+                        <td className="p-4">
+                          <div className="flex flex-wrap gap-2">
+                            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                              disabled={markServicedLoading && markServicedId === asset.id}
+                              onClick={() => void handleMarkServiced(asset.id)}>
+                              {markServicedLoading && markServicedId === asset.id ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                              Mark Serviced
+                            </Button>
+                            <Button size="sm" variant="outline"
+                              onClick={() => setExpandedRowId((v) => (v === asset.id ? null : asset.id))}>
+                              {isExpanded ? "Hide" : "Details"}
+                              <ChevronDown className={`h-4 w-4 ml-1 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="border-b border-border/20 bg-muted/10">
+                          <td colSpan={7} className="p-5">
+                            <AssetDetailPanel item={asset} onEdit={openEdit} onDelete={openDelete} onServiced={handleMarkServiced} markServicedLoading={markServicedLoading} markServicedId={markServicedId} isAdmin={isAdmin} isStaff={isStaff} />
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile card view — assets */}
+          <div className="md:hidden divide-y divide-border/20">
+            {assetItems.map((asset) => {
+              const days = asset.daysUntilService;
+              const svcStatus = days === null ? { label: "No Schedule", cls: "bg-slate-100 text-slate-500" }
+                : days < 0 ? { label: `Overdue ${Math.abs(days)}d`, cls: "bg-red-100 text-red-700" }
+                : days <= 14 ? { label: `Due in ${days}d`, cls: "bg-amber-100 text-amber-700" }
+                : { label: `In ${days}d`, cls: "bg-emerald-100 text-emerald-700" };
+              let cyclePct = 0; let cycleColor = "#10B981";
+              if (asset.lastServicedDate && asset.maintenanceIntervalDays) {
+                const ds = Math.floor((Date.now() - new Date(asset.lastServicedDate).getTime()) / 86400000);
+                cyclePct = Math.min(100, Math.round((ds / asset.maintenanceIntervalDays) * 100));
+                cycleColor = cyclePct >= 100 ? "#EF4444" : cyclePct >= 80 ? "#F59E0B" : "#10B981";
+              }
+              const isExpanded = expandedRowId === asset.id;
+              return (
+                <div key={asset.id} className="p-4 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-foreground text-base">{asset.product}</p>
+                      <p className="text-xs text-muted-foreground">{asset.branch} · {asset.category}</p>
+                    </div>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${svcStatus.cls}`}>{svcStatus.label}</span>
+                  </div>
+                  {asset.maintenanceIntervalDays && (
+                    <div className="space-y-1">
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div style={{ width: `${cyclePct}%`, background: cycleColor }} className="h-full rounded-full" />
+                      </div>
+                      <p className="text-xs text-muted-foreground">{cyclePct}% of {asset.maintenanceIntervalDays}-day service cycle</p>
+                    </div>
+                  )}
+                  <div className="flex gap-2 pt-1">
+                    <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                      disabled={markServicedLoading && markServicedId === asset.id}
+                      onClick={() => void handleMarkServiced(asset.id)}>
+                      Mark Serviced
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setExpandedRowId((v) => (v === asset.id ? null : asset.id))}>
+                      {isExpanded ? "Hide" : "Details"}
+                    </Button>
+                  </div>
+                  {isExpanded && (
+                    <div className="pt-2">
+                      <AssetDetailPanel item={asset} onEdit={openEdit} onDelete={openDelete} onServiced={handleMarkServiced} markServicedLoading={markServicedLoading} markServicedId={markServicedId} isAdmin={isAdmin} isStaff={isStaff} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── Operations KPI Cards ── */}
       {!loading && operationsKpi && (
@@ -1541,6 +1695,58 @@ export default function PredictiveInventoryPage() {
                 <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Supply vs. 30-Day Demand Overview ── */}
+      {!loading && allConsumables.length > 0 && supplyDemandData.some((d) => d.demand30d > 0) && (
+        <div className="glass-card rounded-2xl overflow-hidden">
+          <div className="p-5 border-b border-border/30">
+            <h2 className="text-xl font-semibold text-foreground">Supply vs. 30-Day Projected Demand</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Will current stock last 30 days? Dark bar = stock on hand. Light bar = estimated demand over next 30 days based on avg daily usage.
+              A short dark bar vs a tall light bar means risk of stockout.
+            </p>
+          </div>
+          <div className="p-5">
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={supplyDemandData} margin={{ top: 8, right: 24, left: 8, bottom: 8 }} barCategoryGap="30%">
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,25%,90%)" />
+                <XAxis dataKey="name" tick={{ fontSize: 12, fill: "hsl(215,20%,35%)" }}
+                  label={{ value: "Supply Item", position: "insideBottom", offset: -4, fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 11 }} allowDecimals={false}
+                  label={{ value: "Packs", angle: -90, position: "insideLeft", offset: 8, fontSize: 12 }} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                  formatter={(value: number, name: string) => [
+                    `${value} packs`, name === "currentStock" ? "Current Stock (on hand)" : "30-Day Projected Demand"
+                  ]} />
+                <Legend verticalAlign="top" wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="currentStock" name="Current Stock" radius={[4, 4, 0, 0]}>
+                  {supplyDemandData.map((entry, idx) => (
+                    <Cell key={idx} fill={
+                      entry.status === "Critical" ? "#EF4444"
+                      : entry.status === "Low" ? "#F59E0B"
+                      : entry.status === "Healthy" ? "#10B981"
+                      : "#94A3B8"
+                    } />
+                  ))}
+                </Bar>
+                <Bar dataKey="demand30d" name="30-Day Demand" fill="hsl(218,58%,80%)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+            <div className="mt-3 flex flex-wrap gap-3">
+              {supplyDemandData.map((d) => (
+                <div key={d.name} className="text-xs text-muted-foreground">
+                  <strong className="text-foreground">{d.name}:</strong>{" "}
+                  {d.demand30d > 0
+                    ? d.coverage !== null && d.coverage >= 100
+                      ? <span className="text-emerald-600">✓ Covered ({d.coverage}% of 30d demand)</span>
+                      : <span className="text-red-600">⚠ Only {d.coverage ?? 0}% covered — needs restock</span>
+                    : <span className="text-slate-500">No usage data yet</span>}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
