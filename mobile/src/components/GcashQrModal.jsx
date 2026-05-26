@@ -86,10 +86,12 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
       Alert.alert(
         'Proof Submitted!',
         'Your GCash payment proof has been sent to our staff for manual verification. We will notify you once approved.',
-        [{ text: 'OK', onPress: () => {
-          onPaymentSubmitted?.();
-          handleClose();
-        }}]
+        [{
+          text: 'OK', onPress: () => {
+            onPaymentSubmitted?.();
+            handleClose();
+          }
+        }]
       );
     } catch (err) {
       console.error('[GcashQrModal] Proof submission failed:', err);
@@ -143,7 +145,7 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
               <Text style={S.instructionText}>2. Take a screenshot of the GCash receipt.</Text>
               <Text style={S.instructionText}>3. Enter the 13-digit Reference Number and upload the receipt screenshot below.</Text>
               {branchPhone ? (
-                <Text style={[S.instructionText, {fontWeight: 'bold', color: colors.primary, marginTop: 4}]}>
+                <Text style={[S.instructionText, { fontWeight: 'bold', color: colors.primary, marginTop: 4 }]}>
                   *For help, contact branch at: {branchPhone}
                 </Text>
               ) : null}
@@ -217,7 +219,7 @@ const S = StyleSheet.create({
   amountVal: { fontSize: 26, fontWeight: '900', color: colors.primary, marginTop: 4 },
   qrContainer: { alignItems: 'center', marginBottom: 16, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 16, padding: 16 },
   qrLabel: { fontSize: 14, fontWeight: '800', color: colors.text, marginBottom: 8 },
-  qrImage: { width: SW * 0.5, height: SW * 0.5, marginBottom: 10 },
+  qrImage: { width: SW * 0.65, height: SW * 0.65, marginBottom: 10 },
   qrAcctName: { fontSize: 13, fontWeight: '700', color: '#1E293B' },
   qrAcctNumber: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
   instructionsCard: { backgroundColor: '#EFF6FF', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#BFDBFE', marginBottom: 16 },
