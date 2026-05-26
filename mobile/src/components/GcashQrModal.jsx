@@ -47,8 +47,13 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
   };
 
   const handleSubmitProof = async () => {
-    if (!referenceNumber.trim()) {
+    const trimmedRef = referenceNumber.trim();
+    if (!trimmedRef) {
       Alert.alert('Reference Required', 'Please enter your GCash Reference Number.');
+      return;
+    }
+    if (trimmedRef.length !== 13 || !/^\d+$/.test(trimmedRef)) {
+      Alert.alert('Invalid Reference Number', 'GCash Reference Number must be exactly 13 digits.');
       return;
     }
     if (!screenshotUri) {
