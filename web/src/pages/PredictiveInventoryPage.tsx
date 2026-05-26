@@ -19,6 +19,7 @@ import {
   ShoppingCart,
   BarChart2,
   X,
+  Activity,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -38,7 +39,7 @@ import {
   Bar,
   Legend,
 } from "recharts";
-import { inventoryApi, branchesApi, type InventoryRecord, type BookingPipelineRecord } from "@/lib/api";
+import { inventoryApi, branchesApi, type InventoryRecord, type BookingPipelineRecord, type OperationsKpiRecord, type DailyOrderVolumeRecord } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -152,7 +153,7 @@ interface InventoryItem {
   forecastedUsage: number;
   daysUntilEmpty: number | null;
   projectedAfter7Days: number;
-  status: "Healthy" | "Low" | "Critical";
+  status: "Healthy" | "Low" | "Critical" | "No Data";
   historicalDailyUsage: number;
   confirmedDemand7D: number;
   isAsset: boolean;
@@ -182,8 +183,8 @@ function calcDaysUntilService(
   return Math.floor((next.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
 }
 
-function getStatus(daysRemaining: number | null): "Healthy" | "Low" | "Critical" {
-  if (daysRemaining === null) return "Healthy";
+function getStatus(daysRemaining: number | null, hasUsage: boolean): "Healthy" | "Low" | "Critical" | "No Data" {
+  if (!hasUsage || daysRemaining === null) return "No Data";
   if (daysRemaining <= 7) return "Critical";
   if (daysRemaining <= 14) return "Low";
   return "Healthy";
@@ -260,6 +261,7 @@ const statusStyle: Record<string, string> = {
   Healthy: "bg-emerald-100 text-emerald-700",
   Low: "bg-amber-100 text-amber-700",
   Critical: "bg-red-100 text-red-700",
+  "No Data": "bg-slate-100 text-slate-500",
 };
 
 const assetStatusStyle: Record<string, string> = {
@@ -384,7 +386,8 @@ function mapInventoryRecord(
   const type: InventoryItem["type"] = catLower.includes("conditioner") ? "Fabric Conditioner"
     : catLower.includes("detergent") ? "Detergent" : isAsset ? "Asset" : "Other";
   const daysRemaining = isAsset ? null : calcDaysRemaining(Number(record.currentStock || 0), dailyUsage);
-  const status = isAsset ? "Healthy" : getStatus(daysRemaining);
+  const hasUsage = !isAsset && (itemForecast?.usage ?? 0) >= 0.001;
+  const status = isAsset ? "Healthy" : getStatus(daysRemaining, hasUsage);
   const daysUntilService = calcDaysUntilService(record.lastServicedDate, record.maintenanceIntervalDays);
   return {
     id: record.id,
@@ -438,8 +441,9 @@ export default function PredictiveInventoryPage() {
   const [showAllAttention, setShowAllAttention] = useState(false);
   const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
   const [showDetails, setShowDetails] = useState(false);
-  const [activeVizTab, setActiveVizTab] = useState<"runway" | "rhythm" | "wave" | "pipeline" | "anomaly" | "risk" | "maintenance">("runway");
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [operationsKpi, setOperationsKpi] = useState<OperationsKpiRecord | null>(null);
+  const [dailyOrderVolume, setDailyOrderVolume] = useState<DailyOrderVolumeRecord[]>([]);
   const [donutSegmentFilter, setDonutSegmentFilter] = useState<"all" | "Critical" | "Low" | "Healthy">("all");
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -472,7 +476,7 @@ export default function PredictiveInventoryPage() {
   const loadInventory = async () => {
     try {
       setError("");
-      const [items, _alerts, forecastResp, pending, stats, activityStats, pipelineData] = await Promise.all([
+      const [items, _alerts, forecastResp, pending, stats, activityStats, pipelineData, kpi, volumeData] = await Promise.all([
         inventoryApi.list(),
         inventoryApi.alerts(),
         inventoryApi.forecast(7),
@@ -480,11 +484,15 @@ export default function PredictiveInventoryPage() {
         inventoryApi.dailyStats(60).catch(() => [] as DailyStatsRecord[]),
         inventoryApi.orderActivityStats(60).catch(() => [] as DailyStatsRecord[]),
         inventoryApi.bookingPipeline(14).catch(() => [] as BookingPipelineRecord[]),
+        inventoryApi.operationsKpi().catch(() => null),
+        inventoryApi.dailyOrderVolume(30).catch(() => [] as DailyOrderVolumeRecord[]),
       ]);
       setPendingConsumption(pending || {});
       setDailyStats((stats as DailyStatsRecord[]) || []);
       setOrderStats((activityStats as DailyStatsRecord[]) || []);
       setBookingPipelineData((pipelineData as BookingPipelineRecord[]) || []);
+      setOperationsKpi(kpi);
+      setDailyOrderVolume((volumeData as DailyOrderVolumeRecord[]) || []);
       const forecastMap = new Map<number, { usage: number; historical: number; confirmed7D: number }>();
       (forecastResp || []).forEach((f) => {
         const usage = Number(f.projectedDailyUsage ?? f.estimatedDailyUsage ?? 0);
@@ -642,11 +650,28 @@ export default function PredictiveInventoryPage() {
   }, [allConsumables]);
 
   // Effective stats: order activity is primary (has data as soon as orders start processing),
-  // fall back to dailyStats (movement-based) for any item not covered by orderStats
+  // fall back to dailyStats (movement-based) for any item not covered by orderStats.
+  // When multiple branches have data for the same item (admin "All" view), sum them.
   const effectiveStats = useMemo<DailyStatsRecord[]>(() => {
     const merged = new Map<string, DailyStatsRecord>();
-    orderStats.forEach((r) => merged.set(r.itemName, r));
-    dailyStats.forEach((r) => { if (!merged.has(r.itemName)) merged.set(r.itemName, r); });
+
+    const mergeRecord = (r: DailyStatsRecord) => {
+      const existing = merged.get(r.itemName);
+      if (!existing) {
+        merged.set(r.itemName, { ...r, days: r.days.map((d) => ({ ...d })) });
+        return;
+      }
+      const dayMap = new Map(existing.days.map((d) => [d.date, d.consumed]));
+      r.days.forEach((d) => { dayMap.set(d.date, (dayMap.get(d.date) ?? 0) + d.consumed); });
+      merged.set(r.itemName, {
+        ...existing,
+        days: existing.days.map((d) => ({ date: d.date, consumed: dayMap.get(d.date) ?? 0 })),
+      });
+    };
+
+    orderStats.forEach(mergeRecord);
+    // dailyStats is only a fallback for items with no order-activity data at all
+    dailyStats.forEach((r) => { if (!merged.has(r.itemName)) mergeRecord(r); });
     return Array.from(merged.values());
   }, [orderStats, dailyStats]);
 
@@ -1146,6 +1171,16 @@ export default function PredictiveInventoryPage() {
 
       {error && <p className="text-base text-destructive">{error}</p>}
 
+      {!loading && inventory.length === 0 && !error && (
+        <div className="glass-card rounded-2xl p-12 text-center">
+          <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-foreground mb-2">No inventory items yet</h3>
+          <p className="text-base text-muted-foreground">
+            Add your first item using the "Create Item" button above. Staff will enter actual stock levels when ready.
+          </p>
+        </div>
+      )}
+
       {/* Branch tabs */}
       {isAdmin && branches.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -1480,341 +1515,220 @@ export default function PredictiveInventoryPage() {
         )}
       </div>
 
-      {/* Analytics & Visualizations */}
-      {!loading && filteredInventory.length > 0 && (
+      {/* ── Operations KPI Cards ── */}
+      {!loading && operationsKpi && (
         <div className="glass-card rounded-2xl overflow-hidden">
           <div className="p-5 border-b border-border/30 flex items-center gap-2">
-            <BarChart2 className="h-5 w-5 text-primary" />
-            <h2 className="text-xl font-semibold text-foreground">Predictive Analytics</h2>
+            <Activity className="h-5 w-5 text-primary" />
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">Operations Overview</h2>
+              <p className="text-xs text-muted-foreground">Based on job_orders table — last 30 days</p>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2 px-5 pt-4">
-            {([
-              { key: "runway",    label: "Stock Runway" },
-              { key: "risk",      label: "Risk Score" },
-              { key: "rhythm",    label: "Demand Rhythm" },
-              { key: "wave",      label: "Wave Forecast" },
-              { key: "pipeline",  label: "Booking Pipeline" },
-              { key: "anomaly",   label: "Anomaly Detector" },
-              { key: "maintenance", label: "Maintenance" },
-            ] as const).map((tab) => (
-              <button key={tab.key} onClick={() => setActiveVizTab(tab.key)}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeVizTab === tab.key ? "bg-primary text-primary-foreground" : "bg-background border border-border text-foreground hover:bg-muted"}`}>
-                {tab.label}
-              </button>
+          <div className="p-5 grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              { label: "Orders Today", value: String(operationsKpi.ordersToday), sub: "orders placed today", icon: Package },
+              { label: "Orders This Week", value: String(operationsKpi.ordersThisWeek), sub: "Mon–today", icon: TrendingUp },
+              { label: "Avg Weight / Order", value: operationsKpi.avgKgPerOrder30d > 0 ? `${operationsKpi.avgKgPerOrder30d} kg` : "—", sub: "last 30 days", icon: Droplets },
+              { label: "Peak Day", value: operationsKpi.peakDayOfWeek, sub: `${operationsKpi.peakDayOrderCount} orders avg`, icon: CalendarClock },
+            ].map((card) => (
+              <div key={card.label} className="rounded-xl border border-border/20 bg-background p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <card.icon className="h-4 w-4 text-primary" />
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{card.label}</span>
+                </div>
+                <p className="text-2xl font-bold text-foreground">{card.value}</p>
+                <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
+              </div>
             ))}
           </div>
-          <div className="p-5">
+        </div>
+      )}
 
-            {/* Tab 1: Stock Runway Table */}
-            {activeVizTab === "runway" && (
-              <div>
-                <h3 className="text-lg font-semibold text-foreground mb-1">Stock Runway — Exact Stockout Dates</h3>
-                <p className="text-sm text-muted-foreground mb-4">Shows when each item runs out and the latest safe date to place an order (accounting for supplier lead time). Items with no usage data are excluded from date calculations.</p>
-                {runwayData.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No consumable items to show.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm min-w-[640px]">
-                      <thead>
-                        <tr className="border-b border-border/30 bg-muted/20">
-                          <th className="text-left p-3 font-semibold text-foreground">Item</th>
-                          <th className="text-left p-3 font-semibold text-foreground">Branch</th>
-                          <th className="text-left p-3 font-semibold text-foreground">Stock</th>
-                          <th className="text-left p-3 font-semibold text-foreground">Days Left</th>
-                          <th className="text-left p-3 font-semibold text-foreground">Stockout Date</th>
-                          <th className="text-left p-3 font-semibold text-foreground">
-                            <span className="inline-flex items-center gap-1">Must Order By <InfoHint text="Stockout date minus supplier lead time. If 'Order Now', you're already within the lead time window." /></span>
-                          </th>
-                          <th className="text-left p-3 font-semibold text-foreground">Lead Time</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {runwayData.map((item) => {
-                          const rowBg = item.urgencyStatus === "Already Late" ? "bg-red-50 border-l-4 border-l-red-500"
-                            : item.urgencyStatus === "Order Soon" ? "bg-amber-50 border-l-4 border-l-amber-500" : "";
-                          const urgencyBadge = item.urgencyStatus === "Already Late"
-                            ? "bg-red-100 text-red-700"
-                            : item.urgencyStatus === "Order Soon"
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-emerald-100 text-emerald-700";
-                          return (
-                            <tr key={item.id} className={`border-b border-border/20 ${rowBg}`}>
-                              <td className="p-3 font-medium text-foreground">
-                                {item.product.replace(" Detergent", "").replace(" Fabric Conditioner", "")}
-                              </td>
-                              <td className="p-3 text-muted-foreground text-xs">{item.branch.replace(" Branch", "")}</td>
-                              <td className="p-3 text-foreground">{item.currentStock} {item.unit}</td>
-                              <td className="p-3 text-foreground">
-                                {item.daysUntilEmpty !== null ? `${item.daysUntilEmpty}d` : <span className="text-muted-foreground">No usage data</span>}
-                              </td>
-                              <td className="p-3 text-foreground">
-                                {item.stockoutDate ?? <span className="text-muted-foreground">—</span>}
-                              </td>
-                              <td className="p-3">
-                                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${urgencyBadge}`}>
-                                  {item.mustOrderBy ?? "—"}
-                                </span>
-                              </td>
-                              <td className="p-3 text-muted-foreground text-xs">{item.leadTime}d</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-                <p className="text-xs text-muted-foreground mt-3">Lead time defaults to 3 days. Edit an item to set a custom supplier lead time.</p>
-              </div>
-            )}
-
-            {/* Tab 2: Inventory Risk Score */}
-            {activeVizTab === "risk" && (
-              <div>
-                <h3 className="text-lg font-semibold text-foreground mb-1">Inventory Risk Score</h3>
-                <p className="text-sm text-muted-foreground mb-4">Risk accounts for supplier lead time — an item with 4 days left and 3-day lead time has only 1 safe day remaining. Higher score = more urgent action needed.</p>
-                {riskScoreData.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No consumable items to score.</p>
-                ) : (
-                  <div className="space-y-3 max-h-[420px] overflow-y-auto">
-                    {riskScoreData.map((item, i) => (
-                      <div key={i} className="space-y-1">
-                        <div className="flex items-center justify-between text-sm">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-medium text-foreground truncate">{item.name}</span>
-                            <span className="text-xs text-muted-foreground shrink-0">({item.branch})</span>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0 ml-2">
-                            <span className="text-xs text-muted-foreground">
-                              {item.daysLeft !== null ? `${item.daysLeft}d left` : "no data"}
-                              {" · "}{item.leadTime}d lead
-                            </span>
-                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                              style={{ background: item.riskColor + "20", color: item.riskColor }}>
-                              {item.riskLabel}
-                            </span>
-                            <span className="text-sm font-bold w-8 text-right" style={{ color: item.riskColor }}>{item.riskScore}</span>
-                          </div>
-                        </div>
-                        <div className="h-3 bg-muted rounded-full overflow-hidden">
-                          <div style={{ width: `${item.riskScore}%`, background: item.riskColor }} className="h-full rounded-full transition-all" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="mt-4 flex flex-wrap gap-4 text-xs text-muted-foreground">
-                  {[{ label: "Critical (95–100)", color: "#EF4444" }, { label: "High Risk (80–94)", color: "#F97316" }, { label: "Elevated (65–79)", color: "#F59E0B" }, { label: "Moderate (40–64)", color: "#EAB308" }, { label: "Low Risk (0–39)", color: "#10B981" }].map((l) => (
-                    <span key={l.label} className="inline-flex items-center gap-1.5">
-                      <span className="h-3 w-3 rounded-sm" style={{ background: l.color }} />{l.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Tab 3: Demand Rhythm Curve */}
-            {activeVizTab === "rhythm" && (
-              <div>
-                <h3 className="text-lg font-semibold text-foreground mb-1">Demand Rhythm Curve</h3>
-                <p className="text-sm text-muted-foreground mb-4">Shows the typical demand shape across the week. A spike on Saturday means that day consumes far more than average — stock accordingly before the weekend.</p>
-                {!hasRhythmData ? (
-                  <div className="flex items-center justify-center h-48 text-sm text-muted-foreground text-center px-8">
-                    No order history yet — appears once orders have been processed.
-                  </div>
-                ) : (
-                  <>
-                    <ResponsiveContainer width="100%" height={300}>
-                      <AreaChart data={rhythmData} margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
-                        <defs>
-                          {trend14dKeys.map((key, i) => (
-                            <linearGradient key={key} id={`rhythmGrad${i}`} x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor={LINE_COLORS[i % LINE_COLORS.length]} stopOpacity={0.3} />
-                              <stop offset="95%" stopColor={LINE_COLORS[i % LINE_COLORS.length]} stopOpacity={0.05} />
-                            </linearGradient>
-                          ))}
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,25%,90%)" />
-                        <XAxis dataKey="day" tick={{ fontSize: 12 }} />
-                        <YAxis tick={{ fontSize: 12 }} label={{ value: "Avg packs/day", angle: -90, position: "insideLeft", offset: 8, fontSize: 12 }} />
-                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                          formatter={(value: number, name: string) => [`${value.toFixed(2)} packs`, name]} />
-                        <Legend verticalAlign="top" iconType="circle" wrapperStyle={{ fontSize: 12, paddingBottom: 4 }} />
-                        {trend14dKeys.map((key, i) => (
-                          <Area key={key} type="monotone" dataKey={key}
-                            stroke={LINE_COLORS[i % LINE_COLORS.length]} strokeWidth={2.5}
-                            fill={`url(#rhythmGrad${i})`} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                        ))}
-                      </AreaChart>
-                    </ResponsiveContainer>
-                    <div className="mt-4 rounded-xl bg-muted/30 p-4 space-y-1.5">
-                      <p className="text-sm font-semibold text-foreground mb-1">Rhythm Insights</p>
-                      {trend14dKeys.map((key) => {
-                        const fullName = CONSUMABLE_NAMES.find((n) => n.replace(" Detergent", "").replace(" Fabric Conditioner", "") === key) ?? key;
-                        const dayData = rhythmData.map((r) => ({ day: r.day as string, val: r[key] as number }));
-                        const peakDay = dayData.reduce((a, b) => a.val >= b.val ? a : b);
-                        const lowDay = dayData.reduce((a, b) => (a.val <= b.val && a.val > 0) ? a : b);
-                        const avg = dayData.reduce((s, d) => s + d.val, 0) / 7;
-                        if (avg < 0.001) return null;
-                        return (
-                          <p key={key} className="text-sm text-foreground">
-                            <strong>{key}</strong>: peaks on <strong>{peakDay.day}</strong> ({peakDay.val.toFixed(2)} packs avg), slowest on <strong>{lowDay.day}</strong> ({lowDay.val.toFixed(2)} packs avg)
-                          </p>
-                        );
-                      })}
+      {/* ── Supply Risk Score Cards ── */}
+      {!loading && allConsumables.length > 0 && (
+        <div className="glass-card rounded-2xl overflow-hidden">
+          <div className="p-5 border-b border-border/30 flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">Supply Risk Score — With Lead Time</h2>
+              <p className="text-xs text-muted-foreground">Risk accounts for supplier delivery time. "Order Today" means you're already within the danger window.</p>
+            </div>
+          </div>
+          <div className="p-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            {riskScoreData.map((item, i) => {
+              const urgency = item.riskScore >= 95 ? "Order Today" : item.riskScore >= 65 ? "Order Soon" : item.riskScore >= 40 ? "Monitor" : "Sufficient";
+              return (
+                <div key={i} className="rounded-xl border p-4 space-y-3" style={{ borderColor: item.riskColor + "40", background: item.riskColor + "08" }}>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="font-semibold text-foreground text-base">{item.name}</p>
+                      <p className="text-xs text-muted-foreground">{item.branch}</p>
                     </div>
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* Tab 4: Wave-Shaped 30-Day Forecast */}
-            {activeVizTab === "wave" && (
-              <div>
-                <h3 className="text-lg font-semibold text-foreground mb-1">Wave-Shaped 30-Day Stock Forecast</h3>
-                <p className="text-sm text-muted-foreground mb-4">Unlike a flat-line forecast, this applies weekday multipliers — higher usage on busy days means steeper drops, creating a realistic wave pattern. Select an item to view.</p>
-                {waveForecastData.length === 0 ? (
-                  <div className="flex items-center justify-center h-48 text-sm text-muted-foreground text-center px-8">
-                    No usage data yet — forecast appears once orders are processing.
+                    <span className="text-2xl font-black" style={{ color: item.riskColor }}>{item.riskScore}</span>
                   </div>
-                ) : (
-                  <WaveForecastPanel data={waveForecastData} lineColors={LINE_COLORS} />
-                )}
-              </div>
-            )}
-
-            {/* Tab 5: Booking Pipeline */}
-            {activeVizTab === "pipeline" && (
-              <div>
-                <h3 className="text-lg font-semibold text-foreground mb-1">Upcoming Booking Pipeline — Next 14 Days</h3>
-                <p className="text-sm text-muted-foreground mb-4">Confirmed demand from scheduled bookings (PENDING, ASSIGNED, ORDER_RECEIVED). Each bar shows how many packs are already committed per item on that day — this is real future demand, not a projection.</p>
-                {bookingPipelineData.length === 0 ? (
-                  <div className="flex items-center justify-center h-48 text-sm text-muted-foreground text-center px-8">
-                    No upcoming bookings with supply requests in the next 14 days.
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                    <div style={{ width: `${item.riskScore}%`, background: item.riskColor }} className="h-full rounded-full transition-all" />
                   </div>
-                ) : (
-                  <div className="space-y-6">
-                    {bookingPipelineData.map((record) => {
-                      const totalDemand = record.upcoming.reduce((s, d) => s + d.quantity, 0);
-                      const peakDay = record.upcoming.reduce((a, b) => a.quantity >= b.quantity ? a : b);
-                      return (
-                        <div key={record.itemName}>
-                          <div className="flex items-center justify-between mb-2">
-                            <p className="font-semibold text-foreground">{record.itemName}</p>
-                            <span className="text-xs text-muted-foreground">{totalDemand.toFixed(0)} packs confirmed · peak: {peakDay.date} ({peakDay.quantity})</span>
-                          </div>
-                          <ResponsiveContainer width="100%" height={160}>
-                            <BarChart data={record.upcoming} margin={{ top: 4, right: 16, left: 4, bottom: 30 }}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,25%,90%)" />
-                              <XAxis dataKey="date" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" interval={0} />
-                              <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                                formatter={(value: number) => [`${value} packs`, "Confirmed demand"]} />
-                              <Bar dataKey="quantity" name="Confirmed demand" radius={[3, 3, 0, 0]}>
-                                {record.upcoming.map((entry, idx) => (
-                                  <Cell key={idx} fill={entry.quantity > 0 ? "hsl(218,58%,35%)" : "#e2e8f0"} />
-                                ))}
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">{item.daysLeft !== null ? `${item.daysLeft}d left · ${item.leadTime}d lead` : "No usage data"}</span>
+                    <span className="font-semibold px-2 py-0.5 rounded-full text-white text-xs" style={{ background: item.riskColor }}>{urgency}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{item.currentStock} {item.unit} in stock</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Stock Runway Table ── */}
+      {!loading && runwayData.some((r) => r.daysUntilEmpty !== null) && (
+        <div className="glass-card rounded-2xl overflow-hidden">
+          <div className="p-5 border-b border-border/30">
+            <h2 className="text-xl font-semibold text-foreground">Stock Runway — Exact Stockout Dates</h2>
+            <p className="text-xs text-muted-foreground">When each item runs out and the latest safe date to place an order. Based on avg daily usage from completed orders.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px]">
+              <thead>
+                <tr className="border-b border-border/30 bg-muted/20">
+                  <th className="text-left p-3 font-semibold text-foreground">Item</th>
+                  <th className="text-left p-3 font-semibold text-foreground">Branch</th>
+                  <th className="text-left p-3 font-semibold text-foreground">Stock</th>
+                  <th className="text-left p-3 font-semibold text-foreground">Days Left</th>
+                  <th className="text-left p-3 font-semibold text-foreground">Stockout Date</th>
+                  <th className="text-left p-3 font-semibold text-foreground">
+                    <span className="inline-flex items-center gap-1">Must Order By <InfoHint text="Stockout date minus supplier lead time. 'Order Now' means you are already within the lead-time window." /></span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {runwayData.map((item) => {
+                  const rowBg = item.urgencyStatus === "Already Late" ? "bg-red-50 border-l-4 border-l-red-500"
+                    : item.urgencyStatus === "Order Soon" ? "bg-amber-50 border-l-4 border-l-amber-500" : "";
+                  const badge = item.urgencyStatus === "Already Late" ? "bg-red-100 text-red-700"
+                    : item.urgencyStatus === "Order Soon" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700";
+                  return (
+                    <tr key={item.id} className={`border-b border-border/20 ${rowBg}`}>
+                      <td className="p-3 font-medium text-foreground">{item.product.replace(" Detergent", "").replace(" Fabric Conditioner", "")}</td>
+                      <td className="p-3 text-xs text-muted-foreground">{item.branch.replace(" Branch", "")}</td>
+                      <td className="p-3 text-foreground">{item.currentStock} {item.unit}</td>
+                      <td className="p-3 text-foreground">{item.daysUntilEmpty !== null ? `${item.daysUntilEmpty}d` : <span className="text-muted-foreground text-xs">No usage data</span>}</td>
+                      <td className="p-3 text-foreground">{item.stockoutDate ?? <span className="text-muted-foreground">—</span>}</td>
+                      <td className="p-3"><span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badge}`}>{item.mustOrderBy ?? "—"}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Wave Forecast ── */}
+      {!loading && waveForecastData.length > 0 && (
+        <div className="glass-card rounded-2xl overflow-hidden">
+          <div className="p-5 border-b border-border/30">
+            <h2 className="text-xl font-semibold text-foreground">Wave-Shaped 30-Day Stock Forecast</h2>
+            <p className="text-xs text-muted-foreground">Weekday multipliers from 60-day order history applied — stock drops faster on busy days. X-axis shows actual calendar dates.</p>
+          </div>
+          <div className="p-5">
+            {waveForecastData.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No usage data yet — appears once orders are processing.</p>
+            ) : (
+              <WaveForecastPanel data={waveForecastData} lineColors={LINE_COLORS} />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Order Volume Trend + Booking Pipeline side by side ── */}
+      {!loading && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+
+          {/* Order Volume Trend */}
+          <div className="glass-card rounded-2xl overflow-hidden">
+            <div className="p-5 border-b border-border/30">
+              <h2 className="text-lg font-semibold text-foreground">Daily Order Volume — Last 30 Days</h2>
+              <p className="text-xs text-muted-foreground">Based on completed orders from job_orders table. Dashed line = rolling 7-day average.</p>
+            </div>
+            <div className="p-5">
+              {dailyOrderVolume.every((d) => d.orderCount === 0) ? (
+                <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">No order data yet.</div>
+              ) : (
+                <>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <LineChart data={dailyOrderVolume} margin={{ top: 8, right: 16, left: 4, bottom: 40 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,25%,90%)" />
+                      <XAxis dataKey="dateLabel" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" interval={Math.floor(dailyOrderVolume.length / 6)}
+                        label={{ value: "Date", position: "insideBottom", offset: -28, fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} allowDecimals={false}
+                        label={{ value: "Number of Orders", angle: -90, position: "insideLeft", offset: 8, fontSize: 11 }} />
+                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                        formatter={(value: number, name: string) => [
+                          name === "orderCount" ? `${value} orders` : `${value} orders (7-day avg)`, name === "orderCount" ? "Orders" : "7-Day Avg"
+                        ]} />
+                      <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11 }} />
+                      <Line type="monotone" dataKey="orderCount" name="Orders" stroke="hsl(218,58%,35%)" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="rollingAvg7d" name="7-Day Avg" stroke="#f97316" strokeWidth={2} strokeDasharray="6 3" dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                  <p className="text-xs text-muted-foreground mt-2 text-right">Last updated: {new Date().toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })}</p>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Booking Pipeline */}
+          <div className="glass-card rounded-2xl overflow-hidden">
+            <div className="p-5 border-b border-border/30">
+              <h2 className="text-lg font-semibold text-foreground">Upcoming Booking Demand — Next 14 Days</h2>
+              <p className="text-xs text-muted-foreground">Confirmed supply consumption from PENDING/ASSIGNED bookings. Forward-looking, not historical.</p>
+            </div>
+            <div className="p-5">
+              {bookingPipelineData.length === 0 ? (
+                <div className="flex items-center justify-center h-48 text-sm text-muted-foreground text-center px-4">No upcoming bookings with supply requests in the next 14 days.</div>
+              ) : (
+                <>
+                  {bookingPipelineData.map((record) => {
+                    const totalDemand = record.upcoming.reduce((s, d) => s + d.quantity, 0);
+                    const peakDay = record.upcoming.reduce((a, b) => a.quantity >= b.quantity ? a : b);
+                    return (
+                      <div key={record.itemName} className="mb-4">
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-sm font-semibold text-foreground">{record.itemName}</p>
+                          <span className="text-xs text-muted-foreground">{totalDemand.toFixed(0)} packs confirmed · peak: {peakDay.date} ({peakDay.quantity})</span>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
+                        <ResponsiveContainer width="100%" height={120}>
+                          <BarChart data={record.upcoming} margin={{ top: 4, right: 8, left: 4, bottom: 24 }}>
+                            <XAxis dataKey="date" tick={{ fontSize: 9 }} angle={-35} textAnchor="end" interval={1} />
+                            <YAxis tick={{ fontSize: 10 }} allowDecimals={false} label={{ value: "Packs", angle: -90, position: "insideLeft", fontSize: 10 }} />
+                            <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} formatter={(v: number) => [`${v} packs`, "Demand"]} />
+                            <Bar dataKey="quantity" radius={[2, 2, 0, 0]}>
+                              {record.upcoming.map((e, idx) => <Cell key={idx} fill={e.quantity > 0 ? "hsl(218,58%,35%)" : "#e2e8f0"} />)}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    );
+                  })}
+                  <p className="text-xs text-muted-foreground mt-1 text-right">Last updated: {new Date().toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })}</p>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
-            {/* Tab 6: Anomaly Detector */}
-            {activeVizTab === "anomaly" && (
-              <div>
-                <h3 className="text-lg font-semibold text-foreground mb-1">Consumption Anomaly Detector</h3>
-                <p className="text-sm text-muted-foreground mb-4">Compares actual daily consumption against what was expected based on weekday patterns. Positive deviation = more used than expected (spike). Negative = below expected (quiet day).</p>
-                {anomalyData.length === 0 ? (
-                  <div className="flex items-center justify-center h-48 text-sm text-muted-foreground text-center px-8">
-                    No consumption data yet — appears after orders are completed.
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    {anomalyData.map((record) => {
-                      const maxSpike = Math.max(...record.points.map((p) => Math.abs(p.deviation)), 0.01);
-                      return (
-                        <div key={record.name}>
-                          <p className="font-semibold text-foreground mb-2">{record.fullName}</p>
-                          <ResponsiveContainer width="100%" height={200}>
-                            <BarChart data={record.points} margin={{ top: 4, right: 16, left: 4, bottom: 30 }}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,25%,90%)" />
-                              <XAxis dataKey="date" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" interval={0} />
-                              <YAxis tick={{ fontSize: 11 }} domain={[-maxSpike * 1.3, maxSpike * 1.3]} />
-                              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                                formatter={(value: number, name: string) => {
-                                  if (name === "deviation") return [`${value > 0 ? "+" : ""}${value.toFixed(2)} packs vs expected`, "Deviation"];
-                                  if (name === "expected") return [`${value.toFixed(2)} packs`, "Expected"];
-                                  return [`${value} packs`, "Actual"];
-                                }} />
-                              <ReferenceLine y={0} stroke="#94A3B8" strokeWidth={1.5} />
-                              <Bar dataKey="deviation" name="deviation" radius={[2, 2, 0, 0]}>
-                                {record.points.map((entry, idx) => (
-                                  <Cell key={idx} fill={entry.deviation > 0.5 ? "#EF4444" : entry.deviation < -0.5 ? "#3B82F6" : "#94A3B8"} />
-                                ))}
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                          <div className="flex gap-4 text-xs text-muted-foreground mt-1">
-                            <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-red-500" />Above expected (spike)</span>
-                            <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-blue-500" />Below expected (quiet)</span>
-                            <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-slate-400" />Normal range</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Tab 7: Maintenance */}
-            {activeVizTab === "maintenance" && (
-              <div>
-                <h3 className="text-lg font-semibold text-foreground mb-1">Asset Maintenance Timeline</h3>
-                <p className="text-sm text-muted-foreground mb-4">Red = overdue, Amber = due within 10 days, Green = on track.</p>
-                {assetItems.filter((i) => i.maintenanceIntervalDays).length === 0 ? (
-                  <p className="text-muted-foreground text-sm">No equipment tracked yet.</p>
-                ) : (
-                  <div className="space-y-3 max-h-[400px] overflow-y-auto">
-                    {assetItems.filter((i) => i.maintenanceIntervalDays).map((item) => {
-                      const days = item.daysUntilService;
-                      const totalDays = item.maintenanceIntervalDays || 180;
-                      const color = days === null ? "#94A3B8" : days < 0 ? "#EF4444" : days <= 10 ? "#F59E0B" : "#10B981";
-                      const pct = days === null ? 50 : Math.min(100, Math.max(0, ((totalDays + days) / totalDays) * 100));
-                      const sinceService = days !== null && item.maintenanceIntervalDays
-                        ? Math.max(0, item.maintenanceIntervalDays - (days > 0 ? days : 0))
-                        : null;
-                      const statusLabel = days === null ? "No data" : days < 0 ? `Overdue by ${Math.abs(days)}d` : days === 0 ? "Due today" : `Due in ${days}d`;
-                      const barLabel = sinceService !== null
-                        ? `${item.product} — ${sinceService}d since service (${statusLabel})`
-                        : `${item.product} — ${statusLabel}`;
-                      return (
-                        <div key={item.id} className="space-y-1">
-                          <div className="flex justify-between text-sm">
-                            <span className="font-medium text-foreground truncate max-w-[60%]">{barLabel}</span>
-                            <span className="text-xs font-semibold shrink-0 ml-2" style={{ color }}>{statusLabel}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
-                              <div style={{ width: `${pct}%`, background: color }} className="h-full rounded-full transition-all" />
-                            </div>
-                            <span className="text-xs text-muted-foreground w-24 text-right shrink-0">
-                              Last: {item.lastServicedDate ? new Date(item.lastServicedDate).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "2-digit" }) : "—"}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
+      {/* ── Operations Heatmap (order count per day-of-week) ── */}
+      {!loading && dailyOrderVolume.length > 0 && (
+        <div className="glass-card rounded-2xl overflow-hidden">
+          <div className="p-5 border-b border-border/30">
+            <h2 className="text-xl font-semibold text-foreground">Operations Heatmap — Avg Orders by Day of Week</h2>
+            <p className="text-xs text-muted-foreground">Based on actual order count per day of week — last 30 days. Darker = busier. Not soap usage — actual business activity.</p>
+          </div>
+          <div className="p-5">
+            <OperationsHeatmap dailyOrderVolume={dailyOrderVolume} />
           </div>
         </div>
       )}
@@ -1954,6 +1868,82 @@ export default function PredictiveInventoryPage() {
 
 // ── Sub-panel components ───────────────────────────────────────────────────────
 
+// ── OperationsHeatmap ─────────────────────────────────────────────────────────
+
+function OperationsHeatmap({ dailyOrderVolume }: { dailyOrderVolume: DailyOrderVolumeRecord[] }) {
+  const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const jsDowForCol = [1, 2, 3, 4, 5, 6, 0];
+
+  const buckets: Record<number, number[]> = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+  dailyOrderVolume.forEach(({ date, orderCount }) => {
+    if (orderCount > 0) {
+      const dow = new Date(date + "T00:00:00").getDay();
+      buckets[dow].push(orderCount);
+    }
+  });
+  const avgs = jsDowForCol.map((dow) => {
+    const arr = buckets[dow];
+    return arr.length ? Math.round((arr.reduce((s, v) => s + v, 0) / arr.length) * 10) / 10 : 0;
+  });
+  const maxVal = Math.max(...avgs, 0.01);
+
+  const totalOrders = dailyOrderVolume.reduce((s, d) => s + d.orderCount, 0);
+  const weekdayTotal = [0, 1, 2, 3, 4].reduce((s, i) => s + avgs[i], 0);
+  const weekendTotal = [5, 6].reduce((s, i) => s + avgs[i], 0);
+  const weekendPct = weekdayTotal > 0 ? Math.round((weekendTotal / (weekdayTotal + weekendTotal)) * 100) : 0;
+  const peakIdx = avgs.indexOf(Math.max(...avgs));
+  const positiveAvgs = avgs.filter((v) => v > 0);
+  const slowIdx = positiveAvgs.length > 0 ? avgs.indexOf(positiveAvgs.reduce((min, v) => Math.min(min, v), Infinity)) : -1;
+
+  const insights: string[] = [];
+  if (maxVal > 0) {
+    insights.push(`📌 Busiest day: ${DAYS[peakIdx]} with avg ${avgs[peakIdx].toFixed(1)} orders — pre-stock supplies before ${DAYS[(peakIdx - 1 + 7) % 7]}`);
+    if (slowIdx !== -1 && slowIdx !== peakIdx && avgs[slowIdx] > 0) insights.push(`📌 Slowest day: ${DAYS[slowIdx]} with avg ${avgs[slowIdx].toFixed(1)} orders — ideal time for inventory counts`);
+    insights.push(`📌 Weekend orders are ${weekendPct}% of total activity (${DAYS[5]} + ${DAYS[6]})`);
+    if (avgs[5] > avgs[0] * 1.3 || avgs[6] > avgs[0] * 1.3) insights.push(`📌 Weekend surge detected — consider increasing stock before ${DAYS[5]}`);
+    insights.push(`📌 Total orders in period: ${totalOrders} orders over ${dailyOrderVolume.length} days`);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-3 flex-wrap">
+        {DAYS.map((day, ci) => {
+          const val = avgs[ci];
+          const intensity = maxVal > 0 ? val / maxVal : 0;
+          const lightness = Math.round(95 - intensity * 70);
+          const bg = intensity < 0.05 ? "#f8fafc" : `hsl(218,58%,${lightness}%)`;
+          const textColor = lightness < 55 ? "#fff" : "#1e293b";
+          return (
+            <div key={day} className="flex flex-col items-center gap-1">
+              <span className="text-xs text-muted-foreground font-medium">{day}</span>
+              <div style={{ background: bg, color: textColor, width: 56, height: 56, borderRadius: 8, border: "1px solid #e2e8f0" }}
+                className="flex flex-col items-center justify-center cursor-default"
+                title={`${day}: avg ${val > 0 ? val.toFixed(1) + " orders" : "no data"}`}>
+                <span className="text-sm font-bold">{val > 0 ? val.toFixed(1) : "—"}</span>
+                <span className="text-xs opacity-70">orders</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span>Low</span>
+        {[95, 78, 61, 44, 27].map((l) => (
+          <span key={l} style={{ background: `hsl(218,58%,${l}%)`, width: 14, height: 14, borderRadius: 2, display: "inline-block" }} />
+        ))}
+        <span>High</span>
+      </div>
+      {insights.length > 0 && (
+        <div className="rounded-xl bg-muted/30 p-4 space-y-1.5">
+          <p className="text-sm font-semibold text-foreground mb-1">Auto-Generated Insights</p>
+          {insights.map((insight, i) => <p key={i} className="text-sm text-foreground">{insight}</p>)}
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground text-right">Last updated: {new Date().toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })}</p>
+    </div>
+  );
+}
+
 // ── WaveForecastPanel ──────────────────────────────────────────────────────────
 
 function WaveForecastPanel({
@@ -1991,8 +1981,8 @@ function WaveForecastPanel({
       <ResponsiveContainer width="100%" height={280}>
         <LineChart data={chartData} margin={{ top: 12, right: 28, left: 16, bottom: 28 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,25%,90%)" />
-          <XAxis dataKey="day" tick={{ fontSize: 11 }} interval={4}
-            label={{ value: "Forecast days", position: "insideBottom", offset: -12, fontSize: 12 }} />
+          <XAxis dataKey="date" tick={{ fontSize: 11 }} angle={-30} textAnchor="end" interval={Math.floor(chartData.length / 6)}
+            label={{ value: "Calendar Date", position: "insideBottom", offset: -12, fontSize: 11 }} />
           <YAxis tick={{ fontSize: 12 }} width={56}
             label={{ value: `Stock (${item.unit})`, angle: -90, position: "insideLeft", offset: 8, fontSize: 12 }} />
           <Tooltip contentStyle={{ fontSize: 12, borderRadius: 10 }}
@@ -2007,7 +1997,7 @@ function WaveForecastPanel({
           <ReferenceLine y={item.reorderLevel} stroke="hsl(12,76%,61%)" strokeDasharray="6 4" strokeWidth={2} ifOverflow="extendDomain"
             label={{ value: "Reorder level", position: "insideTopRight", fontSize: 11, fill: "hsl(12,76%,61%)" }} />
           {crossDay >= 0 && chartData[crossDay] && (
-            <ReferenceLine x={chartData[crossDay].day} stroke="#F59E0B" strokeDasharray="4 3" strokeWidth={1.5}
+            <ReferenceLine x={chartData[crossDay].date} stroke="#F59E0B" strokeDasharray="4 3" strokeWidth={1.5}
               label={{ value: `⚠ D${crossDay + 1}`, position: "top", fontSize: 11, fill: "#B45309" }} />
           )}
           <Line type="monotone" dataKey="stock" name="stock" stroke={lineColors[0]} strokeWidth={3} dot={false} />

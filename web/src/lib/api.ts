@@ -181,6 +181,21 @@ export type BookingPipelineRecord = {
   upcoming: Array<{ date: string; dayLabel: string; quantity: number }>;
 };
 
+export type OperationsKpiRecord = {
+  ordersToday: number;
+  ordersThisWeek: number;
+  avgKgPerOrder30d: number;
+  peakDayOfWeek: string;
+  peakDayOrderCount: number;
+};
+
+export type DailyOrderVolumeRecord = {
+  date: string;
+  dateLabel: string;
+  orderCount: number;
+  rollingAvg7d: number;
+};
+
 export type AppNotification = {
   id: string;
   title: string;
@@ -707,6 +722,10 @@ export const inventoryApi = {
     ),
   bookingPipeline: (days = 14) =>
     apiRequest<BookingPipelineRecord[]>(`/api/inventory/booking-pipeline?days=${days}`),
+  operationsKpi: () =>
+    apiRequest<OperationsKpiRecord>("/api/inventory/operations-kpi"),
+  dailyOrderVolume: (days = 30) =>
+    apiRequest<DailyOrderVolumeRecord[]>(`/api/inventory/daily-order-volume?days=${days}`),
 };
 
 export const notificationsApi = {
