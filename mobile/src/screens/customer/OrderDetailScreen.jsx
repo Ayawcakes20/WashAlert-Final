@@ -13,6 +13,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { useFocusEffect } from '@react-navigation/native';
 import PriceConfirmationModal from '../../components/PriceConfirmationModal';
+import GcashQrModal from '../../components/GcashQrModal';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -169,6 +170,7 @@ export default function OrderDetailScreen({ route, navigation }) {
   const [branchPhones, setBP]   = useState({});
   const [showFullTL, setShowTL] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [showGcashQrModal, setShowGcashQrModal] = useState(false);
   const [feedbackRating, setFeedbackRating]     = useState(0);
   const [feedbackComment, setFeedbackComment]   = useState('');
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
@@ -372,52 +374,8 @@ export default function OrderDetailScreen({ route, navigation }) {
     ? order.timeline
     : STEPS.map((s,i) => ({step:s.label, time: i===0?order.date:'', done:i<=idx})));
 
-  const payNow = async () => {
-    try {
-      const { checkoutUrl } = await payments.initiateGcashCheckout(order);
-      const url = String(checkoutUrl || '').trim();
-      if (!url || !/^https?:\/\//i.test(url)) throw new Error('No checkout URL returned.');
-      
-      const trackingNumber = order.trackingNumber || order.orderId;
-      
-      try { 
-        await WebBrowser.openBrowserAsync(url, {
-          showTitle: true,
-          toolbarColor: '#2563EB',
-          controlsColor: '#ffffff',
-          enableBarCollapsing: true,
-        }); 
-      } catch { 
-        if (await Linking.canOpenURL(url)) await Linking.openURL(url); 
-      }
-
-      // Check payment status on return to active-sync with PayMongo
-      if (trackingNumber) {
-        try {
-          const paymentSync = await payments.trackPayment(trackingNumber);
-          if (paymentSync && (paymentSync.status === 'PAID' || paymentSync.status === 'VERIFIED')) {
-            Alert.alert(
-              'Payment Confirmed',
-              'Your GCash payment was confirmed successfully!'
-            );
-          }
-        } catch (syncErr) {
-          console.warn('[OrderDetail] Post-payNow payment status sync failed:', syncErr);
-        }
-      }
-
-      load();
-    } catch (e) {
-      const msg = String(e?.message || '');
-      // Show a friendly message for all GCash errors — do not expose raw server messages.
-      const isUserFacing = msg.includes('already paid') || msg.includes('price has not been set') || msg.includes('tracking number');
-      Alert.alert(
-        'Checkout Issue',
-        isUserFacing
-          ? msg
-          : 'Unable to start GCash checkout right now. Please try again or choose another payment option.'
-      );
-    }
+  const payNow = () => {
+    setShowGcashQrModal(true);
   };
 
   const cancelOrder = () => {
@@ -558,12 +516,28 @@ export default function OrderDetailScreen({ route, navigation }) {
           orderData={order}
           onConfirmed={() => {
             setShowReceiptModal(false);
-            Alert.alert('✅ Confirmed!', 'Price confirmed! We are now washing your laundry.');
-            load();
+            load().then((refreshed) => {
+              const isGcash = String(order?.paymentMethod || '').toLowerCase() === 'gcash';
+              if (isGcash && !isPaymentSettled(order)) {
+                setShowGcashQrModal(true);
+              } else {
+                Alert.alert('✅ Confirmed!', 'Price confirmed! We are now washing your laundry.');
+              }
+            });
           }}
           onDismiss={() => setShowReceiptModal(false)}
           onRejected={() => {
             setShowReceiptModal(false);
+            load();
+          }}
+        />
+
+        <GcashQrModal
+          visible={showGcashQrModal}
+          order={order}
+          branchPhone={branchPhone}
+          onClose={() => setShowGcashQrModal(false)}
+          onPaymentSubmitted={() => {
             load();
           }}
         />

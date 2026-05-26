@@ -1504,6 +1504,19 @@ export const notifications = {
 };
 
 export const payments = {
+  submitProof: async (payload) => {
+    return apiRequest('/api/payments/proof', {
+      method: 'POST',
+      body: {
+        trackingNumber: payload.trackingNumber,
+        method: payload.method || 'GCash',
+        amount: payload.amount,
+        referenceNumber: payload.referenceNumber,
+        proofUrl: payload.proofUrl,
+      },
+    });
+  },
+
   /**
    * Fetch the latest payment status for a given tracking number from the backend.
    * Returns { status, method, amount } or null if no payment record exists yet.

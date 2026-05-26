@@ -99,66 +99,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
         }
       }
 
-      // 2. If GCash and not yet paid, trigger PayMongo Checkout
-      if (isGcash && !isPaid) {
-        try {
-          const checkoutTarget = confirmedOrder?.trackingNumber || fullOrderData?.trackingNumber;
-
-          if (!checkoutTarget) throw new Error('Tracking number missing for checkout.');
-
-          const response = await payments.initiateGcashCheckout(checkoutTarget);
-          // Handle both {data: {checkoutUrl}} and {checkoutUrl} structures
-          const checkoutUrl = response?.data?.checkoutUrl || response?.checkoutUrl;
-
-          if (!checkoutUrl) {
-            throw new Error('PayMongo checkout URL is missing from response.');
-          }
-
-          const browserResult = await WebBrowser.openBrowserAsync(checkoutUrl, {
-            showTitle: true,
-            toolbarColor: '#2563EB',
-            controlsColor: '#ffffff',
-            enableBarCollapsing: true,
-          });
-
-          // Check if payment was completed successfully by calling the track endpoint
-          let isPaymentSyncSuccessful = false;
-          try {
-            const paymentSync = await payments.trackPayment(checkoutTarget);
-            if (paymentSync && (paymentSync.status === 'PAID' || paymentSync.status === 'VERIFIED')) {
-              isPaymentSyncSuccessful = true;
-            }
-          } catch (syncErr) {
-            console.warn('[PriceModal] Payment status sync failed:', syncErr);
-          }
-
-          if (isPaymentSyncSuccessful) {
-            Alert.alert(
-              'Payment Confirmed',
-              'Your GCash payment was confirmed successfully! We are now washing your laundry.',
-              [{ text: 'OK', onPress: () => onConfirmed?.() }]
-            );
-            return;
-          }
-
-          if (browserResult.type === 'cancel') {
-            Alert.alert(
-              'Payment Link Sent',
-              'We have initiated your GCash payment. You can complete it via the browser or the "Pay Now" button in your history.',
-              [{ text: 'OK', onPress: () => onConfirmed?.() }]
-            );
-            return;
-          }
-        } catch (paymentErr) {
-          console.warn('[PriceModal] GCash checkout failed:', paymentErr?.message);
-          Alert.alert(
-            'Checkout Issue',
-            'Unable to start GCash checkout right now. Please try again or choose another payment option.\n\nYou can also pay later via your order history.',
-            [{ text: 'OK', onPress: () => onConfirmed?.() }]
-          );
-          return;
-        }
-      }
+      // Manual GCash QR code check will be handled by the parent screen on confirmation
 
       onConfirmed && onConfirmed();
     } catch (e) {
