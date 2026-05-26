@@ -1997,7 +1997,7 @@ function WaveForecastPanel({
           <ReferenceLine y={item.reorderLevel} stroke="hsl(12,76%,61%)" strokeDasharray="6 4" strokeWidth={2} ifOverflow="extendDomain"
             label={{ value: "Reorder level", position: "insideTopRight", fontSize: 11, fill: "hsl(12,76%,61%)" }} />
           {crossDay >= 0 && chartData[crossDay] && (
-            <ReferenceLine x={chartData[crossDay].day} stroke="#F59E0B" strokeDasharray="4 3" strokeWidth={1.5}
+            <ReferenceLine x={chartData[crossDay].date} stroke="#F59E0B" strokeDasharray="4 3" strokeWidth={1.5}
               label={{ value: `⚠ D${crossDay + 1}`, position: "top", fontSize: 11, fill: "#B45309" }} />
           )}
           <Line type="monotone" dataKey="stock" name="stock" stroke={lineColors[0]} strokeWidth={3} dot={false} />
