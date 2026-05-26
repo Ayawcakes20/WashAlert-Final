@@ -553,6 +553,38 @@ export default function PredictiveInventoryPage() {
   const allConsumables = useMemo(() => inventory.filter((i) => !i.isAsset), [inventory]);
   const allAssets = useMemo(() => inventory.filter((i) => i.isAsset), [inventory]);
 
+  // Always show exactly 4 canonical supply items sorted by urgency.
+  const canonicalFour = useMemo(() => {
+    const statusOrder: Record<string, number> = { Critical: 0, Low: 1, Healthy: 2, "No Data": 3 };
+    return CONSUMABLE_CATALOG.map((cat) => {
+      const found = allConsumables.find((i) => i.product === cat.name);
+      if (found) return found;
+      return {
+        id: `placeholder-${cat.name}`,
+        product: cat.name,
+        branch: userBranch || "—",
+        category: cat.category,
+        type: cat.category === "Fabric Conditioner" ? "Fabric Conditioner" : "Detergent",
+        unit: cat.unit,
+        currentStock: 0,
+        reorderLevel: 10,
+        status: "No Data" as const,
+        isAsset: false,
+        assetType: "Consumable",
+        daysUntilEmpty: null,
+        historicalDailyUsage: 0,
+        hasUsage: false,
+        assetStatus: undefined,
+        supplierLeadTimeDays: 3,
+        maintenanceIntervalDays: null,
+        lastServicedDate: null,
+        purchaseDate: null,
+        daysUntilService: null,
+        assetStatusField: undefined,
+      } as any;
+    }).sort((a, b) => (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3));
+  }, [allConsumables, userBranch]);
+
   const summary = useMemo(() => {
     const critical = filteredInventory.filter((i) => i.status === "Critical").length;
     const low = filteredInventory.filter((i) => i.status === "Low").length;
@@ -1285,41 +1317,11 @@ export default function PredictiveInventoryPage() {
       )}
 
       {/* Filters — consumable table only */}
-      {!loading && consumableItems.length > 0 && (
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm font-medium text-muted-foreground">Filter supplies:</span>
-          <Select
-            value={donutSegmentFilter !== "all" ? donutSegmentFilter : statusFilter}
-            onValueChange={(v) => {
-              setDonutSegmentFilter("all");
-              setStatusFilter(v as typeof statusFilter);
-            }}>
-            <SelectTrigger className="h-9 w-[160px] text-sm rounded-lg"><SelectValue placeholder="All Statuses" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="Critical">Critical (≤7 days)</SelectItem>
-              <SelectItem value="Low">Low (8–14 days)</SelectItem>
-              <SelectItem value="Healthy">Healthy (&gt;14 days)</SelectItem>
-            </SelectContent>
-          </Select>
-          {(statusFilter !== "all" || donutSegmentFilter !== "all") && (
-            <button onClick={() => { setStatusFilter("all"); setDonutSegmentFilter("all"); }}
-              className="text-sm font-semibold text-primary hover:underline">Clear filter</button>
-          )}
-        </div>
-      )}
-
       {/* ── Consumable Supplies Table ── */}
       <div className="glass-card rounded-2xl overflow-hidden">
-        <div className="p-6 border-b border-border/30 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-semibold text-foreground">Consumable Supplies — Stock Forecast</h2>
-            <p className="text-sm text-muted-foreground mt-1">Detergent and fabric conditioner only. Sorted by urgency: Critical → Low → Healthy. Does not include equipment assets.</p>
-          </div>
-          <button onClick={() => setShowDetails((v) => !v)}
-            className="text-sm font-medium text-primary hover:underline self-start sm:self-auto">
-            {showDetails ? "Hide details" : "Show details"}
-          </button>
+        <div className="p-6 border-b border-border/30">
+          <h2 className="text-xl font-semibold text-foreground">Consumable Supplies — Stock Summary</h2>
+          <p className="text-sm text-muted-foreground mt-1">Detergent and fabric conditioner only. Sorted by urgency: Critical → Low → Healthy. Does not include equipment assets.</p>
         </div>
         <div className="px-6 py-3 border-b border-border/20 bg-muted/10 flex flex-wrap gap-x-6 gap-y-2 text-sm">
           <span className="font-semibold text-muted-foreground">Status:</span>
@@ -1330,83 +1332,59 @@ export default function PredictiveInventoryPage() {
         </div>
 
         {/* Desktop table */}
-        <div className="overflow-x-auto overflow-y-visible hidden md:block">
-          <table className="w-full min-w-[680px] text-sm">
+        <div className="overflow-x-auto hidden md:block">
+          <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/30 bg-muted/20">
-                <th className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap">
-                  <span className="inline-flex items-center gap-1.5">Supply Item <InfoHint text="Consumable supply name — detergent or fabric conditioner." /></span>
-                </th>
-                <th className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap">
-                  <span className="inline-flex items-center gap-1.5">Current Stock <InfoHint text="Packs currently on hand." /></span>
-                </th>
-                <th className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap">
-                  <span className="inline-flex items-center gap-1.5">Est. Days Left <InfoHint text="Projected days before stock hits reorder level, based on avg daily usage from completed orders." /></span>
-                </th>
-                <th className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap">
-                  <span className="inline-flex items-center gap-1.5">Status <InfoHint text="Critical ≤7d, Low 8–14d, Healthy >14d, No Data if no order history." /></span>
-                </th>
-                {showDetails && (
-                  <>
-                    <th className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1.5">Expected Use 7D <InfoHint text="Estimated consumption next 7 days from order history and confirmed bookings." /></span>
-                    </th>
-                    <th className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1.5">Reorder Level <InfoHint text="Minimum stock before reordering is recommended." /></span>
-                    </th>
-                  </>
-                )}
-                <th className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap">Action</th>
+                <th className="text-left p-4 font-semibold text-[15px] text-foreground">Supply Item</th>
+                <th className="text-left p-4 font-semibold text-[15px] text-foreground">Current Stock</th>
+                <th className="text-left p-4 font-semibold text-[15px] text-foreground">Status</th>
+                <th className="text-left p-4 font-semibold text-[15px] text-foreground">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading
                 ? Array.from({ length: 4 }).map((_, i) => (
                     <tr key={i} className="border-b border-border/20">
-                      {Array.from({ length: showDetails ? 7 : 5 }).map((__, j) => <td key={j} className="p-4"><Skeleton className="h-5 w-full rounded" /></td>)}
+                      {Array.from({ length: 4 }).map((__, j) => <td key={j} className="p-4"><Skeleton className="h-5 w-full rounded" /></td>)}
                     </tr>
                   ))
-                : pagedConsumables.map((inv) => {
+                : canonicalFour.map((inv) => {
+                    const isPlaceholder = inv.id.toString().startsWith("placeholder-");
                     const isExpanded = expandedRowId === inv.id;
-                    const daysLeft = inv.daysUntilEmpty !== null ? `${inv.daysUntilEmpty} day(s)` : "No usage data yet";
-                    const maxStock = Math.max(inv.reorderLevel * 3, inv.currentStock, 1);
-                    const itemIcon = inv.type === "Detergent" ? <Droplets className="h-4 w-4 text-primary" /> : <Sparkles className="h-4 w-4 text-secondary" />;
+                    const itemIcon = inv.type === "Detergent" ? <Droplets className="h-4 w-4 text-primary shrink-0" /> : <Sparkles className="h-4 w-4 text-secondary shrink-0" />;
                     return (
                       <>
-                        <tr key={inv.id} className="border-b border-border/20 hover:bg-muted/20 align-top">
+                        <tr key={inv.id} className="border-b border-border/20 hover:bg-muted/20 align-middle">
                           <td className="p-4">
                             <div className="flex items-center gap-2">
                               {itemIcon}
                               <span className="text-base font-semibold text-foreground">{inv.product}</span>
                             </div>
                             <div className="ml-6 text-xs text-muted-foreground">{inv.branch} · {inv.type}</div>
-                            <div className="ml-6 mt-1"><StockBar current={inv.currentStock} reorder={inv.reorderLevel} max={maxStock} /></div>
                           </td>
-                          <td className="p-4 text-base text-foreground">{formatQuantity(inv.currentStock, inv.unit)}</td>
-                          <td className="p-4 text-base text-foreground">{daysLeft}</td>
+                          <td className="p-4 text-base text-foreground">
+                            {isPlaceholder ? <span className="text-muted-foreground text-sm">Not recorded</span> : formatQuantity(inv.currentStock, inv.unit)}
+                          </td>
                           <td className="p-4">
                             <span className={`text-sm font-semibold px-3 py-1 rounded-full ${statusStyle[inv.status]}`}>{inv.status}</span>
                           </td>
-                          {showDetails && (
-                            <>
-                              <td className="p-4 text-base text-foreground">{formatExpectedUse7D(inv)}</td>
-                              <td className="p-4 text-base text-foreground">{formatQuantity(inv.reorderLevel, inv.unit)}</td>
-                            </>
-                          )}
                           <td className="p-4">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Button size="sm" onClick={() => openAdjust(inv)}>Add Stock</Button>
-                              <Button size="sm" variant="outline"
-                                onClick={() => setExpandedRowId((v) => (v === inv.id ? null : inv.id))}>
-                                {isExpanded ? "Hide" : "Details"}
-                                <ChevronDown className={`h-4 w-4 ml-1 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-                              </Button>
-                            </div>
+                            {!isPlaceholder && (
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Button size="sm" onClick={() => openAdjust(inv)}>Add Stock</Button>
+                                <Button size="sm" variant="outline"
+                                  onClick={() => setExpandedRowId((v) => (v === inv.id ? null : inv.id))}>
+                                  {isExpanded ? "Hide" : "Details"}
+                                  <ChevronDown className={`h-4 w-4 ml-1 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                                </Button>
+                              </div>
+                            )}
                           </td>
                         </tr>
-                        {isExpanded && (
+                        {isExpanded && !isPlaceholder && (
                           <tr className="border-b border-border/20 bg-muted/10">
-                            <td colSpan={showDetails ? 7 : 5} className="p-5">
+                            <td colSpan={4} className="p-5">
                               <ConsumableDetailPanel item={inv} chartData={selectedItemChart} pendingConsumption={pendingConsumption} onEdit={openEdit} onDelete={openDelete} isAdmin={isAdmin} isStaff={isStaff} />
                             </td>
                           </tr>
@@ -1414,9 +1392,6 @@ export default function PredictiveInventoryPage() {
                       </>
                     );
                   })}
-              {!loading && consumableItems.length === 0 && (
-                <tr><td colSpan={showDetails ? 7 : 5} className="p-8 text-center text-base text-muted-foreground">No consumable supplies found. Use "Create Item" to add Surf, Ariel, Charm, or Downy.</td></tr>
-              )}
             </tbody>
           </table>
         </div>
@@ -1428,11 +1403,10 @@ export default function PredictiveInventoryPage() {
                 <div key={i} className="p-4 space-y-2">
                   <Skeleton className="h-5 w-40" />
                   <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-2 w-full" />
                 </div>
               ))
-            : pagedConsumables.map((inv) => {
-                const maxStock = Math.max(inv.reorderLevel * 3, inv.currentStock, 1);
+            : canonicalFour.map((inv) => {
+                const isPlaceholder = inv.id.toString().startsWith("placeholder-");
                 const isExpanded = expandedRowId === inv.id;
                 return (
                   <div key={inv.id} className="p-4 space-y-2">
@@ -1444,17 +1418,17 @@ export default function PredictiveInventoryPage() {
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${statusStyle[inv.status]}`}>{inv.status}</span>
                     </div>
                     <p className="text-sm text-foreground">
-                      {formatQuantity(inv.currentStock, inv.unit)}
-                      {inv.daysUntilEmpty !== null && ` · ${inv.daysUntilEmpty}d left`}
+                      {isPlaceholder ? <span className="text-muted-foreground">Not recorded</span> : formatQuantity(inv.currentStock, inv.unit)}
                     </p>
-                    <StockBar current={inv.currentStock} reorder={inv.reorderLevel} max={maxStock} />
-                    <div className="flex gap-2 pt-1">
-                      <Button size="sm" onClick={() => openAdjust(inv)}>Add Stock</Button>
-                      <Button size="sm" variant="outline" onClick={() => setExpandedRowId((v) => (v === inv.id ? null : inv.id))}>
-                        {isExpanded ? "Hide" : "Details"}
-                      </Button>
-                    </div>
-                    {isExpanded && (
+                    {!isPlaceholder && (
+                      <div className="flex gap-2 pt-1">
+                        <Button size="sm" onClick={() => openAdjust(inv)}>Add Stock</Button>
+                        <Button size="sm" variant="outline" onClick={() => setExpandedRowId((v) => (v === inv.id ? null : inv.id))}>
+                          {isExpanded ? "Hide" : "Details"}
+                        </Button>
+                      </div>
+                    )}
+                    {isExpanded && !isPlaceholder && (
                       <div className="pt-2">
                         <ConsumableDetailPanel item={inv} chartData={selectedItemChart} pendingConsumption={pendingConsumption} onEdit={openEdit} onDelete={openDelete} isAdmin={isAdmin} isStaff={isStaff} />
                       </div>
@@ -1462,14 +1436,7 @@ export default function PredictiveInventoryPage() {
                   </div>
                 );
               })}
-          {!loading && consumableItems.length === 0 && (
-            <div className="p-8 text-center text-base text-muted-foreground">No consumable supplies found.</div>
-          )}
         </div>
-
-        {!loading && consumableItems.length > tablePageSize && (
-          <Paginator page={tablePage} total={consumableItems.length} pageSize={tablePageSize} pageSizes={TABLE_PAGE_SIZES} onPageSizeChange={setTablePageSize} onPage={setTablePage} />
-        )}
       </div>
 
 

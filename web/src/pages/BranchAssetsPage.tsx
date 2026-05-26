@@ -3,7 +3,7 @@ import { useMemo, useState, useEffect } from "react";
 import {
   Boxes, Plus, Trash2, Loader2, MapPin,
   CheckCircle2, AlertCircle, XCircle, RefreshCw, ClipboardList,
-  Search, Pencil, Eye, ChevronLeft, ChevronRight, Calendar, Wrench,
+  Search, Pencil, Eye, ChevronLeft, ChevronRight, Calendar,
 } from "lucide-react";
 import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { getSessionUser } from "@/lib/session";
-import { inventoryApi, type InventoryRecord } from "@/lib/api";
+import { inventoryApi } from "@/lib/api";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -376,12 +376,6 @@ export default function BranchAssetsPage() {
   const [conditionFilter, setConditionFilter] = useState<AssetCondition | "All">("All");
   const [tablePage, setTablePage] = useState(1);
 
-  // ── Equipment Register (API-based, with maintenance tracking) ──
-  const [equipmentItems, setEquipmentItems] = useState<InventoryRecord[]>([]);
-  const [equipmentLoading, setEquipmentLoading] = useState(true);
-  const [markServicedId, setMarkServicedId] = useState<number | null>(null);
-  const [markServicedLoading, setMarkServicedLoading] = useState(false);
-
   // ── Add dialog ──
   const [addOpen, setAddOpen] = useState(false);
   const [addSubmitting, setAddSubmitting] = useState(false);
@@ -465,43 +459,6 @@ export default function BranchAssetsPage() {
     const nextId = generateNextProductId(assets, "");
     setAddForm(blankAdd(isAdmin, userBranch, nextId));
     setAddOpen(true);
-  };
-
-  // ── Equipment Register helpers ───────────────────────────────────────────
-
-  const loadEquipment = async () => {
-    try {
-      setEquipmentLoading(true);
-      const items = await inventoryApi.list();
-      // Only show asset-type items (equipment)
-      const assetOnly = (items || []).filter((i) => i.assetType === "Asset");
-      // Filter to user's branch for staff
-      const filtered = isStaff
-        ? assetOnly.filter((i) => (i.branch || "").toLowerCase().includes((userBranch || "").toLowerCase().split(" ")[0]))
-        : assetOnly;
-      setEquipmentItems(filtered);
-    } catch {
-      setEquipmentItems([]);
-    } finally {
-      setEquipmentLoading(false);
-    }
-  };
-
-  useEffect(() => { void loadEquipment(); }, []);
-
-  const handleMarkServiced = async (id: number) => {
-    setMarkServicedId(id);
-    setMarkServicedLoading(true);
-    try {
-      await inventoryApi.markServiced(id);
-      toast.success("Asset marked as serviced.");
-      await loadEquipment();
-    } catch (err: any) {
-      toast.error(err?.message || "Unable to mark as serviced.");
-    } finally {
-      setMarkServicedLoading(false);
-      setMarkServicedId(null);
-    }
   };
 
   const submitAdd = async () => {
@@ -896,205 +853,6 @@ export default function BranchAssetsPage() {
           })}
         </motion.div>
       )}
-
-      {/* ── Branch Equipment Register (API-based, with maintenance tracking) ── */}
-      <motion.div variants={anim} className="glass-card rounded-2xl overflow-hidden">
-        <div className="p-5 border-b border-border/30 flex items-center gap-3">
-          <Wrench className="h-5 w-5 text-primary" />
-          <div>
-            <h2 className="text-lg font-semibold text-foreground">Branch Equipment Register</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Physical equipment tracked by maintenance schedule — washing machines, dryers, aircon, fans. No stock level applies.</p>
-          </div>
-        </div>
-
-        {equipmentLoading ? (
-          <div className="p-8 flex items-center justify-center gap-2 text-muted-foreground text-sm">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading equipment...
-          </div>
-        ) : equipmentItems.length === 0 ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">
-            <Wrench className="h-8 w-8 mx-auto mb-2 opacity-20" />
-            <p>No equipment records found.</p>
-            <p className="text-xs mt-1">Equipment is tracked by admin. Contact admin to add washing machines, dryers, aircon, etc.</p>
-          </div>
-        ) : (
-          <>
-            {/* Asset summary banner */}
-            {(() => {
-              const overdue = equipmentItems.filter((a) => {
-                if (!a.lastServicedDate || !a.maintenanceIntervalDays) return false;
-                const next = new Date(new Date(a.lastServicedDate).getTime() + a.maintenanceIntervalDays * 86400000);
-                return next < new Date();
-              }).length;
-              const onTrack = equipmentItems.length - overdue;
-              return (
-                <div className="px-5 py-3 bg-muted/10 border-b border-border/20 flex flex-wrap gap-5 text-sm">
-                  {overdue > 0 && (
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="h-2.5 w-2.5 rounded-full bg-red-500 shrink-0" />
-                      <strong className="text-red-700">{overdue}</strong>
-                      <span className="text-muted-foreground">overdue for service</span>
-                    </span>
-                  )}
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 shrink-0" />
-                    <strong className="text-emerald-700">{onTrack}</strong>
-                    <span className="text-muted-foreground">on track</span>
-                  </span>
-                  <span className="text-muted-foreground ml-auto">{equipmentItems.length} total equipment unit{equipmentItems.length !== 1 ? "s" : ""}</span>
-                </div>
-              );
-            })()}
-
-            {/* Desktop table */}
-            <div className="overflow-x-auto hidden md:block">
-              <table className="w-full min-w-[860px] text-sm">
-                <thead>
-                  <tr className="border-b border-border/30 bg-muted/20">
-                    {["Equipment", "Condition", "Service Status", "Last Serviced", "Next Service Due", "Maintenance Cycle", "Actions"].map((h) => (
-                      <th key={h} className="text-left p-4 font-medium text-muted-foreground whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {equipmentItems.map((asset) => {
-                    const days = (() => {
-                      if (!asset.lastServicedDate || !asset.maintenanceIntervalDays) return null;
-                      const next = new Date(new Date(asset.lastServicedDate).getTime() + asset.maintenanceIntervalDays * 86400000);
-                      return Math.floor((next.getTime() - Date.now()) / 86400000);
-                    })();
-                    const svcStatus = days === null
-                      ? { label: "No Schedule", cls: "bg-slate-100 text-slate-500" }
-                      : days < 0
-                      ? { label: `Overdue ${Math.abs(days)}d`, cls: "bg-red-100 text-red-700" }
-                      : days <= 7
-                      ? { label: `Due in ${days}d`, cls: "bg-red-100 text-red-700" }
-                      : days <= 14
-                      ? { label: `Due in ${days}d`, cls: "bg-amber-100 text-amber-700" }
-                      : { label: `In ${days}d`, cls: "bg-emerald-100 text-emerald-700" };
-                    const nextSvc = asset.lastServicedDate && asset.maintenanceIntervalDays
-                      ? new Date(new Date(asset.lastServicedDate).getTime() + asset.maintenanceIntervalDays * 86400000)
-                      : null;
-                    let cyclePct = 0; let cycleColor = "#10B981";
-                    if (asset.lastServicedDate && asset.maintenanceIntervalDays) {
-                      const daysSince = Math.floor((Date.now() - new Date(asset.lastServicedDate).getTime()) / 86400000);
-                      cyclePct = Math.min(100, Math.round((daysSince / asset.maintenanceIntervalDays) * 100));
-                      cycleColor = cyclePct >= 100 ? "#EF4444" : cyclePct >= 80 ? "#F59E0B" : "#10B981";
-                    }
-                    return (
-                      <tr key={asset.id} className="border-b border-border/20 hover:bg-muted/30 transition-colors align-middle">
-                        <td className="p-4">
-                          <div className="flex items-center gap-2">
-                            <Wrench className="h-4 w-4 text-primary shrink-0" />
-                            <div>
-                              <p className="font-semibold text-foreground">{asset.itemName}</p>
-                              <p className="text-xs text-muted-foreground">{asset.branch} · {asset.category}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                            asset.assetStatus === "Under Maintenance" ? "bg-amber-100 text-amber-700"
-                            : asset.assetStatus === "Decommissioned" ? "bg-red-100 text-red-700"
-                            : "bg-emerald-100 text-emerald-700"
-                          }`}>{asset.assetStatus || "Active"}</span>
-                        </td>
-                        <td className="p-4">
-                          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${svcStatus.cls}`}>{svcStatus.label}</span>
-                        </td>
-                        <td className="p-4 text-sm text-foreground">
-                          {asset.lastServicedDate
-                            ? new Date(asset.lastServicedDate).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
-                            : <span className="text-muted-foreground text-xs">Not recorded</span>}
-                        </td>
-                        <td className="p-4 text-sm text-foreground">
-                          {nextSvc
-                            ? nextSvc.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
-                            : <span className="text-muted-foreground text-xs">—</span>}
-                        </td>
-                        <td className="p-4">
-                          {asset.maintenanceIntervalDays ? (
-                            <div className="space-y-1 min-w-[120px]">
-                              <div className="h-2 bg-muted rounded-full overflow-hidden">
-                                <div style={{ width: `${cyclePct}%`, background: cycleColor }} className="h-full rounded-full transition-all" />
-                              </div>
-                              <p className="text-xs text-muted-foreground">{cyclePct}% of {asset.maintenanceIntervalDays}-day cycle</p>
-                            </div>
-                          ) : <span className="text-xs text-muted-foreground">—</span>}
-                        </td>
-                        <td className="p-4">
-                          <div className="flex items-center gap-2">
-                            <Button
-                              size="sm"
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
-                              disabled={markServicedLoading && markServicedId === asset.id}
-                              onClick={() => void handleMarkServiced(asset.id)}
-                            >
-                              {markServicedLoading && markServicedId === asset.id
-                                ? <Loader2 className="h-3 w-3 animate-spin" />
-                                : "Mark Serviced"}
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile card view */}
-            <div className="md:hidden divide-y divide-border/20">
-              {equipmentItems.map((asset) => {
-                const days = (() => {
-                  if (!asset.lastServicedDate || !asset.maintenanceIntervalDays) return null;
-                  const next = new Date(new Date(asset.lastServicedDate).getTime() + asset.maintenanceIntervalDays * 86400000);
-                  return Math.floor((next.getTime() - Date.now()) / 86400000);
-                })();
-                const svcStatus = days === null ? { label: "No Schedule", cls: "bg-slate-100 text-slate-500" }
-                  : days < 0 ? { label: `Overdue ${Math.abs(days)}d`, cls: "bg-red-100 text-red-700" }
-                  : days <= 14 ? { label: `Due in ${days}d`, cls: "bg-amber-100 text-amber-700" }
-                  : { label: `In ${days}d`, cls: "bg-emerald-100 text-emerald-700" };
-                let cyclePct = 0; let cycleColor = "#10B981";
-                if (asset.lastServicedDate && asset.maintenanceIntervalDays) {
-                  const ds = Math.floor((Date.now() - new Date(asset.lastServicedDate).getTime()) / 86400000);
-                  cyclePct = Math.min(100, Math.round((ds / asset.maintenanceIntervalDays) * 100));
-                  cycleColor = cyclePct >= 100 ? "#EF4444" : cyclePct >= 80 ? "#F59E0B" : "#10B981";
-                }
-                return (
-                  <div key={asset.id} className="p-4 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="font-semibold text-foreground">{asset.itemName}</p>
-                        <p className="text-xs text-muted-foreground">{asset.branch} · {asset.category}</p>
-                      </div>
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${svcStatus.cls}`}>{svcStatus.label}</span>
-                    </div>
-                    {asset.maintenanceIntervalDays && (
-                      <div className="space-y-1">
-                        <div className="h-2 bg-muted rounded-full overflow-hidden">
-                          <div style={{ width: `${cyclePct}%`, background: cycleColor }} className="h-full rounded-full" />
-                        </div>
-                        <p className="text-xs text-muted-foreground">{cyclePct}% of {asset.maintenanceIntervalDays}-day service cycle</p>
-                      </div>
-                    )}
-                    <Button
-                      size="sm"
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
-                      disabled={markServicedLoading && markServicedId === asset.id}
-                      onClick={() => void handleMarkServiced(asset.id)}
-                    >
-                      {markServicedLoading && markServicedId === asset.id
-                        ? <Loader2 className="h-3 w-3 animate-spin" />
-                        : "Mark Serviced"}
-                    </Button>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-      </motion.div>
 
       {/* ── Add Asset Dialog ────────────────────────────────────────────────── */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
