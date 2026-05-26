@@ -382,9 +382,13 @@ function mapInventoryRecord(
   const isAsset = record.assetType === "Asset";
   const itemForecast = isAsset ? undefined : forecastMap.get(record.id);
   const dailyUsage = itemForecast?.usage ?? 0;
-  const catLower = (record.category ?? "").toLowerCase();
+  // Normalize type by item name first (canonical), then fall back to category field
+  const canonical = CONSUMABLE_DEFAULTS[record.itemName];
+  const catLower = (canonical?.category ?? record.category ?? "").toLowerCase();
   const type: InventoryItem["type"] = catLower.includes("conditioner") ? "Fabric Conditioner"
     : catLower.includes("detergent") ? "Detergent" : isAsset ? "Asset" : "Other";
+  // Normalize unit for canonical consumables (prevents "liters" showing for packs items)
+  const unit = (!isAsset && canonical?.unit) ? canonical.unit : (record.unit || (isAsset ? "units" : "packs"));
   const daysRemaining = isAsset ? null : calcDaysRemaining(Number(record.currentStock || 0), dailyUsage);
   const hasUsage = !isAsset && (itemForecast?.usage ?? 0) >= 0.001;
   const status = isAsset ? "Healthy" : getStatus(daysRemaining, hasUsage);
@@ -396,8 +400,8 @@ function mapInventoryRecord(
     branch: getCanonicalBranchName(record.branch),
     currentStock: Number(record.currentStock || 0),
     reorderLevel: Number(record.reorderLevel || 0),
-    unit: record.unit || "packs",
-    category: record.category || "General",
+    unit,
+    category: canonical?.category ?? record.category ?? "General",
     forecastedUsage: dailyUsage,
     projectedAfter7Days: Math.max(0, Number(record.currentStock || 0) - dailyUsage * 7),
     status,
@@ -1386,7 +1390,7 @@ export default function PredictiveInventoryPage() {
                               {itemIcon}
                               <span className="text-base font-semibold text-foreground">{inv.product}</span>
                             </div>
-                            <div className="ml-6 text-xs text-muted-foreground">{inv.branch} · {inv.category}</div>
+                            <div className="ml-6 text-xs text-muted-foreground">{inv.branch} · {inv.type}</div>
                             <div className="ml-6 mt-1"><StockBar current={inv.currentStock} reorder={inv.reorderLevel} max={maxStock} /></div>
                           </td>
                           <td className="p-4 text-base text-foreground">{formatQuantity(inv.currentStock, inv.unit)}</td>
@@ -1676,7 +1680,7 @@ export default function PredictiveInventoryPage() {
             <Activity className="h-5 w-5 text-primary" />
             <div>
               <h2 className="text-xl font-semibold text-foreground">Operations Overview</h2>
-              <p className="text-xs text-muted-foreground">Based on job_orders table — last 30 days</p>
+              <p className="text-xs text-muted-foreground">Live order data — last 30 days</p>
             </div>
           </div>
           <div className="p-5 grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1757,7 +1761,7 @@ export default function PredictiveInventoryPage() {
           <div className="p-5 border-b border-border/30 flex items-center justify-between">
             <div>
               <h2 className="text-xl font-semibold text-foreground">Supply Risk Score — With Lead Time</h2>
-              <p className="text-xs text-muted-foreground">Risk accounts for supplier delivery time. "Order Today" means you're already within the danger window.</p>
+              <p className="text-xs text-muted-foreground">Each score factors in how long your supplier takes to deliver. "Order Today" means stock may run out before a new delivery arrives.</p>
             </div>
           </div>
           <div className="p-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -1836,7 +1840,7 @@ export default function PredictiveInventoryPage() {
         <div className="glass-card rounded-2xl overflow-hidden">
           <div className="p-5 border-b border-border/30">
             <h2 className="text-xl font-semibold text-foreground">Wave-Shaped 30-Day Stock Forecast</h2>
-            <p className="text-xs text-muted-foreground">Weekday multipliers from 60-day order history applied — stock drops faster on busy days. X-axis shows actual calendar dates.</p>
+            <p className="text-xs text-muted-foreground">Stock depletes faster on busy days and slower on quiet days — based on your 60-day order pattern. Calendar dates on the X-axis.</p>
           </div>
           <div className="p-5">
             {waveForecastData.length === 0 ? (
@@ -1856,7 +1860,7 @@ export default function PredictiveInventoryPage() {
           <div className="glass-card rounded-2xl overflow-hidden">
             <div className="p-5 border-b border-border/30">
               <h2 className="text-lg font-semibold text-foreground">Daily Order Volume — Last 30 Days</h2>
-              <p className="text-xs text-muted-foreground">Based on completed orders from job_orders table. Dashed line = rolling 7-day average.</p>
+              <p className="text-xs text-muted-foreground">Number of customer orders placed per day. The dashed line shows the 7-day running average — useful for spotting busy periods and trends.</p>
             </div>
             <div className="p-5">
               {dailyOrderVolume.every((d) => d.orderCount === 0) ? (
@@ -1889,7 +1893,7 @@ export default function PredictiveInventoryPage() {
           <div className="glass-card rounded-2xl overflow-hidden">
             <div className="p-5 border-b border-border/30">
               <h2 className="text-lg font-semibold text-foreground">Upcoming Booking Demand — Next 14 Days</h2>
-              <p className="text-xs text-muted-foreground">Confirmed supply consumption from PENDING/ASSIGNED bookings. Forward-looking, not historical.</p>
+              <p className="text-xs text-muted-foreground">Soap and fabric conditioner demand from upcoming confirmed bookings — orders already scheduled for the next 14 days.</p>
             </div>
             <div className="p-5">
               {bookingPipelineData.length === 0 ? (
@@ -1926,12 +1930,12 @@ export default function PredictiveInventoryPage() {
         </div>
       )}
 
-      {/* ── Operations Heatmap (order count per day-of-week) ── */}
+      {/* ── Order Activity Calendar ── */}
       {!loading && dailyOrderVolume.length > 0 && (
         <div className="glass-card rounded-2xl overflow-hidden">
           <div className="p-5 border-b border-border/30">
-            <h2 className="text-xl font-semibold text-foreground">Operations Heatmap — Avg Orders by Day of Week</h2>
-            <p className="text-xs text-muted-foreground">Based on actual order count per day of week — last 30 days. Darker = busier. Not soap usage — actual business activity.</p>
+            <h2 className="text-xl font-semibold text-foreground">Order Activity Calendar — Last 30 Days</h2>
+            <p className="text-sm text-muted-foreground">Each cell shows how many orders were placed that day. Darker = busier. The bottom row shows each day's average across all weeks — use this to plan when to restock and when to schedule maintenance.</p>
           </div>
           <div className="p-5">
             <OperationsHeatmap dailyOrderVolume={dailyOrderVolume} />
@@ -2077,75 +2081,172 @@ export default function PredictiveInventoryPage() {
 // ── OperationsHeatmap ─────────────────────────────────────────────────────────
 
 function OperationsHeatmap({ dailyOrderVolume }: { dailyOrderVolume: DailyOrderVolumeRecord[] }) {
-  const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const jsDowForCol = [1, 2, 3, 4, 5, 6, 0];
+  const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0]; // JS Sunday=0, map to last column
 
-  const buckets: Record<number, number[]> = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
-  dailyOrderVolume.forEach(({ date, orderCount }) => {
-    if (orderCount > 0) {
-      const dow = new Date(date + "T00:00:00").getDay();
-      buckets[dow].push(orderCount);
+  // Build week × day grid from the raw daily data
+  const gridRows: Array<{ weekLabel: string; cells: Array<{ date: string; display: string; count: number; hasData: boolean }> }> = [];
+  if (dailyOrderVolume.length > 0) {
+    // Sort ascending by date
+    const sorted = [...dailyOrderVolume].sort((a, b) => a.date.localeCompare(b.date));
+    // Find the Monday of the first week
+    const firstDate = new Date(sorted[0].date + "T00:00:00");
+    const firstDow = firstDate.getDay(); // 0=Sun
+    const daysBack = firstDow === 0 ? 6 : firstDow - 1; // shift so Mon=0
+    const gridStart = new Date(firstDate);
+    gridStart.setDate(gridStart.getDate() - daysBack);
+
+    const dateMap = new Map(sorted.map((d) => [d.date, d.orderCount]));
+    const totalDays = Math.ceil((new Date(sorted[sorted.length - 1].date + "T00:00:00").getTime() - gridStart.getTime()) / 86400000) + 1;
+    const weeks = Math.ceil(totalDays / 7);
+
+    for (let w = 0; w < weeks; w++) {
+      const weekStart = new Date(gridStart);
+      weekStart.setDate(weekStart.getDate() + w * 7);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      const wLabel = weekStart.toLocaleDateString("en-PH", { month: "short", day: "numeric" })
+        + " – " + weekEnd.toLocaleDateString("en-PH", { month: "short", day: "numeric" });
+      const cells = Array.from({ length: 7 }, (_, d) => {
+        const cell = new Date(weekStart);
+        cell.setDate(cell.getDate() + d);
+        const ymd = `${cell.getFullYear()}-${String(cell.getMonth() + 1).padStart(2, "0")}-${String(cell.getDate()).padStart(2, "0")}`;
+        const count = dateMap.get(ymd) ?? 0;
+        const hasData = dateMap.has(ymd);
+        const display = cell.toLocaleDateString("en-PH", { month: "short", day: "numeric" });
+        return { date: ymd, display, count, hasData };
+      });
+      gridRows.push({ weekLabel: wLabel, cells });
     }
-  });
-  const avgs = jsDowForCol.map((dow) => {
-    const arr = buckets[dow];
-    return arr.length ? Math.round((arr.reduce((s, v) => s + v, 0) / arr.length) * 10) / 10 : 0;
-  });
-  const maxVal = Math.max(...avgs, 0.01);
+  }
 
-  const totalOrders = dailyOrderVolume.reduce((s, d) => s + d.orderCount, 0);
-  const weekdayTotal = [0, 1, 2, 3, 4].reduce((s, i) => s + avgs[i], 0);
-  const weekendTotal = [5, 6].reduce((s, i) => s + avgs[i], 0);
-  const weekendPct = weekdayTotal > 0 ? Math.round((weekendTotal / (weekdayTotal + weekendTotal)) * 100) : 0;
-  const peakIdx = avgs.indexOf(Math.max(...avgs));
-  const positiveAvgs = avgs.filter((v) => v > 0);
-  const slowIdx = positiveAvgs.length > 0 ? avgs.indexOf(positiveAvgs.reduce((min, v) => Math.min(min, v), Infinity)) : -1;
+  // Day-of-week averages (for the summary row)
+  const dowBuckets: number[][] = [[], [], [], [], [], [], []];
+  dailyOrderVolume.forEach(({ date, orderCount }) => {
+    const dow = new Date(date + "T00:00:00").getDay();
+    const col = DOW_ORDER.indexOf(dow);
+    if (col >= 0 && orderCount > 0) dowBuckets[col].push(orderCount);
+  });
+  const dowAvgs = dowBuckets.map((b) => b.length ? Math.round((b.reduce((s, v) => s + v, 0) / b.length) * 10) / 10 : 0);
+
+  const allCounts = dailyOrderVolume.map((d) => d.orderCount);
+  const maxCount = Math.max(...allCounts, 1);
+  const totalOrders = allCounts.reduce((s, v) => s + v, 0);
+  const activeDays = allCounts.filter((v) => v > 0).length;
+  const avgPerActiveDay = activeDays > 0 ? Math.round((totalOrders / activeDays) * 10) / 10 : 0;
+
+  const peakIdx = dowAvgs.indexOf(Math.max(...dowAvgs));
+  const nonZeroAvgs = dowAvgs.filter((v) => v > 0);
+  const slowIdx = nonZeroAvgs.length > 0 ? dowAvgs.indexOf(Math.min(...nonZeroAvgs)) : -1;
+  const weekdayAvg = [0,1,2,3,4].reduce((s, i) => s + dowAvgs[i], 0) / 5;
+  const weekendAvg = [5,6].reduce((s, i) => s + dowAvgs[i], 0) / 2;
+
+  const cellColor = (count: number, hasData: boolean) => {
+    if (!hasData) return { bg: "#f1f5f9", text: "#94a3b8" };
+    if (count === 0) return { bg: "#f8fafc", text: "#cbd5e1" };
+    const intensity = count / maxCount;
+    const lightness = Math.round(95 - intensity * 68);
+    return { bg: `hsl(218,58%,${lightness}%)`, text: lightness < 55 ? "#fff" : "#1e293b" };
+  };
 
   const insights: string[] = [];
-  if (maxVal > 0) {
-    insights.push(`📌 Busiest day: ${DAYS[peakIdx]} with avg ${avgs[peakIdx].toFixed(1)} orders — pre-stock supplies before ${DAYS[(peakIdx - 1 + 7) % 7]}`);
-    if (slowIdx !== -1 && slowIdx !== peakIdx && avgs[slowIdx] > 0) insights.push(`📌 Slowest day: ${DAYS[slowIdx]} with avg ${avgs[slowIdx].toFixed(1)} orders — ideal time for inventory counts`);
-    insights.push(`📌 Weekend orders are ${weekendPct}% of total activity (${DAYS[5]} + ${DAYS[6]})`);
-    if (avgs[5] > avgs[0] * 1.3 || avgs[6] > avgs[0] * 1.3) insights.push(`📌 Weekend surge detected — consider increasing stock before ${DAYS[5]}`);
-    insights.push(`📌 Total orders in period: ${totalOrders} orders over ${dailyOrderVolume.length} days`);
+  if (maxCount > 0) {
+    insights.push(`📌 Busiest day: ${DAY_LABELS[peakIdx]} averages ${dowAvgs[peakIdx].toFixed(1)} orders — restock supplies before ${DAY_LABELS[(peakIdx - 1 + 7) % 7]}`);
+    if (slowIdx >= 0 && slowIdx !== peakIdx) insights.push(`📌 Quietest day: ${DAY_LABELS[slowIdx]} averages ${dowAvgs[slowIdx].toFixed(1)} orders — best day for inventory counts and equipment servicing`);
+    if (weekdayAvg > 0 && weekendAvg > 0) {
+      const pct = Math.abs(Math.round(((weekendAvg - weekdayAvg) / weekdayAvg) * 100));
+      const dir = weekendAvg > weekdayAvg ? "higher" : "lower";
+      insights.push(`📌 Weekends are ${pct}% ${dir} than weekdays — ${weekendAvg > weekdayAvg ? "stock up before Saturday" : "lighter weekend load, schedule maintenance then"}`);
+    }
+    if (dowAvgs[peakIdx] > 0) {
+      const restockDay = DAY_LABELS[(peakIdx - 2 + 7) % 7];
+      insights.push(`📌 Recommended restock day: ${restockDay} — gives a full day buffer before the ${DAY_LABELS[peakIdx]} peak`);
+    }
+    insights.push(`📌 ${totalOrders} total orders over ${dailyOrderVolume.length} days · ${avgPerActiveDay} orders/active day avg · ${activeDays} active days`);
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex gap-3 flex-wrap">
-        {DAYS.map((day, ci) => {
-          const val = avgs[ci];
-          const intensity = maxVal > 0 ? val / maxVal : 0;
-          const lightness = Math.round(95 - intensity * 70);
-          const bg = intensity < 0.05 ? "#f8fafc" : `hsl(218,58%,${lightness}%)`;
-          const textColor = lightness < 55 ? "#fff" : "#1e293b";
-          return (
-            <div key={day} className="flex flex-col items-center gap-1">
-              <span className="text-xs text-muted-foreground font-medium">{day}</span>
-              <div style={{ background: bg, color: textColor, width: 56, height: 56, borderRadius: 8, border: "1px solid #e2e8f0" }}
-                className="flex flex-col items-center justify-center cursor-default"
-                title={`${day}: avg ${val > 0 ? val.toFixed(1) + " orders" : "no data"}`}>
-                <span className="text-sm font-bold">{val > 0 ? val.toFixed(1) : "—"}</span>
-                <span className="text-xs opacity-70">orders</span>
-              </div>
-            </div>
-          );
-        })}
+    <div className="space-y-5">
+      {/* Calendar grid */}
+      <div className="overflow-x-auto">
+        <table className="min-w-full border-collapse text-sm">
+          <thead>
+            <tr>
+              <th className="text-left pr-3 pb-2 text-xs font-semibold text-muted-foreground whitespace-nowrap w-24">Week</th>
+              {DAY_LABELS.map((d) => (
+                <th key={d} className="pb-2 text-center text-xs font-semibold text-muted-foreground w-14">{d}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {gridRows.map((row) => (
+              <tr key={row.weekLabel}>
+                <td className="pr-3 py-1 text-xs text-muted-foreground whitespace-nowrap align-middle">{row.weekLabel}</td>
+                {row.cells.map((cell, ci) => {
+                  const { bg, text } = cellColor(cell.count, cell.hasData);
+                  return (
+                    <td key={ci} className="py-1 px-0.5">
+                      <div
+                        style={{ background: bg, color: text, width: 52, height: 44, borderRadius: 6, border: "1px solid #e2e8f0" }}
+                        className="flex flex-col items-center justify-center mx-auto cursor-default"
+                        title={`${cell.display}: ${cell.hasData ? cell.count + " orders" : "no data"}`}>
+                        <span className="text-sm font-bold leading-none">{cell.hasData ? cell.count : "·"}</span>
+                        <span className="text-[10px] opacity-60 mt-0.5">{cell.display.split(" ")[1]}</span>
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+            {/* Day-of-week average row */}
+            <tr>
+              <td className="pr-3 pt-3 pb-1 text-xs font-semibold text-foreground whitespace-nowrap">Day avg</td>
+              {dowAvgs.map((avg, ci) => {
+                const intensity = maxCount > 0 ? avg / maxCount : 0;
+                const lightness = Math.round(95 - intensity * 68);
+                const bg = avg > 0 ? `hsl(218,58%,${lightness}%)` : "#f8fafc";
+                const text = lightness < 55 ? "#fff" : "#1e293b";
+                return (
+                  <td key={ci} className="pt-3 pb-1 px-0.5">
+                    <div style={{ background: bg, color: text, width: 52, height: 44, borderRadius: 6, border: "1px solid #e2e8f0" }}
+                      className="flex flex-col items-center justify-center mx-auto">
+                      <span className="text-sm font-bold leading-none">{avg > 0 ? avg.toFixed(1) : "—"}</span>
+                      <span className="text-[10px] opacity-60 mt-0.5">avg</span>
+                    </div>
+                  </td>
+                );
+              })}
+            </tr>
+          </tbody>
+        </table>
       </div>
+
+      {/* Color scale legend */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span>Low</span>
-        {[95, 78, 61, 44, 27].map((l) => (
-          <span key={l} style={{ background: `hsl(218,58%,${l}%)`, width: 14, height: 14, borderRadius: 2, display: "inline-block" }} />
+        <span>Fewer orders</span>
+        {[92, 78, 63, 48, 33].map((l) => (
+          <span key={l} style={{ background: `hsl(218,58%,${l}%)`, width: 16, height: 16, borderRadius: 3, display: "inline-block", border: "1px solid #e2e8f0" }} />
         ))}
-        <span>High</span>
+        <span>More orders</span>
+        <span className="ml-4 inline-flex items-center gap-1">
+          <span style={{ background: "#f1f5f9", width: 16, height: 16, borderRadius: 3, display: "inline-block", border: "1px solid #e2e8f0" }} />
+          No data
+        </span>
       </div>
+
+      {/* Insights */}
       {insights.length > 0 && (
-        <div className="rounded-xl bg-muted/30 p-4 space-y-1.5">
-          <p className="text-sm font-semibold text-foreground mb-1">Auto-Generated Insights</p>
-          {insights.map((insight, i) => <p key={i} className="text-sm text-foreground">{insight}</p>)}
+        <div className="rounded-xl bg-muted/30 border border-border/20 p-4 space-y-2">
+          <p className="text-sm font-semibold text-foreground">Operational Insights</p>
+          {insights.map((insight, i) => (
+            <p key={i} className="text-sm text-foreground leading-relaxed">{insight}</p>
+          ))}
         </div>
       )}
-      <p className="text-xs text-muted-foreground text-right">Last updated: {new Date().toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })}</p>
+
+      <p className="text-xs text-muted-foreground text-right">
+        Last refreshed: {new Date().toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })} · {dailyOrderVolume.length} days of data
+      </p>
     </div>
   );
 }
@@ -2182,7 +2283,7 @@ function WaveForecastPanel({
         </div>
       )}
       <p className="text-xs text-muted-foreground mb-3">
-        Weekday multipliers applied — usage is higher on busy days and lower on slow days, creating a realistic depletion wave instead of a flat line.
+        Usage is higher on your busiest days and lower on quiet days — giving a realistic picture of when stock runs out, not just a flat average line.
       </p>
       <ResponsiveContainer width="100%" height={280}>
         <LineChart data={chartData} margin={{ top: 12, right: 28, left: 16, bottom: 28 }}>
