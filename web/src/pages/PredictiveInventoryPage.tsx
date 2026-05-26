@@ -1147,7 +1147,7 @@ export default function PredictiveInventoryPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-foreground tracking-tight">Predictive Inventory</h1>
+          <h1 className="text-3xl font-bold text-foreground tracking-tight">Consumable Inventory</h1>
           <p className="text-base text-muted-foreground mt-1">
             {isStaff ? `Viewing inventory for ${userBranch || "your branch"}` : "Actionable restock dashboard for all branches."}
           </p>

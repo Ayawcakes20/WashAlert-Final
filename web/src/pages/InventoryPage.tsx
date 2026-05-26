@@ -49,7 +49,7 @@ type Tab = "predictive" | "assets";
 const ALL_TABS: { id: Tab; label: string; icon: typeof Package; description: string }[] = [
   {
     id: "predictive",
-    label: "Predictive Inventory",
+    label: "Consumable Inventory",
     icon: Package,
     description: "Consumables · Detergent & Fabric Conditioner · AI Forecasting",
   },
