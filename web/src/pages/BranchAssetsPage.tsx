@@ -21,6 +21,11 @@ import {
 } from "@/components/ui/select";
 import { getSessionUser } from "@/lib/session";
 import { inventoryApi } from "@/lib/api";
+import { runBranchAssetSeedOnce } from "@/lib/branchAssetSeed";
+
+// Seed realistic branch asset records into localStorage on first load.
+// Runs synchronously before useState(loadAssets) so data is present immediately.
+runBranchAssetSeedOnce();
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
