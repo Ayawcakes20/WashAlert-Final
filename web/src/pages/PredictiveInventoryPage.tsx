@@ -1011,12 +1011,9 @@ export default function PredictiveInventoryPage() {
   const openDelete = (row: InventoryItem) => { setSelectedItem(row); setDeleteOpen(true); };
 
   const submitCreate = async () => {
-    const isAssetCreate = createForm.assetType === "Asset";
-    const computedItemName = isAssetCreate
-      ? `${createForm.brand.trim()} ${createForm.category.trim()}`.trim()
-      : createForm.itemName.trim();
+    const computedItemName = createForm.itemName.trim();
     if (!createForm.branch.trim() || !computedItemName || !createForm.category.trim() || !createForm.unit.trim()) {
-      toast.error(isAssetCreate ? "Branch, asset type, and brand are required." : "Branch, item name, category, and unit are required."); return;
+      toast.error("Branch, item name, category, and unit are required."); return;
     }
     setCreateSubmitting(true);
     try {
@@ -1024,11 +1021,7 @@ export default function PredictiveInventoryPage() {
         branch: createForm.branch.trim(), itemName: computedItemName,
         category: createForm.category.trim(), unit: createForm.unit.trim(),
         currentStock: Number(createForm.currentStock || 0), reorderLevel: Number(createForm.reorderLevel || 0),
-        assetType: createForm.assetType || null,
-        purchaseDate: createForm.purchaseDate || null,
-        lastServicedDate: createForm.lastServicedDate || null,
-        maintenanceIntervalDays: createForm.maintenanceIntervalDays ? Number(createForm.maintenanceIntervalDays) : null,
-        assetStatus: isAssetCreate ? (createForm.assetStatus || "Active") : null,
+        assetType: "Consumable",
       } as any);
       toast.success("Inventory item created.");
       setCreateOpen(false);
@@ -1146,7 +1139,7 @@ export default function PredictiveInventoryPage() {
           <div className="flex items-center gap-2 text-amber-900 text-sm font-medium">
             <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
             <span>
-              {actionItems.criticalCount} item{actionItems.criticalCount > 1 ? "s" : ""} need{actionItems.criticalCount === 1 ? "s" : ""} restocking now
+              {actionItems.criticalCount} supply item{actionItems.criticalCount > 1 ? "s" : ""} need{actionItems.criticalCount === 1 ? "s" : ""} restocking now — stock will run out within 7 days
             </span>
           </div>
           <button onClick={() => setBannerDismissed(true)} className="shrink-0 text-amber-700 hover:text-amber-900 transition-colors" aria-label="Dismiss">
@@ -1479,195 +1472,6 @@ export default function PredictiveInventoryPage() {
         )}
       </div>
 
-      {/* Branch Equipment Register has been moved to Branch Assets page */}
-      {false && (
-        <div className="glass-card rounded-2xl overflow-hidden">
-          <div className="p-6 border-b border-border/30 flex items-center gap-3">
-            <Wrench className="h-5 w-5 text-primary" />
-            <div>
-              <h2 className="text-xl font-semibold text-foreground">Branch Equipment Register</h2>
-              <p className="text-sm text-muted-foreground mt-0.5">Physical equipment tracked by maintenance schedule — washing machines, dryers, aircon, fans. No stock level applies.</p>
-            </div>
-          </div>
-          {/* Asset summary banner */}
-          {(() => {
-            const overdue = assetItems.filter((a) => a.daysUntilService !== null && a.daysUntilService !== undefined && a.daysUntilService < 0).length;
-            const dueSoon = assetItems.filter((a) => a.daysUntilService !== null && a.daysUntilService !== undefined && a.daysUntilService >= 0 && a.daysUntilService <= 14).length;
-            const onTrack = assetItems.length - overdue - dueSoon;
-            return (
-              <div className="px-6 py-3 bg-muted/10 border-b border-border/20 flex flex-wrap gap-5 text-sm">
-                {overdue > 0 && <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-500 shrink-0" /><strong className="text-red-700">{overdue}</strong><span className="text-muted-foreground">overdue for service</span></span>}
-                {dueSoon > 0 && <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-500 shrink-0" /><strong className="text-amber-700">{dueSoon}</strong><span className="text-muted-foreground">service due within 14 days</span></span>}
-                <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500 shrink-0" /><strong className="text-emerald-700">{onTrack}</strong><span className="text-muted-foreground">on track</span></span>
-                <span className="text-muted-foreground ml-auto">{assetItems.length} total equipment unit{assetItems.length !== 1 ? "s" : ""}</span>
-              </div>
-            );
-          })()}
-
-          {/* Desktop table */}
-          <div className="overflow-x-auto hidden md:block">
-            <table className="w-full min-w-[860px] text-sm">
-              <thead>
-                <tr className="border-b border-border/30 bg-muted/20">
-                  <th className="text-left p-4 font-semibold text-[15px] text-foreground">Equipment</th>
-                  <th className="text-left p-4 font-semibold text-[15px] text-foreground">Condition</th>
-                  <th className="text-left p-4 font-semibold text-[15px] text-foreground">
-                    <span className="inline-flex items-center gap-1">Service Status <InfoHint text="Based on days until next scheduled service. Overdue = past due date, Due Soon = within 14 days." /></span>
-                  </th>
-                  <th className="text-left p-4 font-semibold text-[15px] text-foreground">Last Serviced</th>
-                  <th className="text-left p-4 font-semibold text-[15px] text-foreground">Next Service Due</th>
-                  <th className="text-left p-4 font-semibold text-[15px] text-foreground">
-                    <span className="inline-flex items-center gap-1">Maintenance Cycle <InfoHint text="How far through the current service interval this equipment is. Red bar = overdue." /></span>
-                  </th>
-                  <th className="text-left p-4 font-semibold text-[15px] text-foreground">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {assetItems.map((asset) => {
-                  const isExpanded = expandedRowId === asset.id;
-                  const days = asset.daysUntilService;
-                  const svcStatus = days === null
-                    ? { label: "No Schedule", cls: "bg-slate-100 text-slate-500" }
-                    : days < 0
-                    ? { label: `Overdue ${Math.abs(days)}d`, cls: "bg-red-100 text-red-700" }
-                    : days <= 7
-                    ? { label: `Due in ${days}d`, cls: "bg-red-100 text-red-700" }
-                    : days <= 14
-                    ? { label: `Due in ${days}d`, cls: "bg-amber-100 text-amber-700" }
-                    : { label: `In ${days}d`, cls: "bg-emerald-100 text-emerald-700" };
-                  const nextSvc = asset.lastServicedDate && asset.maintenanceIntervalDays
-                    ? new Date(new Date(asset.lastServicedDate).getTime() + asset.maintenanceIntervalDays * 86400000)
-                    : null;
-                  let cyclePct = 0;
-                  let cycleColor = "#10B981";
-                  if (asset.lastServicedDate && asset.maintenanceIntervalDays) {
-                    const daysSince = Math.floor((Date.now() - new Date(asset.lastServicedDate).getTime()) / 86400000);
-                    cyclePct = Math.min(100, Math.round((daysSince / asset.maintenanceIntervalDays) * 100));
-                    cycleColor = cyclePct >= 100 ? "#EF4444" : cyclePct >= 80 ? "#F59E0B" : "#10B981";
-                  }
-                  return (
-                    <>
-                      <tr key={asset.id} className="border-b border-border/20 hover:bg-muted/20 align-middle">
-                        <td className="p-4">
-                          <div className="flex items-center gap-2">
-                            <Wrench className="h-4 w-4 text-primary shrink-0" />
-                            <div>
-                              <p className="font-semibold text-foreground text-base">{asset.product}</p>
-                              <p className="text-xs text-muted-foreground">{asset.branch} · {asset.category}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <span className={`text-sm font-semibold px-3 py-1 rounded-full ${assetStatusStyle[asset.assetStatus || "Active"] ?? assetStatusStyle["Active"]}`}>
-                            {asset.assetStatus || "Active"}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <span className={`text-sm font-semibold px-2 py-0.5 rounded-full ${svcStatus.cls}`}>{svcStatus.label}</span>
-                        </td>
-                        <td className="p-4 text-sm text-foreground">
-                          {asset.lastServicedDate
-                            ? new Date(asset.lastServicedDate).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
-                            : <span className="text-muted-foreground text-xs">Not recorded</span>}
-                        </td>
-                        <td className="p-4 text-sm text-foreground">
-                          {nextSvc
-                            ? nextSvc.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
-                            : <span className="text-muted-foreground text-xs">No schedule</span>}
-                        </td>
-                        <td className="p-4 min-w-[160px]">
-                          {asset.maintenanceIntervalDays ? (
-                            <div className="space-y-1">
-                              <div className="h-2.5 bg-muted rounded-full overflow-hidden">
-                                <div style={{ width: `${cyclePct}%`, background: cycleColor }} className="h-full rounded-full transition-all" />
-                              </div>
-                              <p className="text-xs text-muted-foreground">{cyclePct}% of {asset.maintenanceIntervalDays}-day cycle</p>
-                            </div>
-                          ) : <span className="text-xs text-muted-foreground">No interval set</span>}
-                        </td>
-                        <td className="p-4">
-                          <div className="flex flex-wrap gap-2">
-                            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
-                              disabled={markServicedLoading && markServicedId === asset.id}
-                              onClick={() => void handleMarkServiced(asset.id)}>
-                              {markServicedLoading && markServicedId === asset.id ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                              Mark Serviced
-                            </Button>
-                            <Button size="sm" variant="outline"
-                              onClick={() => setExpandedRowId((v) => (v === asset.id ? null : asset.id))}>
-                              {isExpanded ? "Hide" : "Details"}
-                              <ChevronDown className={`h-4 w-4 ml-1 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                      {isExpanded && (
-                        <tr className="border-b border-border/20 bg-muted/10">
-                          <td colSpan={7} className="p-5">
-                            <AssetDetailPanel item={asset} onEdit={openEdit} onDelete={openDelete} onServiced={handleMarkServiced} markServicedLoading={markServicedLoading} markServicedId={markServicedId} isAdmin={isAdmin} isStaff={isStaff} />
-                          </td>
-                        </tr>
-                      )}
-                    </>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Mobile card view — assets */}
-          <div className="md:hidden divide-y divide-border/20">
-            {assetItems.map((asset) => {
-              const days = asset.daysUntilService;
-              const svcStatus = days === null ? { label: "No Schedule", cls: "bg-slate-100 text-slate-500" }
-                : days < 0 ? { label: `Overdue ${Math.abs(days)}d`, cls: "bg-red-100 text-red-700" }
-                : days <= 14 ? { label: `Due in ${days}d`, cls: "bg-amber-100 text-amber-700" }
-                : { label: `In ${days}d`, cls: "bg-emerald-100 text-emerald-700" };
-              let cyclePct = 0; let cycleColor = "#10B981";
-              if (asset.lastServicedDate && asset.maintenanceIntervalDays) {
-                const ds = Math.floor((Date.now() - new Date(asset.lastServicedDate).getTime()) / 86400000);
-                cyclePct = Math.min(100, Math.round((ds / asset.maintenanceIntervalDays) * 100));
-                cycleColor = cyclePct >= 100 ? "#EF4444" : cyclePct >= 80 ? "#F59E0B" : "#10B981";
-              }
-              const isExpanded = expandedRowId === asset.id;
-              return (
-                <div key={asset.id} className="p-4 space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="font-semibold text-foreground text-base">{asset.product}</p>
-                      <p className="text-xs text-muted-foreground">{asset.branch} · {asset.category}</p>
-                    </div>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${svcStatus.cls}`}>{svcStatus.label}</span>
-                  </div>
-                  {asset.maintenanceIntervalDays && (
-                    <div className="space-y-1">
-                      <div className="h-2 bg-muted rounded-full overflow-hidden">
-                        <div style={{ width: `${cyclePct}%`, background: cycleColor }} className="h-full rounded-full" />
-                      </div>
-                      <p className="text-xs text-muted-foreground">{cyclePct}% of {asset.maintenanceIntervalDays}-day service cycle</p>
-                    </div>
-                  )}
-                  <div className="flex gap-2 pt-1">
-                    <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
-                      disabled={markServicedLoading && markServicedId === asset.id}
-                      onClick={() => void handleMarkServiced(asset.id)}>
-                      Mark Serviced
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setExpandedRowId((v) => (v === asset.id ? null : asset.id))}>
-                      {isExpanded ? "Hide" : "Details"}
-                    </Button>
-                  </div>
-                  {isExpanded && (
-                    <div className="pt-2">
-                      <AssetDetailPanel item={asset} onEdit={openEdit} onDelete={openDelete} onServiced={handleMarkServiced} markServicedLoading={markServicedLoading} markServicedId={markServicedId} isAdmin={isAdmin} isStaff={isStaff} />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* ── Operations KPI Cards ── */}
       {!loading && operationsKpi && (
