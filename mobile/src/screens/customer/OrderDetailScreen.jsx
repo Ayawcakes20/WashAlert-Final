@@ -711,7 +711,7 @@ export default function OrderDetailScreen({ route, navigation }) {
           {/* Pay Now button for GCash — hidden once payment is settled (PAID, VERIFIED, or isPaid) */}
           {String(order.paymentMethod || '').toLowerCase() === 'gcash' &&
            !isPaymentSettled(order) &&
-           ['price_approved', 'washing', 'ready_for_delivery', 'delivering'].includes(ns) && (
+           ['price_approved', 'washing', 'drying', 'ready', 'delivering'].includes(ns) && (
             <TouchableOpacity
               style={styles.payNowBtn}
               onPress={payNow}
