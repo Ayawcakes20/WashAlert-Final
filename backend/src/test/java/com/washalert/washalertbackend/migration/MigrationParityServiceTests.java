@@ -58,7 +58,7 @@ class MigrationParityServiceTests {
                 new MachineResponse(1L, "M-1", "Main", MachineType.WASHER, MachineStatus.AVAILABLE, LocalDateTime.now())
         ));
         when(firestoreReadService.listInventoryItems()).thenReturn(List.of(
-                new InventoryItemResponse(1L, "Main", "Detergent", "Supplies", "kg", BigDecimal.ONE, BigDecimal.ONE, true, 30, true, LocalDateTime.now())
+                new InventoryItemResponse(1L, "Main", "Detergent", "Supplies", "kg", BigDecimal.ONE, BigDecimal.ONE, true, 30, true, LocalDateTime.now(), null, null, null, null, null, null)
         ));
         when(firestoreReadService.listOrders()).thenReturn(List.of(
                 JobOrderResponse.builder()

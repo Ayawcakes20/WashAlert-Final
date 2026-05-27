@@ -11,6 +11,7 @@ import com.washalert.washalertbackend.payment.dto.PaymentResponse;
 import com.washalert.washalertbackend.payment.dto.SubmitPaymentProofRequest;
 import com.washalert.washalertbackend.payment.dto.VerifyPaymentRequest;
 import com.washalert.washalertbackend.notification.NotificationService;
+import com.washalert.washalertbackend.support.GeminiChatClient;
 import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
@@ -34,6 +35,7 @@ public class PaymentService {
     private final PaymongoService paymongoService;
     private final JobOrderTimelineService timelineService;
     private final FirestoreSyncService firestoreSyncService;
+    private final GeminiChatClient geminiChatClient;
 
     public PaymentService(
             PaymentRecordRepository paymentRepository,
@@ -41,7 +43,8 @@ public class PaymentService {
             NotificationService notificationService,
             PaymongoService paymongoService,
             JobOrderTimelineService timelineService,
-            FirestoreSyncService firestoreSyncService
+            FirestoreSyncService firestoreSyncService,
+            GeminiChatClient geminiChatClient
     ) {
         this.paymentRepository = paymentRepository;
         this.orderRepository = orderRepository;
@@ -49,6 +52,7 @@ public class PaymentService {
         this.paymongoService = paymongoService;
         this.timelineService = timelineService;
         this.firestoreSyncService = firestoreSyncService;
+        this.geminiChatClient = geminiChatClient;
     }
 
     @Transactional
@@ -62,6 +66,13 @@ public class PaymentService {
                 .orElseGet(() -> PaymentRecord.builder().jobOrder(order).build());
         if (payment.getStatus() == PaymentStatus.VERIFIED || payment.getStatus() == PaymentStatus.PAID) {
             throw new IllegalStateException("Payment is already verified/paid and cannot be replaced.");
+        }
+
+        if (req.method() == PaymentMethod.GCASH) {
+            boolean isValidGcashReceipt = geminiChatClient.validateGcashReceipt(req.proofUrl().trim());
+            if (!isValidGcashReceipt) {
+                throw new IllegalArgumentException("The uploaded photo does not appear to be a valid GCash receipt. Please upload a screenshot of your successful GCash transaction.");
+            }
         }
 
         payment.setMethod(req.method());

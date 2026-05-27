@@ -379,4 +379,87 @@ public class GeminiChatClient {
         String encodedKey = URLEncoder.encode(apiKey, StandardCharsets.UTF_8);
         return "%s/models/%s:generateContent?key=%s".formatted(normalizeBaseUrl(baseUrl), model, encodedKey);
     }
+
+    public boolean validateGcashReceipt(String imageUrl) {
+        if (!isConfigured()) {
+            log.warn("[GEMINI][RECEIPT] API key is not configured. Skipping validation.");
+            return true;
+        }
+        if (imageUrl == null || imageUrl.isBlank()) {
+            log.warn("[GEMINI][RECEIPT] Empty receipt image URL. Skipping validation.");
+            return true;
+        }
+
+        try {
+            log.info("[GEMINI][RECEIPT] Starting validation for image: {}", imageUrl);
+            HttpRequest downloadRequest = HttpRequest.newBuilder(URI.create(imageUrl))
+                    .GET()
+                    .build();
+            HttpResponse<byte[]> downloadResponse = httpClient.send(downloadRequest, HttpResponse.BodyHandlers.ofByteArray());
+            if (downloadResponse.statusCode() != 200) {
+                log.error("[GEMINI][RECEIPT] Failed to download image. Status: {}", downloadResponse.statusCode());
+                return true; // Fallback to avoid blocking customers
+            }
+
+            byte[] imageBytes = downloadResponse.body();
+            String contentType = downloadResponse.headers().firstValue("Content-Type").orElse("image/jpeg");
+            String base64Image = java.util.Base64.getEncoder().encodeToString(imageBytes);
+
+            ObjectNode payload = objectMapper.createObjectNode();
+
+            ArrayNode contents = objectMapper.createArrayNode();
+            ObjectNode contentNode = objectMapper.createObjectNode();
+            contentNode.put("role", "user");
+
+            ArrayNode parts = objectMapper.createArrayNode();
+
+            ObjectNode textPart = objectMapper.createObjectNode();
+            textPart.put("text",
+                    "You are an automated system that validates payment receipts for a laundry app.\n" +
+                    "Determine if this image is a valid GCash receipt or screenshot showing a successful transfer, Express Send, or QR payment transaction inside the GCash app.\n" +
+                    "Look for GCash branding, logo, transaction receipt details, 'Sent to', 'Ref No.', or other clear indicators of a GCash payment receipt.\n" +
+                    "If it is a valid GCash receipt (even if it's a partial screenshot or cropped, but clearly a GCash receipt/transaction confirmation), respond with EXACTLY: VALID.\n" +
+                    "If it is NOT a GCash receipt (for example: a screenshot of another app, a photo of a person, animal, random object, document, or anything that is NOT a GCash receipt), respond with EXACTLY: INVALID."
+            );
+            parts.add(textPart);
+
+            ObjectNode imagePart = objectMapper.createObjectNode();
+            ObjectNode inlineData = objectMapper.createObjectNode();
+            inlineData.put("mimeType", contentType);
+            inlineData.put("data", base64Image);
+            imagePart.set("inlineData", inlineData);
+            parts.add(imagePart);
+
+            contentNode.set("parts", parts);
+            contents.add(contentNode);
+            payload.set("contents", contents);
+
+            ObjectNode generationConfig = objectMapper.createObjectNode();
+            generationConfig.put("temperature", 0.0);
+            payload.set("generationConfig", generationConfig);
+
+            HttpRequest apiRequest = HttpRequest.newBuilder(URI.create(buildGenerateContentUrl()))
+                    .timeout(Duration.ofSeconds(30))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
+                    .build();
+
+            HttpResponse<String> apiResponse = httpClient.send(apiRequest, HttpResponse.BodyHandlers.ofString());
+            String body = apiResponse.body() == null ? "" : apiResponse.body();
+
+            if (apiResponse.statusCode() >= 400) {
+                log.error("[GEMINI][RECEIPT] API error ({}): {}", apiResponse.statusCode(), body);
+                return true; // Fallback
+            }
+
+            JsonNode root = objectMapper.readTree(body);
+            String resultText = extractContent(root).trim().toUpperCase();
+            log.info("[GEMINI][RECEIPT] Validation result text: {}", resultText);
+
+            return resultText.contains("VALID") && !resultText.contains("INVALID");
+        } catch (Exception e) {
+            log.error("[GEMINI][RECEIPT] Exception during validation: {}", e.getMessage(), e);
+            return true; // Fallback
+        }
+    }
 }
