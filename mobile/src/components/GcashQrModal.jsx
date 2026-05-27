@@ -19,6 +19,7 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
   const [loading, setLoading] = useState(false);
   const [referenceNumber, setReferenceNumber] = useState('');
   const [screenshotUri, setScreenshotUri] = useState(null);
+  const [uploadedProofUrl, setUploadedProofUrl] = useState(null);
 
   const amountToPay = order?.finalPrice ?? order?.amount ?? order?.totalPrice ?? 0;
   const trackingNumber = order?.trackingNumber || order?.orderId || '';
@@ -38,7 +39,33 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setScreenshotUri(result.assets[0].uri);
+        const uri = result.assets[0].uri;
+        setLoading(true);
+        try {
+          // 1. Upload receipt to Firebase Storage immediately
+          const uploadResult = await uploadImageAsync(uri, {
+            idToken: firebaseIdToken,
+            folder: 'payments',
+          });
+          const proofUrl = uploadResult.downloadURL;
+
+          // 2. Validate receipt on the backend using Gemini
+          await payments.validateReceipt(proofUrl);
+
+          // Validation succeeded
+          setScreenshotUri(uri);
+          setUploadedProofUrl(proofUrl);
+        } catch (valErr) {
+          console.warn('[GcashQrModal] Receipt validation failed:', valErr);
+          Alert.alert(
+            'Invalid Receipt',
+            valErr.message || 'The selected image is not a valid GCash receipt screenshot. Please select a genuine GCash receipt.'
+          );
+          setScreenshotUri(null);
+          setUploadedProofUrl(null);
+        } finally {
+          setLoading(false);
+        }
       }
     } catch (err) {
       console.warn('[GcashQrModal] Image selection failed:', err);
@@ -63,16 +90,18 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
 
     setLoading(true);
     try {
-      // 1. Upload receipt to Firebase Storage
-      let proofUrl = '';
-      try {
-        const uploadResult = await uploadImageAsync(screenshotUri, {
-          idToken: firebaseIdToken,
-          folder: 'payments',
-        });
-        proofUrl = uploadResult.downloadURL;
-      } catch (uploadErr) {
-        throw new Error(`Receipt upload failed: ${uploadErr.message}`);
+      // Use pre-uploaded & validated proof URL, fallback to upload if missing
+      let proofUrl = uploadedProofUrl;
+      if (!proofUrl) {
+        try {
+          const uploadResult = await uploadImageAsync(screenshotUri, {
+            idToken: firebaseIdToken,
+            folder: 'payments',
+          });
+          proofUrl = uploadResult.downloadURL;
+        } catch (uploadErr) {
+          throw new Error(`Receipt upload failed: ${uploadErr.message}`);
+        }
       }
 
       if (!proofUrl) {
@@ -109,6 +138,7 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
   const handleClose = () => {
     setReferenceNumber('');
     setScreenshotUri(null);
+    setUploadedProofUrl(null);
     onClose?.();
   };
 
@@ -175,13 +205,17 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
                 onPress={handleSelectImage}
                 disabled={loading}
               >
-                <Ionicons
-                  name={screenshotUri ? 'checkmark-circle' : 'cloud-upload-outline'}
-                  size={20}
-                  color={screenshotUri ? colors.success : colors.primary}
-                />
+                {loading && !screenshotUri ? (
+                  <ActivityIndicator color={colors.primary} size="small" />
+                ) : (
+                  <Ionicons
+                    name={screenshotUri ? 'checkmark-circle' : 'cloud-upload-outline'}
+                    size={20}
+                    color={screenshotUri ? colors.success : colors.primary}
+                  />
+                )}
                 <Text style={[S.uploadBtnTxt, screenshotUri && { color: colors.success }]}>
-                  {screenshotUri ? 'Receipt Selected (Tap to Change)' : 'Choose Screenshot from Gallery'}
+                  {loading && !screenshotUri ? 'Uploading & Validating...' : screenshotUri ? 'Receipt Selected (Tap to Change)' : 'Choose Screenshot from Gallery'}
                 </Text>
               </TouchableOpacity>
 

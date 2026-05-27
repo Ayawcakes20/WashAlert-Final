@@ -36,6 +36,19 @@ public class PaymentController {
         return paymentService.submitProof(req);
     }
 
+    @PostMapping("/validate")
+    public java.util.Map<String, Boolean> validateReceipt(@RequestBody java.util.Map<String, String> body) {
+        String proofUrl = body.get("proofUrl");
+        if (proofUrl == null || proofUrl.isBlank()) {
+            throw new IllegalArgumentException("Proof URL is required.");
+        }
+        boolean isValid = paymentService.validateGcashReceipt(proofUrl);
+        if (!isValid) {
+            throw new IllegalArgumentException("The uploaded photo does not appear to be a valid GCash receipt. Please upload a screenshot of your successful GCash transaction.");
+        }
+        return java.util.Map.of("valid", true);
+    }
+
     @PostMapping("/checkout/gcash/{trackingNumber}")
     public GcashCheckoutResponse initiateGcashCheckout(@PathVariable String trackingNumber) {
         // ResponseStatusException from the service propagates naturally — no wrapper needed.

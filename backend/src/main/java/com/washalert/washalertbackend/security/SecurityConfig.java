@@ -100,6 +100,7 @@ public class SecurityConfig {
                                 "/api/bookings/check-supplies",
                                 "/api/payments/checkout/**",
                                 "/api/payments/proof",
+                                "/api/payments/validate",
                                 "/api/support/chat",
                                 "/api/orders/**",
                                 "/api/deliveries/**",
@@ -176,7 +177,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/logout").authenticated()
 
                         // /api/payments/proof requires CUSTOMER authentication
-                        .requestMatchers(HttpMethod.POST, "/api/payments/proof").hasRole("CUSTOMER")
+                        .requestMatchers(HttpMethod.POST, "/api/payments/proof", "/api/payments/validate").hasRole("CUSTOMER")
 
                         .requestMatchers(HttpMethod.GET, "/api/admin/users/drivers").hasAnyRole("ADMIN", "STAFF")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")

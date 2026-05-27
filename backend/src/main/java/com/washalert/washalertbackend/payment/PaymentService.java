@@ -350,6 +350,14 @@ public class PaymentService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public boolean validateGcashReceipt(String proofUrl) {
+        if (proofUrl == null || proofUrl.isBlank()) {
+            throw new IllegalArgumentException("Proof URL is required.");
+        }
+        return geminiChatClient.validateGcashReceipt(proofUrl.trim());
+    }
+
     private String normalizeTracking(String tracking) {
         if (tracking == null || tracking.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tracking number is required.");

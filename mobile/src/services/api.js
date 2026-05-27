@@ -1517,6 +1517,13 @@ export const payments = {
     });
   },
 
+  validateReceipt: async (proofUrl) => {
+    return apiRequest('/api/payments/validate', {
+      method: 'POST',
+      body: { proofUrl },
+    });
+  },
+
   /**
    * Fetch the latest payment status for a given tracking number from the backend.
    * Returns { status, method, amount } or null if no payment record exists yet.
