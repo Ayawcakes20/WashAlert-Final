@@ -380,14 +380,16 @@ public class GeminiChatClient {
         return "%s/models/%s:generateContent?key=%s".formatted(normalizeBaseUrl(baseUrl), model, encodedKey);
     }
 
-    public boolean validateGcashReceipt(String imageUrl) {
+    public static record ReceiptValidationResult(boolean valid, String referenceNumber) {}
+
+    public ReceiptValidationResult validateGcashReceipt(String imageUrl) {
         if (!isConfigured()) {
             log.warn("[GEMINI][RECEIPT] API key is not configured. Skipping validation.");
-            return true;
+            return new ReceiptValidationResult(true, null);
         }
         if (imageUrl == null || imageUrl.isBlank()) {
             log.warn("[GEMINI][RECEIPT] Empty receipt image URL. Skipping validation.");
-            return true;
+            return new ReceiptValidationResult(true, null);
         }
 
         try {
@@ -398,7 +400,7 @@ public class GeminiChatClient {
             HttpResponse<byte[]> downloadResponse = httpClient.send(downloadRequest, HttpResponse.BodyHandlers.ofByteArray());
             if (downloadResponse.statusCode() != 200) {
                 log.error("[GEMINI][RECEIPT] Failed to download image. Status: {}", downloadResponse.statusCode());
-                return true; // Fallback to avoid blocking customers
+                return new ReceiptValidationResult(true, null); // Fallback to avoid blocking customers
             }
 
             byte[] imageBytes = downloadResponse.body();
@@ -417,9 +419,12 @@ public class GeminiChatClient {
             textPart.put("text",
                     "You are an automated system that validates payment receipts for a laundry app.\n" +
                     "Determine if this image is a valid GCash receipt or screenshot showing a successful transfer, Express Send, or QR payment transaction inside the GCash app.\n" +
-                    "Look for GCash branding, logo, transaction receipt details, 'Sent to', 'Ref No.', or other clear indicators of a GCash payment receipt.\n" +
-                    "If it is a valid GCash receipt (even if it's a partial screenshot or cropped, but clearly a GCash receipt/transaction confirmation), respond with EXACTLY: VALID.\n" +
-                    "If it is NOT a GCash receipt (for example: a screenshot of another app, a photo of a person, animal, random object, document, or anything that is NOT a GCash receipt), respond with EXACTLY: INVALID."
+                    "Look for GCash branding, logo, transaction receipt details, 'Sent to', 'Ref No.', or other clear indicators of a GCash payment receipt.\n\n" +
+                    "You must respond with a JSON object containing two fields:\n" +
+                    "1. \"valid\": boolean, true if the image is a valid GCash receipt screenshot, false otherwise.\n" +
+                    "2. \"referenceNumber\": string, the 13-digit reference number extracted from the receipt if it is valid (look for labels like 'Ref No.', 'Ref. No.', 'Reference No.', 'Instapay Ref No.', or any 13-digit number near the top/bottom), or null if not found or if the image is invalid.\n\n" +
+                    "Respond ONLY with the raw JSON object. Do not wrap it in markdown block code or add any other text. Example:\n" +
+                    "{\"valid\": true, \"referenceNumber\": \"5013749285918\"}"
             );
             parts.add(textPart);
 
@@ -449,17 +454,36 @@ public class GeminiChatClient {
 
             if (apiResponse.statusCode() >= 400) {
                 log.error("[GEMINI][RECEIPT] API error ({}): {}", apiResponse.statusCode(), body);
-                return true; // Fallback
+                return new ReceiptValidationResult(true, null); // Fallback
             }
 
             JsonNode root = objectMapper.readTree(body);
-            String resultText = extractContent(root).trim().toUpperCase();
-            log.info("[GEMINI][RECEIPT] Validation result text: {}", resultText);
+            String resultText = extractContent(root).trim();
+            if (resultText.startsWith("```")) {
+                int firstLineBreak = resultText.indexOf('\n');
+                if (firstLineBreak != -1) {
+                    resultText = resultText.substring(firstLineBreak + 1);
+                } else {
+                    resultText = resultText.substring(3);
+                }
+            }
+            if (resultText.endsWith("```")) {
+                resultText = resultText.substring(0, resultText.length() - 3);
+            }
+            resultText = resultText.trim();
 
-            return resultText.contains("VALID") && !resultText.contains("INVALID");
+            JsonNode decisionNode = objectMapper.readTree(resultText);
+            boolean valid = decisionNode.path("valid").asBoolean();
+            String referenceNumber = decisionNode.path("referenceNumber").isNull() ? null : decisionNode.path("referenceNumber").asText().trim();
+            if (referenceNumber != null && referenceNumber.isEmpty()) {
+                referenceNumber = null;
+            }
+
+            log.info("[GEMINI][RECEIPT] Validation parsed result: valid={}, ref={}", valid, referenceNumber);
+            return new ReceiptValidationResult(valid, referenceNumber);
         } catch (Exception e) {
             log.error("[GEMINI][RECEIPT] Exception during validation: {}", e.getMessage(), e);
-            return true; // Fallback
+            return new ReceiptValidationResult(true, null); // Fallback
         }
     }
 }

@@ -37,16 +37,19 @@ public class PaymentController {
     }
 
     @PostMapping("/validate")
-    public java.util.Map<String, Boolean> validateReceipt(@RequestBody java.util.Map<String, String> body) {
+    public java.util.Map<String, Object> validateReceipt(@RequestBody java.util.Map<String, String> body) {
         String proofUrl = body.get("proofUrl");
         if (proofUrl == null || proofUrl.isBlank()) {
             throw new IllegalArgumentException("Proof URL is required.");
         }
-        boolean isValid = paymentService.validateGcashReceipt(proofUrl);
-        if (!isValid) {
+        com.washalert.washalertbackend.support.GeminiChatClient.ReceiptValidationResult result = paymentService.validateGcashReceipt(proofUrl);
+        if (!result.valid()) {
             throw new IllegalArgumentException("The uploaded photo does not appear to be a valid GCash receipt. Please upload a screenshot of your successful GCash transaction.");
         }
-        return java.util.Map.of("valid", true);
+        java.util.Map<String, Object> response = new java.util.HashMap<>();
+        response.put("valid", true);
+        response.put("referenceNumber", result.referenceNumber());
+        return response;
     }
 
     @PostMapping("/checkout/gcash/{trackingNumber}")

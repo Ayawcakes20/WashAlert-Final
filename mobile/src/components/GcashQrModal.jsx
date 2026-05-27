@@ -50,11 +50,24 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
           const proofUrl = uploadResult.downloadURL;
 
           // 2. Validate receipt on the backend using Gemini
-          await payments.validateReceipt(proofUrl);
+          const valResult = await payments.validateReceipt(proofUrl);
 
           // Validation succeeded
           setScreenshotUri(uri);
           setUploadedProofUrl(proofUrl);
+
+          if (valResult && valResult.referenceNumber) {
+            setReferenceNumber(valResult.referenceNumber);
+            Alert.alert(
+              'Receipt Verified!',
+              `GCash receipt verified successfully. We have auto-filled the Reference Number (${valResult.referenceNumber}) for you.`
+            );
+          } else {
+            Alert.alert(
+              'Receipt Attached',
+              'GCash receipt attached successfully. Please enter the 13-digit Reference Number manually.'
+            );
+          }
         } catch (valErr) {
           console.warn('[GcashQrModal] Receipt validation failed:', valErr);
           Alert.alert(

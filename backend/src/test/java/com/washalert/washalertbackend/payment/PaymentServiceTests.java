@@ -114,7 +114,8 @@ class PaymentServiceTests {
 
         when(orderRepository.findByTrackingNumber("WA-10017")).thenReturn(Optional.of(order));
         when(paymentRepository.findByJobOrder_TrackingNumber("WA-10017")).thenReturn(Optional.empty());
-        when(geminiChatClient.validateGcashReceipt("https://firebase/storage/proof.jpg")).thenReturn(true);
+        when(geminiChatClient.validateGcashReceipt("https://firebase/storage/proof.jpg"))
+                .thenReturn(new GeminiChatClient.ReceiptValidationResult(true, "5013749285918"));
         when(paymentRepository.save(any(PaymentRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         PaymentResponse res = paymentService.submitProof(req);
@@ -142,10 +143,37 @@ class PaymentServiceTests {
 
         when(orderRepository.findByTrackingNumber("WA-10017")).thenReturn(Optional.of(order));
         when(paymentRepository.findByJobOrder_TrackingNumber("WA-10017")).thenReturn(Optional.empty());
-        when(geminiChatClient.validateGcashReceipt("https://firebase/storage/proof.jpg")).thenReturn(false);
+        when(geminiChatClient.validateGcashReceipt("https://firebase/storage/proof.jpg"))
+                .thenReturn(new GeminiChatClient.ReceiptValidationResult(false, null));
 
         assertThatThrownBy(() -> paymentService.submitProof(req))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("The uploaded photo does not appear to be a valid GCash receipt. Please upload a screenshot of your successful GCash transaction.");
+    }
+
+    @Test
+    void submitProofWithMismatchedGcashReferenceThrowsIllegalArgumentException() {
+        JobOrder order = JobOrder.builder()
+                .id(17L)
+                .trackingNumber("WA-10017")
+                .status(JobOrderStatus.PRICE_CONFIRMED)
+                .build();
+
+        SubmitPaymentProofRequest req = new SubmitPaymentProofRequest(
+                "WA-10017",
+                PaymentMethod.GCASH,
+                new BigDecimal("450.00"),
+                "1111111111111",
+                "https://firebase/storage/proof.jpg"
+        );
+
+        when(orderRepository.findByTrackingNumber("WA-10017")).thenReturn(Optional.of(order));
+        when(paymentRepository.findByJobOrder_TrackingNumber("WA-10017")).thenReturn(Optional.empty());
+        when(geminiChatClient.validateGcashReceipt("https://firebase/storage/proof.jpg"))
+                .thenReturn(new GeminiChatClient.ReceiptValidationResult(true, "5013749285918"));
+
+        assertThatThrownBy(() -> paymentService.submitProof(req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("The Reference Number entered (1111111111111) does not match the Reference Number on the uploaded receipt (5013749285918).");
     }
 }

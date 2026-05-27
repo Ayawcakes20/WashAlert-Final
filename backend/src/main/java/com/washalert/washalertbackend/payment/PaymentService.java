@@ -69,9 +69,12 @@ public class PaymentService {
         }
 
         if (req.method() == PaymentMethod.GCASH) {
-            boolean isValidGcashReceipt = geminiChatClient.validateGcashReceipt(req.proofUrl().trim());
-            if (!isValidGcashReceipt) {
+            GeminiChatClient.ReceiptValidationResult validation = geminiChatClient.validateGcashReceipt(req.proofUrl().trim());
+            if (!validation.valid()) {
                 throw new IllegalArgumentException("The uploaded photo does not appear to be a valid GCash receipt. Please upload a screenshot of your successful GCash transaction.");
+            }
+            if (validation.referenceNumber() != null && !validation.referenceNumber().equals(req.referenceNumber().trim())) {
+                throw new IllegalArgumentException("The Reference Number entered (" + req.referenceNumber() + ") does not match the Reference Number on the uploaded receipt (" + validation.referenceNumber() + ").");
             }
         }
 
@@ -351,7 +354,7 @@ public class PaymentService {
     }
 
     @Transactional(readOnly = true)
-    public boolean validateGcashReceipt(String proofUrl) {
+    public GeminiChatClient.ReceiptValidationResult validateGcashReceipt(String proofUrl) {
         if (proofUrl == null || proofUrl.isBlank()) {
             throw new IllegalArgumentException("Proof URL is required.");
         }

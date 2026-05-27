@@ -1509,7 +1509,7 @@ export const payments = {
       method: 'POST',
       body: {
         trackingNumber: payload.trackingNumber,
-        method: payload.method || 'GCash',
+        method: String(payload.method || 'GCASH').toUpperCase(),
         amount: payload.amount,
         referenceNumber: payload.referenceNumber,
         proofUrl: payload.proofUrl,
