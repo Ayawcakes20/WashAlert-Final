@@ -131,8 +131,8 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
       });
 
       Alert.alert(
-        'Proof Submitted!',
-        'Your GCash payment proof has been sent to our staff for manual verification. We will notify you once approved.',
+        'Payment Confirmed!',
+        'Your GCash payment has been verified and confirmed. Your order is now being processed!',
         [{
           text: 'OK', onPress: () => {
             onPaymentSubmitted?.();

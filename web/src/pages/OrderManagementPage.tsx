@@ -621,7 +621,7 @@ export default function OrderManagementPage() {
     return () => {
       active = false;
     };
-  }, [selectedOrder?.id, selectedOrder?.trackingNumber, selectedOrder?.paymentMethod]);
+  }, [selectedOrder?.id, selectedOrder?.trackingNumber, selectedOrder?.paymentMethod, selectedOrder?.isPaid, selectedOrder?.paymentStatus]);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editSubmitting, setEditSubmitting] = useState(false);
@@ -2077,12 +2077,14 @@ export default function OrderManagementPage() {
                           <p className="text-[11px] text-slate-400 font-bold uppercase">GCash Ref No.</p>
                           {loadingPaymentRecord ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
-                          ) : paymentRecord?.referenceNumber ? (
+                          ) : paymentRecord?.referenceNumber && !String(paymentRecord.referenceNumber).startsWith('cs_') ? (
                             <code className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded text-[11px] font-mono font-bold">
                               {paymentRecord.referenceNumber}
                             </code>
+                          ) : selectedOrder.isPaid ? (
+                            <span className="text-[11px] text-emerald-600 font-bold italic">Auto-confirmed via GCash Pay</span>
                           ) : (
-                            <span className="text-[11px] text-slate-400 italic">Not submitted</span>
+                            <span className="text-[11px] text-slate-400 italic">Not submitted yet</span>
                           )}
                         </div>
                         <div className="flex justify-between items-start">
@@ -2107,6 +2109,8 @@ export default function OrderManagementPage() {
                                 />
                               </div>
                             </div>
+                          ) : selectedOrder.isPaid ? (
+                            <span className="text-[11px] text-emerald-600 font-bold italic">Paid via GCash checkout link</span>
                           ) : (
                             <span className="text-[11px] text-slate-400 italic">No receipt uploaded</span>
                           )}
