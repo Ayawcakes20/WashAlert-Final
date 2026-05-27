@@ -72,6 +72,7 @@ type ApiServiceType = "DROP_OFF" | "PICKUP_DELIVERY";
 type Order = {
   id: number;
   orderId: string;
+  trackingNumber: string;
   customerName: string;
   serviceType: ApiServiceType;
   branch: string;
@@ -309,6 +310,7 @@ const TABLE_PAGE_SIZE_OPTIONS = [10, 20, 30];
 const mapOrder = (order: JobOrderResponse): Order => ({
   id: order.id,
   orderId: order.trackingNumber,
+  trackingNumber: order.trackingNumber,
   customerName: order.customerName,
   serviceType: order.serviceType,
   branch: order.branch || "Unassigned",
@@ -577,6 +579,49 @@ export default function OrderManagementPage() {
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [markingPaidId, setMarkingPaidId] = useState<number | null>(null);
+
+  const [paymentRecord, setPaymentRecord] = useState<any>(null);
+  const [loadingPaymentRecord, setLoadingPaymentRecord] = useState(false);
+  const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedOrder) {
+      setPaymentRecord(null);
+      return;
+    }
+
+    const isGcash = selectedOrder.paymentMethod?.toUpperCase().includes("GCASH");
+    if (!isGcash) {
+      setPaymentRecord(null);
+      return;
+    }
+
+    let active = true;
+    const fetchPaymentRecord = async () => {
+      setLoadingPaymentRecord(true);
+      try {
+        const record = await paymentsApi.track(selectedOrder.trackingNumber);
+        if (active) {
+          setPaymentRecord(record);
+        }
+      } catch (err) {
+        console.error("Failed to fetch payment record for order:", err);
+        if (active) {
+          setPaymentRecord(null);
+        }
+      } finally {
+        if (active) {
+          setLoadingPaymentRecord(false);
+        }
+      }
+    };
+
+    void fetchPaymentRecord();
+
+    return () => {
+      active = false;
+    };
+  }, [selectedOrder?.id, selectedOrder?.trackingNumber, selectedOrder?.paymentMethod]);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editSubmitting, setEditSubmitting] = useState(false);
@@ -2074,6 +2119,50 @@ export default function OrderManagementPage() {
                         )}
                       </div>
                     </div>
+
+                    {selectedOrder.paymentMethod?.toUpperCase().includes('GCASH') && (
+                      <div className="mt-3 pt-3 border-t border-slate-100 space-y-3">
+                        <div className="flex justify-between items-center">
+                          <p className="text-[11px] text-slate-400 font-bold uppercase">GCash Ref No.</p>
+                          {loadingPaymentRecord ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
+                          ) : paymentRecord?.referenceNumber ? (
+                            <code className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded text-[11px] font-mono font-bold">
+                              {paymentRecord.referenceNumber}
+                            </code>
+                          ) : (
+                            <span className="text-[11px] text-slate-400 italic">Not submitted</span>
+                          )}
+                        </div>
+                        <div className="flex justify-between items-start">
+                          <p className="text-[11px] text-slate-400 font-bold uppercase mt-1">Receipt Proof</p>
+                          {loadingPaymentRecord ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
+                          ) : paymentRecord?.proofUrl ? (
+                            <div className="flex flex-col items-end gap-1.5">
+                              <button
+                                type="button"
+                                className="text-[11px] font-bold text-blue-600 hover:text-blue-800 underline active:scale-95 transition-all flex items-center gap-1 cursor-pointer bg-transparent border-none p-0"
+                                onClick={() => setReceiptPreviewUrl(paymentRecord.proofUrl)}
+                              >
+                                <Eye className="h-3 w-3" /> View Receipt
+                              </button>
+                              <div className="h-20 w-16 border border-slate-200 rounded-lg overflow-hidden cursor-pointer shadow-sm active:scale-95 transition-all bg-slate-50 flex items-center justify-center">
+                                <img
+                                  src={paymentRecord.proofUrl}
+                                  alt="GCash Receipt"
+                                  className="h-full w-full object-cover"
+                                  onClick={() => setReceiptPreviewUrl(paymentRecord.proofUrl)}
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-slate-400 italic">No receipt uploaded</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="bg-slate-900 rounded-xl p-4 flex justify-between items-center mt-2">
                       <div>
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total Amount Due</p>
@@ -2492,6 +2581,34 @@ export default function OrderManagementPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── GCash Proof Image Preview Dialog ── */}
+      <Dialog open={!!receiptPreviewUrl} onOpenChange={(open) => !open && setReceiptPreviewUrl(null)}>
+        <DialogContent className="sm:max-w-lg border-brand-border rounded-xl p-0 overflow-hidden bg-slate-900 shadow-2xl flex flex-col items-center justify-center [&>button:last-child]:text-white [&>button:last-child]:opacity-80 [&>button:last-child]:hover:opacity-100">
+          <div className="relative p-2 flex items-center justify-center w-full max-h-[80vh]">
+            {receiptPreviewUrl && (
+              <img
+                src={receiptPreviewUrl}
+                alt="GCash Payment Receipt"
+                className="max-w-full max-h-[75vh] object-contain rounded-lg shadow-inner"
+              />
+            )}
+          </div>
+          <div className="bg-slate-950/80 w-full py-3 px-4 border-t border-slate-800 flex justify-between items-center text-slate-300 text-xs">
+            <span className="font-semibold">GCash Payment Proof Receipt</span>
+            {receiptPreviewUrl && (
+              <a
+                href={receiptPreviewUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-bold text-blue-400 hover:text-blue-300 underline flex items-center gap-1 transition-all"
+              >
+                Open in new tab
+              </a>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Receipt Preview Dialog ── */}
       {selectedOrder && (
