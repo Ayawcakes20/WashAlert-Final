@@ -88,6 +88,16 @@ public class PaymentService {
         payment.setNotes(null);
 
         PaymentRecord saved = paymentRepository.save(payment);
+
+        // For GCash, auto-confirm the payment immediately after validation succeeds.
+        if (req.method() == PaymentMethod.GCASH) {
+            confirmPayment(saved, req.referenceNumber().trim(), "Customer Receipt Upload");
+            // Re-fetch the record to return the latest state.
+            saved = paymentRepository.findById(saved.getId()).orElse(saved);
+            return toResponse(saved);
+        }
+
+        // Non-GCash (e.g. cash) — stays PENDING for staff verification.
         notificationService.enqueueEmail(
                 saved.getJobOrder().getCustomerEmail(),
                 "WashAlert Payment Proof Received",

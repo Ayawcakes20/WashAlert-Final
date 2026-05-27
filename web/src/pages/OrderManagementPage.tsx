@@ -578,7 +578,7 @@ export default function OrderManagementPage() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [markingPaidId, setMarkingPaidId] = useState<number | null>(null);
+
 
   const [paymentRecord, setPaymentRecord] = useState<any>(null);
   const [loadingPaymentRecord, setLoadingPaymentRecord] = useState(false);
@@ -765,31 +765,11 @@ export default function OrderManagementPage() {
     const deliveryPaymentBlocked = nextStatus === "DELIVERED" && isUnpaidGcash;
 
     if (washingPaymentBlocked || deliveryPaymentBlocked) {
-      const confirmManualPay = window.confirm(
-        `GCash payment for order ${currentOrder.orderId} has not been verified yet.\n\n` +
-        `Do you want to confirm this payment manually and proceed to ${statusLabel[nextStatus]}?`
+      toast.error(
+        `GCash payment for order ${currentOrder.orderId} has not been confirmed yet. ` +
+        `Please wait for the customer to complete payment — it will be confirmed automatically.`
       );
-      if (confirmManualPay) {
-        setStatusUpdatingId(currentOrder.id);
-        try {
-          // First mark as paid
-          const updatedPay = await ordersApi.markAsPaid(currentOrder.id);
-          toast.success(`Payment manually marked as Paid for ${currentOrder.orderId}.`);
-          
-          // Then update status
-          const updated = await ordersApi.updateStatus(currentOrder.id, nextStatus, codCollected);
-          const mapped = mapOrder(updated);
-          setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
-          setSelectedOrder(mapped);
-          toast.success(`Order ${updated.trackingNumber} moved to ${statusLabel[mapped.status]}.`);
-          await loadOrders(Math.max(0, ordersPage - 1), true);
-        } catch (err: any) {
-          toast.error(err?.message || "Failed to confirm payment and update status.");
-          await loadOrders(Math.max(0, ordersPage - 1), true);
-        } finally {
-          setStatusUpdatingId(null);
-        }
-      }
+      setStatusUpdatingId(null);
       return;
     }
 
@@ -989,21 +969,7 @@ export default function OrderManagementPage() {
     }
   };
 
-  const handleManualMarkAsPaid = async (orderId: number) => {
-    setMarkingPaidId(orderId);
-    try {
-      const updated = await ordersApi.markAsPaid(orderId);
-      const mapped = mapOrder(updated);
-      setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
-      setSelectedOrder(mapped);
-      toast.success("Payment manually marked as Paid successfully.");
-      await loadOrders(Math.max(0, ordersPage - 1), true);
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to mark payment as paid.");
-    } finally {
-      setMarkingPaidId(null);
-    }
-  };
+
 
   const [feedbackData, setFeedbackData] = useState<FeedbackResponse | null>(null);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
@@ -2100,22 +2066,7 @@ export default function OrderManagementPage() {
                         {selectedOrder.isPaid ? (
                           <span className="bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full text-[9px] font-black uppercase">● Paid</span>
                         ) : (
-                          <>
-                            <span className="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full text-[9px] font-black uppercase">● Pending</span>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2 text-[10px] font-bold rounded-lg border-emerald-200 text-emerald-600 hover:bg-emerald-50 active:scale-95 transition-all flex items-center gap-1"
-                              onClick={() => void handleManualMarkAsPaid(selectedOrder.id)}
-                              disabled={markingPaidId === selectedOrder.id}
-                            >
-                              {markingPaidId === selectedOrder.id ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                "Confirm Payment"
-                              )}
-                            </Button>
-                          </>
+                          <span className="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full text-[9px] font-black uppercase">● Awaiting Payment</span>
                         )}
                       </div>
                     </div>
