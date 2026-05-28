@@ -438,41 +438,19 @@ public class GeminiChatClient {
 
             ObjectNode textPart = objectMapper.createObjectNode();
             textPart.put("text",
-                    "You are a payment validation system for a laundry app. Your ONLY job is to check if the image is a real GCash payment receipt and extract the reference number.\n\n" +
-                    "=== VALID GCASH RECEIPT FORMATS (set valid = true) ===\n" +
-                    "TYPE 1 - GCash Save-to-Gallery Receipt (most common format users will upload):\n" +
-                    "  • Solid bright blue background filling the entire image\n" +
-                    "  • A white rounded-corner receipt card in the center\n" +
-                    "  • A blue or teal circle with a white checkmark icon at the top of the card\n" +
-                    "  • Recipient name (may be partially masked, e.g. 'PR***E LE****D AN**N V.')\n" +
-                    "  • GCash phone number (may be partially masked, e.g. '+63 9*****1915')\n" +
-                    "  • Text 'Sent via GCash' or 'GCash' branding\n" +
-                    "  • Amount section showing peso amount (e.g. '₱140.00' or 'Total Amount Sent P140.00')\n" +
-                    "  • A reference number labeled 'Ref No.' followed by digits (may have spaces, e.g. '5041 208 358587')\n" +
-                    "  • A transaction date and time\n" +
-                    "TYPE 2 - GCash In-App Screenshot (screenshot taken of the GCash app receipt screen):\n" +
-                    "  • Shows GCash app interface with similar receipt details\n" +
-                    "  • Shows 'Sent', 'Money Sent', 'You sent', 'Transfer Successful', or similar success message\n" +
-                    "  • Contains GCash logo or branding\n" +
-                    "  • Shows recipient and amount\n" +
-                    "  • Shows a reference number\n" +
-                    "TYPE 3 - GCash QR Payment Confirmation:\n" +
-                    "  • Shows a successful QR payment confirmation within GCash\n" +
-                    "  • Contains GCash branding and a reference number\n\n" +
-                    "=== ALWAYS REJECT (set valid = false) ===\n" +
-                    "  • Photos of real-world objects: people, selfies, food, laundry, pets, buildings, products\n" +
-                    "  • Screenshots from other apps: banking apps (BDO, BPI, Maya, etc.), social media, messaging, this laundry app\n" +
-                    "  • GCash screens that are NOT a receipt: login screen, home/wallet screen, balance screen, send-money form, payment method selection\n" +
-                    "  • Generic screenshots, documents, ID cards, bills from other services\n\n" +
-                    "=== REFERENCE NUMBER RULES ===\n" +
-                    "  • Look for the label 'Ref No.', 'Ref. No.', 'Reference No.', 'Instapay Ref No.', or similar\n" +
-                    "  • The number is exactly 13 digits. It may appear with spaces (e.g. '5041 208 358587') — remove spaces to get '5041208358587'\n" +
-                    "  • If you see a 13-digit number (after removing spaces/dashes) near a 'Ref' label, that is the reference number\n" +
-                    "  • A valid receipt MUST have this 13-digit reference number. If you cannot find it, set valid = false\n\n" +
-                    "=== RESPONSE FORMAT ===\n" +
-                    "Respond ONLY with a raw JSON object — no markdown, no explanation, no code block. Example:\n" +
-                    "{\"valid\": true, \"referenceNumber\": \"5041208358587\"}\n" +
-                    "If invalid: {\"valid\": false, \"referenceNumber\": null}"
+                    "You are a payment validation system for a laundry app. Your task is to verify if the uploaded image is a genuine GCash transaction receipt showing a successful transfer or payment, and extract the 13-digit reference number.\n\n" +
+                    "=== VALIDATION RULES ===\n" +
+                    "1. The image MUST be a genuine GCash successful payment receipt, screenshot of a successful transaction inside the GCash app, or a GCash save-to-gallery receipt image.\n" +
+                    "2. The image must show GCash branding (such as the GCash logo, GCash name, or the text 'Sent via GCash').\n" +
+                    "3. The image must show details of a successful transaction (such as a recipient name or number, transaction amount, and date/time).\n" +
+                    "4. The image MUST contain a 13-digit reference number (usually labeled 'Ref No.', 'Ref. No.', 'Reference No.', 'Instapay Ref No.', or similar). Look very carefully at all text in the image to find the 13-digit reference number. The reference number may contain spaces (e.g., '5041 208 358587' or '5041-208-358-587'). You must extract all 13 digits. If you cannot find a 13-digit reference number, set valid = false.\n" +
+                    "5. Reject any image that is NOT a genuine GCash successful payment receipt. Reject photos of laundry, people, pets, food, landscapes, order screens from this laundry app, BDO/BPI/Maya bank app receipts, or GCash screens that are not receipt confirmations (like the login, home, or payment input screen).\n\n" +
+                    "=== OUTPUT FORMAT ===\n" +
+                    "Respond ONLY with a JSON object containing two fields. Do not add any explanation, markdown code blocks, or other text:\n" +
+                    "- \"valid\": boolean, true if the image is a valid GCash receipt with a 13-digit reference number, false otherwise.\n" +
+                    "- \"referenceNumber\": string, the extracted 13-digit reference number (digits only, remove all spaces or dashes), or null if not found or if the image is invalid.\n\n" +
+                    "Example response:\n" +
+                    "{\"valid\": true, \"referenceNumber\": \"5041208358587\"}"
             );
             parts.add(textPart);
 
@@ -516,19 +494,13 @@ public class GeminiChatClient {
 
             JsonNode root = objectMapper.readTree(body);
             String resultText = extractContent(root).trim();
-            // Strip markdown code fences if Gemini wraps output despite instructions
-            if (resultText.startsWith("```")) {
-                int firstLineBreak = resultText.indexOf('\n');
-                if (firstLineBreak != -1) {
-                    resultText = resultText.substring(firstLineBreak + 1);
-                } else {
-                    resultText = resultText.substring(3);
-                }
+            
+            // Extract the JSON object boundaries from response in case Gemini includes markdown fences or introductory text
+            int firstOpenBrace = resultText.indexOf('{');
+            int lastCloseBrace = resultText.lastIndexOf('}');
+            if (firstOpenBrace != -1 && lastCloseBrace != -1 && firstOpenBrace < lastCloseBrace) {
+                resultText = resultText.substring(firstOpenBrace, lastCloseBrace + 1);
             }
-            if (resultText.endsWith("```")) {
-                resultText = resultText.substring(0, resultText.length() - 3);
-            }
-            resultText = resultText.trim();
 
             JsonNode decisionNode = objectMapper.readTree(resultText);
             boolean valid = decisionNode.path("valid").asBoolean();
