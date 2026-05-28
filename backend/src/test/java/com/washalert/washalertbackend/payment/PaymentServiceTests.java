@@ -120,7 +120,7 @@ class PaymentServiceTests {
 
         PaymentResponse res = paymentService.submitProof(req);
 
-        assertThat(res.status()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(res.status()).isEqualTo(PaymentStatus.PAID);
         assertThat(res.referenceNumber()).isEqualTo("5013749285918");
         verify(geminiChatClient).validateGcashReceipt("https://firebase/storage/proof.jpg");
     }

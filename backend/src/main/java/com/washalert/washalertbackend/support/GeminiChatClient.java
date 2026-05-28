@@ -420,8 +420,15 @@ public class GeminiChatClient {
                     "You are an automated system that validates payment receipts for a laundry app.\n" +
                     "Determine if this image is a valid GCash receipt or screenshot showing a successful transfer, Express Send, or QR payment transaction inside the GCash app.\n" +
                     "Look for GCash branding, logo, transaction receipt details, 'Sent to', 'Ref No.', or other clear indicators of a GCash payment receipt.\n\n" +
+                    "CRITICAL SECURITY INSTRUCTIONS:\n" +
+                    "- The image MUST be a genuine GCash transaction receipt, Express Send receipt, GCash QR payment confirmation, or GCash save-to-gallery receipt image.\n" +
+                    "- Do NOT accept any other image. Specifically, reject: photos of people, laundry, pets, food, products, landscapes, selfies, general documents, bank statements from other banks, order detail screenshots from this laundry app, or generic screenshots of other apps.\n" +
+                    "- If the image is not a genuine GCash receipt, 'valid' MUST be false and 'referenceNumber' MUST be null.\n" +
+                    "- A valid GCash receipt MUST contain a 13-digit reference number (usually starts with 5 or 9, e.g., 5013749285918). If you cannot find a 13-digit reference number, 'valid' MUST be false and 'referenceNumber' MUST be null.\n" +
+                    "- If the image is a screenshot of the GCash app but not a successful transaction receipt (for example, a login screen, a balance screen, or a payment method selection screen), 'valid' MUST be false.\n" +
+                    "- Any doubt or if the image lacks clear GCash payment markers? Set 'valid' to false.\n\n" +
                     "You must respond with a JSON object containing two fields:\n" +
-                    "1. \"valid\": boolean, true if the image is a valid GCash receipt screenshot, false otherwise.\n" +
+                    "1. \"valid\": boolean, true if the image is a valid GCash receipt screenshot and has a 13-digit reference number, false otherwise.\n" +
                     "2. \"referenceNumber\": string, the 13-digit reference number extracted from the receipt if it is valid (look for labels like 'Ref No.', 'Ref. No.', 'Reference No.', 'Instapay Ref No.', or any 13-digit number near the top/bottom), or null if not found or if the image is invalid.\n\n" +
                     "Respond ONLY with the raw JSON object. Do not wrap it in markdown block code or add any other text. Example:\n" +
                     "{\"valid\": true, \"referenceNumber\": \"5013749285918\"}"
@@ -476,6 +483,13 @@ public class GeminiChatClient {
             boolean valid = decisionNode.path("valid").asBoolean();
             String referenceNumber = decisionNode.path("referenceNumber").isNull() ? null : decisionNode.path("referenceNumber").asText().trim();
             if (referenceNumber != null && referenceNumber.isEmpty()) {
+                referenceNumber = null;
+            }
+
+            // Enforce programmatically that a valid GCash receipt MUST have a 13-digit reference number
+            if (valid && (referenceNumber == null || referenceNumber.length() != 13 || !referenceNumber.matches("\\d+"))) {
+                log.warn("[GEMINI][RECEIPT] Receipt marked valid by Gemini but reference number is missing or invalid: {}", referenceNumber);
+                valid = false;
                 referenceNumber = null;
             }
 
