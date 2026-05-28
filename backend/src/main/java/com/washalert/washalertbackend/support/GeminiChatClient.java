@@ -405,7 +405,11 @@ public class GeminiChatClient {
                 HttpResponse<byte[]> downloadResponse = httpClient.send(downloadRequest, HttpResponse.BodyHandlers.ofByteArray());
                 if (downloadResponse.statusCode() == 200) {
                     imageBytes = downloadResponse.body();
-                    contentType = downloadResponse.headers().firstValue("Content-Type").orElse("image/jpeg");
+                    // Normalize MIME type: strip charset/params (e.g. "image/jpeg; charset=utf-8" -> "image/jpeg")
+                    // and default non-image types (e.g. "application/octet-stream") to "image/jpeg"
+                    String rawCt = downloadResponse.headers().firstValue("Content-Type").orElse("image/jpeg");
+                    String baseCt = rawCt.contains(";") ? rawCt.split(";")[0].trim() : rawCt.trim();
+                    contentType = baseCt.startsWith("image/") ? baseCt : "image/jpeg";
                     break;
                 }
                 log.error("[GEMINI][RECEIPT] Image download returned status {} on attempt {}", downloadResponse.statusCode(), dlAttempt);
@@ -434,33 +438,41 @@ public class GeminiChatClient {
 
             ObjectNode textPart = objectMapper.createObjectNode();
             textPart.put("text",
-                    "You are an automated system that validates payment receipts for a laundry app.\n" +
-                    "Carefully examine this image and determine if it is a valid GCash receipt screenshot.\n\n" +
-                    "WHAT TO ACCEPT (set valid = true):\n" +
-                    "- GCash Send Money receipt (shows 'Sent', 'You sent', or similar confirmation)\n" +
-                    "- GCash Express Send receipt\n" +
-                    "- GCash QR payment confirmation screen\n" +
-                    "- GCash save-to-gallery receipt image\n" +
-                    "- Any GCash in-app screenshot that clearly shows a SUCCESSFUL payment or money transfer and a reference number\n" +
-                    "- The image must display GCash branding (GCash logo, GCash name, or the distinctive GCash app interface)\n" +
-                    "- The receipt must show a transaction reference number (typically labeled 'Ref No.', 'Reference No.', 'Ref. No.', 'Instapay Ref No.', or similar label)\n\n" +
-                    "WHAT TO REJECT (set valid = false):\n" +
-                    "- Photos of people, selfies, pets, food, laundry, objects, or any real-world scene\n" +
-                    "- Screenshots from non-GCash apps (other banking apps, messaging apps, social media, etc.)\n" +
-                    "- Screenshots from this laundry app (WashAlert) or any other app's order/booking screen\n" +
-                    "- GCash app screens that are NOT a payment receipt (e.g. login, balance, home screen, payment selection, loading screens)\n" +
-                    "- General documents, ID cards, bank statements from other banks\n" +
-                    "- Images without any visible GCash branding or reference number\n\n" +
-                    "REFERENCE NUMBER EXTRACTION:\n" +
-                    "- Look for labels like 'Ref No.', 'Ref. No.', 'Reference No.', 'Instapay Ref No.', or a standalone number near the transaction details\n" +
-                    "- GCash reference numbers are exactly 13 digits long (digits only, no letters)\n" +
-                    "- Extract the exact 13-digit number. If the number has spaces or dashes, remove them and check if it is 13 digits\n" +
-                    "- If the receipt is valid but you cannot find a 13-digit reference number, set valid = false\n\n" +
-                    "You must respond with a JSON object containing two fields:\n" +
-                    "1. \"valid\": boolean, true if the image is a genuine GCash payment receipt with a 13-digit reference number, false otherwise.\n" +
-                    "2. \"referenceNumber\": string, the exact 13-digit reference number from the receipt, or null if not found or invalid.\n\n" +
-                    "Respond ONLY with the raw JSON object. Do not use markdown, code blocks, or any other text. Example:\n" +
-                    "{\"valid\": true, \"referenceNumber\": \"5013749285918\"}"
+                    "You are a payment validation system for a laundry app. Your ONLY job is to check if the image is a real GCash payment receipt and extract the reference number.\n\n" +
+                    "=== VALID GCASH RECEIPT FORMATS (set valid = true) ===\n" +
+                    "TYPE 1 - GCash Save-to-Gallery Receipt (most common format users will upload):\n" +
+                    "  • Solid bright blue background filling the entire image\n" +
+                    "  • A white rounded-corner receipt card in the center\n" +
+                    "  • A blue or teal circle with a white checkmark icon at the top of the card\n" +
+                    "  • Recipient name (may be partially masked, e.g. 'PR***E LE****D AN**N V.')\n" +
+                    "  • GCash phone number (may be partially masked, e.g. '+63 9*****1915')\n" +
+                    "  • Text 'Sent via GCash' or 'GCash' branding\n" +
+                    "  • Amount section showing peso amount (e.g. '₱140.00' or 'Total Amount Sent P140.00')\n" +
+                    "  • A reference number labeled 'Ref No.' followed by digits (may have spaces, e.g. '5041 208 358587')\n" +
+                    "  • A transaction date and time\n" +
+                    "TYPE 2 - GCash In-App Screenshot (screenshot taken of the GCash app receipt screen):\n" +
+                    "  • Shows GCash app interface with similar receipt details\n" +
+                    "  • Shows 'Sent', 'Money Sent', 'You sent', 'Transfer Successful', or similar success message\n" +
+                    "  • Contains GCash logo or branding\n" +
+                    "  • Shows recipient and amount\n" +
+                    "  • Shows a reference number\n" +
+                    "TYPE 3 - GCash QR Payment Confirmation:\n" +
+                    "  • Shows a successful QR payment confirmation within GCash\n" +
+                    "  • Contains GCash branding and a reference number\n\n" +
+                    "=== ALWAYS REJECT (set valid = false) ===\n" +
+                    "  • Photos of real-world objects: people, selfies, food, laundry, pets, buildings, products\n" +
+                    "  • Screenshots from other apps: banking apps (BDO, BPI, Maya, etc.), social media, messaging, this laundry app\n" +
+                    "  • GCash screens that are NOT a receipt: login screen, home/wallet screen, balance screen, send-money form, payment method selection\n" +
+                    "  • Generic screenshots, documents, ID cards, bills from other services\n\n" +
+                    "=== REFERENCE NUMBER RULES ===\n" +
+                    "  • Look for the label 'Ref No.', 'Ref. No.', 'Reference No.', 'Instapay Ref No.', or similar\n" +
+                    "  • The number is exactly 13 digits. It may appear with spaces (e.g. '5041 208 358587') — remove spaces to get '5041208358587'\n" +
+                    "  • If you see a 13-digit number (after removing spaces/dashes) near a 'Ref' label, that is the reference number\n" +
+                    "  • A valid receipt MUST have this 13-digit reference number. If you cannot find it, set valid = false\n\n" +
+                    "=== RESPONSE FORMAT ===\n" +
+                    "Respond ONLY with a raw JSON object — no markdown, no explanation, no code block. Example:\n" +
+                    "{\"valid\": true, \"referenceNumber\": \"5041208358587\"}\n" +
+                    "If invalid: {\"valid\": false, \"referenceNumber\": null}"
             );
             parts.add(textPart);
 
