@@ -392,19 +392,36 @@ public class GeminiChatClient {
             return new ReceiptValidationResult(false, null);
         }
 
-        try {
-            log.info("[GEMINI][RECEIPT] Starting validation for image: {}", imageUrl);
-            HttpRequest downloadRequest = HttpRequest.newBuilder(URI.create(imageUrl))
-                    .GET()
-                    .build();
-            HttpResponse<byte[]> downloadResponse = httpClient.send(downloadRequest, HttpResponse.BodyHandlers.ofByteArray());
-            if (downloadResponse.statusCode() != 200) {
-                log.error("[GEMINI][RECEIPT] Failed to download image. Status: {}", downloadResponse.statusCode());
-                return new ReceiptValidationResult(false, null); // Fallback to fail validation
+        // Attempt image download up to 2 times for transient network errors
+        byte[] imageBytes = null;
+        String contentType = "image/jpeg";
+        for (int dlAttempt = 1; dlAttempt <= 2; dlAttempt++) {
+            try {
+                log.info("[GEMINI][RECEIPT] Downloading image (attempt {}): {}", dlAttempt, imageUrl);
+                HttpRequest downloadRequest = HttpRequest.newBuilder(URI.create(imageUrl))
+                        .GET()
+                        .timeout(Duration.ofSeconds(20))
+                        .build();
+                HttpResponse<byte[]> downloadResponse = httpClient.send(downloadRequest, HttpResponse.BodyHandlers.ofByteArray());
+                if (downloadResponse.statusCode() == 200) {
+                    imageBytes = downloadResponse.body();
+                    contentType = downloadResponse.headers().firstValue("Content-Type").orElse("image/jpeg");
+                    break;
+                }
+                log.error("[GEMINI][RECEIPT] Image download returned status {} on attempt {}", downloadResponse.statusCode(), dlAttempt);
+            } catch (Exception dlEx) {
+                log.warn("[GEMINI][RECEIPT] Image download exception on attempt {}: {}", dlAttempt, dlEx.getMessage());
             }
+            if (dlAttempt < 2) {
+                try { Thread.sleep(1500); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+            }
+        }
+        if (imageBytes == null) {
+            log.error("[GEMINI][RECEIPT] Failed to download image after 2 attempts.");
+            return new ReceiptValidationResult(false, null);
+        }
 
-            byte[] imageBytes = downloadResponse.body();
-            String contentType = downloadResponse.headers().firstValue("Content-Type").orElse("image/jpeg");
+        try {
             String base64Image = java.util.Base64.getEncoder().encodeToString(imageBytes);
 
             ObjectNode payload = objectMapper.createObjectNode();
@@ -418,19 +435,31 @@ public class GeminiChatClient {
             ObjectNode textPart = objectMapper.createObjectNode();
             textPart.put("text",
                     "You are an automated system that validates payment receipts for a laundry app.\n" +
-                    "Determine if this image is a valid GCash receipt or screenshot showing a successful transfer, Express Send, or QR payment transaction inside the GCash app.\n" +
-                    "Look for GCash branding, logo, transaction receipt details, 'Sent to', 'Ref No.', or other clear indicators of a GCash payment receipt.\n\n" +
-                    "CRITICAL SECURITY INSTRUCTIONS:\n" +
-                    "- The image MUST be a genuine GCash transaction receipt, Express Send receipt, GCash QR payment confirmation, or GCash save-to-gallery receipt image.\n" +
-                    "- Do NOT accept any other image. Specifically, reject: photos of people, laundry, pets, food, products, landscapes, selfies, general documents, bank statements from other banks, order detail screenshots from this laundry app, or generic screenshots of other apps.\n" +
-                    "- If the image is not a genuine GCash receipt, 'valid' MUST be false and 'referenceNumber' MUST be null.\n" +
-                    "- A valid GCash receipt MUST contain a 13-digit reference number (usually starts with 5 or 9, e.g., 5013749285918). If you cannot find a 13-digit reference number, 'valid' MUST be false and 'referenceNumber' MUST be null.\n" +
-                    "- If the image is a screenshot of the GCash app but not a successful transaction receipt (for example, a login screen, a balance screen, or a payment method selection screen), 'valid' MUST be false.\n" +
-                    "- Any doubt or if the image lacks clear GCash payment markers? Set 'valid' to false.\n\n" +
+                    "Carefully examine this image and determine if it is a valid GCash receipt screenshot.\n\n" +
+                    "WHAT TO ACCEPT (set valid = true):\n" +
+                    "- GCash Send Money receipt (shows 'Sent', 'You sent', or similar confirmation)\n" +
+                    "- GCash Express Send receipt\n" +
+                    "- GCash QR payment confirmation screen\n" +
+                    "- GCash save-to-gallery receipt image\n" +
+                    "- Any GCash in-app screenshot that clearly shows a SUCCESSFUL payment or money transfer and a reference number\n" +
+                    "- The image must display GCash branding (GCash logo, GCash name, or the distinctive GCash app interface)\n" +
+                    "- The receipt must show a transaction reference number (typically labeled 'Ref No.', 'Reference No.', 'Ref. No.', 'Instapay Ref No.', or similar label)\n\n" +
+                    "WHAT TO REJECT (set valid = false):\n" +
+                    "- Photos of people, selfies, pets, food, laundry, objects, or any real-world scene\n" +
+                    "- Screenshots from non-GCash apps (other banking apps, messaging apps, social media, etc.)\n" +
+                    "- Screenshots from this laundry app (WashAlert) or any other app's order/booking screen\n" +
+                    "- GCash app screens that are NOT a payment receipt (e.g. login, balance, home screen, payment selection, loading screens)\n" +
+                    "- General documents, ID cards, bank statements from other banks\n" +
+                    "- Images without any visible GCash branding or reference number\n\n" +
+                    "REFERENCE NUMBER EXTRACTION:\n" +
+                    "- Look for labels like 'Ref No.', 'Ref. No.', 'Reference No.', 'Instapay Ref No.', or a standalone number near the transaction details\n" +
+                    "- GCash reference numbers are exactly 13 digits long (digits only, no letters)\n" +
+                    "- Extract the exact 13-digit number. If the number has spaces or dashes, remove them and check if it is 13 digits\n" +
+                    "- If the receipt is valid but you cannot find a 13-digit reference number, set valid = false\n\n" +
                     "You must respond with a JSON object containing two fields:\n" +
-                    "1. \"valid\": boolean, true if the image is a valid GCash receipt screenshot and has a 13-digit reference number, false otherwise.\n" +
-                    "2. \"referenceNumber\": string, the 13-digit reference number extracted from the receipt if it is valid (look for labels like 'Ref No.', 'Ref. No.', 'Reference No.', 'Instapay Ref No.', or any 13-digit number near the top/bottom), or null if not found or if the image is invalid.\n\n" +
-                    "Respond ONLY with the raw JSON object. Do not wrap it in markdown block code or add any other text. Example:\n" +
+                    "1. \"valid\": boolean, true if the image is a genuine GCash payment receipt with a 13-digit reference number, false otherwise.\n" +
+                    "2. \"referenceNumber\": string, the exact 13-digit reference number from the receipt, or null if not found or invalid.\n\n" +
+                    "Respond ONLY with the raw JSON object. Do not use markdown, code blocks, or any other text. Example:\n" +
                     "{\"valid\": true, \"referenceNumber\": \"5013749285918\"}"
             );
             parts.add(textPart);
@@ -450,22 +479,32 @@ public class GeminiChatClient {
             generationConfig.put("temperature", 0.0);
             payload.set("generationConfig", generationConfig);
 
-            HttpRequest apiRequest = HttpRequest.newBuilder(URI.create(buildGenerateContentUrl()))
-                    .timeout(Duration.ofSeconds(30))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
-                    .build();
-
-            HttpResponse<String> apiResponse = httpClient.send(apiRequest, HttpResponse.BodyHandlers.ofString());
-            String body = apiResponse.body() == null ? "" : apiResponse.body();
-
-            if (apiResponse.statusCode() >= 400) {
-                log.error("[GEMINI][RECEIPT] API error ({}): {}", apiResponse.statusCode(), body);
-                return new ReceiptValidationResult(false, null); // Fallback to fail validation
+            // Attempt Gemini API call up to 2 times for transient errors (429, 503)
+            HttpResponse<String> apiResponse = null;
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                HttpRequest apiRequest = HttpRequest.newBuilder(URI.create(buildGenerateContentUrl()))
+                        .timeout(Duration.ofSeconds(30))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
+                        .build();
+                apiResponse = httpClient.send(apiRequest, HttpResponse.BodyHandlers.ofString());
+                if (apiResponse.statusCode() < 400) {
+                    break; // success
+                }
+                if (attempt < 2 && (apiResponse.statusCode() == 429 || apiResponse.statusCode() == 503)) {
+                    log.warn("[GEMINI][RECEIPT] Transient API error ({}) on attempt {}, retrying...", apiResponse.statusCode(), attempt);
+                    try { Thread.sleep(2000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                } else {
+                    log.error("[GEMINI][RECEIPT] API error ({}) after {} attempt(s): {}", apiResponse.statusCode(), attempt, apiResponse.body());
+                    return new ReceiptValidationResult(false, null);
+                }
             }
+
+            String body = apiResponse.body() == null ? "" : apiResponse.body();
 
             JsonNode root = objectMapper.readTree(body);
             String resultText = extractContent(root).trim();
+            // Strip markdown code fences if Gemini wraps output despite instructions
             if (resultText.startsWith("```")) {
                 int firstLineBreak = resultText.indexOf('\n');
                 if (firstLineBreak != -1) {
@@ -487,14 +526,17 @@ public class GeminiChatClient {
             }
 
             if (referenceNumber != null) {
-                // Extract only the digits in case Gemini returned it with formatting or labels (e.g. spaces or 'Ref No.')
+                // Strip any non-digit characters (spaces, dashes) Gemini may have included
                 String digitsOnly = referenceNumber.replaceAll("\\D", "");
                 if (digitsOnly.length() == 13) {
                     referenceNumber = digitsOnly;
+                } else {
+                    // Digits do not form a clean 13-digit number — discard
+                    referenceNumber = null;
                 }
             }
 
-            // Enforce programmatically that a valid GCash receipt MUST have a 13-digit reference number
+            // Programmatic safeguard: a receipt marked valid MUST have a clean 13-digit reference number
             if (valid && (referenceNumber == null || referenceNumber.length() != 13 || !referenceNumber.matches("\\d+"))) {
                 log.warn("[GEMINI][RECEIPT] Receipt marked valid by Gemini but reference number is missing or invalid: {}", referenceNumber);
                 valid = false;
