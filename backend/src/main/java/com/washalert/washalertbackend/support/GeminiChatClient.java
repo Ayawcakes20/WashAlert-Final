@@ -486,6 +486,14 @@ public class GeminiChatClient {
                 referenceNumber = null;
             }
 
+            if (referenceNumber != null) {
+                // Extract only the digits in case Gemini returned it with formatting or labels (e.g. spaces or 'Ref No.')
+                String digitsOnly = referenceNumber.replaceAll("\\D", "");
+                if (digitsOnly.length() == 13) {
+                    referenceNumber = digitsOnly;
+                }
+            }
+
             // Enforce programmatically that a valid GCash receipt MUST have a 13-digit reference number
             if (valid && (referenceNumber == null || referenceNumber.length() != 13 || !referenceNumber.matches("\\d+"))) {
                 log.warn("[GEMINI][RECEIPT] Receipt marked valid by Gemini but reference number is missing or invalid: {}", referenceNumber);
