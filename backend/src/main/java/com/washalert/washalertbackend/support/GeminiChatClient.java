@@ -384,12 +384,12 @@ public class GeminiChatClient {
 
     public ReceiptValidationResult validateGcashReceipt(String imageUrl) {
         if (!isConfigured()) {
-            log.warn("[GEMINI][RECEIPT] API key is not configured. Skipping validation.");
-            return new ReceiptValidationResult(true, null);
+            log.warn("[GEMINI][RECEIPT] API key is not configured. Failing validation.");
+            return new ReceiptValidationResult(false, null);
         }
         if (imageUrl == null || imageUrl.isBlank()) {
-            log.warn("[GEMINI][RECEIPT] Empty receipt image URL. Skipping validation.");
-            return new ReceiptValidationResult(true, null);
+            log.warn("[GEMINI][RECEIPT] Empty receipt image URL. Failing validation.");
+            return new ReceiptValidationResult(false, null);
         }
 
         try {
@@ -400,7 +400,7 @@ public class GeminiChatClient {
             HttpResponse<byte[]> downloadResponse = httpClient.send(downloadRequest, HttpResponse.BodyHandlers.ofByteArray());
             if (downloadResponse.statusCode() != 200) {
                 log.error("[GEMINI][RECEIPT] Failed to download image. Status: {}", downloadResponse.statusCode());
-                return new ReceiptValidationResult(true, null); // Fallback to avoid blocking customers
+                return new ReceiptValidationResult(false, null); // Fallback to fail validation
             }
 
             byte[] imageBytes = downloadResponse.body();
@@ -461,7 +461,7 @@ public class GeminiChatClient {
 
             if (apiResponse.statusCode() >= 400) {
                 log.error("[GEMINI][RECEIPT] API error ({}): {}", apiResponse.statusCode(), body);
-                return new ReceiptValidationResult(true, null); // Fallback
+                return new ReceiptValidationResult(false, null); // Fallback to fail validation
             }
 
             JsonNode root = objectMapper.readTree(body);
@@ -505,7 +505,7 @@ public class GeminiChatClient {
             return new ReceiptValidationResult(valid, referenceNumber);
         } catch (Exception e) {
             log.error("[GEMINI][RECEIPT] Exception during validation: {}", e.getMessage(), e);
-            return new ReceiptValidationResult(true, null); // Fallback
+            return new ReceiptValidationResult(false, null); // Fallback to fail validation
         }
     }
 }

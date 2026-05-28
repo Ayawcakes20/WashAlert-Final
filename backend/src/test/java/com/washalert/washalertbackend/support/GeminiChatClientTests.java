@@ -27,9 +27,9 @@ class GeminiChatClientTests {
     }
 
     @Test
-    void validateGcashReceiptReturnsFallbackTrueWhenNotConfigured() {
+    void validateGcashReceiptReturnsFallbackFalseWhenNotConfigured() {
         GeminiChatClient.ReceiptValidationResult result = client.validateGcashReceipt("https://firebase/storage/proof.jpg");
-        assertThat(result.valid()).isTrue();
+        assertThat(result.valid()).isFalse();
         assertThat(result.referenceNumber()).isNull();
     }
 }

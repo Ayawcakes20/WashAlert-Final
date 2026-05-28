@@ -73,8 +73,8 @@ public class PaymentService {
             if (!validation.valid()) {
                 throw new IllegalArgumentException("The uploaded photo does not appear to be a valid GCash receipt. Please upload a screenshot of your successful GCash transaction.");
             }
-            if (validation.referenceNumber() != null && !validation.referenceNumber().equals(req.referenceNumber().trim())) {
-                throw new IllegalArgumentException("The Reference Number entered (" + req.referenceNumber() + ") does not match the Reference Number on the uploaded receipt (" + validation.referenceNumber() + ").");
+            if (validation.referenceNumber() == null || !validation.referenceNumber().equals(req.referenceNumber().trim())) {
+                throw new IllegalArgumentException("The Reference Number entered (" + req.referenceNumber() + ") does not match the Reference Number on the uploaded receipt (" + (validation.referenceNumber() != null ? validation.referenceNumber() : "N/A") + ").");
             }
         }
 
