@@ -363,16 +363,23 @@ const mapOrder = (order: JobOrderResponse): Order => ({
   slotEndTime: order.slotEndTime ?? undefined,
 });
 
-const formatDateTime = (timestamp?: string) =>
-  timestamp
-    ? new Date(timestamp).toLocaleString("en-US", {
+const formatDateTime = (timestamp?: string) => {
+  if (!timestamp) return "-";
+  // If the timestamp doesn't contain a timezone offset (+/-) or Z, append 'Z' to treat it as UTC
+  const hasTimezone = timestamp.endsWith("Z") || timestamp.includes("+") || (timestamp.includes("T") && timestamp.split("T")[1].includes("-"));
+  const isoTimestamp = hasTimezone ? timestamp : `${timestamp}Z`;
+  try {
+    return new Date(isoTimestamp).toLocaleString("en-US", {
       year: "numeric",
       month: "short",
       day: "2-digit",
       hour: "numeric",
       minute: "2-digit",
-    })
-    : "-";
+    });
+  } catch {
+    return timestamp;
+  }
+};
 
 const formatBookingDate = (dateStr?: string) => {
   if (!dateStr) return null;
