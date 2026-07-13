@@ -73,15 +73,36 @@ public class PaymentService {
             if (!validation.valid()) {
                 throw new IllegalArgumentException("The uploaded photo does not appear to be a valid GCash receipt. Please upload a screenshot of your successful GCash transaction.");
             }
-            if (validation.referenceNumber() == null || !validation.referenceNumber().equals(req.referenceNumber().trim())) {
-                throw new IllegalArgumentException("The Reference Number entered (" + req.referenceNumber() + ") does not match the Reference Number on the uploaded receipt (" + (validation.referenceNumber() != null ? validation.referenceNumber() : "N/A") + ").");
+            // Cross-check: if user typed a reference number AND Gemini found one, they must match.
+            String userRef = (req.referenceNumber() != null && !req.referenceNumber().isBlank()) ? req.referenceNumber().trim() : null;
+            if (validation.referenceNumber() != null && userRef != null && !validation.referenceNumber().equals(userRef)) {
+                throw new IllegalArgumentException("The Reference Number entered (" + userRef + ") does not match the Reference Number on the uploaded receipt (" + validation.referenceNumber() + ").");
             }
+            // Prefer Gemini-extracted reference number; fall back to user-provided one.
+            String resolvedRef = validation.referenceNumber() != null ? validation.referenceNumber() : userRef;
+
+            payment.setMethod(req.method());
+            payment.setAmount(req.amount());
+            payment.setReferenceNumber(resolvedRef);
+            payment.setProofUrl(req.proofUrl().trim());
+            payment.setStatus(PaymentStatus.PENDING);
+            payment.setVerifiedAt(null);
+            payment.setVerifiedBy(null);
+            payment.setNotes(null);
+
+            PaymentRecord saved = paymentRepository.save(payment);
+            // Auto-confirm GCash payment immediately after receipt validation.
+            confirmPayment(saved, resolvedRef, "Customer Receipt Upload");
+            // Re-fetch the record to return the latest state.
+            saved = paymentRepository.findById(saved.getId()).orElse(saved);
+            return toResponse(saved);
         }
 
+        // Non-GCash (e.g. cash) — stays PENDING for staff verification.
         payment.setMethod(req.method());
         payment.setAmount(req.amount());
-        payment.setReferenceNumber(req.referenceNumber().trim());
-        payment.setProofUrl(req.proofUrl().trim());
+        payment.setReferenceNumber(req.referenceNumber() != null ? req.referenceNumber().trim() : null);
+        payment.setProofUrl(req.proofUrl() != null ? req.proofUrl().trim() : null);
         payment.setStatus(PaymentStatus.PENDING);
         payment.setVerifiedAt(null);
         payment.setVerifiedBy(null);
@@ -89,15 +110,6 @@ public class PaymentService {
 
         PaymentRecord saved = paymentRepository.save(payment);
 
-        // For GCash, auto-confirm the payment immediately after validation succeeds.
-        if (req.method() == PaymentMethod.GCASH) {
-            confirmPayment(saved, req.referenceNumber().trim(), "Customer Receipt Upload");
-            // Re-fetch the record to return the latest state.
-            saved = paymentRepository.findById(saved.getId()).orElse(saved);
-            return toResponse(saved);
-        }
-
-        // Non-GCash (e.g. cash) — stays PENDING for staff verification.
         notificationService.enqueueEmail(
                 saved.getJobOrder().getCustomerEmail(),
                 "WashAlert Payment Proof Received",

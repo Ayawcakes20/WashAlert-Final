@@ -19,7 +19,6 @@ public record SubmitPaymentProofRequest(
         @DecimalMin(value = "0.01", message = "Amount must be at least 0.01.")
         BigDecimal amount,
 
-        @NotBlank(message = "Reference number is required.")
         @Size(max = 100, message = "Reference number is too long.")
         String referenceNumber,
 

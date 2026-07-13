@@ -87,15 +87,6 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
   };
 
   const handleSubmitProof = async () => {
-    const trimmedRef = referenceNumber.trim();
-    if (!trimmedRef) {
-      Alert.alert('Reference Required', 'Please enter your GCash Reference Number.');
-      return;
-    }
-    if (trimmedRef.length !== 13 || !/^\d+$/.test(trimmedRef)) {
-      Alert.alert('Invalid Reference Number', 'GCash Reference Number must be exactly 13 digits.');
-      return;
-    }
     if (!screenshotUri) {
       Alert.alert('Receipt Screenshot Required', 'Please upload a screenshot of your successful GCash transaction.');
       return;
@@ -191,7 +182,7 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
               <Text style={S.instructionsTitle}>Instructions:</Text>
               <Text style={S.instructionText}>1. Scan the QR code or send GCash transfer to the number above.</Text>
               <Text style={S.instructionText}>2. Take a screenshot of the GCash receipt.</Text>
-              <Text style={S.instructionText}>3. Enter the 13-digit Reference Number and upload the receipt screenshot below.</Text>
+              <Text style={S.instructionText}>3. Upload the screenshot below — the reference number will be detected automatically.</Text>
               {branchPhone ? (
                 <Text style={[S.instructionText, { fontWeight: 'bold', color: colors.primary, marginTop: 4 }]}>
                   *For help, contact branch at: {branchPhone}
@@ -201,15 +192,14 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
 
             {/* Form Fields */}
             <View style={S.form}>
-              <Text style={S.fieldLabel}>GCash Reference Number (13 digits)</Text>
+              <Text style={S.fieldLabel}>GCash Reference No. <Text style={{ color: '#94A3B8', fontWeight: '500' }}>(auto-detected from receipt)</Text></Text>
               <TextInput
-                style={S.textInput}
+                style={[S.textInput, { backgroundColor: referenceNumber ? '#F0FDF4' : '#F8FAFC', color: referenceNumber ? '#15803D' : '#94A3B8' }]}
                 keyboardType="numeric"
                 maxLength={13}
-                placeholder="e.g. 5013749285918"
+                placeholder="Detected automatically from your receipt"
                 value={referenceNumber}
-                onChangeText={setReferenceNumber}
-                editable={!loading}
+                editable={false}
               />
 
               <Text style={S.fieldLabel}>Receipt Screenshot</Text>
