@@ -170,12 +170,15 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/orders/track/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/payments/track/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/deliveries/track/**").permitAll()
-                        // Support chat/history was previously public. It is only ever called from the
-                        // logged-in Customer/Driver areas of the mobile app (never a pre-login screen),
-                        // and being public let anyone pull order/payment/delivery data — including the
-                        // delivery confirmationCode — by typing a tracking number into the chat box.
-                        .requestMatchers(HttpMethod.POST, "/api/support/chat").hasAnyRole("CUSTOMER", "DRIVER")
-                        .requestMatchers(HttpMethod.GET, "/api/support/history").hasAnyRole("CUSTOMER", "DRIVER")
+                        // Support chat/history was previously public. It is only ever called from
+                        // logged-in areas of the app — the mobile Customer/Driver chat screens, and
+                        // the web Staff/Admin IkotAsk AI assistant + Support Tickets viewer (which
+                        // reads ticket conversation history via this same endpoint) — never from a
+                        // pre-login screen. Being public let anyone pull order/payment/delivery data,
+                        // including the delivery confirmationCode, by typing a tracking number into
+                        // the chat box.
+                        .requestMatchers(HttpMethod.POST, "/api/support/chat").hasAnyRole("CUSTOMER", "DRIVER", "ADMIN", "STAFF")
+                        .requestMatchers(HttpMethod.GET, "/api/support/history").hasAnyRole("CUSTOMER", "DRIVER", "ADMIN", "STAFF")
 
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/auth/logout").authenticated()

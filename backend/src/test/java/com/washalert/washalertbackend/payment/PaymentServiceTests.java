@@ -8,7 +8,11 @@ import com.washalert.washalertbackend.orders.JobOrderStatus;
 import com.washalert.washalertbackend.firebase.FirestoreSyncService;
 import com.washalert.washalertbackend.payment.dto.SubmitPaymentProofRequest;
 import com.washalert.washalertbackend.payment.dto.PaymentResponse;
+import com.washalert.washalertbackend.security.AuthUserDetails;
 import com.washalert.washalertbackend.support.GeminiChatClient;
+import com.washalert.washalertbackend.user.Role;
+import com.washalert.washalertbackend.user.User;
+import com.washalert.washalertbackend.user.UserStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -118,7 +122,7 @@ class PaymentServiceTests {
                 .thenReturn(new GeminiChatClient.ReceiptValidationResult(true, "5013749285918"));
         when(paymentRepository.save(any(PaymentRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        PaymentResponse res = paymentService.submitProof(req);
+        PaymentResponse res = paymentService.submitProof(req, customerPrincipal("customer@test.com"));
 
         assertThat(res.status()).isEqualTo(PaymentStatus.PAID);
         assertThat(res.referenceNumber()).isEqualTo("5013749285918");
@@ -130,6 +134,7 @@ class PaymentServiceTests {
         JobOrder order = JobOrder.builder()
                 .id(17L)
                 .trackingNumber("WA-10017")
+                .customerEmail("customer@test.com")
                 .status(JobOrderStatus.PRICE_CONFIRMED)
                 .build();
 
@@ -146,7 +151,7 @@ class PaymentServiceTests {
         when(geminiChatClient.validateGcashReceipt("https://firebase/storage/proof.jpg"))
                 .thenReturn(new GeminiChatClient.ReceiptValidationResult(false, null));
 
-        assertThatThrownBy(() -> paymentService.submitProof(req))
+        assertThatThrownBy(() -> paymentService.submitProof(req, customerPrincipal("customer@test.com")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("The uploaded photo does not appear to be a valid GCash receipt. Please upload a screenshot of your successful GCash transaction.");
     }
@@ -156,6 +161,7 @@ class PaymentServiceTests {
         JobOrder order = JobOrder.builder()
                 .id(17L)
                 .trackingNumber("WA-10017")
+                .customerEmail("customer@test.com")
                 .status(JobOrderStatus.PRICE_CONFIRMED)
                 .build();
 
@@ -172,8 +178,20 @@ class PaymentServiceTests {
         when(geminiChatClient.validateGcashReceipt("https://firebase/storage/proof.jpg"))
                 .thenReturn(new GeminiChatClient.ReceiptValidationResult(true, "5013749285918"));
 
-        assertThatThrownBy(() -> paymentService.submitProof(req))
+        assertThatThrownBy(() -> paymentService.submitProof(req, customerPrincipal("customer@test.com")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("The Reference Number entered (1111111111111) does not match the Reference Number on the uploaded receipt (5013749285918).");
+    }
+
+    private AuthUserDetails customerPrincipal(String email) {
+        User customer = User.builder()
+                .id(42L)
+                .email(email)
+                .fullName("Test Customer")
+                .role(Role.CUSTOMER)
+                .status(UserStatus.ACTIVE)
+                .enabled(true)
+                .build();
+        return new AuthUserDetails(customer);
     }
 }
