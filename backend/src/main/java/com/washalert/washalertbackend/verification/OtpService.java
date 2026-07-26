@@ -230,10 +230,11 @@ public class OtpService {
     }
 
     private String generateNumericCode(int length) {
+        // Uses the full [0, 10^length) range and zero-pads, instead of [10^(length-1), 10^length)
+        // which can never produce a leading zero — that previously cut the search space by ~10%.
         int bound = (int) Math.pow(10, length);
-        int floor = (int) Math.pow(10, length - 1);
-        int value = floor + random.nextInt(bound - floor);
-        return String.valueOf(value);
+        int value = random.nextInt(bound);
+        return String.format("%0" + length + "d", value);
     }
 
     private String normalizeEmail(String email) {

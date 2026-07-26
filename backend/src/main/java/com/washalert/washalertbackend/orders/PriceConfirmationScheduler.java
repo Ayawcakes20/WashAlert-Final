@@ -1,6 +1,8 @@
 package com.washalert.washalertbackend.orders;
 
+import com.washalert.washalertbackend.booking.PricingService;
 import com.washalert.washalertbackend.firebase.FirestoreSyncService;
+import com.washalert.washalertbackend.inventory.InventoryService;
 import com.washalert.washalertbackend.notification.NotificationService;
 import com.washalert.washalertbackend.orders.dto.JobOrderResponse;
 import com.washalert.washalertbackend.payment.PaymentRecord;
@@ -36,19 +38,25 @@ public class PriceConfirmationScheduler {
     private final NotificationService notificationService;
     private final FirestoreSyncService firestoreSyncService;
     private final PaymentRecordRepository paymentRepository;
+    private final InventoryService inventoryService;
+    private final PricingService pricingService;
 
     public PriceConfirmationScheduler(
             JobOrderRepository repo,
             JobOrderTimelineService timelineService,
             NotificationService notificationService,
             FirestoreSyncService firestoreSyncService,
-            PaymentRecordRepository paymentRepository
+            PaymentRecordRepository paymentRepository,
+            InventoryService inventoryService,
+            PricingService pricingService
     ) {
         this.repo = repo;
         this.timelineService = timelineService;
         this.notificationService = notificationService;
         this.firestoreSyncService = firestoreSyncService;
         this.paymentRepository = paymentRepository;
+        this.inventoryService = inventoryService;
+        this.pricingService = pricingService;
     }
 
     @Scheduled(fixedDelay = 300_000) // every 5 minutes
@@ -68,10 +76,43 @@ public class PriceConfirmationScheduler {
             try {
                 if (now.isAfter(deadline)) {
                     // ── AUTO-CONFIRM ─────────────────────────────────────────
+                    // Mirror the same guards JobOrderService.updateStatus() applies for a
+                    // staff-driven PRICE_CONFIRMED → WASHING transition. Without these, an
+                    // unpaid GCash order would get washed for free after the deadline, and
+                    // inventory would never be deducted for it.
+                    String pm = order.getPaymentMethod();
+                    boolean isOnlinePayment = pm != null && pm.toUpperCase().contains("GCASH");
+                    if (isOnlinePayment && !order.isPaid()) {
+                        log.info("[PriceConfirm] Holding order #{} at PRICE_CONFIRMED — GCash payment not yet verified.",
+                                order.getTrackingNumber());
+                        continue;
+                    }
+
                     log.info("[PriceConfirm] Auto-confirming order #{} (deadline passed)", order.getTrackingNumber());
+
+                    int detQty = (order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0)
+                            ? order.getDetergentQuantity() : 1;
+                    int conQty = (order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0)
+                            ? order.getConditionerQuantity() : 1;
+                    pricingService.validateAddonQuantities(
+                            order.getServiceName(),
+                            order.getEstimatedWeightKg(),
+                            order.getDetergentPreference(),
+                            detQty,
+                            order.getFabricConditionerPreference(),
+                            conQty
+                    );
+                    inventoryService.validateSuppliesForBooking(
+                            order.getBranch(),
+                            order.getDetergentPreference(),
+                            order.getFabricConditionerPreference(),
+                            detQty,
+                            conQty
+                    );
 
                     order.setStatus(JobOrderStatus.WASHING);
                     order.setPriceConfirmedAt(now);
+                    inventoryService.deductForOrder(order);
                     timelineService.log(order, JobOrderStatus.WASHING, "system",
                             "Auto-confirmed after 1 hour of no customer response. Washing started.");
 

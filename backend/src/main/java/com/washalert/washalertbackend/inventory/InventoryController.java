@@ -62,17 +62,21 @@ public class InventoryController {
 
     @PostMapping("/items")
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
-    public InventoryItemResponse create(@Valid @RequestBody CreateInventoryItemRequest req) {
-        return inventoryService.create(req);
+    public InventoryItemResponse create(
+            @Valid @RequestBody CreateInventoryItemRequest req,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return inventoryService.create(req, principal);
     }
 
     @PutMapping("/items/{itemId}")
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public InventoryItemResponse update(
             @PathVariable Long itemId,
-            @Valid @RequestBody UpdateInventoryItemRequest req
+            @Valid @RequestBody UpdateInventoryItemRequest req,
+            @AuthenticationPrincipal AuthUserDetails principal
     ) {
-        return inventoryService.update(itemId, req);
+        return inventoryService.update(itemId, req, principal);
     }
 
     @PatchMapping("/items/{itemId}/adjust")

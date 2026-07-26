@@ -1230,6 +1230,23 @@ public class JobOrderService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not the assigned delivery rider.");
         }
 
+        // Enforce the same state machine and payment gate as the staff-driven updateStatus()
+        // path — this method previously set DELIVERED unconditionally, letting a driver jump
+        // straight from e.g. ORDER_RECEIVED to DELIVERED and mark an unpaid GCash order as paid.
+        if (order.getStatus() != JobOrderStatus.DELIVERED && !isValidTransition(order.getStatus(), JobOrderStatus.DELIVERED)) {
+            throw new IllegalStateException(
+                    "Invalid job order status transition from " + order.getStatus() + " to DELIVERED.");
+        }
+        String pm = order.getPaymentMethod();
+        boolean isOnlinePayment = pm != null && pm.toUpperCase().contains("GCASH");
+        if (isOnlinePayment && !order.isPaid()) {
+            // Blocked unconditionally — codCollected is meaningless for a GCash order and
+            // must never be usable to fake a payment confirmation on one.
+            throw new IllegalStateException(
+                    "Payment must be verified before marking this order as delivered. "
+                    + "Ask the customer to complete their GCash payment first.");
+        }
+
         order.setStatus(JobOrderStatus.DELIVERED);
         order.setDeliveredAt(LocalDateTime.now());
         if (codCollected) {
@@ -1243,7 +1260,7 @@ public class JobOrderService {
                         .ifPresent(pr -> {
                             pr.setStatus(com.washalert.washalertbackend.payment.PaymentStatus.PAID);
                             pr.setVerifiedAt(LocalDateTime.now());
-                            pr.setVerifiedBy("Driver — COD collected");
+                            pr.setVerifiedBy("Driver COD: " + driver.getEmail());
                             paymentRepository.save(pr);
                         });
             } catch (Exception e) {
@@ -1251,6 +1268,8 @@ public class JobOrderService {
             }
         }
         JobOrder saved = repo.save(order);
+        timelineService.log(saved, JobOrderStatus.DELIVERED, driver.getEmail(),
+                codCollected ? "Delivered by driver — COD collected." : "Delivered by driver.");
 
         try {
             notificationService.enqueuePushToUserEmail(saved.getCustomerEmail(), "Laundry delivered",

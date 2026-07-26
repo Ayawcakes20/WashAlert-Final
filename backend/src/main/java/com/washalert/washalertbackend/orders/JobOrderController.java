@@ -335,10 +335,10 @@ public class JobOrderController {
     @PreAuthorize("hasRole('DRIVER')")
     public JobOrderResponse updateDriverLocation(
             @PathVariable Long id,
-            @RequestBody Map<String, Double> location,
+            @Valid @RequestBody com.washalert.washalertbackend.orders.dto.UpdateDriverLocationRequest location,
             @AuthenticationPrincipal AuthUserDetails principal
     ) {
-        return service.updateDriverLocation(id, location.get("latitude"), location.get("longitude"), principal);
+        return service.updateDriverLocation(id, location.latitude(), location.longitude(), principal);
     }
 
     @PostMapping("/my/{trackingNumber}/feedback")

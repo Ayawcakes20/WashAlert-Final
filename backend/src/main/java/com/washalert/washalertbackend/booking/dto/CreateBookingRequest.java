@@ -6,6 +6,8 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.FutureOrPresent;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -47,12 +49,16 @@ public record CreateBookingRequest(
         @Size(max = 80, message = "Detergent preference is too long.")
         String detergentPreference,
 
+        @Min(value = 0, message = "Detergent quantity cannot be negative.")
+        @Max(value = 20, message = "Detergent quantity is too high.")
         Integer detergentQuantity,
 
         @NotBlank(message = "Fabric conditioner preference is required.")
         @Size(max = 80, message = "Fabric conditioner preference is too long.")
         String fabricConditionerPreference,
 
+        @Min(value = 0, message = "Fabric conditioner quantity cannot be negative.")
+        @Max(value = 20, message = "Fabric conditioner quantity is too high.")
         Integer conditionerQuantity,
 
         @NotNull(message = "Load size is required.")
