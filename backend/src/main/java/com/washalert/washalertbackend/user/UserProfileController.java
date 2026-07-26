@@ -55,7 +55,12 @@ public class UserProfileController {
             @AuthenticationPrincipal AuthUserDetails principal,
             @Valid @RequestBody UpdateProfileRequest req
     ) {
-        User user = principal.getUser();
+        // Reload the current row by id rather than saving principal.getUser() — that object
+        // is the snapshot captured at login time and may be stale (e.g. an admin suspended
+        // or demoted this account after login). Saving the stale snapshot back would silently
+        // overwrite status/role/enabled with their login-time values.
+        User user = userRepository.findById(principal.getUser().getId())
+                .orElseThrow(() -> new IllegalStateException("User not found."));
         String normalizedName = req.fullName().trim();
         String normalizedMobile = normalizeBlankToNull(req.mobileNumber());
         String normalizedImageUrl = normalizeBlankToNull(req.profileImageUrl());

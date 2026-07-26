@@ -4,6 +4,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -17,6 +18,18 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class RateLimitFilter extends OncePerRequestFilter {
+
+    // Off by default: honoring X-Forwarded-For with no trusted-proxy check lets a client
+    // rotate the header per request to get a fresh rate-limit bucket every time, defeating
+    // login/OTP throttling entirely. Only enable this once the deployment is confirmed to
+    // sit behind a proxy that overwrites (not appends to) this header before it reaches us.
+    private final boolean trustForwardedFor;
+
+    public RateLimitFilter(
+            @Value("${washalert.security.trust-forwarded-for:false}") boolean trustForwardedFor
+    ) {
+        this.trustForwardedFor = trustForwardedFor;
+    }
 
     /**
      * windowMinute: epochMinute (nowSec / 60)
@@ -123,11 +136,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     private String clientIp(HttpServletRequest req) {
-        // If behind proxy later, this will work (use first IP)
-        String xff = req.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            String first = xff.split(",")[0].trim();
-            if (!first.isBlank()) return first;
+        if (trustForwardedFor) {
+            String xff = req.getHeader("X-Forwarded-For");
+            if (xff != null && !xff.isBlank()) {
+                String first = xff.split(",")[0].trim();
+                if (!first.isBlank()) return first;
+            }
         }
         return req.getRemoteAddr();
     }

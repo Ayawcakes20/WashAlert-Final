@@ -667,11 +667,11 @@ export const AuthProvider = ({ children }) => {
     await persistOnboardingSeen();
   }, [persistOnboardingSeen]);
 
-  const resetPassword = useCallback(async (email, newPassword) => {
+  const resetPassword = useCallback(async (email, newPassword, code) => {
     try {
       await authRequest('/api/auth/otp/reset-password', {
         method: 'POST',
-        body: { email: normalizeEmail(email), newPassword },
+        body: { email: normalizeEmail(email), code, newPassword },
       });
       return { success: true };
     } catch (error) {

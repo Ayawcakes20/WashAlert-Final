@@ -159,6 +159,21 @@ public class OtpService {
         otps.deleteByUser(user);
     }
 
+    /**
+     * Checks the code without consuming it. Used for UX-only pre-checks (e.g. a
+     * "verify code" screen shown before the actual sensitive action). The action
+     * that follows (e.g. password reset) MUST call {@link #verifyCodeOnly(String, String)}
+     * itself immediately before performing the sensitive mutation — this method alone
+     * does not authorize anything.
+     */
+    @Transactional
+    public void checkCodeOnly(String email, String code) {
+        User user = users.findByEmail(normalizeEmail(email))
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        verifyCodeOnly(user, code);
+    }
+
     private void verifyCodeOnly(User user, String code) {
         EmailOtp otp = otps.findByUser(user)
                 .orElseThrow(() -> new IllegalArgumentException("No verification code found. Please request a new one."));

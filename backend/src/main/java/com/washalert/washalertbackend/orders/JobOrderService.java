@@ -1475,12 +1475,24 @@ public class JobOrderService {
         return sb.toString();
     }
 
+    // Characters that Excel/Sheets/LibreOffice treat as the start of a formula when a
+    // cell begins with them (=, +, -, @) or that can start a DDE/tab-injection sequence.
+    private static final java.util.Set<Character> CSV_FORMULA_TRIGGER_CHARS =
+            java.util.Set.of('=', '+', '-', '@', '\t', '\r');
+
     private static String csvField(String value) {
         if (value == null || value.isEmpty()) return "";
-        if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
-            return "\"" + value.replace("\"", "\"\"") + "\"";
+        String safe = value;
+        // Neutralize CSV formula injection: a value starting with =, +, -, @, tab, or CR
+        // executes as a formula/DDE payload when the export is opened in a spreadsheet
+        // application. Prefixing with a single quote forces it to be read as plain text.
+        if (!safe.isEmpty() && CSV_FORMULA_TRIGGER_CHARS.contains(safe.charAt(0))) {
+            safe = "'" + safe;
         }
-        return value;
+        if (safe.contains(",") || safe.contains("\"") || safe.contains("\n")) {
+            return "\"" + safe.replace("\"", "\"\"") + "\"";
+        }
+        return safe;
     }
 
     private static final String FS_RATING        = "customerRating";

@@ -161,15 +161,19 @@ public class SecurityConfig {
                                 "/api/bookings/check-supplies",
                                 "/api/payments/webhook",
                                 "/api/payments/checkout/**",
-                                "/api/payments/paymongo/webhook",
-                                "/api/support/chat")
+                                "/api/payments/paymongo/webhook")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/bookings/slots").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/bookings/supplies-availability").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/orders/track/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/payments/track/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/deliveries/track/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/support/history").permitAll()
+                        // Support chat/history was previously public. It is only ever called from the
+                        // logged-in Customer/Driver areas of the mobile app (never a pre-login screen),
+                        // and being public let anyone pull order/payment/delivery data — including the
+                        // delivery confirmationCode — by typing a tracking number into the chat box.
+                        .requestMatchers(HttpMethod.POST, "/api/support/chat").hasAnyRole("CUSTOMER", "DRIVER")
+                        .requestMatchers(HttpMethod.GET, "/api/support/history").hasAnyRole("CUSTOMER", "DRIVER")
 
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/auth/logout").authenticated()

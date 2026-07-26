@@ -74,6 +74,11 @@ export default function LoginOtpPage() {
       }));
 
       saveSessionUser(me);
+      // The Firebase idToken/refreshToken were only needed to get through this OTP
+      // step — the app now runs on the httpOnly API session cookie. Clearing this
+      // here means a non-expiring refresh token doesn't sit in localStorage as
+      // XSS loot for the rest of the session.
+      clearFirebaseWebSession();
       toast.success("Login successful.");
       navigate("/dashboard");
     } catch (err: any) {

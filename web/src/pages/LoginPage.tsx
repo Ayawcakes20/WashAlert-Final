@@ -6,7 +6,7 @@ import logoLaundryHubs from "@/assets/logo-laundryhubs.webp";
 import logoSpeedyWash from "@/assets/logo-speedywash.webp";
 import { authApi } from "@/lib/api";
 import { firebaseAuthApi } from "@/lib/firebaseAuth";
-import { saveFirebaseWebSession, saveSessionUser } from "@/lib/session";
+import { saveFirebaseWebSession, saveSessionUser, clearFirebaseWebSession } from "@/lib/session";
 import { toast } from "@/components/ui/sonner";
 
 type LoginField = "email" | "password";
@@ -155,6 +155,11 @@ export default function LoginPage() {
         provider: "FIREBASE",
       }));
       saveSessionUser(me);
+      // Login is complete and the app now runs on the httpOnly API session cookie —
+      // the Firebase idToken/refreshToken saved above are no longer needed. Clearing
+      // them here means a non-expiring refresh token doesn't sit in localStorage as
+      // XSS loot for the rest of the session.
+      clearFirebaseWebSession();
 
       const role = (me.role || "").toUpperCase();
       if (role !== "ADMIN" && role !== "STAFF") {
