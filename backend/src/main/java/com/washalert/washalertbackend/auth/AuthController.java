@@ -503,7 +503,11 @@ public class AuthController {
     @PostMapping("/otp/verify-reset")
     public ResponseEntity<?> verifyResetOtp(@Valid @RequestBody VerifyOtpRequest req, HttpServletRequest request) {
         try {
-            otpService.verifyCodeOnly(req.email(), req.code());
+            // Non-consuming pre-check only, for UX ("is this code correct?").
+            // The code is re-verified and consumed atomically in /otp/reset-password
+            // immediately before the password is changed — this step alone must never
+            // authorize the password mutation.
+            otpService.checkCodeOnly(req.email(), req.code());
             return ResponseEntity.ok().build();
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));
@@ -516,7 +520,7 @@ public class AuthController {
             HttpServletRequest request
     ) {
         try {
-            authService.resetPasswordWithOtp(req.email(), req.newPassword());
+            authService.resetPasswordWithOtp(req.email(), req.code(), req.newPassword());
             return ResponseEntity.ok().build();
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));

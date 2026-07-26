@@ -41,7 +41,11 @@ public class AnalyticsService {
         this.paymentRepository = paymentRepository;
     }
 
-    @Cacheable(value = "analytics-summary", key = "(#branch ?: 'global') + ':' + #fromDate + ':' + #toDate + ':' + #principal.user.role.name()")
+    // Keyed on the ACTOR'S OWN branch (principal.user.branch), not just the raw #branch
+    // argument — for STAFF, resolveBranch() below ignores #branch entirely and substitutes
+    // the caller's own branch, so the cache key must reflect that resolved scope too, or
+    // Staff at different branches collide on the same cache entry and read each other's data.
+    @Cacheable(value = "analytics-summary", key = "#principal.user.role.name() + ':' + (#principal.user.branch ?: '') + ':' + (#branch ?: 'global') + ':' + #fromDate + ':' + #toDate")
     @Transactional(readOnly = true)
     public AnalyticsSummaryResponse summary(LocalDate fromDate, LocalDate toDate, String branch, AuthUserDetails principal) {
         LocalDate from = (fromDate == null) ? LocalDate.now().minusDays(6) : fromDate;

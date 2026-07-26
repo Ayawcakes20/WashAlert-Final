@@ -32,8 +32,11 @@ public class PaymentController {
     }
 
     @PostMapping("/proof")
-    public PaymentResponse submitProof(@Valid @RequestBody SubmitPaymentProofRequest req) {
-        return paymentService.submitProof(req);
+    public PaymentResponse submitProof(
+            @Valid @RequestBody SubmitPaymentProofRequest req,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return paymentService.submitProof(req, principal);
     }
 
     @PostMapping("/validate")

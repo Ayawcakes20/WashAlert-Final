@@ -67,6 +67,20 @@ function fmtMoney(n: number): string {
   return "₱" + n.toFixed(2);
 }
 
+// Escapes any order-derived string before it is interpolated into the receipt HTML.
+// The receipt is rendered via document.write() in a same-origin popup — without this,
+// a crafted customer name (or any other order field) could execute script on the
+// dashboard's own origin when staff print a receipt.
+function esc(value: unknown): string {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[c] as string));
+}
+
 function infoRow(label: string, value: string): string {
   if (!value || value === "N/A" || value.trim() === "") return "";
   return `
@@ -279,7 +293,7 @@ function buildReceiptHtml(order: ReceiptOrder, autoPrint = true): { html: string
   <div class="center">
     <div class="brand">WashAlert</div>
     <div class="receipt-title">Official Receipt / Transaction Record</div>
-    <div class="branch-line">${order.branch || "Branch N/A"} &mdash; Open 7:00 AM &ndash; 10:00 PM</div>
+    <div class="branch-line">${esc(order.branch || "Branch N/A")} &mdash; Open 7:00 AM &ndash; 10:00 PM</div>
   </div>
 
   <hr class="dash"/>
@@ -294,19 +308,19 @@ function buildReceiptHtml(order: ReceiptOrder, autoPrint = true): { html: string
   <p class="section-label">Order Information</p>
   <table class="info-table">
     <tbody>
-      ${infoRow("Customer", order.customerName || "N/A")}
-      ${order.customerPhone ? infoRow("Contact", order.customerPhone) : ""}
-      ${infoRow("Branch", order.branch || "N/A")}
-      ${infoRow("Service", order.serviceName || "N/A")}
+      ${infoRow("Customer", esc(order.customerName || "N/A"))}
+      ${order.customerPhone ? infoRow("Contact", esc(order.customerPhone)) : ""}
+      ${infoRow("Branch", esc(order.branch || "N/A"))}
+      ${infoRow("Service", esc(order.serviceName || "N/A"))}
       ${infoRow(
         "Service Type",
         order.serviceType === "PICKUP_DELIVERY" ? "Pickup &amp; Delivery" : "Drop-Off"
       )}
       ${order.loadSize ? infoRow(
         "Load Classification",
-        String(order.loadSize).charAt(0).toUpperCase() + String(order.loadSize).slice(1).toLowerCase()
+        esc(String(order.loadSize).charAt(0).toUpperCase() + String(order.loadSize).slice(1).toLowerCase())
       ) : ""}
-      ${order.laundryType ? infoRow("Laundry Type", order.laundryType) : ""}
+      ${order.laundryType ? infoRow("Laundry Type", esc(order.laundryType)) : ""}
       ${infoRow(
         "Est. Weight",
         order.estimatedWeightKg ? `${order.estimatedWeightKg} kg` : "N/A"
@@ -320,7 +334,7 @@ function buildReceiptHtml(order: ReceiptOrder, autoPrint = true): { html: string
         order.detergent && order.detergent.toLowerCase() !== "none"
           ? infoRow(
               "Detergent",
-              `${order.detergent} &times; ${order.detergentQuantity || 1} pack(s) &mdash; ${fmtMoney(detPPP)}/pack`
+              `${esc(order.detergent)} &times; ${order.detergentQuantity || 1} pack(s) &mdash; ${fmtMoney(detPPP)}/pack`
             )
           : ""
       }
@@ -328,11 +342,11 @@ function buildReceiptHtml(order: ReceiptOrder, autoPrint = true): { html: string
         order.conditioner && order.conditioner.toLowerCase() !== "none"
           ? infoRow(
               "Fabric Conditioner",
-              `${order.conditioner} &times; ${order.conditionerQuantity || 1} pack(s) &mdash; ${fmtMoney(conPPP)}/pack`
+              `${esc(order.conditioner)} &times; ${order.conditionerQuantity || 1} pack(s) &mdash; ${fmtMoney(conPPP)}/pack`
             )
           : ""
       }
-      ${infoRow("Order Status", orderStatusDisplay)}
+      ${infoRow("Order Status", esc(orderStatusDisplay))}
     </tbody>
   </table>
 
@@ -341,13 +355,13 @@ function buildReceiptHtml(order: ReceiptOrder, autoPrint = true): { html: string
   <p class="section-label">Charges</p>
   <table class="charge-table">
     <tbody>
-      ${serviceBase > 0 ? chargeRow(order.serviceName || "Service Fee", serviceBase) : ""}
+      ${serviceBase > 0 ? chargeRow(esc(order.serviceName || "Service Fee"), serviceBase) : ""}
       ${extraWeight > 0 ? chargeRow("Extra Weight Surcharge", extraWeight) : ""}
       ${rush > 0 ? chargeRow("Rush Service Fee", rush) : ""}
       ${
         detCost > 0
           ? chargeRow(
-              `${order.detergent} Detergent &times;${order.detergentQuantity || 1}`,
+              `${esc(order.detergent)} Detergent &times;${order.detergentQuantity || 1}`,
               detCost
             )
           : ""
@@ -355,7 +369,7 @@ function buildReceiptHtml(order: ReceiptOrder, autoPrint = true): { html: string
       ${
         conCost > 0
           ? chargeRow(
-              `${order.conditioner} Conditioner &times;${order.conditionerQuantity || 1}`,
+              `${esc(order.conditioner)} Conditioner &times;${order.conditionerQuantity || 1}`,
               conCost
             )
           : ""
@@ -373,8 +387,8 @@ function buildReceiptHtml(order: ReceiptOrder, autoPrint = true): { html: string
       <div class="total-amount">${fmtMoney(total)}</div>
     </div>
     <div class="payment-block">
-      <div class="payment-method">${paymentMethodDisplay}</div>
-      <div class="payment-status">${paymentStatusDisplay}</div>
+      <div class="payment-method">${esc(paymentMethodDisplay)}</div>
+      <div class="payment-status">${esc(paymentStatusDisplay)}</div>
     </div>
   </div>
 

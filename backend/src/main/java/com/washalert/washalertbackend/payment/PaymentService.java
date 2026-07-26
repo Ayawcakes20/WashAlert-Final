@@ -56,11 +56,19 @@ public class PaymentService {
     }
 
     @Transactional
-    public PaymentResponse submitProof(SubmitPaymentProofRequest req) {
+    public PaymentResponse submitProof(SubmitPaymentProofRequest req, AuthUserDetails principal) {
         String tracking = normalizeTracking(req.trackingNumber());
 
         JobOrder order = orderRepository.findByTrackingNumber(tracking)
                 .orElseThrow(() -> new IllegalArgumentException("Order not found for tracking number."));
+
+        // Ownership check: only the customer who placed this order may submit payment
+        // proof for it. Without this, any authenticated customer could overwrite another
+        // customer's pending payment record with a forged amount/reference/proof.
+        String callerEmail = principal.getUser().getEmail();
+        if (order.getCustomerEmail() == null || !order.getCustomerEmail().equalsIgnoreCase(callerEmail)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This order does not belong to you.");
+        }
 
         PaymentRecord payment = paymentRepository.findByJobOrder_TrackingNumber(tracking)
                 .orElseGet(() -> PaymentRecord.builder().jobOrder(order).build());

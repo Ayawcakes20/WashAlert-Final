@@ -601,7 +601,8 @@ public class DeliveryService {
 
         if (!dataReadProperties.prefersFirestoreReads()) {
             DeliveryOrder delivery = findDeliveryByIdMysql(deliveryId);
-            enforceStaffBranchScope(actor, delivery.getJobOrder().getBranch());
+            enforceDeliveryReadScope(actor, delivery.getJobOrder().getBranch(),
+                    delivery.getDriverUser() != null ? delivery.getDriverUser().getId() : null);
             return toResponse(delivery);
         }
 
@@ -609,7 +610,7 @@ public class DeliveryService {
         if (firestoreDelivery.isPresent()) {
             DeliveryResponse response = firestoreDelivery.get();
             if (!isIncompleteResponse(response)) {
-                enforceStaffBranchScope(actor, response.branch());
+                enforceDeliveryReadScope(actor, response.branch(), response.assignedDriverId());
                 return response;
             }
             log.warn("[DeliveryService] Firestore delivery {} missing critical fields; falling back to MySQL.", deliveryId);
@@ -617,7 +618,8 @@ public class DeliveryService {
 
         if (dataReadProperties.allowsMysqlFallback() || !firestoreReadService.isAvailable()) {
             DeliveryOrder delivery = findDeliveryByIdMysql(deliveryId);
-            enforceStaffBranchScope(actor, delivery.getJobOrder().getBranch());
+            enforceDeliveryReadScope(actor, delivery.getJobOrder().getBranch(),
+                    delivery.getDriverUser() != null ? delivery.getDriverUser().getId() : null);
             return toResponse(delivery);
         }
 
@@ -940,6 +942,22 @@ public class DeliveryService {
         }
     }
 
+    /**
+     * Read-path equivalent of {@link #enforceDeliveryWriteScope(User, DeliveryOrder)} for callers
+     * that only have a branch + assigned-driver-id pair (e.g. a Firestore-sourced DTO) rather than
+     * a full {@link DeliveryOrder} entity. A DRIVER may only read deliveries assigned to them; an
+     * unassigned delivery (assignedDriverId == null) must NOT be readable by any driver.
+     */
+    private void enforceDeliveryReadScope(User actor, String targetBranch, Long assignedDriverId) {
+        if (actor.getRole() == Role.DRIVER) {
+            if (assignedDriverId == null || !assignedDriverId.equals(actor.getId())) {
+                throw new IllegalArgumentException("You can only view your assigned deliveries.");
+            }
+            return;
+        }
+        enforceStaffBranchScope(actor, targetBranch);
+    }
+
     private void enforceDeliveryWriteScope(User actor, DeliveryOrder delivery) {
         if (actor.getRole() == Role.DRIVER) {
             if (delivery.getDriverUser() == null || !delivery.getDriverUser().getId().equals(actor.getId())) {
@@ -1258,7 +1276,9 @@ public class DeliveryService {
     private void enforceDriverOwnership(DeliveryOrder d, AuthUserDetails principal) {
         User actor = principal.getUser();
         if (actor.getRole() == Role.ADMIN || actor.getRole() == Role.STAFF) return;
-        if (d.getDriverUser() != null && !d.getDriverUser().getId().equals(actor.getId())) {
+        // Fail closed: an unassigned delivery (driverUser == null) must NOT be actionable by
+        // any driver. Previously this fell through and permitted the action.
+        if (d.getDriverUser() == null || !d.getDriverUser().getId().equals(actor.getId())) {
             throw new IllegalArgumentException("This delivery is not assigned to you.");
         }
     }

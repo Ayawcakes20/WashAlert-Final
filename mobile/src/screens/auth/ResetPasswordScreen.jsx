@@ -16,6 +16,7 @@ import { useAuth } from '../../context/AuthContext';
 const ResetPasswordScreen = ({ navigation, route }) => {
   const { resetPassword } = useAuth();
   const email = route?.params?.email;
+  const code = route?.params?.code;
   const [pw, setPw] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -35,12 +36,12 @@ const ResetPasswordScreen = ({ navigation, route }) => {
 
   const handle = async () => {
     if (!validate()) return;
-    if (!email) {
+    if (!email || !code) {
       setErrors({ pw: 'Session expired. Please start over.' });
       return;
     }
     setLoading(true);
-    const result = await resetPassword(email, pw);
+    const result = await resetPassword(email, pw, code);
     setLoading(false);
     if (!result?.success) {
       setErrors((prev) => ({

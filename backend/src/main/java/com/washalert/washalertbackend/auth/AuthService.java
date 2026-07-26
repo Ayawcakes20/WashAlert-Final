@@ -198,9 +198,16 @@ public class AuthService {
         otpService.sendForReset(normalized);
     }
 
-    public void resetPasswordWithOtp(String email, String newPassword) {
+    public void resetPasswordWithOtp(String email, String code, String newPassword) {
         passwordStrengthValidator.validate(newPassword);
         String normalized = normalizeEmail(email);
+
+        // Verify and consume the OTP atomically, immediately before mutating the
+        // password. This is the only check that actually authorizes this action —
+        // the earlier /otp/verify-reset step is a non-consuming UX pre-check and
+        // must never be trusted on its own.
+        otpService.verifyCodeOnly(normalized, code);
+
         User user = users.findByEmail(normalized)
                 .orElseThrow(() -> new IllegalArgumentException("User not found."));
 

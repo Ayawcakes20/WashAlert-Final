@@ -167,6 +167,12 @@ public class BookingService {
             throw new IllegalArgumentException("Selected time slot is already full. Please choose another slot.");
         }
 
+        // Never trust a client-supplied distance when we can compute it ourselves from the
+        // branch/delivery coordinates captured during address selection — this closes the
+        // "distanceKm: 0" free-delivery tamper. Only fall back to the client value when
+        // coordinates are unavailable (e.g. drop-off orders with no delivery leg).
+        BigDecimal effectiveDistanceKm = resolveDistanceKm(req);
+
         var est = pricingService.estimate(
                 cleanBranch,
                 req.serviceName(),
@@ -174,7 +180,7 @@ public class BookingService {
                 req.isRush(),
                 req.detergentPreference(),
                 req.fabricConditionerPreference(),
-                req.distanceKm()
+                effectiveDistanceKm
         );
 
         // Reject tampered add-on quantities before any fallback logic runs.
@@ -235,11 +241,14 @@ public class BookingService {
                 .loadSize(req.loadSize())
                 .estimatedWeightKg(req.estimatedWeightKg())
                 .specialInstructions(buildSpecialInstructions(req.laundryType(), req.specialInstructions()))
-                .servicePrice(req.servicePrice() != null ? req.servicePrice() : est.servicePrice())
-                .suppliesPrice(req.suppliesPrice() != null ? req.suppliesPrice() : est.suppliesPrice())
-                .rushPrice(req.rushPrice() != null ? req.rushPrice() : est.rushPrice())
-                .deliveryPrice(req.deliveryPrice() != null ? req.deliveryPrice() : est.deliveryPrice())
-                .totalPrice(req.total() != null ? req.total() : est.totalPrice())
+                // Pricing is always server-computed. Any price fields the client sends in
+                // CreateBookingRequest are display-only echoes and are never trusted here —
+                // this closes a price-tampering hole where a client could set its own total.
+                .servicePrice(est.servicePrice())
+                .suppliesPrice(est.suppliesPrice())
+                .rushPrice(est.rushPrice())
+                .deliveryPrice(est.deliveryPrice())
+                .totalPrice(est.totalPrice())
                 .paymentMethod(paymentMethod)
                 .serviceName(req.serviceName())
                 .status(JobOrderStatus.PENDING)
@@ -303,6 +312,34 @@ public class BookingService {
             log.warn("[BookingService] Notification enqueue failed for {}: {}", saved.getTrackingNumber(), ex.getMessage());
         }
         return toResponse(saved);
+    }
+
+    /**
+     * Prefers a server-computed haversine distance from the branch/delivery coordinates
+     * over the client-supplied {@code distanceKm}. Falls back to the client value only
+     * when coordinates are not present (e.g. drop-off bookings with no delivery leg).
+     */
+    private BigDecimal resolveDistanceKm(CreateBookingRequest req) {
+        if (req.branchLatitude() != null && req.branchLongitude() != null
+                && req.deliveryLatitude() != null && req.deliveryLongitude() != null) {
+            return haversineKm(
+                    req.branchLatitude(), req.branchLongitude(),
+                    req.deliveryLatitude(), req.deliveryLongitude()
+            );
+        }
+        return req.distanceKm();
+    }
+
+    private BigDecimal haversineKm(double lat1, double lon1, double lat2, double lon2) {
+        final double earthRadiusKm = 6371.0;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        double distanceKm = earthRadiusKm * c;
+        return BigDecimal.valueOf(distanceKm).setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
     private void validateDate(LocalDate date) {
