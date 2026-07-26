@@ -307,16 +307,30 @@ public class InventoryService {
     }
 
     @Transactional
-    public InventoryItemResponse create(CreateInventoryItemRequest req) {
-        log.info("[INVENTORY] Attempting to create item: {} in branch: {}", req.itemName(), req.branch());
+    public InventoryItemResponse create(CreateInventoryItemRequest req, AuthUserDetails principal) {
+        User actor = principal.getUser();
+        // STAFF creates only in their own branch — reads are already scoped this way via
+        // resolveEffectiveBranch(); writes previously trusted whatever branch the client sent.
+        String targetBranch = req.branch() == null ? null : req.branch().trim();
+        if (actor.getRole() == Role.STAFF) {
+            if (actor.getBranch() == null || actor.getBranch().isBlank()) {
+                throw new IllegalArgumentException("Your account has no assigned branch.");
+            }
+            if (!sameBranch(actor.getBranch(), targetBranch)) {
+                throw new IllegalArgumentException("You can only create inventory items in your branch.");
+            }
+            targetBranch = actor.getBranch();
+        }
+
+        log.info("[INVENTORY] Attempting to create item: {} in branch: {}", req.itemName(), targetBranch);
         try {
-            itemRepository.findByBranchIgnoreCaseAndItemNameIgnoreCase(req.branch().trim(), req.itemName().trim())
+            itemRepository.findByBranchIgnoreCaseAndItemNameIgnoreCase(targetBranch, req.itemName().trim())
                     .ifPresent(existing -> {
                         throw new IllegalStateException("Inventory item already exists for this branch.");
                     });
 
             InventoryItem item = InventoryItem.builder()
-                    .branch(req.branch().trim())
+                    .branch(targetBranch)
                     .itemName(normalizeItemName(req.itemName()))
                     .category(req.category().trim())
                     .unit(req.unit().trim())
@@ -353,11 +367,26 @@ public class InventoryService {
     }
 
     @Transactional
-    public InventoryItemResponse update(Long itemId, UpdateInventoryItemRequest req) {
+    public InventoryItemResponse update(Long itemId, UpdateInventoryItemRequest req, AuthUserDetails principal) {
+        User actor = principal.getUser();
+
         InventoryItem item = itemRepository.findById(itemId)
                 .orElseThrow(() -> new IllegalArgumentException("Inventory item not found."));
 
         String branch = req.branch().trim();
+
+        // STAFF may only edit an item that is currently in their branch, and may not move it
+        // to a different branch. Both checks are needed — checking only one side would still
+        // let STAFF relocate a Branch-B item into Branch-A (or vice versa) via this endpoint.
+        if (actor.getRole() == Role.STAFF) {
+            if (actor.getBranch() == null || actor.getBranch().isBlank()) {
+                throw new IllegalArgumentException("Your account has no assigned branch.");
+            }
+            if (!sameBranch(actor.getBranch(), item.getBranch()) || !sameBranch(actor.getBranch(), branch)) {
+                throw new IllegalArgumentException("You can only update inventory items in your branch.");
+            }
+        }
+
         String itemName = normalizeItemName(req.itemName());
 
         itemRepository.findByBranchIgnoreCaseAndItemNameIgnoreCase(branch, itemName)

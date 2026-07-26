@@ -56,9 +56,10 @@ public class MachineController {
     @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
     public MachineResponse updateStatus(
             @PathVariable String machineId,
-            @Valid @RequestBody UpdateMachineStatusRequest req
+            @Valid @RequestBody UpdateMachineStatusRequest req,
+            @AuthenticationPrincipal AuthUserDetails principal
     ) {
-        return service.updateStatusByMachineId(machineId, req);
+        return service.updateStatusByMachineId(machineId, req, principal);
     }
 
     @PostMapping

@@ -71,9 +71,17 @@ public class MachineService {
     }
 
     @Transactional
-    public MachineResponse updateStatusByMachineId(String machineId, UpdateMachineStatusRequest req) {
+    public MachineResponse updateStatusByMachineId(String machineId, UpdateMachineStatusRequest req, AuthUserDetails principal) {
         Machine m = repo.findByMachineId(machineId)
                 .orElseThrow(() -> new IllegalArgumentException("Machine not found."));
+
+        // Reads are already branch-scoped via resolveEffectiveBranch(); this write path
+        // previously had no such check, letting Branch-A staff flip any Branch-B machine to
+        // MAINTENANCE — which also silently shrinks that branch's booking slot capacity.
+        User actor = principal.getUser();
+        if (actor.getRole() == Role.STAFF && !sameBranch(actor.getBranch(), m.getBranch())) {
+            throw new IllegalArgumentException("You can only manage machines in your branch.");
+        }
 
         if (m.getStatus() == req.status()) {
             return toResponse(m);

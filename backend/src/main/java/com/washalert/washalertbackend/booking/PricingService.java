@@ -108,8 +108,20 @@ public class PricingService {
             return;
         }
 
-        // No load-count cap — customers may choose their preferred quantity.
-        // Only the dry-only guard (above) is enforced server-side.
+        // Cap add-on packs at the computed number of loads, as documented above. Supply price
+        // is always computed from the load count (see calculateSuppliesPriceWithBreakdown),
+        // never from the requested quantity — without this cap, a booking could request an
+        // arbitrarily large quantity, draining that much inventory while only being charged
+        // for the load-based amount.
+        int computedLoads = computeLoadCount(serviceName, weightKg);
+        if (!isNoSupply(detergent) && detQty > computedLoads) {
+            throw new IllegalArgumentException(
+                    "Detergent quantity cannot exceed " + computedLoads + " pack(s) for this load.");
+        }
+        if (!isNoSupply(fabcon) && conQty > computedLoads) {
+            throw new IllegalArgumentException(
+                    "Fabric conditioner quantity cannot exceed " + computedLoads + " pack(s) for this load.");
+        }
     }
 
     /** Returns true when the supply value means "no supply selected". Handles null, blank, "none", and "customer provided". */
