@@ -37,13 +37,15 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.washalert.mobile",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleMapsApiKey": "AIzaSyAzAGBAijqpEZki3ZZBYe-9rxtzjF55RSY"
       },
       "infoPlist": {
         "UIBackgroundModes": [
           "location",
-          "fetch"
+          "fetch",
+          "remote-notification"
         ],
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow WashAlert to track your location for real-time delivery updates.",
         "NSLocationWhenInUseUsageDescription": "Allow WashAlert to track your location for real-time delivery updates."

@@ -17,8 +17,7 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
-# google-services.json — tracked for EAS Build
-GoogleService-Info.plist
+# google-services.json and GoogleService-Info.plist — both tracked for EAS Build
 
 # Metro
 .metro-health-check*

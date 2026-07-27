@@ -9,6 +9,9 @@
       "node": "20.18.3",
       "android": {
         "buildType": "apk"
+      },
+      "ios": {
+        "simulator": true
       }
     },
     "preview": {
@@ -16,6 +19,9 @@
       "node": "20.18.3",
       "android": {
         "buildType": "apk"
+      },
+      "ios": {
+        "simulator": false
       }
     },
     "production": {
