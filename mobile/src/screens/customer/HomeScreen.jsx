@@ -11,7 +11,7 @@ import { db } from '../../services/firebase';
 import { colors } from '../../theme/colors';
 import { LoadingSkeleton } from '../../components';
 import { useAuth } from '../../context/AuthContext';
-import { bookings as bookingsApi } from '../../services/api';
+import { bookings as bookingsApi, announcements as announcementsApi } from '../../services/api';
 import S from './HomeScreenStyles';
 
 // ─── Static Service Data ──────────────────────────────────────────────────────
@@ -186,6 +186,7 @@ export default function HomeScreen({ navigation }) {
   const [loading, setLoading]     = useState(true);
   const [activeOrders, setActive] = useState([]);
   const [branchTab, setBranchTab] = useState('speedywash');
+  const [announcementsList, setAnnouncementsList] = useState([]);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useFocusEffect(
@@ -205,10 +206,14 @@ export default function HomeScreen({ navigation }) {
   const loadData = async () => {
     try {
       setLoading(true);
-      const res = await bookingsApi.getMyBookings('all');
-      const all = res.bookings || [];
+      const [res, annRes] = await Promise.all([
+        bookingsApi.getMyBookings('all').catch(() => ({ bookings: [] })),
+        announcementsApi.getAll().catch(() => []),
+      ]);
+      const all = res?.bookings || [];
       const active = all.filter(o => ACTIVE_STATUSES.includes(normalize(o.status)));
       setActive(active.slice(0, 3));
+      setAnnouncementsList(Array.isArray(annRes) ? annRes.slice(0, 3) : []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -293,6 +298,34 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} style={S.scroll}>
+
+        {/* ── Announcement Banner ────────────────────────────────────────── */}
+        {announcementsList.length > 0 && (
+          <TouchableOpacity
+            style={S.announcementCard}
+            activeOpacity={0.88}
+            onPress={() => navigation.navigate('Notifications')}
+          >
+            <View style={S.announcementIconBox}>
+              <Ionicons
+                name={announcementsList[0].type === 'CLOSURE' ? 'alert-circle' : 'megaphone'}
+                size={18}
+                color="#FFF"
+              />
+            </View>
+            <View style={S.announcementContent}>
+              <Text style={S.announcementTag}>
+                {(announcementsList[0].type || 'ANNOUNCEMENT')} • {announcementsList[0].targetAllBranches ? 'ALL BRANCHES' : (announcementsList[0].branch || 'NOTICE')}
+              </Text>
+              <Text style={S.announcementTitle} numberOfLines={1}>
+                {announcementsList[0].title}
+              </Text>
+              <Text style={S.announcementMessage} numberOfLines={2}>
+                {announcementsList[0].message}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        )}
 
         {/* ── Hero Card (Services) ─────────────────────────────────────── */}
         <View style={S.heroCard}>

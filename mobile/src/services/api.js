@@ -1503,6 +1503,17 @@ export const notifications = {
   },
 };
 
+export const announcements = {
+  getAll: async () => {
+    try {
+      const response = await apiRequest('/api/announcements');
+      return Array.isArray(response) ? response : [];
+    } catch {
+      return [];
+    }
+  },
+};
+
 export const payments = {
   submitProof: async (payload) => {
     return apiRequest('/api/payments/proof', {

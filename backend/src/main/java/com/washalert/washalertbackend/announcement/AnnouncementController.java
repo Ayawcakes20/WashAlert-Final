@@ -37,7 +37,7 @@ public class AnnouncementController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN','STAFF','DRIVER','CUSTOMER')")
     public List<AnnouncementResponse> listHistory(@AuthenticationPrincipal AuthUserDetails principal) {
         return announcementService.listHistory(principal);
     }

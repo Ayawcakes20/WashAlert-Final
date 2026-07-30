@@ -32,6 +32,21 @@ const S = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12, shadowRadius: 20, elevation: 8,
   },
+
+  // ─── Announcement Banner ──────────────────────────────────────────────────
+  announcementCard: {
+    marginHorizontal: 16, marginBottom: 12, borderRadius: 16,
+    backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#F59E0B',
+    padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+  },
+  announcementIconBox: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: '#F59E0B', alignItems: 'center', justifyContent: 'center',
+  },
+  announcementContent: { flex: 1 },
+  announcementTag: { fontSize: 10, fontWeight: '800', color: '#D97706', textTransform: 'uppercase', marginBottom: 2 },
+  announcementTitle: { fontSize: 14, fontWeight: '800', color: '#92400E', marginBottom: 4 },
+  announcementMessage: { fontSize: 12, fontWeight: '500', color: '#78350F', lineHeight: 17 },
   greetPad: { paddingHorizontal: 20, marginBottom: 16 },
   greetLine1: { fontSize: 16, fontWeight: '600', color: colors.text },
   greetName: { color: colors.text, fontWeight: '800' },

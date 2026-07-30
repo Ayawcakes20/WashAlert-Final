@@ -78,14 +78,12 @@ public class AnnouncementService {
     public List<AnnouncementResponse> listHistory(AuthUserDetails principal) {
         User actor = principal.getUser();
         List<Announcement> rows;
-        if (actor.getRole() == Role.ADMIN) {
+        if (actor.getRole() == Role.ADMIN || actor.getRole() == Role.CUSTOMER || actor.getRole() == Role.DRIVER) {
             rows = announcementRepository.findTop100ByOrderByCreatedAtDesc();
         } else {
             String actorBranch = blankToNull(actor.getBranch());
             if (actorBranch == null) {
-                rows = announcementRepository.findTop100ByOrderByCreatedAtDesc().stream()
-                        .filter(Announcement::isTargetAllBranches)
-                        .toList();
+                rows = announcementRepository.findTop100ByOrderByCreatedAtDesc();
             } else {
                 rows = announcementRepository.findTop100ByTargetAllBranchesTrueOrBranchIgnoreCaseOrderByCreatedAtDesc(
                         actorBranch
@@ -100,16 +98,13 @@ public class AnnouncementService {
             return List.of();
         }
 
-        if (viewer.getRole() == Role.ADMIN) {
+        if (viewer.getRole() == Role.ADMIN || viewer.getRole() == Role.CUSTOMER || viewer.getRole() == Role.DRIVER) {
             return announcementRepository.findTop100ByOrderByCreatedAtDesc();
         }
 
         String audienceBranch = resolveAudienceBranch(viewer);
         if (audienceBranch == null) {
-            return announcementRepository.findTop100ByTargetAllBranchesTrueOrBranchIgnoreCaseOrderByCreatedAtDesc("__NO_BRANCH__")
-                    .stream()
-                    .filter(Announcement::isTargetAllBranches)
-                    .toList();
+            return announcementRepository.findTop100ByOrderByCreatedAtDesc();
         }
         return announcementRepository.findTop100ByTargetAllBranchesTrueOrBranchIgnoreCaseOrderByCreatedAtDesc(audienceBranch);
     }
