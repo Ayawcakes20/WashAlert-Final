@@ -707,7 +707,7 @@ const AddressPickerSheet = ({
               ) : (
                 <View style={styles.resolveRow}>
                   <Ionicons name="location" size={18} color={colors.primary} />
-                  <Text style={styles.resolveAddressText} numberOfLines={2}>
+                  <Text style={styles.resolveAddressText} numberOfLines={4}>
                     {resolvedAddress || 'Tap or drag pin to set address. If unresolved, please add landmark details.'}
                   </Text>
                 </View>
