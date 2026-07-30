@@ -19,7 +19,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import * as Location from 'expo-location';
@@ -140,6 +142,7 @@ const AddressPickerSheet = ({
   initialValue,
   fallbackCoordinate = null,
 }) => {
+  const insets = useSafeAreaInsets();
   // panel: 'list' | 'map' | 'confirm'
   const [panel, setPanel] = useState('list');
 
@@ -633,11 +636,13 @@ const AddressPickerSheet = ({
         {panel === 'map' && (
           <View style={styles.flex}>
             {/* Floating header */}
-            <View style={styles.mapFloatingHeader}>
+            <View style={[styles.mapFloatingHeader, { paddingTop: Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 12) + 8 }]}>
               <TouchableOpacity onPress={() => setPanel('list')} style={styles.mapBackBtn}>
                 <Ionicons name="arrow-back" size={20} color={colors.text} />
               </TouchableOpacity>
-              <Text style={styles.mapHeaderText}>Drag the pin or tap the map to adjust your exact location.</Text>
+              <Text style={styles.mapHeaderText} numberOfLines={2}>
+                Drag the pin or tap the map to adjust your exact location.
+              </Text>
             </View>
 
             <MapView
@@ -956,7 +961,8 @@ const styles = StyleSheet.create({
   mapFloatingHeader: {
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingVertical: 12, paddingHorizontal: 16,
+    paddingBottom: 12, paddingHorizontal: 16,
+    paddingTop: 12,
     backgroundColor: colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
@@ -966,7 +972,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceVariant,
     alignItems: 'center', justifyContent: 'center',
   },
-  mapHeaderText: { fontSize: 14, fontWeight: '600', color: colors.text },
+  mapHeaderText: { flex: 1, fontSize: 13, fontWeight: '600', color: colors.text, lineHeight: 18 },
   mapErrorBanner: {
     position: 'absolute',
     top: 64,
