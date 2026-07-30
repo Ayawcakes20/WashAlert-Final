@@ -472,6 +472,10 @@ const AddressPickerSheet = ({
       Alert.alert('No Address', 'Please pin a location first.');
       return;
     }
+    if (!saveLabel || !saveLabel.trim()) {
+      Alert.alert('Address Type Required', 'Please select whether this is your Home, Office, or Other address.');
+      return;
+    }
 
     // Optionally save to saved addresses
     if (saveThis && saveLabel.trim()) {
@@ -801,31 +805,30 @@ const AddressPickerSheet = ({
               <Text style={styles.saveToggleText}>Save this address for future bookings</Text>
             </TouchableOpacity>
 
-            {saveThis && (
-              <View style={styles.saveLabelRow}>
-                {['Home', 'Office', 'Other'].map((lbl) => (
-                  <TouchableOpacity
-                    key={lbl}
-                    style={[styles.labelChip, saveLabel === lbl && styles.labelChipActive]}
-                    onPress={() => setSaveLabel(lbl)}
-                  >
-                    <Ionicons
-                      name={getLabelIcon(lbl).name}
-                      size={14}
-                      color={saveLabel === lbl ? '#FFF' : getLabelIcon(lbl).color}
-                    />
-                    <Text style={[styles.labelChipText, saveLabel === lbl && styles.labelChipTextActive]}>
-                      {lbl}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
+            {/* Address type selection: Home, Office, Other (Required) */}
+            <View style={styles.saveLabelRow}>
+              {['Home', 'Office', 'Other'].map((lbl) => (
+                <TouchableOpacity
+                  key={lbl}
+                  style={[styles.labelChip, saveLabel === lbl && styles.labelChipActive]}
+                  onPress={() => setSaveLabel(lbl)}
+                >
+                  <Ionicons
+                    name={getLabelIcon(lbl).name}
+                    size={14}
+                    color={saveLabel === lbl ? '#FFF' : getLabelIcon(lbl).color}
+                  />
+                  <Text style={[styles.labelChipText, saveLabel === lbl && styles.labelChipTextActive]}>
+                    {lbl}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
             <TouchableOpacity
-              style={[styles.confirmBtn, (!resolvedAddress || !pinnedCoords) && styles.confirmBtnDisabled]}
+              style={[styles.confirmBtn, (!resolvedAddress || !pinnedCoords || !saveLabel) && styles.confirmBtnDisabled]}
               onPress={handleConfirm}
-              disabled={!resolvedAddress || !pinnedCoords}
+              disabled={!resolvedAddress || !pinnedCoords || !saveLabel}
             >
               <Text style={styles.confirmBtnText}>Use This Address</Text>
             </TouchableOpacity>

@@ -17,8 +17,7 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
-# google-services.json (Removed from ignore so EAS can see it)
-GoogleService-Info.plist
+# google-services.json and GoogleService-Info.plist (Both included so EAS can see them)
 .DS_Store
 *.pem
 .env*.local

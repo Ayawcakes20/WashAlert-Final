@@ -17,6 +17,9 @@
     "preview": {
       "distribution": "internal",
       "node": "20.18.3",
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://backend-service-production-5d36.up.railway.app"
+      },
       "android": {
         "buildType": "apk"
       },

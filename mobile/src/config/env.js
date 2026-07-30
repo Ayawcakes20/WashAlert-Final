@@ -1,16 +1,12 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-const fallbackBaseUrl =
-  Platform.OS === 'android' ? 'http://10.0.2.2:8081' : 'http://localhost:8081';
+const fallbackBaseUrl = 'https://backend-service-production-5d36.up.railway.app';
 
 const rawApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
 const normalizeBaseUrl = (value) => String(value || '').trim().replace(/\/+$/, '');
 
-// Dev note:
-// Prefer local LAN base URL for physical-device testing (e.g. http://192.168.x.x:8081).
-// Use ngrok primarily for external webhook callbacks.
-export const API_BASE_URL = normalizeBaseUrl(rawApiBaseUrl) || normalizeBaseUrl(fallbackBaseUrl);
+export const API_BASE_URL = normalizeBaseUrl(rawApiBaseUrl) || fallbackBaseUrl;
 
 export const FIREBASE_API_KEY = (process.env.EXPO_PUBLIC_FIREBASE_API_KEY || '').trim();
 export const FIREBASE_STORAGE_BUCKET =

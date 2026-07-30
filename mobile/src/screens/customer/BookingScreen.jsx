@@ -163,18 +163,18 @@ export default function BookingScreen({ route, navigation }) {
   // Active qty for the selected addon.
   // Returns 0 if the item is out of stock (supplyAvail loaded and available=false),
   // otherwise clamps to at least 1 so the booking payload is correct.
-  const detQty = det !== 'none'
+  const detQty = (detSource === 'shop' && det !== 'none')
     ? (() => {
         const avail = supplyAvail?.detergent?.find(d => d.id === det);
         if (avail !== null && avail !== undefined && !avail.available) return 0;
-        return Math.max(1, detQtyMap[det] ?? 1);
+        return Math.max(0, detQtyMap[det] ?? 0);
       })()
     : 0;
-  const fabQty = fab !== 'none'
+  const fabQty = (fabSource === 'shop' && fab !== 'none')
     ? (() => {
         const avail = supplyAvail?.conditioner?.find(c => c.id === fab);
         if (avail !== null && avail !== undefined && !avail.available) return 0;
-        return Math.max(1, fabQtyMap[fab] ?? 1);
+        return Math.max(0, fabQtyMap[fab] ?? 0);
       })()
     : 0;
 
@@ -441,8 +441,8 @@ export default function BookingScreen({ route, navigation }) {
     try{
       const dk=needsAddr&&address?.latitude&&branch?.latitude?distKm(branch.latitude,branch.longitude,address.latitude,address.longitude):0;
       const _svcPrice  = getServiceBasePrice(service, loadSize === 'LARGE' ? 8 : 5);
-      const _supDet = submitDet !== 'none' ? Math.max(1, detQtyMap[submitDet] ?? 1) : 0;
-      const _supFab = submitFab !== 'none' ? Math.max(1, fabQtyMap[submitFab] ?? 1) : 0;
+      const _supDet = submitDet !== 'none' ? Math.max(0, detQtyMap[submitDet] ?? 0) : 0;
+      const _supFab = submitFab !== 'none' ? Math.max(0, fabQtyMap[submitFab] ?? 0) : 0;
       const _supPrice  = ((DET_OPTS.find(o=>o.id===submitDet)?.price||0) * _supDet) + ((FAB_OPTS.find(o=>o.id===submitFab)?.price||0) * _supFab);
       const _rushPrice = rush ? 150 : 0;
       const _delPrice  = needsAddr ? deliveryFee : 0;
@@ -455,9 +455,9 @@ export default function BookingScreen({ route, navigation }) {
         serviceTypeBackend:mode.backendServiceType,
         scheduleDate:schDate,
         scheduleTime:schTime,
-        detergent:DET_OPTS.find(o=>o.id===submitDet)?.label||'Customer Provided',
+        detergent: (submitDet !== 'none' && _supDet > 0) ? (DET_OPTS.find(o=>o.id===submitDet)?.label || 'Customer Provided') : 'Customer Provided',
         detergentQuantity: _supDet,
-        conditioner:FAB_OPTS.find(o=>o.id===submitFab)?.label||'Customer Provided',
+        conditioner: (submitFab !== 'none' && _supFab > 0) ? (FAB_OPTS.find(o=>o.id===submitFab)?.label || 'Customer Provided') : 'Customer Provided',
         conditionerQuantity: _supFab,
         estimatedWeightKg: loadSize === 'LARGE' ? 8 : 5,
         delivery: needsAddr,
@@ -727,7 +727,6 @@ export default function BookingScreen({ route, navigation }) {
                         setDet('none');
                         setDetQtyMap({ surf: 0, ariel: 0 });
                       } else {
-                        // Default to first in-stock shop item
                         if(det==='none') {
                           const detItems = ['surf','ariel'];
                           const firstInStock = detItems.find(id => {
@@ -736,7 +735,6 @@ export default function BookingScreen({ route, navigation }) {
                           });
                           if(firstInStock) {
                             setDet(firstInStock);
-                            setDetQtyMap(m=>({...m,[firstInStock]:Math.max(1,m[firstInStock]??1)}));
                           }
                         }
                       }
@@ -766,7 +764,6 @@ export default function BookingScreen({ route, navigation }) {
                   onPress={()=>{
                     if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                     setDet(o.id);
-                    if(detQtyMap[o.id]<1) setDetQtyMap(m=>({...m,[o.id]:1}));
                     setStockError(null);
                   }}
                   activeOpacity={0.8}
@@ -780,38 +777,38 @@ export default function BookingScreen({ route, navigation }) {
                     <TouchableOpacity
                       onPress={()=>{
                         if(isOut){ showToast(`${o.label} is out of stock.`); return; }
-                        if(!isSel){ setDet(o.id);setDetQtyMap(m=>({...m,[o.id]:1}));setStockError(null); return; }
-                        setDetQtyMap(m=>({...m,[o.id]:Math.max(1,(m[o.id]??1)-1)}));
+                        setDet(o.id);
+                        setDetQtyMap(m=>({...m,[o.id]:Math.max(0,(m[o.id]??0)-1)}));
                         setStockError(null);
                       }}
-                      disabled={isOut}
-                      style={{width:28,height:28,borderRadius:14,backgroundColor:isOut?'#D1D5DB':isSel?colors.primary:'#D1D5DB',alignItems:'center',justifyContent:'center'}}
+                      disabled={isOut || displayQty <= 0}
+                      style={{width:28,height:28,borderRadius:14,backgroundColor:(isOut || displayQty <= 0)?'#D1D5DB':colors.primary,alignItems:'center',justifyContent:'center'}}
                     >
-                      <Text style={{color:isSel?'#fff':'#9CA3AF',fontSize:16,fontWeight:'700',lineHeight:20}}>-</Text>
+                      <Text style={{color:(isOut || displayQty <= 0)?'#9CA3AF':'#fff',fontSize:16,fontWeight:'700',lineHeight:20}}>-</Text>
                     </TouchableOpacity>
                     <Text style={{fontSize:14,fontWeight:'800',color:isSel?colors.text:'#9CA3AF',minWidth:22,textAlign:'center'}}>{displayQty}</Text>
                     <TouchableOpacity
                       onPress={()=>{
                         if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                         const stockMax = avail?.availableQty ?? Infinity;
-                        if(!isSel){
-                          setDet(o.id);
-                          setDetQtyMap(m=>({...m,[o.id]:1}));
-                        } else {
-                          const cur = detQtyMap[o.id]??1;
-                          if(stockMax!==Infinity && cur>=stockMax){
-                            showToast(`Only ${stockMax} pack(s) of ${avail?.label||o.label} available at this branch.`);
-                            return;
-                          }
-                          setDetQtyMap(m=>({...m,[o.id]:cur+1}));
+                        setDet(o.id);
+                        const cur = detQtyMap[o.id] ?? 0;
+                        if(stockMax!==Infinity && cur>=stockMax){
+                          showToast(`Only ${stockMax} pack(s) of ${avail?.label||o.label} available at this branch.`);
+                          return;
                         }
+                        if(cur >= computedLoadCount){
+                          showToast(`Maximum ${computedLoadCount} pack(s) for this booking.`);
+                          return;
+                        }
+                        setDetQtyMap(m=>({...m,[o.id]:cur+1}));
                         setStockError(null);
                       }}
                       style={{width:28,height:28,borderRadius:14,backgroundColor:isOut?'#D1D5DB':colors.primary,alignItems:'center',justifyContent:'center'}}
                     >
                       <Text style={{color:isOut?'#9CA3AF':'#fff',fontSize:16,fontWeight:'700',lineHeight:20}}>+</Text>
                     </TouchableOpacity>
-                    <Ionicons name="checkmark-circle" size={20} color={colors.primary} style={{opacity:isSel?1:0,marginLeft:4}}/>
+                    <Ionicons name="checkmark-circle" size={20} color={colors.primary} style={{opacity:isSel && displayQty > 0?1:0,marginLeft:4}}/>
                   </View>
                 </TouchableOpacity>
               );
@@ -838,7 +835,6 @@ export default function BookingScreen({ route, navigation }) {
                         setFab('none');
                         setFabQtyMap({ charm: 0, downy: 0 });
                       } else {
-                        // Default to first in-stock shop item
                         if(fab==='none') {
                           const fabItems = ['charm','downy'];
                           const firstInStock = fabItems.find(id => {
@@ -847,7 +843,6 @@ export default function BookingScreen({ route, navigation }) {
                           });
                           if(firstInStock) {
                             setFab(firstInStock);
-                            setFabQtyMap(m=>({...m,[firstInStock]:Math.max(1,m[firstInStock]??1)}));
                           }
                         }
                       }
@@ -876,7 +871,6 @@ export default function BookingScreen({ route, navigation }) {
                   onPress={()=>{
                     if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                     setFab(o.id);
-                    if(fabQtyMap[o.id]<1) setFabQtyMap(m=>({...m,[o.id]:1}));
                     setStockError(null);
                   }}
                   activeOpacity={0.8}
@@ -890,38 +884,38 @@ export default function BookingScreen({ route, navigation }) {
                     <TouchableOpacity
                       onPress={()=>{
                         if(isOut){ showToast(`${o.label} is out of stock.`); return; }
-                        if(!isSel){ setFab(o.id);setFabQtyMap(m=>({...m,[o.id]:1}));setStockError(null); return; }
-                        setFabQtyMap(m=>({...m,[o.id]:Math.max(1,(m[o.id]??1)-1)}));
+                        setFab(o.id);
+                        setFabQtyMap(m=>({...m,[o.id]:Math.max(0,(m[o.id]??0)-1)}));
                         setStockError(null);
                       }}
-                      disabled={isOut}
-                      style={{width:28,height:28,borderRadius:14,backgroundColor:isOut?'#D1D5DB':isSel?colors.primary:'#D1D5DB',alignItems:'center',justifyContent:'center'}}
+                      disabled={isOut || displayQty <= 0}
+                      style={{width:28,height:28,borderRadius:14,backgroundColor:(isOut || displayQty <= 0)?'#D1D5DB':colors.primary,alignItems:'center',justifyContent:'center'}}
                     >
-                      <Text style={{color:isSel?'#fff':'#9CA3AF',fontSize:16,fontWeight:'700',lineHeight:20}}>-</Text>
+                      <Text style={{color:(isOut || displayQty <= 0)?'#9CA3AF':'#fff',fontSize:16,fontWeight:'700',lineHeight:20}}>-</Text>
                     </TouchableOpacity>
                     <Text style={{fontSize:14,fontWeight:'800',color:isSel?colors.text:'#9CA3AF',minWidth:22,textAlign:'center'}}>{displayQty}</Text>
                     <TouchableOpacity
                       onPress={()=>{
                         if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                         const stockMax = avail?.availableQty ?? Infinity;
-                        if(!isSel){
-                          setFab(o.id);
-                          setFabQtyMap(m=>({...m,[o.id]:1}));
-                        } else {
-                          const cur = fabQtyMap[o.id]??1;
-                          if(stockMax!==Infinity && cur>=stockMax){
-                            showToast(`Only ${stockMax} pack(s) of ${avail?.label||o.label} available at this branch.`);
-                            return;
-                          }
-                          setFabQtyMap(m=>({...m,[o.id]:cur+1}));
+                        setFab(o.id);
+                        const cur = fabQtyMap[o.id] ?? 0;
+                        if(stockMax!==Infinity && cur>=stockMax){
+                          showToast(`Only ${stockMax} pack(s) of ${avail?.label||o.label} available at this branch.`);
+                          return;
                         }
+                        if(cur >= computedLoadCount){
+                          showToast(`Maximum ${computedLoadCount} pack(s) for this booking.`);
+                          return;
+                        }
+                        setFabQtyMap(m=>({...m,[o.id]:cur+1}));
                         setStockError(null);
                       }}
                       style={{width:28,height:28,borderRadius:14,backgroundColor:isOut?'#D1D5DB':colors.primary,alignItems:'center',justifyContent:'center'}}
                     >
                       <Text style={{color:isOut?'#9CA3AF':'#fff',fontSize:16,fontWeight:'700',lineHeight:20}}>+</Text>
                     </TouchableOpacity>
-                    <Ionicons name="checkmark-circle" size={20} color={colors.primary} style={{opacity:isSel?1:0,marginLeft:4}}/>
+                    <Ionicons name="checkmark-circle" size={20} color={colors.primary} style={{opacity:isSel && displayQty > 0?1:0,marginLeft:4}}/>
                   </View>
                 </TouchableOpacity>
               );
@@ -1050,8 +1044,8 @@ export default function BookingScreen({ route, navigation }) {
                 <Ionicons name="sparkles-outline" size={14} color={colors.primary}/>
                 <Text style={S.summaryTitle}>EXTRAS</Text>
               </View>
-              <Row label="Detergent" value={det==='none'?'Customer Provided':`${detOpt?.label} x${detQty} (₱${detCost})`}/>
-              <Row label="Fabric Conditioner" value={fab==='none'?'Customer Provided':`${fabOpt?.label} x${fabQty} (₱${fabCost})`}/>
+              <Row label="Detergent" value={det==='none'||detQty===0?'Customer Provided':`${detOpt?.label} x${detQty} (₱${detCost})`}/>
+              <Row label="Fabric Conditioner" value={fab==='none'||fabQty===0?'Customer Provided':`${fabOpt?.label} x${fabQty} (₱${fabCost})`}/>
               {rush && <Row label="Rush Service" value="Yes (+₱150)"/>}
             </View>
 
