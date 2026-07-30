@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -54,6 +55,7 @@ const NotificationsScreen = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [hasNext, setHasNext] = useState(false);
   const [hasPrevious, setHasPrevious] = useState(false);
+  const [selectedNotif, setSelectedNotif] = useState(null);
 
   const loadNotifications = useCallback(async (requestedPage = 0, showLoading = true) => {
     try {
@@ -98,6 +100,11 @@ const NotificationsScreen = () => {
       // best effort for local read state
     }
   }, []);
+
+  const handleItemPress = (item) => {
+    markAsRead(item.id);
+    setSelectedNotif(item);
+  };
 
   const markAllRead = useCallback(async () => {
     try {
@@ -156,7 +163,7 @@ const NotificationsScreen = () => {
                 <TouchableOpacity
                   key={item.id}
                   activeOpacity={0.8}
-                  onPress={() => markAsRead(item.id)}
+                  onPress={() => handleItemPress(item)}
                   style={[styles.notifCard, !item.read && styles.notifCardUnread]}
                 >
                   <View style={[styles.iconBox, { backgroundColor: styleDef.bg }]}> 
@@ -200,6 +207,47 @@ const NotificationsScreen = () => {
           </View>
         ) : null}
       </ScrollView>
+
+      {/* ── Notification / Announcement Detail Modal ──────────────── */}
+      {selectedNotif && (
+        <Modal
+          visible={!!selectedNotif}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setSelectedNotif(null)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setSelectedNotif(null)}
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              style={styles.modalContent}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <View style={styles.modalHeader}>
+                <View style={[styles.iconBox, { backgroundColor: getTypeStyle(selectedNotif.type).bg }]}>
+                  <Ionicons name={getTypeStyle(selectedNotif.type).icon} size={20} color={getTypeStyle(selectedNotif.type).text} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalTitle}>{selectedNotif.title}</Text>
+                  <Text style={styles.notifTime}>{formatTimeLabel(selectedNotif.timestamp)}</Text>
+                </View>
+                <TouchableOpacity onPress={() => setSelectedNotif(null)} style={styles.closeBtn}>
+                  <Ionicons name="close" size={20} color={colors.text} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+                <Text style={styles.modalMsg}>{selectedNotif.message}</Text>
+              </ScrollView>
+              <TouchableOpacity style={styles.modalDoneBtn} onPress={() => setSelectedNotif(null)}>
+                <Text style={styles.modalDoneBtnText}>Close</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 };
@@ -297,6 +345,71 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: colors.textSecondary,
+  },
+
+  // ─── Modal Styles ─────────────────────────────────────────────────────────
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxHeight: '75%',
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingBottom: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    marginBottom: 14,
+  },
+  modalTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.text,
+    lineHeight: 20,
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBody: {
+    maxHeight: 280,
+    marginBottom: 16,
+  },
+  modalMsg: {
+    fontSize: 14,
+    color: colors.text,
+    lineHeight: 22,
+  },
+  modalDoneBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalDoneBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFF',
   },
 });
 
