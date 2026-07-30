@@ -636,7 +636,7 @@ const AddressPickerSheet = ({
         {panel === 'map' && (
           <View style={styles.flex}>
             {/* Floating header */}
-            <View style={[styles.mapFloatingHeader, { paddingTop: Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 12) + 8 }]}>
+            <View style={[styles.mapFloatingHeader, { paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ? StatusBar.currentHeight + 4 : 12) : Math.max(insets.top, 10) }]}>
               <TouchableOpacity onPress={() => setPanel('list')} style={styles.mapBackBtn}>
                 <Ionicons name="arrow-back" size={20} color={colors.text} />
               </TouchableOpacity>
@@ -961,8 +961,7 @@ const styles = StyleSheet.create({
   mapFloatingHeader: {
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingBottom: 12, paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingBottom: 10, paddingHorizontal: 16,
     backgroundColor: colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
