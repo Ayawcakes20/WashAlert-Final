@@ -311,24 +311,58 @@ const AddressPickerSheet = ({
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Allow location access to use this feature.');
+        Alert.alert('Permission Denied', 'Please grant location access in your phone settings to use your current location.');
         return;
       }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+
+      // Check if location services (GPS) are enabled on device
+      const servicesEnabled = await Location.hasServicesEnabledAsync().catch(() => true);
+      if (!servicesEnabled) {
+        Alert.alert(
+          'GPS / Location Disabled',
+          'Please turn on Location / GPS in your phone settings and try again.'
+        );
+        return;
+      }
+
+      // Try last known location first for speed
+      let loc = await Location.getLastKnownPositionAsync({ maxAge: 120000 }).catch(() => null);
+
+      if (!loc || !loc.coords) {
+        // Fallback to getCurrentPositionAsync with 8s timeout
+        loc = await Promise.race([
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Location request timed out')), 8000)),
+        ]).catch(async () => {
+          // Retry with Lowest accuracy for fast cell tower / wifi fix
+          return await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Lowest });
+        });
+      }
+
+      if (!loc || !loc.coords) {
+        Alert.alert('Location Unavailable', 'Unable to retrieve your location. Please ensure GPS is enabled or use "Pin on map".');
+        return;
+      }
+
       const { latitude, longitude } = loc.coords;
       const coords = sanitizeCoordinate({ latitude, longitude }, safeFallbackCoordinate);
       if (!coords) {
         Alert.alert('Error', 'Unable to parse current location coordinates.');
         return;
       }
+
       const nextRegion = sanitizeRegion({ ...mapRegion, ...coords }, safeFallbackCoordinate);
       setPinnedCoords(coords);
       setMapRegion(nextRegion);
       logMapLocationDebug('CURRENT_LOCATION', nextRegion, coords);
       await resolveFromCoords(coords.latitude, coords.longitude);
       setPanel('confirm');
-    } catch {
-      Alert.alert('Error', 'Unable to get current location.');
+    } catch (err) {
+      console.warn('[AddressPicker] handleCurrentLocation error:', err);
+      Alert.alert(
+        'Location Unavailable',
+        'Could not get your current GPS position. Please make sure Location/GPS is turned ON in your phone settings, or use "Pin on map".'
+      );
     }
   };
 
