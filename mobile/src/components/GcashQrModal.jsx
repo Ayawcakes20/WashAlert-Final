@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, ActivityIndicator,
-  StyleSheet, Alert, Image, ScrollView, TextInput, Dimensions, Linking,
+  StyleSheet, Alert, Image, ScrollView, TextInput, Dimensions, Linking, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as IntentLauncher from 'expo-intent-launcher';
 import { uploadImageAsync } from '../services/storageService';
 import { payments } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -25,21 +26,20 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
   const trackingNumber = order?.trackingNumber || order?.orderId || '';
 
   const handleOpenGcashApp = async () => {
-    const urls = [
-      'intent://#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.globe.gcash.android;end',
-      'market://details?id=com.globe.gcash.android',
-    ];
-    for (const url of urls) {
+    if (Platform.OS === 'android') {
       try {
-        await Linking.openURL(url);
+        await IntentLauncher.startActivityAsync('android.intent.action.MAIN', {
+          packageName: 'com.globe.gcash.android',
+          category: 'android.intent.category.LAUNCHER',
+        });
         return;
       } catch {
-        // try next URL
+        // GCash not installed or launch failed
       }
     }
     Alert.alert(
-      'GCash Not Found',
-      'GCash app is not installed on this device. Please install it from the Play Store or scan the QR code above using another phone.',
+      'Open GCash',
+      'Please open your GCash app manually to scan the QR code and complete payment.',
     );
   };
 
