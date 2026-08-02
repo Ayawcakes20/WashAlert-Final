@@ -173,7 +173,7 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
                 style={S.qrImage}
                 resizeMode="contain"
               />
-              <Text style={S.qrAcctName}>Account: PR***E LE****D AN**N V.</Text>
+              <Text style={S.qrAcctName}>Account: Prince Villar</Text>
               <Text style={S.qrAcctNumber}>GCash No: +63 926 657 1915</Text>
             </View>
 
