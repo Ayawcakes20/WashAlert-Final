@@ -26,19 +26,16 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
 
   const handleOpenGcashApp = async () => {
     try {
-      const gcashUrl = 'gcash://';
-      const canOpen = await Linking.canOpenURL(gcashUrl).catch(() => false);
-      if (canOpen) {
-        await Linking.openURL(gcashUrl);
-      } else {
+      await Linking.openURL('gcash://');
+    } catch {
+      try {
+        await Linking.openURL('intent://#Intent;package=com.globe.gcash.android;scheme=gcash;end');
+      } catch {
         Alert.alert(
           'Open GCash App',
-          'Could not automatically launch the GCash app. Please open your GCash app on your phone to scan or pay.',
-          [{ text: 'OK' }]
+          'Please open your GCash app manually on your phone to scan or pay.'
         );
       }
-    } catch {
-      Alert.alert('Open GCash App', 'Please open your GCash app on your phone to complete your payment.');
     }
   };
 
