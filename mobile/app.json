@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "washalertmobile",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
