@@ -41,15 +41,18 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
            """)
     List<DeliveryOrder> findAllByOrderByUpdatedAtDesc();
 
+    // Branch is free text with no canonical entity/FK (see BranchNames) — normalized the same
+    // way JobOrderRepository/MachineRepository already are, so a delivery listing for a branch
+    // doesn't silently come back empty on a naming-convention mismatch.
     @Query("""
            select d
            from DeliveryOrder d
            join fetch d.jobOrder jo
            left join fetch d.driverUser du
-           where lower(jo.branch) = lower(:branch)
+           where replace(lower(jo.branch), ' branch', '') = replace(lower(:branch), ' branch', '')
            order by d.updatedAt desc
            """)
-    List<DeliveryOrder> findByJobOrder_BranchIgnoreCaseOrderByUpdatedAtDesc(@Param("branch") String branch);
+    List<DeliveryOrder> findByJobOrderNormalizedBranchOrderByUpdatedAtDesc(@Param("branch") String branch);
 
     @Query("""
            select d
@@ -76,7 +79,7 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
                     select d
                     from DeliveryOrder d
                     join d.jobOrder jo
-                    where (:branch is null or lower(jo.branch) = lower(:branch))
+                    where (:branch is null or replace(lower(jo.branch), ' branch', '') = replace(lower(:branch), ' branch', ''))
                       and (:status is null or d.status = :status)
                       and (:search is null or lower(jo.trackingNumber) like lower(concat('%', :search, '%'))
                            or lower(jo.customerName) like lower(concat('%', :search, '%'))
@@ -86,7 +89,7 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
                     select count(d)
                     from DeliveryOrder d
                     join d.jobOrder jo
-                    where (:branch is null or lower(jo.branch) = lower(:branch))
+                    where (:branch is null or replace(lower(jo.branch), ' branch', '') = replace(lower(:branch), ' branch', ''))
                       and (:status is null or d.status = :status)
                       and (:search is null or lower(jo.trackingNumber) like lower(concat('%', :search, '%'))
                            or lower(jo.customerName) like lower(concat('%', :search, '%'))

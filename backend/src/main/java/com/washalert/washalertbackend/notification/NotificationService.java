@@ -142,7 +142,7 @@ public class NotificationService {
                     .filter(role -> role != Role.ADMIN)
                     .toList();
             if (!branchScopedRoles.isEmpty()) {
-                userDeviceTokenRepository.findByUser_RoleInAndUser_BranchIgnoreCaseAndActiveTrueAndUser_EnabledTrue(
+                userDeviceTokenRepository.findByUserRoleInAndNormalizedBranch(
                         branchScopedRoles,
                         normalizedBranch
                 ).forEach(token -> allTokens.add(token.getFcmToken()));

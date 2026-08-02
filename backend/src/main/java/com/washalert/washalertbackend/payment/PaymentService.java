@@ -1,6 +1,7 @@
 package com.washalert.washalertbackend.payment;
 
 import java.math.BigDecimal;
+import com.washalert.washalertbackend.common.BranchNames;
 import com.washalert.washalertbackend.firebase.FirestoreSyncService;
 import com.washalert.washalertbackend.orders.JobOrder;
 import com.washalert.washalertbackend.orders.JobOrderRepository;
@@ -167,7 +168,7 @@ public class PaymentService {
         User actor = principal.getUser();
 
         if (actor.getRole() == Role.STAFF) {
-            return paymentRepository.findByBranchWithJobOrderOrderBySubmittedAtDesc(actor.getBranch())
+            return paymentRepository.findByNormalizedBranchWithJobOrderOrderBySubmittedAtDesc(actor.getBranch())
                     .stream()
                     .map(this::toResponse)
                     .toList();
@@ -177,7 +178,7 @@ public class PaymentService {
             return paymentRepository.findAllWithJobOrderOrderBySubmittedAtDesc().stream().map(this::toResponse).toList();
         }
 
-        return paymentRepository.findByBranchWithJobOrderOrderBySubmittedAtDesc(branch.trim())
+        return paymentRepository.findByNormalizedBranchWithJobOrderOrderBySubmittedAtDesc(branch.trim())
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -405,6 +406,6 @@ public class PaymentService {
     }
 
     private boolean sameBranch(String a, String b) {
-        return a != null && b != null && a.trim().equalsIgnoreCase(b.trim());
+        return BranchNames.matches(a, b);
     }
 }

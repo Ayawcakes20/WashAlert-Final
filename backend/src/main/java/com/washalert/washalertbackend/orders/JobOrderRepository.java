@@ -24,7 +24,20 @@ public interface JobOrderRepository extends JpaRepository<JobOrder, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<JobOrder> findByTrackingNumberIgnoreCase(String trackingNumber);
     List<JobOrder> findByStatusInAndCreatedAtAfter(Collection<JobOrderStatus> statuses, LocalDateTime after);
-    List<JobOrder> findByBranchIgnoreCaseAndStatusInAndCreatedAtAfter(String branch, Collection<JobOrderStatus> statuses, LocalDateTime after);
+
+    // Branch is free text with no canonical entity/FK (see BranchNames), so every query below
+    // that filters/counts by branch normalizes the same way findPagedWithFilters (below) and
+    // UserRepository.findInternalUsersPaged already do — a raw exact match silently returns
+    // empty/zero whenever the caller's branch string and the stored branch string used a
+    // different naming convention (e.g. "Quezon City" vs "Quezon City Branch").
+    @Query("""
+            select jo from JobOrder jo
+            where replace(lower(jo.branch), ' branch', '') = replace(lower(:branch), ' branch', '')
+              and jo.status in :statuses
+              and jo.createdAt > :after
+            """)
+    List<JobOrder> findByNormalizedBranchAndStatusInAndCreatedAtAfter(
+            @Param("branch") String branch, @Param("statuses") Collection<JobOrderStatus> statuses, @Param("after") LocalDateTime after);
 
     List<JobOrder> findTop10ByOrderByCreatedAtDesc();
     List<JobOrder> findAllByOrderByCreatedAtDesc();
@@ -45,27 +58,53 @@ public interface JobOrderRepository extends JpaRepository<JobOrder, Long> {
     );
 
     // STAFF branch views
-    List<JobOrder> findTop10ByBranchIgnoreCaseOrderByCreatedAtDesc(String branch);
+    // Callers pass PageRequest.of(0, 10) to preserve the original findTop10By... behavior.
+    @Query("select jo from JobOrder jo where replace(lower(jo.branch), ' branch', '') = replace(lower(:branch), ' branch', '') order by jo.createdAt desc")
+    List<JobOrder> findTop10ByNormalizedBranchOrderByCreatedAtDesc(@Param("branch") String branch, Pageable pageable);
 
-    List<JobOrder> findByBranchIgnoreCaseOrderByCreatedAtDesc(String branch);
+    @Query("select jo from JobOrder jo where replace(lower(jo.branch), ' branch', '') = replace(lower(:branch), ' branch', '') order by jo.createdAt desc")
+    List<JobOrder> findByNormalizedBranchOrderByCreatedAtDesc(@Param("branch") String branch);
+
     List<JobOrder> findByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
-    List<JobOrder> findByBranchIgnoreCaseAndCreatedAtBetween(String branch, LocalDateTime start, LocalDateTime end);
+
+    @Query("select jo from JobOrder jo where replace(lower(jo.branch), ' branch', '') = replace(lower(:branch), ' branch', '') and jo.createdAt between :start and :end")
+    List<JobOrder> findByNormalizedBranchAndCreatedAtBetween(@Param("branch") String branch, @Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
     Optional<JobOrder> findTopByCustomerEmailIgnoreCaseOrderByCreatedAtDesc(String customerEmail);
 
-    long countByStatusAndBranchIgnoreCase(JobOrderStatus status, String branch);
+    @Query("select count(jo) from JobOrder jo where jo.status = :status and replace(lower(jo.branch), ' branch', '') = replace(lower(:branch), ' branch', '')")
+    long countByStatusAndNormalizedBranch(@Param("status") JobOrderStatus status, @Param("branch") String branch);
 
-    List<JobOrder> findByBranchIgnoreCaseAndStatusIn(String branch, Collection<JobOrderStatus> statuses);
+    @Query("select jo from JobOrder jo where replace(lower(jo.branch), ' branch', '') = replace(lower(:branch), ' branch', '') and jo.status in :statuses")
+    List<JobOrder> findByNormalizedBranchAndStatusIn(@Param("branch") String branch, @Param("statuses") Collection<JobOrderStatus> statuses);
 
-    long countByBranchIgnoreCaseAndBookingDateAndSlotStartTime(String branch, LocalDate bookingDate, LocalTime slotStartTime);
+    // Booking slot capacity check — the most serious consequence of the unnormalized-branch bug:
+    // undercounting existing bookings for a slot lets a customer double-book an already-full slot.
+    @Query("select count(jo) from JobOrder jo where replace(lower(jo.branch), ' branch', '') = replace(lower(:branch), ' branch', '') and jo.bookingDate = :bookingDate and jo.slotStartTime = :slotStartTime")
+    long countByNormalizedBranchAndBookingDateAndSlotStartTime(@Param("branch") String branch, @Param("bookingDate") LocalDate bookingDate, @Param("slotStartTime") LocalTime slotStartTime);
 
-    List<JobOrder> findByCustomerEmailIgnoreCaseAndBranchIgnoreCaseAndBookingDateAndSlotStartTimeAndStatusAndCreatedAtAfter(
-            String customerEmail, String branch, LocalDate bookingDate, LocalTime slotStartTime,
-            JobOrderStatus status, LocalDateTime createdAfter);
+    // Duplicate-booking guard — same risk class: a branch-string mismatch here means the guard
+    // fails to find the customer's just-submitted pending booking, letting the same booking
+    // through twice.
+    @Query("""
+            select jo from JobOrder jo
+            where lower(jo.customerEmail) = lower(:customerEmail)
+              and replace(lower(jo.branch), ' branch', '') = replace(lower(:branch), ' branch', '')
+              and jo.bookingDate = :bookingDate
+              and jo.slotStartTime = :slotStartTime
+              and jo.status = :status
+              and jo.createdAt > :createdAfter
+            """)
+    List<JobOrder> findByCustomerEmailAndNormalizedBranchAndBookingDateAndSlotStartTimeAndStatusAndCreatedAtAfter(
+            @Param("customerEmail") String customerEmail, @Param("branch") String branch, @Param("bookingDate") LocalDate bookingDate,
+            @Param("slotStartTime") LocalTime slotStartTime, @Param("status") JobOrderStatus status, @Param("createdAfter") LocalDateTime createdAfter);
 
     List<JobOrder> findByStatusAndServiceTypeOrderByCreatedAtDesc(JobOrderStatus status, ServiceType serviceType);
 
     List<JobOrder> findByStatusInAndBookingDateBetween(Collection<JobOrderStatus> statuses, LocalDate start, LocalDate end);
-    List<JobOrder> findByBranchIgnoreCaseAndStatusInAndBookingDateBetween(String branch, Collection<JobOrderStatus> statuses, LocalDate start, LocalDate end);
+
+    @Query("select jo from JobOrder jo where replace(lower(jo.branch), ' branch', '') = replace(lower(:branch), ' branch', '') and jo.status in :statuses and jo.bookingDate between :start and :end")
+    List<JobOrder> findByNormalizedBranchAndStatusInAndBookingDateBetween(@Param("branch") String branch, @Param("statuses") Collection<JobOrderStatus> statuses, @Param("start") LocalDate start, @Param("end") LocalDate end);
 
     @Query(
             value = """

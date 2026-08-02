@@ -1,5 +1,6 @@
 package com.washalert.washalertbackend.inventory;
 
+import com.washalert.washalertbackend.common.BranchNames;
 import com.washalert.washalertbackend.common.DataReadProperties;
 import com.washalert.washalertbackend.firebase.FirestoreReadService;
 import com.washalert.washalertbackend.firebase.FirestoreSyncService;
@@ -118,7 +119,7 @@ public class InventoryService {
 
         String resolvedName = resolveInventoryItemName(rawItemName);
         InventoryItem item = itemRepository
-                .findByBranchIgnoreCaseAndItemNameIgnoreCase(branch.trim(), resolvedName)
+                .findByNormalizedBranchAndItemNameIgnoreCase(branch.trim(), resolvedName)
                 .orElse(null);
 
         BigDecimal required = BigDecimal.valueOf(requiredQty);
@@ -178,7 +179,7 @@ public class InventoryService {
 
         var detItems = detDefs.stream().map(def -> {
             InventoryItem item = itemRepository
-                    .findByBranchIgnoreCaseAndItemNameIgnoreCase(effectiveBranch, def.itemName())
+                    .findByNormalizedBranchAndItemNameIgnoreCase(effectiveBranch, def.itemName())
                     .orElse(null);
             int qty = (item != null && item.getCurrentStock() != null)
                     ? item.getCurrentStock().intValue() : 0;
@@ -187,7 +188,7 @@ public class InventoryService {
 
         var fabItems = fabDefs.stream().map(def -> {
             InventoryItem item = itemRepository
-                    .findByBranchIgnoreCaseAndItemNameIgnoreCase(effectiveBranch, def.itemName())
+                    .findByNormalizedBranchAndItemNameIgnoreCase(effectiveBranch, def.itemName())
                     .orElse(null);
             int qty = (item != null && item.getCurrentStock() != null)
                     ? item.getCurrentStock().intValue() : 0;
@@ -245,7 +246,7 @@ public class InventoryService {
                 effectiveBranch == null
                         ? jobOrderRepository.findByStatusInAndCreatedAtAfter(
                                 prewashStatuses, java.time.LocalDateTime.now().minusDays(30))
-                        : jobOrderRepository.findByBranchIgnoreCaseAndStatusIn(effectiveBranch, prewashStatuses);
+                        : jobOrderRepository.findByNormalizedBranchAndStatusIn(effectiveBranch, prewashStatuses);
         java.util.Map<String, Long> result = new java.util.LinkedHashMap<>();
         for (com.washalert.washalertbackend.orders.JobOrder jo : orders) {
             String det = jo.getDetergentPreference();
@@ -280,7 +281,7 @@ public class InventoryService {
         );
         List<JobOrder> candidates = effectiveBranch == null
                 ? jobOrderRepository.findByStatusInAndCreatedAtAfter(upcomingStatuses, LocalDateTime.now().minusDays(60))
-                : jobOrderRepository.findByBranchIgnoreCaseAndStatusIn(effectiveBranch, upcomingStatuses);
+                : jobOrderRepository.findByNormalizedBranchAndStatusIn(effectiveBranch, upcomingStatuses);
 
         java.time.LocalDate today = java.time.LocalDate.now();
         java.time.LocalDate horizon = today.plusDays(horizonDays);
@@ -324,7 +325,7 @@ public class InventoryService {
 
         log.info("[INVENTORY] Attempting to create item: {} in branch: {}", req.itemName(), targetBranch);
         try {
-            itemRepository.findByBranchIgnoreCaseAndItemNameIgnoreCase(targetBranch, req.itemName().trim())
+            itemRepository.findByNormalizedBranchAndItemNameIgnoreCase(targetBranch, req.itemName().trim())
                     .ifPresent(existing -> {
                         throw new IllegalStateException("Inventory item already exists for this branch.");
                     });
@@ -389,7 +390,7 @@ public class InventoryService {
 
         String itemName = normalizeItemName(req.itemName());
 
-        itemRepository.findByBranchIgnoreCaseAndItemNameIgnoreCase(branch, itemName)
+        itemRepository.findByNormalizedBranchAndItemNameIgnoreCase(branch, itemName)
                 .ifPresent(existing -> {
                     if (!existing.getId().equals(item.getId())) {
                         throw new IllegalStateException("Inventory item already exists for this branch.");
@@ -465,7 +466,7 @@ public class InventoryService {
 
         Page<InventoryItem> page = effectiveBranch == null
                 ? itemRepository.findAll(pageable)
-                : itemRepository.findByBranchIgnoreCase(effectiveBranch, pageable);
+                : itemRepository.findByNormalizedBranch(effectiveBranch, pageable);
 
         return PagedResponse.from(page.map(this::toResponse));
     }
@@ -537,7 +538,7 @@ public class InventoryService {
         try {
             String resolvedName = resolveInventoryItemName(itemName);
             InventoryItem item = itemRepository
-                    .findByBranchIgnoreCaseAndItemNameIgnoreCase(branch, resolvedName)
+                    .findByNormalizedBranchAndItemNameIgnoreCase(branch, resolvedName)
                     .orElse(null);
             if (item == null) {
                 log.warn("[INVENTORY] Deduct skipped — item '{}' (resolved: '{}') not found in branch '{}'", itemName, resolvedName, branch);
@@ -571,7 +572,7 @@ public class InventoryService {
         try {
             String resolvedName = resolveInventoryItemName(itemName);
             InventoryItem item = itemRepository
-                    .findByBranchIgnoreCaseAndItemNameIgnoreCase(branch, resolvedName)
+                    .findByNormalizedBranchAndItemNameIgnoreCase(branch, resolvedName)
                     .orElse(null);
             if (item == null) {
                 log.warn("[INVENTORY] Release skipped — item '{}' not found in branch '{}'", resolvedName, branch);
@@ -604,7 +605,7 @@ public class InventoryService {
         // 3) Inventory projection then uses branch usage for low-stock forecasting.
         List<JobOrder> scopedOrders = effectiveBranch == null
                 ? jobOrderRepository.findByCreatedAtBetween(since, LocalDateTime.now())
-                : jobOrderRepository.findByBranchIgnoreCaseAndCreatedAtBetween(
+                : jobOrderRepository.findByNormalizedBranchAndCreatedAtBetween(
                 effectiveBranch,
                 since,
                 LocalDateTime.now()
@@ -802,7 +803,7 @@ public class InventoryService {
                     .toList();
         }
 
-        return itemRepository.findByBranchIgnoreCaseOrderByItemNameAsc(effectiveBranch).stream()
+        return itemRepository.findByNormalizedBranchOrderByItemNameAsc(effectiveBranch).stream()
                 .map(this::toResponse)
                 .toList();
     }
@@ -928,7 +929,7 @@ public class InventoryService {
     }
 
     private boolean sameBranch(String a, String b) {
-        return a != null && b != null && a.trim().equalsIgnoreCase(b.trim());
+        return BranchNames.matches(a, b);
     }
 
     private boolean isLowStock(InventoryItem item) {
@@ -981,9 +982,9 @@ public class InventoryService {
         List<JobOrder> orders;
         if (principal.getUser().getRole() == Role.STAFF) {
             String staffBranch = principal.getUser().getBranch();
-            orders = jobOrderRepository.findByBranchIgnoreCaseAndStatusInAndCreatedAtAfter(staffBranch, CONSUMPTION_STATUSES, since);
+            orders = jobOrderRepository.findByNormalizedBranchAndStatusInAndCreatedAtAfter(staffBranch, CONSUMPTION_STATUSES, since);
         } else if (branchParam != null && !branchParam.isBlank()) {
-            orders = jobOrderRepository.findByBranchIgnoreCaseAndStatusInAndCreatedAtAfter(branchParam.trim(), CONSUMPTION_STATUSES, since);
+            orders = jobOrderRepository.findByNormalizedBranchAndStatusInAndCreatedAtAfter(branchParam.trim(), CONSUMPTION_STATUSES, since);
         } else {
             orders = jobOrderRepository.findByStatusInAndCreatedAtAfter(CONSUMPTION_STATUSES, since);
         }
@@ -1071,7 +1072,7 @@ public class InventoryService {
 
         List<JobOrder> last30 = effectiveBranch == null
                 ? jobOrderRepository.findByCreatedAtBetween(since30, now)
-                : jobOrderRepository.findByBranchIgnoreCaseAndCreatedAtBetween(effectiveBranch, since30, now);
+                : jobOrderRepository.findByNormalizedBranchAndCreatedAtBetween(effectiveBranch, since30, now);
 
         LocalDate today = LocalDate.now();
         java.time.LocalDate startOfWeek = today.with(java.time.DayOfWeek.MONDAY);
@@ -1120,7 +1121,7 @@ public class InventoryService {
 
         List<JobOrder> orders = effectiveBranch == null
                 ? jobOrderRepository.findByCreatedAtBetween(since, LocalDateTime.now())
-                : jobOrderRepository.findByBranchIgnoreCaseAndCreatedAtBetween(effectiveBranch, since, LocalDateTime.now());
+                : jobOrderRepository.findByNormalizedBranchAndCreatedAtBetween(effectiveBranch, since, LocalDateTime.now());
 
         Map<String, Integer> dailyCount = new LinkedHashMap<>();
         orders.stream()
@@ -1170,7 +1171,7 @@ public class InventoryService {
 
         List<JobOrder> orders = effectiveBranch == null
                 ? jobOrderRepository.findByStatusInAndBookingDateBetween(pipelineStatuses, today, horizon)
-                : jobOrderRepository.findByBranchIgnoreCaseAndStatusInAndBookingDateBetween(effectiveBranch, pipelineStatuses, today, horizon);
+                : jobOrderRepository.findByNormalizedBranchAndStatusInAndBookingDateBetween(effectiveBranch, pipelineStatuses, today, horizon);
 
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd");
         Map<String, Map<String, Double>> itemDayDemand = new LinkedHashMap<>();
@@ -1229,9 +1230,9 @@ public class InventoryService {
         List<InventoryMovement> movements;
         if (principal.getUser().getRole() == Role.STAFF) {
             String branch = principal.getUser().getBranch();
-            movements = movementRepository.findOutMovementsByBranchSince(branch, since);
+            movements = movementRepository.findOutMovementsByNormalizedBranchSince(branch, since);
         } else if (branchParam != null && !branchParam.isBlank()) {
-            movements = movementRepository.findOutMovementsByBranchSince(branchParam.trim(), since);
+            movements = movementRepository.findOutMovementsByNormalizedBranchSince(branchParam.trim(), since);
         } else {
             movements = movementRepository.findAllOutMovementsSince(since);
         }
