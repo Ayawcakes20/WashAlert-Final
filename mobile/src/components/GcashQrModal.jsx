@@ -25,18 +25,22 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
   const trackingNumber = order?.trackingNumber || order?.orderId || '';
 
   const handleOpenGcashApp = async () => {
-    try {
-      await Linking.openURL('gcash://');
-    } catch {
+    const urls = [
+      'intent://#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.globe.gcash.android;end',
+      'market://details?id=com.globe.gcash.android',
+    ];
+    for (const url of urls) {
       try {
-        await Linking.openURL('intent://#Intent;package=com.globe.gcash.android;scheme=gcash;end');
+        await Linking.openURL(url);
+        return;
       } catch {
-        Alert.alert(
-          'Open GCash App',
-          'Please open your GCash app manually on your phone to scan or pay.'
-        );
+        // try next URL
       }
     }
+    Alert.alert(
+      'GCash Not Found',
+      'GCash app is not installed on this device. Please install it from the Play Store or scan the QR code above using another phone.',
+    );
   };
 
   const handleSelectImage = async () => {
