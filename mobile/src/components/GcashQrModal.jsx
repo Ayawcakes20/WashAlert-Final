@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, ActivityIndicator,
-  StyleSheet, Alert, Image, ScrollView, TextInput, Dimensions,
+  StyleSheet, Alert, Image, ScrollView, TextInput, Dimensions, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -23,6 +23,24 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
 
   const amountToPay = order?.finalPrice ?? order?.amount ?? order?.totalPrice ?? 0;
   const trackingNumber = order?.trackingNumber || order?.orderId || '';
+
+  const handleOpenGcashApp = async () => {
+    try {
+      const gcashUrl = 'gcash://';
+      const canOpen = await Linking.canOpenURL(gcashUrl).catch(() => false);
+      if (canOpen) {
+        await Linking.openURL(gcashUrl);
+      } else {
+        Alert.alert(
+          'Open GCash App',
+          'Could not automatically launch the GCash app. Please open your GCash app on your phone to scan or pay.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch {
+      Alert.alert('Open GCash App', 'Please open your GCash app on your phone to complete your payment.');
+    }
+  };
 
   const handleSelectImage = async () => {
     try {
@@ -175,6 +193,12 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
               />
               <Text style={S.qrAcctName}>Account: Prince Villar</Text>
               <Text style={S.qrAcctNumber}>GCash No: +63 926 657 1915</Text>
+              
+              <TouchableOpacity style={S.openGcashBtn} onPress={handleOpenGcashApp} activeOpacity={0.85}>
+                <Ionicons name="phone-portrait-outline" size={18} color="#FFF" />
+                <Text style={S.openGcashBtnTxt}>Open GCash App to Pay</Text>
+                <Ionicons name="open-outline" size={16} color="#FFF" />
+              </TouchableOpacity>
             </View>
 
             {/* Instructions */}
@@ -264,6 +288,13 @@ const S = StyleSheet.create({
   qrImage: { width: SW * 0.65, height: SW * 0.65, marginBottom: 10 },
   qrAcctName: { fontSize: 13, fontWeight: '700', color: '#1E293B' },
   qrAcctNumber: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  openGcashBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: '#007DFE', width: '100%', height: 44, borderRadius: 12,
+    marginTop: 12, shadowColor: '#007DFE', shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25, shadowRadius: 6, elevation: 3,
+  },
+  openGcashBtnTxt: { color: '#FFF', fontSize: 13, fontWeight: '800' },
   instructionsCard: { backgroundColor: '#EFF6FF', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#BFDBFE', marginBottom: 16 },
   instructionsTitle: { fontSize: 13, fontWeight: '800', color: '#1E40AF', marginBottom: 6 },
   instructionText: { fontSize: 12, color: '#1E3A8A', lineHeight: 18, marginBottom: 4 },
