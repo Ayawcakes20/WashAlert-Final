@@ -84,11 +84,25 @@ export default {
           DEFAULT: "hsl(var(--gold))",
           foreground: "hsl(var(--gold-foreground))",
         },
+        brand: {
+          navy: "hsl(var(--navy))",
+          navyDark: "hsl(var(--navy-deep))",
+          mint: "hsl(var(--mint))",
+          mintSoft: "hsl(168 55% 94%)",
+          border: "hsl(var(--border))",
+          bg: "hsl(var(--background))",
+          muted: "hsl(var(--muted-foreground))",
+          text: "hsl(var(--foreground))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+        brand: "var(--radius)",
+      },
+      boxShadow: {
+        brand: "var(--shadow-card)",
       },
       keyframes: {
         "accordion-down": {
