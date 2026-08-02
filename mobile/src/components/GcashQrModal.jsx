@@ -5,7 +5,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import * as IntentLauncher from 'expo-intent-launcher';
 import { uploadImageAsync } from '../services/storageService';
 import { payments } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -28,13 +27,9 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
   const handleOpenGcashApp = async () => {
     if (Platform.OS === 'android') {
       try {
-        await IntentLauncher.startActivityAsync('android.intent.action.MAIN', {
-          packageName: 'com.globe.gcash.android',
-          category: 'android.intent.category.LAUNCHER',
-        });
+        await Linking.openURL('intent://#Intent;action=android.intent.action.VIEW;package=com.globe.gcash.android;end');
         return;
-      } catch (err) {
-        console.warn('[GcashQrModal] IntentLauncher failed, trying fallback scheme:', err);
+      } catch {
         try {
           await Linking.openURL('gcash://');
           return;
