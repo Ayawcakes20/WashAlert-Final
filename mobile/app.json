@@ -29,12 +29,6 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "POST_NOTIFICATIONS",
-        "ACCESS_BACKGROUND_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION"
       ],
       "predictiveBackGestureEnabled": false,
@@ -49,9 +43,6 @@
       },
       "infoPlist": {
         "UIBackgroundModes": [
-          "location",
-          "fetch",
-          "remote-notification",
           "location",
           "fetch",
           "remote-notification"
