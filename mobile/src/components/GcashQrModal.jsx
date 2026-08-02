@@ -5,7 +5,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import * as IntentLauncher from 'expo-intent-launcher';
 import { uploadImageAsync } from '../services/storageService';
 import { payments } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -28,18 +27,16 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
   const handleOpenGcashApp = async () => {
     if (Platform.OS === 'android') {
       try {
-        await IntentLauncher.startActivityAsync('android.intent.action.MAIN', {
-          packageName: 'com.globe.gcash.android',
-          category: 'android.intent.category.LAUNCHER',
-        });
+        // Opens Google Play Store page for GCash — tap "Open" if already installed
+        await Linking.openURL('https://play.google.com/store/apps/details?id=com.globe.gcash.android');
         return;
       } catch {
-        // GCash not installed or launch failed
+        // fall through
       }
     }
     Alert.alert(
       'Open GCash',
-      'Please open your GCash app manually to scan the QR code and complete payment.',
+      'Please open your GCash app manually, then scan the QR code above to pay.',
     );
   };
 
