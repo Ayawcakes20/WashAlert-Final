@@ -653,7 +653,7 @@ public class JobOrderService {
         if (actor.getRole() == Role.ADMIN) {
             orders = repo.findAllByOrderByCreatedAtDesc();
         } else {
-            orders = repo.findByBranchIgnoreCaseOrderByCreatedAtDesc(actor.getBranch());
+            orders = repo.findByNormalizedBranchOrderByCreatedAtDesc(actor.getBranch());
         }
 
         if (orders.isEmpty()) {
@@ -1417,9 +1417,9 @@ public class JobOrderService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "New date cannot be in the past.");
         }
 
-        long booked = repo.countByBranchIgnoreCaseAndBookingDateAndSlotStartTime(
+        long booked = repo.countByNormalizedBranchAndBookingDateAndSlotStartTime(
                 jo.getBranch(), req.newDate(), req.newSlotStartTime());
-        long capacity = machineRepository.countByBranchIgnoreCaseAndStatusNot(jo.getBranch(), MachineStatus.MAINTENANCE);
+        long capacity = machineRepository.countByNormalizedBranchAndStatusNot(jo.getBranch(), MachineStatus.MAINTENANCE);
         if (capacity <= 0) capacity = 1L;
         if (booked >= capacity) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,

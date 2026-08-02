@@ -61,7 +61,7 @@ public class ReportingService {
             String effectiveBranch = resolveBranch(req.branch(), principal);
             var deliveries = (effectiveBranch == null)
                     ? deliveryRepository.findAllByOrderByUpdatedAtDesc()
-                    : deliveryRepository.findByJobOrder_BranchIgnoreCaseOrderByUpdatedAtDesc(effectiveBranch);
+                    : deliveryRepository.findByJobOrderNormalizedBranchOrderByUpdatedAtDesc(effectiveBranch);
 
             Map<String, Long> counts = new LinkedHashMap<>();
             for (DeliveryStatus status : DeliveryStatus.values()) {

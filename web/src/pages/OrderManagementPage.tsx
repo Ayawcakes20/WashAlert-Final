@@ -2147,7 +2147,7 @@ export default function OrderManagementPage() {
                   <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Order Timeline</p>
                   </div>
-                  <div className="p-4 pl-6 space-y-5">
+                  <div className="p-4 space-y-5">
                     <div className="relative pl-6 border-l-2 border-blue-500 pb-4">
                       <div className="absolute -left-[9px] top-0.5 h-4 w-4 rounded-full bg-blue-600 ring-2 ring-white" />
                       <p className="text-xs font-black text-slate-800">Order received</p>
@@ -2292,11 +2292,11 @@ export default function OrderManagementPage() {
                         return (
                           <>
                             <Button
-                              className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl h-14 disabled:opacity-50"
+                              className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl min-h-14 py-3 whitespace-nowrap disabled:opacity-50"
                               onClick={handleMarkNextStep}
                               disabled={statusUpdatingId === selectedOrder.id}
                             >
-                              {statusUpdatingId === selectedOrder.id ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
+                              {statusUpdatingId === selectedOrder.id ? <Loader2 className="h-5 w-5 animate-spin mr-2 shrink-0" /> : null}
                               Mark as {statusLabel[nextStatus] || 'Next Step'}
                             </Button>
                             {(['WASHING', 'DRYING', 'READY', 'DELIVERED', 'OUT_FOR_DELIVERY'].includes(selectedOrder.status)) && (
@@ -2371,71 +2371,86 @@ export default function OrderManagementPage() {
               </div>
 
               {(selectedOrder.status === 'DELIVERED' || selectedOrder.status === 'READY') && (
-                <div className="border-t border-slate-100 pt-4 space-y-4">
-                  <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-                    <MessageSquare className="h-3.5 w-3.5" /> Customer Feedback
-                  </h3>
-
-                  {feedbackLoading ? (
-                    <div className="flex justify-center py-4">
-                      <Loader2 className="h-5 w-5 animate-spin text-slate-300" />
+                <>
+                  {/* Customer Feedback — matches the card pattern (header bar + p-4 body) used by
+                      every other section (Customer, Delivery Details, Laundry Services, Payment,
+                      Order Timeline) instead of a bare top-divider, so spacing/border treatment
+                      is uniform across the whole detail panel. */}
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <MessageSquare className="h-3 w-3" /> Customer Feedback
+                      </p>
                     </div>
-                  ) : feedbackData?.customerRating ? (
-                    <div className="bg-slate-50 rounded-xl p-4 space-y-2">
-                      <div className="flex items-center gap-1">
-                        {[1, 2, 3, 4, 5].map((star) => (
-                          <Star
-                            key={star}
-                            className={`h-5 w-5 ${star <= (feedbackData.customerRating ?? 0) ? "fill-amber-400 text-amber-400" : "text-slate-200"}`}
-                          />
-                        ))}
-                        <span className="ml-2 text-sm font-black text-slate-600">{feedbackData.customerRating}/5</span>
-                      </div>
-                      {feedbackData.customerComment && (
-                        <p className="text-sm text-slate-600 italic leading-relaxed">
-                          &ldquo;{feedbackData.customerComment}&rdquo;
-                        </p>
-                      )}
-                      {feedbackData.feedbackSubmittedAt && (
-                        <p className="text-[10px] text-slate-300">
-                          Submitted {new Date(feedbackData.feedbackSubmittedAt).toLocaleString()}
-                        </p>
+                    <div className="p-4">
+                      {feedbackLoading ? (
+                        <div className="flex justify-center py-4">
+                          <Loader2 className="h-5 w-5 animate-spin text-slate-300" />
+                        </div>
+                      ) : feedbackData?.customerRating ? (
+                        <div className="bg-slate-50 rounded-xl p-4 space-y-2">
+                          <div className="flex items-center gap-1">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <Star
+                                key={star}
+                                className={`h-5 w-5 ${star <= (feedbackData.customerRating ?? 0) ? "fill-amber-400 text-amber-400" : "text-slate-200"}`}
+                              />
+                            ))}
+                            <span className="ml-2 text-sm font-black text-slate-600">{feedbackData.customerRating}/5</span>
+                          </div>
+                          {feedbackData.customerComment && (
+                            <p className="text-sm text-slate-600 italic leading-relaxed">
+                              &ldquo;{feedbackData.customerComment}&rdquo;
+                            </p>
+                          )}
+                          {feedbackData.feedbackSubmittedAt && (
+                            <p className="text-[10px] text-slate-300">
+                              Submitted {new Date(feedbackData.feedbackSubmittedAt).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400 italic">No customer rating yet.</p>
                       )}
                     </div>
-                  ) : (
-                    <p className="text-xs text-slate-400 italic">No customer rating yet.</p>
-                  )}
+                  </div>
 
                   {/* Staff Note */}
-                  <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-                    <Pencil className="h-3.5 w-3.5" /> Staff Note
-                  </h3>
-                  <textarea
-                    className="w-full text-sm border border-slate-200 rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 text-slate-700 placeholder:text-slate-300"
-                    rows={3}
-                    maxLength={300}
-                    placeholder="Add an internal note about this order…"
-                    value={staffNoteInput}
-                    onChange={(e) => setStaffNoteInput(e.target.value)}
-                  />
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] text-slate-300">{staffNoteInput.length}/300</span>
-                    <Button
-                      size="sm"
-                      className="font-bold rounded-lg"
-                      disabled={staffNoteSubmitting}
-                      onClick={() => void submitStaffNote()}
-                    >
-                      {staffNoteSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-                      Save Note
-                    </Button>
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <Pencil className="h-3 w-3" /> Staff Note
+                      </p>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      <textarea
+                        className="w-full text-sm border border-slate-200 rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 text-slate-700 placeholder:text-slate-300"
+                        rows={3}
+                        maxLength={300}
+                        placeholder="Add an internal note about this order…"
+                        value={staffNoteInput}
+                        onChange={(e) => setStaffNoteInput(e.target.value)}
+                      />
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] text-slate-300">{staffNoteInput.length}/300</span>
+                        <Button
+                          size="sm"
+                          className="font-bold rounded-lg"
+                          disabled={staffNoteSubmitting}
+                          onClick={() => void submitStaffNote()}
+                        >
+                          {staffNoteSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                          Save Note
+                        </Button>
+                      </div>
+                      {feedbackData?.staffNoteUpdatedAt && (
+                        <p className="text-[10px] text-slate-300">
+                          Last updated {new Date(feedbackData.staffNoteUpdatedAt).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  {feedbackData?.staffNoteUpdatedAt && (
-                    <p className="text-[10px] text-slate-300">
-                      Last updated {new Date(feedbackData.staffNoteUpdatedAt).toLocaleString()}
-                    </p>
-                  )}
-                </div>
+                </>
               )}
             </div>
           ) : (

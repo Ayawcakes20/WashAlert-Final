@@ -1,5 +1,6 @@
 package com.washalert.washalertbackend.machines;
 
+import com.washalert.washalertbackend.common.BranchNames;
 import com.washalert.washalertbackend.common.DataReadProperties;
 import com.washalert.washalertbackend.firebase.FirestoreReadService;
 import com.washalert.washalertbackend.firebase.FirestoreSyncService;
@@ -125,7 +126,7 @@ public class MachineService {
                     .toList();
         }
 
-        return repo.findByBranchIgnoreCase(effectiveBranch).stream()
+        return repo.findByNormalizedBranch(effectiveBranch).stream()
                 .map(this::toResponse)
                 .sorted(Comparator.comparing(MachineResponse::machineId, String.CASE_INSENSITIVE_ORDER))
                 .toList();
@@ -149,7 +150,7 @@ public class MachineService {
     }
 
     private boolean sameBranch(String a, String b) {
-        return a != null && b != null && a.trim().equalsIgnoreCase(b.trim());
+        return BranchNames.matches(a, b);
     }
 
     private MachineResponse toResponse(Machine m) {

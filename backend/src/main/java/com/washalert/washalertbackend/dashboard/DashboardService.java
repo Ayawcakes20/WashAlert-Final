@@ -60,16 +60,16 @@ public class DashboardService {
         } else {
             String branch = actor.getBranch();
 
-            pending = orders.countByStatusAndBranchIgnoreCase(JobOrderStatus.PENDING, branch);
-            washing = orders.countByStatusAndBranchIgnoreCase(JobOrderStatus.WASHING, branch);
-            drying = orders.countByStatusAndBranchIgnoreCase(JobOrderStatus.DRYING, branch);
-            ready = orders.countByStatusAndBranchIgnoreCase(JobOrderStatus.READY, branch);
+            pending = orders.countByStatusAndNormalizedBranch(JobOrderStatus.PENDING, branch);
+            washing = orders.countByStatusAndNormalizedBranch(JobOrderStatus.WASHING, branch);
+            drying = orders.countByStatusAndNormalizedBranch(JobOrderStatus.DRYING, branch);
+            ready = orders.countByStatusAndNormalizedBranch(JobOrderStatus.READY, branch);
 
-            available = machines.countByStatusAndBranchIgnoreCase(MachineStatus.AVAILABLE, branch);
-            inUse = machines.countByStatusAndBranchIgnoreCase(MachineStatus.IN_USE, branch);
-            maintenance = machines.countByStatusAndBranchIgnoreCase(MachineStatus.MAINTENANCE, branch);
+            available = machines.countByStatusAndNormalizedBranch(MachineStatus.AVAILABLE, branch);
+            inUse = machines.countByStatusAndNormalizedBranch(MachineStatus.IN_USE, branch);
+            maintenance = machines.countByStatusAndNormalizedBranch(MachineStatus.MAINTENANCE, branch);
 
-            recent = orders.findTop10ByBranchIgnoreCaseOrderByCreatedAtDesc(branch)
+            recent = orders.findTop10ByNormalizedBranchOrderByCreatedAtDesc(branch, org.springframework.data.domain.PageRequest.of(0, 10))
                     .stream()
                     .map(mapper::toResponse)
                     .toList();

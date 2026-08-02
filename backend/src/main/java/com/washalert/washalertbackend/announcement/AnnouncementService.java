@@ -2,6 +2,7 @@ package com.washalert.washalertbackend.announcement;
 
 import com.washalert.washalertbackend.announcement.dto.AnnouncementResponse;
 import com.washalert.washalertbackend.announcement.dto.CreateAnnouncementRequest;
+import com.washalert.washalertbackend.common.BranchNames;
 import com.washalert.washalertbackend.orders.JobOrder;
 import com.washalert.washalertbackend.orders.JobOrderRepository;
 import com.washalert.washalertbackend.security.AuthUserDetails;
@@ -85,8 +86,8 @@ public class AnnouncementService {
             if (actorBranch == null) {
                 rows = announcementRepository.findTop100ByOrderByCreatedAtDesc();
             } else {
-                rows = announcementRepository.findTop100ByTargetAllBranchesTrueOrBranchIgnoreCaseOrderByCreatedAtDesc(
-                        actorBranch
+                rows = announcementRepository.findByTargetAllBranchesTrueOrNormalizedBranchOrderByCreatedAtDesc(
+                        actorBranch, org.springframework.data.domain.PageRequest.of(0, 100)
                 );
             }
         }
@@ -106,7 +107,8 @@ public class AnnouncementService {
         if (audienceBranch == null) {
             return announcementRepository.findTop100ByOrderByCreatedAtDesc();
         }
-        return announcementRepository.findTop100ByTargetAllBranchesTrueOrBranchIgnoreCaseOrderByCreatedAtDesc(audienceBranch);
+        return announcementRepository.findByTargetAllBranchesTrueOrNormalizedBranchOrderByCreatedAtDesc(
+                audienceBranch, org.springframework.data.domain.PageRequest.of(0, 100));
     }
 
     private List<User> resolveRecipients(Announcement announcement) {
@@ -161,6 +163,6 @@ public class AnnouncementService {
     }
 
     private boolean sameBranch(String a, String b) {
-        return a != null && b != null && a.trim().equalsIgnoreCase(b.trim());
+        return BranchNames.matches(a, b);
     }
 }

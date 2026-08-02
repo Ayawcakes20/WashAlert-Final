@@ -80,7 +80,7 @@ public class InventorySeeder {
         );
 
         for (SeedItem item : items) {
-            boolean exists = repository.findByBranchIgnoreCaseAndItemNameIgnoreCase(BRANCH, item.name()).isPresent();
+            boolean exists = repository.findByNormalizedBranchAndItemNameIgnoreCase(BRANCH, item.name()).isPresent();
             if (!exists) {
                 InventoryItem entity = InventoryItem.builder()
                         .branch(BRANCH)

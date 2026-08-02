@@ -68,7 +68,7 @@ class BookingServiceTests {
         );
 
         when(machineRepository.lockByBranch(any())).thenReturn(List.of(activeMachine()));
-        when(jobOrderRepository.countByBranchIgnoreCaseAndBookingDateAndSlotStartTime(any(), any(), any())).thenReturn(0L);
+        when(jobOrderRepository.countByNormalizedBranchAndBookingDateAndSlotStartTime(any(), any(), any())).thenReturn(0L);
         when(pricingService.estimate(any(), any(), any(), anyBoolean(), any(), any(), any()))
                 .thenReturn(new PricingService.PriceEstimation(
                         new BigDecimal("240.00"),

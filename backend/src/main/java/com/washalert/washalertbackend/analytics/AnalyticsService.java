@@ -62,11 +62,11 @@ public class AnalyticsService {
 
         List<JobOrder> queriedOrders = (effectiveBranch == null)
                 ? orderRepository.findByCreatedAtBetween(start, end)
-                : orderRepository.findByBranchIgnoreCaseAndCreatedAtBetween(effectiveBranch, start, end);
+                : orderRepository.findByNormalizedBranchAndCreatedAtBetween(effectiveBranch, start, end);
 
         List<PaymentRecord> queriedPayments = (effectiveBranch == null)
                 ? paymentRepository.findBySubmittedAtBetween(start, end)
-                : paymentRepository.findByJobOrder_BranchIgnoreCaseAndSubmittedAtBetween(effectiveBranch, start, end);
+                : paymentRepository.findByJobOrderNormalizedBranchAndSubmittedAtBetween(effectiveBranch, start, end);
 
         List<JobOrder> orders = safeOrders(queriedOrders);
         List<PaymentRecord> payments = safePayments(queriedPayments);

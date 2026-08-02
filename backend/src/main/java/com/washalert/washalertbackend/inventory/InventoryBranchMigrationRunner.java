@@ -96,7 +96,7 @@ public class InventoryBranchMigrationRunner {
 
             // Does a canonical row already exist for the same item name?
             Optional<InventoryItem> canonicalOpt =
-                    itemRepo.findByBranchIgnoreCaseAndItemNameIgnoreCase(
+                    itemRepo.findByNormalizedBranchAndItemNameIgnoreCase(
                             canonical, item.getItemName());
 
             if (canonicalOpt.isPresent()) {

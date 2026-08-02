@@ -1,5 +1,6 @@
 package com.washalert.washalertbackend.delivery;
 
+import com.washalert.washalertbackend.common.BranchNames;
 import com.washalert.washalertbackend.common.DataReadProperties;
 import com.washalert.washalertbackend.common.dto.PagedResponse;
 import com.washalert.washalertbackend.delivery.dto.BranchHandoverRequest;
@@ -873,7 +874,7 @@ public class DeliveryService {
             return deliveryRepository.findAllByOrderByUpdatedAtDesc().stream().map(this::toResponse).toList();
         }
 
-        return deliveryRepository.findByJobOrder_BranchIgnoreCaseOrderByUpdatedAtDesc(effectiveBranch)
+        return deliveryRepository.findByJobOrderNormalizedBranchOrderByUpdatedAtDesc(effectiveBranch)
                 .stream().map(this::toResponse).toList();
     }
 
@@ -1299,7 +1300,7 @@ public class DeliveryService {
     }
 
     private boolean sameBranch(String a, String b) {
-        return a != null && b != null && a.trim().equalsIgnoreCase(b.trim());
+        return BranchNames.matches(a, b);
     }
 
     private boolean matchesDriverBranch(User driver, JobOrder order) {

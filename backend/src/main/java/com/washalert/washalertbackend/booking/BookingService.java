@@ -76,7 +76,7 @@ public class BookingService {
         LocalDate targetDate = (date == null) ? LocalDate.now() : date;
         validateDate(targetDate);
 
-        long capacity = machineRepository.countByBranchIgnoreCaseAndStatusNot(cleanBranch, MachineStatus.MAINTENANCE);
+        long capacity = machineRepository.countByNormalizedBranchAndStatusNot(cleanBranch, MachineStatus.MAINTENANCE);
         if (capacity <= 0) {
             throw new IllegalArgumentException("No active machines found for the selected branch.");
         }
@@ -94,7 +94,7 @@ public class BookingService {
             LocalTime slotStart = cursor;
             LocalTime slotEnd = cursor.plusMinutes(slotMinutes);
 
-            long booked = jobOrderRepository.countByBranchIgnoreCaseAndBookingDateAndSlotStartTime(cleanBranch, targetDate, slotStart);
+            long booked = jobOrderRepository.countByNormalizedBranchAndBookingDateAndSlotStartTime(cleanBranch, targetDate, slotStart);
             long remaining = Math.max(capacity - booked, 0);
 
             slots.add(new BookingSlotResponse(
@@ -145,7 +145,7 @@ public class BookingService {
         if (normEmail != null) {
             LocalDateTime since = LocalDateTime.now().minusSeconds(60);
             List<JobOrder> recentDups = jobOrderRepository
-                    .findByCustomerEmailIgnoreCaseAndBranchIgnoreCaseAndBookingDateAndSlotStartTimeAndStatusAndCreatedAtAfter(
+                    .findByCustomerEmailAndNormalizedBranchAndBookingDateAndSlotStartTimeAndStatusAndCreatedAtAfter(
                             normEmail, cleanBranch, req.preferredDate(), slotStart, JobOrderStatus.PENDING, since);
             if (!recentDups.isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -162,7 +162,7 @@ public class BookingService {
             throw new IllegalArgumentException("No active machines found for the selected branch.");
         }
 
-        long booked = jobOrderRepository.countByBranchIgnoreCaseAndBookingDateAndSlotStartTime(cleanBranch, req.preferredDate(), slotStart);
+        long booked = jobOrderRepository.countByNormalizedBranchAndBookingDateAndSlotStartTime(cleanBranch, req.preferredDate(), slotStart);
         if (booked >= capacity) {
             throw new IllegalArgumentException("Selected time slot is already full. Please choose another slot.");
         }

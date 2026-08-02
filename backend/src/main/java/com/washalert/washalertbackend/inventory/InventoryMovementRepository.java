@@ -13,12 +13,15 @@ public interface InventoryMovementRepository extends JpaRepository<InventoryMove
     void deleteByInventoryItem_Id(Long inventoryItemId);
     boolean existsByReasonStartingWith(String prefix);
 
+    // Was a raw case-sensitive exact match on branch — strictly worse than the rest of the
+    // codebase's unnormalized comparisons (see BranchNames), since it didn't even ignore case.
+    // Normalized the same way stock/consumption queries elsewhere already are.
     @Query("SELECT m FROM InventoryMovement m " +
-           "WHERE m.inventoryItem.branch = :branch " +
+           "WHERE replace(lower(m.inventoryItem.branch), ' branch', '') = replace(lower(:branch), ' branch', '') " +
            "AND m.createdAt >= :since " +
            "AND m.quantityDelta < 0 " +
            "ORDER BY m.inventoryItem.itemName, m.createdAt")
-    List<InventoryMovement> findOutMovementsByBranchSince(
+    List<InventoryMovement> findOutMovementsByNormalizedBranchSince(
             @Param("branch") String branch,
             @Param("since") LocalDateTime since);
 
