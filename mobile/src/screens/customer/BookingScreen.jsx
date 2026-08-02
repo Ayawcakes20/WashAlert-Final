@@ -1016,7 +1016,7 @@ export default function BookingScreen({ route, navigation }) {
               <MaterialCommunityIcons name="cellphone-wireless" size={22} color={payMethod==='gcash'?'#fff':colors.primary}/>
               <View style={{flex:1}}>
                 <Text style={[S.payName,payMethod==='gcash'&&S.payNameOn]}>GCash</Text>
-                <Text style={{fontSize:11,color:payMethod==='gcash'?'rgba(255,255,255,0.7)':colors.textSecondary}}>Testing mode — payment activation pending business permit</Text>
+                <Text style={{fontSize:11,color:payMethod==='gcash'?'rgba(255,255,255,0.7)':colors.textSecondary}}>Pay online via GCash or QRPh powered by PayMongo</Text>
               </View>
               {payMethod==='gcash'&&<Ionicons name="checkmark-circle" size={18} color="#fff"/>}
             </TouchableOpacity>

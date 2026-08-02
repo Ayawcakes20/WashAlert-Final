@@ -374,7 +374,27 @@ export default function OrderDetailScreen({ route, navigation }) {
     ? order.timeline
     : STEPS.map((s,i) => ({step:s.label, time: i===0?order.date:'', done:i<=idx})));
 
-  const payNow = () => {
+  const [paying, setPaying] = useState(false);
+
+  const payNow = async () => {
+    try {
+      setPaying(true);
+      const tracking = order?.trackingNumber || String(order?.id || '');
+      const result = await payments.initiateGcashCheckout(tracking || order);
+      const checkoutUrl = result?.checkoutUrl;
+      if (checkoutUrl) {
+        await WebBrowser.openBrowserAsync(checkoutUrl);
+        navigation.navigate('PaymentSuccess', {
+          trackingNumber: tracking,
+          amount: resolveTotal(order),
+        });
+        return;
+      }
+    } catch (err) {
+      console.warn('[OrderDetailScreen] PayMongo live checkout failed, showing QR modal:', err);
+    } finally {
+      setPaying(false);
+    }
     setShowGcashQrModal(true);
   };
 
