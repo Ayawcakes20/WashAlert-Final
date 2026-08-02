@@ -147,7 +147,7 @@ public class NotificationService {
                         normalizedBranch
                 ).forEach(token -> allTokens.add(token.getFcmToken()));
                 branchScopedRoles.forEach(role ->
-                        userRepository.findByRoleAndBranchIgnoreCase(role, normalizedBranch)
+                        userRepository.findByRoleAndNormalizedBranch(role, normalizedBranch)
                                 .forEach(user -> addLegacyToken(allTokens, user))
                 );
             }

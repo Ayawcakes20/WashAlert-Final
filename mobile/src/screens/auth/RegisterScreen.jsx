@@ -249,8 +249,18 @@ const RegisterScreen = ({ navigation }) => {
               </View>
               <Text style={styles.termsText}>
                 I agree to the{' '}
-                <Text style={styles.termsLink}>Terms & Conditions</Text> and{' '}
-                <Text style={styles.termsLink}>Privacy Policy</Text>
+                <Text
+                  style={styles.termsLink}
+                  onPress={() => navigation.navigate('TermsAndConditions')}
+                >
+                  Terms & Conditions
+                </Text> and{' '}
+                <Text
+                  style={styles.termsLink}
+                  onPress={() => navigation.navigate('PrivacyPolicy')}
+                >
+                  Privacy Policy
+                </Text>
               </Text>
             </TouchableOpacity>
             {errors.terms ? <Text style={styles.errorText}>{errors.terms}</Text> : null}

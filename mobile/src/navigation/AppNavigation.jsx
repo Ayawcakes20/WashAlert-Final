@@ -251,6 +251,8 @@ const AuthStack = ({ hasSeenOnboarding }) => (
     <Stack.Screen name="OTPVerification" component={OTPVerificationScreen} />
     <Stack.Screen name="ChangePassword"  component={ChangePasswordScreen} />
     <Stack.Screen name="ResetPassword"   component={ResetPasswordScreen} />
+    <Stack.Screen name="TermsAndConditions" component={TermsAndConditionsScreen} options={stackHeader('Terms & Conditions')} />
+    <Stack.Screen name="PrivacyPolicy"   component={PrivacyPolicyScreen} options={stackHeader('Privacy Policy')} />
   </Stack.Navigator>
 );
 

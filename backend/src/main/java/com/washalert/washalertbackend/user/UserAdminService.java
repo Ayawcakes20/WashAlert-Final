@@ -73,7 +73,7 @@ public class UserAdminService {
     /** Returns all DRIVER accounts, optionally filtered to a specific branch. */
     public List<UserAdminResponse> listDrivers(String branch) {
         List<User> drivers = (branch != null && !branch.isBlank())
-                ? userRepository.findByRoleAndBranchIgnoreCase(Role.DRIVER, branch.trim())
+                ? userRepository.findByRoleAndNormalizedBranch(Role.DRIVER, branch.trim())
                 : userRepository.findByRole(Role.DRIVER);
         return drivers.stream()
                 .sorted(Comparator.comparing(User::getFullName))
