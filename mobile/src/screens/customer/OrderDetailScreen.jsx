@@ -391,7 +391,11 @@ export default function OrderDetailScreen({ route, navigation }) {
         return;
       }
     } catch (err) {
-      console.warn('[OrderDetailScreen] PayMongo live checkout failed, showing QR modal:', err);
+      console.warn('[OrderDetailScreen] PayMongo live checkout failed:', err);
+      Alert.alert(
+        'PayMongo Online Checkout',
+        err.message || 'Unable to open live PayMongo checkout page. Falling back to manual receipt upload.'
+      );
     } finally {
       setPaying(false);
     }
