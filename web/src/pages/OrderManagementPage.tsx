@@ -2404,7 +2404,7 @@ export default function OrderManagementPage() {
                             </p>
                           )}
                           {feedbackData.feedbackSubmittedAt && (
-                            <p className="text-[10px] text-slate-300">
+                            <p className="text-[10px] text-slate-400">
                               Submitted {new Date(feedbackData.feedbackSubmittedAt).toLocaleString()}
                             </p>
                           )}
@@ -2424,15 +2424,15 @@ export default function OrderManagementPage() {
                     </div>
                     <div className="p-4 space-y-3">
                       <textarea
-                        className="w-full text-sm border border-slate-200 rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 text-slate-700 placeholder:text-slate-300"
-                        rows={3}
+                        className="w-full text-sm border border-slate-200 rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 text-slate-700 placeholder:text-slate-400"
+                        rows={2}
                         maxLength={300}
                         placeholder="Add an internal note about this order…"
                         value={staffNoteInput}
                         onChange={(e) => setStaffNoteInput(e.target.value)}
                       />
                       <div className="flex justify-between items-center">
-                        <span className="text-[10px] text-slate-300">{staffNoteInput.length}/300</span>
+                        <span className="text-[10px] text-slate-400">{staffNoteInput.length}/300</span>
                         <Button
                           size="sm"
                           className="font-bold rounded-lg"
@@ -2444,7 +2444,7 @@ export default function OrderManagementPage() {
                         </Button>
                       </div>
                       {feedbackData?.staffNoteUpdatedAt && (
-                        <p className="text-[10px] text-slate-300">
+                        <p className="text-[10px] text-slate-400">
                           Last updated {new Date(feedbackData.staffNoteUpdatedAt).toLocaleString()}
                         </p>
                       )}
