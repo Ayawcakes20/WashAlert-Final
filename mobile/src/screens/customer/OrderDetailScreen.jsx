@@ -171,6 +171,7 @@ export default function OrderDetailScreen({ route, navigation }) {
   const [showFullTL, setShowTL] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showGcashQrModal, setShowGcashQrModal] = useState(false);
+  const [paying, setPaying] = useState(false);
   const [feedbackRating, setFeedbackRating]     = useState(0);
   const [feedbackComment, setFeedbackComment]   = useState('');
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
@@ -373,8 +374,6 @@ export default function OrderDetailScreen({ route, navigation }) {
   const timeline = (order.timeline && order.timeline.length
     ? order.timeline
     : STEPS.map((s,i) => ({step:s.label, time: i===0?order.date:'', done:i<=idx})));
-
-  const [paying, setPaying] = useState(false);
 
   const payNow = async () => {
     try {
