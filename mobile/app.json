@@ -79,16 +79,6 @@
           "color": "#1d4ed8",
           "defaultChannel": "washalert-updates"
         }
-      ],
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "compileSdkVersion": 35,
-            "targetSdkVersion": 35,
-            "buildToolsVersion": "35.0.0"
-          }
-        }
       ]
     ],
     "experiments": {
