@@ -28,6 +28,7 @@ import AIChatSupportPage from "./pages/AIChatSupportPage";
 import AnnouncementsPage from "./pages/AnnouncementsPage";
 import DashboardAboutPage from "./pages/AboutPage";
 import UnauthorizedPage from "./pages/UnauthorizedPage";
+import SessionConflictPage from "./pages/SessionConflictPage";
 import NotFound from "./pages/NotFound";
 import ProfilePage from "./pages/ProfilePage";
 import SupportTicketsPage from "./pages/SupportTicketsPage";
@@ -68,6 +69,7 @@ const App = () => (
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/set-password" element={<SetPasswordPage />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
+          <Route path="/session-conflict" element={<SessionConflictPage />} />
           <Route path="/app/dashboard" element={<Navigate to="/dashboard" replace />} />
           <Route
             element={
