@@ -5,11 +5,13 @@ import { Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { authApi, notificationsApi, type AppNotification, type MeResponse } from "@/lib/api";
 import {
+  SESSION_KEY,
   clearFirebaseWebSession,
   clearSessionUser,
   getSessionUser,
   saveSessionUser,
 } from "@/lib/session";
+import { toast } from "@/components/ui/sonner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -89,6 +91,40 @@ export default function DashboardLayout() {
     };
     void validateSession();
   }, [navigate]);
+
+  // This browser only keeps one shared login session (one cookie, one
+  // localStorage entry) across all tabs. If someone signs in as a different
+  // account in another tab, that overwrites the session this tab was relying
+  // on. Rather than let this tab silently start acting as the new account (or
+  // fail with a confusing API error), detect the switch and send this tab
+  // back to login with a clear explanation.
+  useEffect(() => {
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key !== SESSION_KEY) return;
+
+      if (!event.newValue) {
+        clearFirebaseWebSession();
+        toast.error("You were signed out in another tab.");
+        navigate("/login");
+        return;
+      }
+
+      try {
+        const nextUser = JSON.parse(event.newValue) as MeResponse;
+        if (nextUser.id !== user?.id) {
+          clearSessionUser();
+          clearFirebaseWebSession();
+          toast.error("Your session was replaced by another sign-in in this browser. Please log in again.");
+          navigate("/login");
+        }
+      } catch {
+        navigate("/login");
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, [navigate, user]);
 
   useEffect(() => {
     const timer = setInterval(() => {

@@ -1,6 +1,6 @@
 import type { MeResponse } from "@/lib/api";
 
-const SESSION_KEY = "washalert_web_user";
+export const SESSION_KEY = "washalert_web_user";
 const FIREBASE_WEB_SESSION_KEY = "washalert_web_firebase_session";
 
 export type FirebaseWebSession = {
