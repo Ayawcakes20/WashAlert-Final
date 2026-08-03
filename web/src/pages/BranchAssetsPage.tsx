@@ -783,7 +783,7 @@ export default function BranchAssetsPage() {
                     </td>
                     <td className="p-4 text-muted-foreground max-w-[160px]">
                       <span className="truncate block" title={asset.notes}>
-                        {asset.notes || <span className="text-border">—</span>}
+                        {asset.notes || <span className="text-muted-foreground">—</span>}
                       </span>
                     </td>
                     <td className="p-4 text-xs text-muted-foreground whitespace-nowrap">
@@ -933,11 +933,11 @@ export default function BranchAssetsPage() {
             const CondIcon = cond.icon;
             return (
               <div className="space-y-3 text-sm">
-                <div className="flex justify-between items-start">
+                <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Product ID</span>
                   <span className="font-mono text-xs text-foreground bg-muted px-2 py-0.5 rounded">{detailsTarget.productId || "—"}</span>
                 </div>
-                <div className="flex justify-between items-start">
+                <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Name</span>
                   <span className="font-semibold text-foreground text-right max-w-[60%]">{detailsTarget.name}</span>
                 </div>

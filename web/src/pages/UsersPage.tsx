@@ -413,13 +413,13 @@ export default function UsersPage() {
                       </div>
                     </td>
                     <td className="p-4">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium ${roleStyle[u.role]}`}>
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${roleStyle[u.role]}`}>
                         <RoleIcon className="h-3 w-3" />
                         {u.role}
                       </span>
                     </td>
                     <td className="p-4 text-muted-foreground hidden md:table-cell">{u.branch}</td>
-                    <td className="p-4 text-muted-foreground hidden lg:table-cell">{u.mobileNumber || <span className="text-slate-300 text-xs italic">—</span>}</td>
+                    <td className="p-4 text-muted-foreground hidden lg:table-cell">{u.mobileNumber || <span className="text-slate-400 text-xs italic">—</span>}</td>
                     <td className="p-4 text-muted-foreground hidden lg:table-cell">{u.joined}</td>
                     <td className="p-4 text-center">
                       <div className="inline-flex flex-col items-center gap-1">
