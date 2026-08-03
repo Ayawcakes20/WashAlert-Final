@@ -112,8 +112,11 @@ export default function DashboardLayout() {
       try {
         const nextUser = JSON.parse(event.newValue) as MeResponse;
         if (nextUser.id !== user?.id) {
-          clearSessionUser();
-          clearFirebaseWebSession();
+          // Deliberately do NOT clear the shared session storage here — it now
+          // holds the OTHER tab's legitimate new login. Clearing it would fire
+          // another storage event that tells that tab it was signed out too,
+          // cascading into logging out the account that should stay logged in.
+          // This tab just forgets its own state and steps aside.
           toast.error("Your session was replaced by another sign-in in this browser. Please log in again.");
           navigate("/login");
         }
