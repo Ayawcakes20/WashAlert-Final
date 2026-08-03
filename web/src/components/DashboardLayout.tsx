@@ -11,7 +11,6 @@ import {
   getSessionUser,
   saveSessionUser,
 } from "@/lib/session";
-import { toast } from "@/components/ui/sonner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -104,8 +103,7 @@ export default function DashboardLayout() {
 
       if (!event.newValue) {
         clearFirebaseWebSession();
-        toast.error("You were signed out in another tab.");
-        navigate("/login");
+        navigate("/session-conflict", { state: { reason: "signed-out" } });
         return;
       }
 
@@ -117,8 +115,7 @@ export default function DashboardLayout() {
           // another storage event that tells that tab it was signed out too,
           // cascading into logging out the account that should stay logged in.
           // This tab just forgets its own state and steps aside.
-          toast.error("Your session was replaced by another sign-in in this browser. Please log in again.");
-          navigate("/login");
+          navigate("/session-conflict", { state: { reason: "replaced" } });
         }
       } catch {
         navigate("/login");
