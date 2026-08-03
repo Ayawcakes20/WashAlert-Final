@@ -237,8 +237,8 @@ function ReceiptPreview({ order, actualKg, loadType, pricing: p, deliveryFee, ma
       ) : (
         <div className="py-16 text-center">
           <Scale className="h-10 w-10 text-slate-200 mx-auto mb-3" />
-          <p className="text-[11px] font-black text-slate-300">Enter actual weight</p>
-          <p className="text-[10px] text-slate-300 mt-0.5">Orders below 5 kg are billed at 5 kg minimum</p>
+          <p className="text-[11px] font-black text-slate-400">Enter actual weight</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">Orders below 5 kg are billed at 5 kg minimum</p>
         </div>
       )}
     </div>

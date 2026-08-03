@@ -1569,7 +1569,7 @@ export default function OrderManagementPage() {
       />
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-xl border-slate-200 rounded-3xl p-0 overflow-hidden bg-[#F8FAFC] shadow-2xl [&>button:last-child]:text-white [&>button:last-child]:opacity-80 [&>button:last-child]:hover:opacity-100">
+        <DialogContent className="sm:max-w-xl border-slate-200 rounded-3xl p-0 overflow-hidden bg-[#F8FAFC] shadow-2xl [&>button:last-child]:text-white [&>button:last-child]:opacity-80 [&>button:last-child]:hover:opacity-100 [&>button:last-child]:hover:bg-white/15">
           <div className="bg-gradient-to-br from-slate-900 to-brand-navy px-8 py-10 pr-16 text-white border-b border-white/5">
             <DialogTitle className="text-3xl font-black tracking-tight flex items-center gap-3">
               <Plus className="h-8 w-8 text-blue-400" /> New Job Order
@@ -1706,7 +1706,7 @@ export default function OrderManagementPage() {
       </Dialog>
 
       <Dialog open={assignRiderOpen} onOpenChange={setAssignRiderOpen}>
-        <DialogContent className="sm:max-w-md border-brand-border rounded-2xl p-0 overflow-hidden bg-white shadow-2xl [&>button:last-child]:text-white [&>button:last-child]:opacity-90 [&>button:last-child]:hover:opacity-100">
+        <DialogContent className="sm:max-w-md border-brand-border rounded-2xl p-0 overflow-hidden bg-white shadow-2xl [&>button:last-child]:text-white [&>button:last-child]:opacity-90 [&>button:last-child]:hover:opacity-100 [&>button:last-child]:hover:bg-white/15">
           <div className="bg-gradient-to-br from-brand-navy to-slate-900 px-8 py-8 text-white border-b border-white/10">
             <div className="flex items-center gap-4 mb-4 pr-10">
               <div className="h-12 w-12 rounded-2xl bg-white/15 border border-white/30 flex items-center justify-center shrink-0">
@@ -1828,7 +1828,7 @@ export default function OrderManagementPage() {
       </Dialog>
 
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="sm:max-w-4xl border-brand-border rounded-xl p-0 overflow-hidden bg-slate-50 [&>button:last-child]:text-white [&>button:last-child]:opacity-80 [&>button:last-child]:hover:opacity-100">
+        <DialogContent className="sm:max-w-4xl border-brand-border rounded-xl p-0 overflow-hidden bg-slate-50 [&>button:last-child]:text-white [&>button:last-child]:opacity-80 [&>button:last-child]:hover:opacity-100 [&>button:last-child]:hover:bg-white/15">
           {detailsLoading ? (
             <div className="p-20 flex flex-col items-center justify-center gap-4">
               <Loader2 className="h-10 w-10 animate-spin text-brand-navy" />
@@ -1837,14 +1837,14 @@ export default function OrderManagementPage() {
           ) : selectedOrder ? (
             <div className="flex flex-col h-full max-h-[90vh]">
               {/* Header */}
-              <div className="bg-slate-900 px-6 py-5 pr-16 text-white flex justify-between items-start gap-4">
+              <div className="bg-slate-900 px-6 py-5 pr-16 text-white flex justify-between items-center gap-4">
                 <div className="min-w-0 flex-1">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Order</p>
                   <h2 className="text-xl font-black tracking-tight truncate">{selectedOrder.orderId}</h2>
                   <p className="text-slate-400 text-[11px] font-medium mt-0.5">{formatDateTime(selectedOrder.createdAt)}</p>
                 </div>
-                <div className="flex max-w-[220px] flex-col items-end gap-2 shrink-0 text-right">
-                  <Badge className={`px-3 py-1.5 rounded-lg text-[12px] font-black uppercase tracking-wide border-none whitespace-nowrap ${selectedOrder.status === 'READY' || selectedOrder.status === 'PRICE_CONFIRMED' ? 'bg-emerald-500 text-white' :
+                <div className="flex max-w-[220px] flex-col items-end gap-1.5 shrink-0 text-right">
+                  <Badge className={`px-3 py-1.5 rounded-full text-[12px] font-black uppercase tracking-wide border-none whitespace-nowrap ${selectedOrder.status === 'READY' || selectedOrder.status === 'PRICE_CONFIRMED' ? 'bg-emerald-500 text-white' :
                       selectedOrder.status === 'AWAITING_PRICE_CONFIRMATION' ? 'bg-amber-500 text-white' :
                         selectedOrder.status === 'WASHING' || selectedOrder.status === 'DRYING' ? 'bg-blue-600 text-white' :
                           selectedOrder.status === 'CANCELLED' ? 'bg-red-500 text-white' :
@@ -1852,7 +1852,7 @@ export default function OrderManagementPage() {
                     }`}>
                     {statusLabel[selectedOrder.status]}
                   </Badge>
-                  <span className="text-[10px] text-slate-400 font-semibold break-words">{selectedOrder.branch}</span>
+                  <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest break-words">{selectedOrder.branch}</span>
                 </div>
               </div>
 
@@ -2410,7 +2410,9 @@ export default function OrderManagementPage() {
                           )}
                         </div>
                       ) : (
-                        <p className="text-xs text-slate-400 italic">No customer rating yet.</p>
+                        <div className="w-full text-sm border border-slate-200 rounded-xl p-3">
+                          <p className="text-xs text-slate-400 italic">No customer rating yet.</p>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -2561,7 +2563,7 @@ export default function OrderManagementPage() {
 
       {/* ── GCash Proof Image Preview Dialog ── */}
       <Dialog open={!!receiptPreviewUrl} onOpenChange={(open) => !open && setReceiptPreviewUrl(null)}>
-        <DialogContent className="sm:max-w-lg border-brand-border rounded-xl p-0 overflow-hidden bg-slate-900 shadow-2xl flex flex-col items-center justify-center [&>button:last-child]:text-white [&>button:last-child]:opacity-80 [&>button:last-child]:hover:opacity-100">
+        <DialogContent className="sm:max-w-lg border-brand-border rounded-xl p-0 overflow-hidden bg-slate-900 shadow-2xl flex flex-col items-center justify-center [&>button:last-child]:text-white [&>button:last-child]:opacity-80 [&>button:last-child]:hover:opacity-100 [&>button:last-child]:hover:bg-white/15">
           <div className="relative p-2 flex items-center justify-center w-full max-h-[80vh]">
             {receiptPreviewUrl && (
               <img
