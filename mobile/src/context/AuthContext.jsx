@@ -534,6 +534,20 @@ export const AuthProvider = ({ children }) => {
       }
       return { success: true };
     } catch (error) {
+      const rawMessage = String(error?.message || error || '').toUpperCase();
+      const wrongCurrentPassword =
+        rawMessage.includes('INVALID_LOGIN_CREDENTIALS') ||
+        rawMessage.includes('AUTH/INVALID-CREDENTIAL') ||
+        rawMessage.includes('INVALID_CREDENTIAL') ||
+        rawMessage.includes('INVALID_PASSWORD') ||
+        rawMessage.includes('EMAIL_NOT_FOUND');
+      // This screen only has a "Current Password" field, not an email field —
+      // formatAuthError's generic "Invalid email or password." (written for
+      // the login screen) is confusing here, since there's no email input to
+      // point to. Reword it to what the user can actually act on.
+      if (wrongCurrentPassword) {
+        return { success: false, error: 'Current password is incorrect.' };
+      }
       return { success: false, error: formatAuthError(error) };
     }
   }, [firebaseSession?.email, persistOnboardingSeen, user?.email]);
