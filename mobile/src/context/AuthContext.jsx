@@ -198,6 +198,8 @@ const formatAuthError = (error) => {
   return typeof msg === 'string' ? msg : 'An unexpected authentication error occurred.';
 };
 
+const REQUEST_TIMEOUT_MS = 25000;
+
 const authRequest = async (path, options = {}) => {
   const { method = 'GET', body, headers = {} } = options;
   const url = buildBackendUrl(path);
@@ -213,14 +215,27 @@ const authRequest = async (path, options = {}) => {
       headerKeys: Object.keys(requestHeaders),
     });
   }
-  return parseResponse(
-    await fetch(url, {
+  // Without a timeout, a stalled connection leaves this promise pending
+  // forever, stranding the caller on a loading state indefinitely.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
       method,
       headers: requestHeaders,
       credentials: 'include',
       body: body ? JSON.stringify(body) : undefined,
-    })
-  );
+      signal: controller.signal,
+    });
+    return await parseResponse(res);
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('Request timed out. Please check your connection and try again.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 };
 
 const isSessionProfilePayload = (profile) =>
@@ -244,13 +259,24 @@ const firebaseRequest = async (path, body) => {
   if (!FIREBASE_API_KEY) {
     throw new Error('Firebase API key is not configured.');
   }
-  return parseResponse(
-    await fetch(`https://identitytoolkit.googleapis.com/v1/${path}?key=${FIREBASE_API_KEY}`, {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(`https://identitytoolkit.googleapis.com/v1/${path}?key=${FIREBASE_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    })
-  );
+      signal: controller.signal,
+    });
+    return await parseResponse(res);
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('Request timed out. Please check your connection and try again.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 };
 
 const resolveMobileRole = (profile = {}) => {
