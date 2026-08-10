@@ -341,6 +341,8 @@ const parseResponse = async (res) => {
   return payload;
 };
 
+const REQUEST_TIMEOUT_MS = 25000;
+
 const apiRequest = async (path, options = {}) => {
   const { method = 'GET', body, headers = {} } = options;
   const url = buildBackendUrl(path);
@@ -356,14 +358,31 @@ const apiRequest = async (path, options = {}) => {
       headerKeys: Object.keys(requestHeaders),
     });
   }
-  return parseResponse(
-    await fetch(url, {
+
+  // Without a timeout, a stalled connection (dropped network, backend
+  // restart mid-request, a hung tunnel) leaves the caller's promise
+  // pending forever — screens that gate their whole render on `loading`
+  // get stuck on a spinner with no way out short of force-closing the app.
+  // Abort and surface a clear, catchable error instead.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
       method,
       headers: requestHeaders,
       credentials: 'include',
       body: body ? JSON.stringify(body) : undefined,
-    })
-  );
+      signal: controller.signal,
+    });
+    return await parseResponse(res);
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('Request timed out. Please check your connection and try again.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 };
 
 const getLocalOrders = async () => {
