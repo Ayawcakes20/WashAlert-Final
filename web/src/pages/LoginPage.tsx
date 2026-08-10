@@ -223,6 +223,8 @@ export default function LoginPage() {
               </label>
               <input
                 type="email"
+                name="email"
+                id="email"
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
@@ -245,6 +247,8 @@ export default function LoginPage() {
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"}
+                  name="password"
+                  id="password"
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);
