@@ -144,6 +144,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
+                        // Probely domain-ownership verification file for the backend host
+                        // (served as a static resource; must be reachable without auth).
+                        .requestMatchers(HttpMethod.GET, "/5da30d66-1636-4319-8e74-edf80d879384.txt").permitAll()
                         .requestMatchers("/api/auth/firebase-login-otp/**").permitAll()
 
                         .requestMatchers(HttpMethod.POST,
