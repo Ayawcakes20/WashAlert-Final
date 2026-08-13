@@ -536,7 +536,7 @@ public class DeliveryService {
                 .toList();
     }
 
-    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    @org.springframework.transaction.annotation.Transactional
     public PagedResponse<DeliveryResponse> listMyPaged(
             AuthUserDetails principal,
             String statusGroup,
@@ -545,6 +545,24 @@ public class DeliveryService {
         User driver = principal.getUser();
         if (driver.getRole() != Role.DRIVER) {
             throw new IllegalArgumentException("Only drivers can view personal deliveries.");
+        }
+
+        // Auto-heal stale DeliveryOrder statuses if underlying JobOrder is DELIVERED or CANCELLED
+        try {
+            List<DeliveryOrder> myDeliveries = deliveryRepository.findByDriverUser_IdOrderByUpdatedAtDesc(driver.getId());
+            for (DeliveryOrder d : myDeliveries) {
+                if (d.getJobOrder() != null) {
+                    if (d.getJobOrder().getStatus() == JobOrderStatus.DELIVERED && d.getStatus() != DeliveryStatus.DELIVERED) {
+                        d.setStatus(DeliveryStatus.DELIVERED);
+                        deliveryRepository.save(d);
+                    } else if (d.getJobOrder().getStatus() == JobOrderStatus.CANCELLED && d.getStatus() != DeliveryStatus.CANCELLED) {
+                        d.setStatus(DeliveryStatus.CANCELLED);
+                        deliveryRepository.save(d);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to auto-heal driver delivery statuses: {}", e.getMessage());
         }
 
         List<DeliveryStatus> statuses = resolveDriverStatusGroup(statusGroup);
