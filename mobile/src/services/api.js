@@ -1646,7 +1646,16 @@ export const driverOrders = {
   getTasks: async (page = 0, size = 20) => {
     const response = await apiRequest(`/api/orders/driver/tasks?page=${page}&size=${size}`);
     return {
-      content: (response.content || []).map(order => mapJobOrderToMobile(order)),
+      // toMobileOrderStatus() (used inside mapJobOrderToMobile) lowercases
+      // DELIVERED/OUT_FOR_DELIVERY for the customer-facing screens, which
+      // breaks driver screens that key off the raw backend enum (e.g. the
+      // dashboard's STATUS_CONFIG and its "Done" tile count). getById()
+      // already re-uppercases for this same reason — mirror that here so
+      // the task list and the task detail view agree on status casing.
+      content: (response.content || []).map(order => ({
+        ...mapJobOrderToMobile(order),
+        status: String(order.status || '').toUpperCase(),
+      })),
       totalElements: response.totalElements,
       totalPages: response.totalPages,
     };
