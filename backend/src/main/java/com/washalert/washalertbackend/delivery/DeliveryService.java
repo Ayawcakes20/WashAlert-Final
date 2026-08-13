@@ -243,6 +243,10 @@ public class DeliveryService {
                 outbound.setStatus(DeliveryStatus.ASSIGNED_DELIVERY);
             }
 
+            // Sync driver assignment to the Job Order so they have access
+            order.setAssignedDeliveryDriver(driver);
+            orderRepository.save(order);
+
             DeliveryOrder savedOutbound = deliveryRepository.save(outbound);
             timelineService.log(order, order.getStatus(), driver.getEmail(), "Driver accepted ready-for-delivery order.");
             firestoreSyncService.upsert("deliveries", savedOutbound.getJobOrder().getTrackingNumber(), toResponse(savedOutbound));
@@ -262,6 +266,11 @@ public class DeliveryService {
                 if (assigned.getStatus() == DeliveryStatus.PENDING_PICKUP) {
                     assigned.setStatus(DeliveryStatus.ASSIGNED_PICKUP);
                 }
+                
+                // Sync driver assignment to the Job Order so they have access
+                order.setAssignedPickupDriver(driver);
+                orderRepository.save(order);
+                
                 DeliveryOrder claimed = deliveryRepository.save(assigned);
                 firestoreSyncService.upsert("deliveries", claimed.getJobOrder().getTrackingNumber(), toResponse(claimed));
                 return toResponse(claimed);
@@ -287,6 +296,10 @@ public class DeliveryService {
                 .status(DeliveryStatus.ASSIGNED_PICKUP)
                 .notes("Driver accepted booking.")
                 .build();
+
+        // Sync driver assignment to the Job Order so they have access
+        order.setAssignedPickupDriver(driver);
+        orderRepository.save(order);
 
         DeliveryOrder saved = deliveryRepository.save(delivery);
         timelineService.log(order, order.getStatus(), driver.getEmail(), "Driver accepted booking.");
