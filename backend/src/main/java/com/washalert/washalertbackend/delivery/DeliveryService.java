@@ -1379,11 +1379,12 @@ public class DeliveryService {
         String normalized = blankToNull(statusGroup);
         if (normalized == null || "all".equalsIgnoreCase(normalized)) return List.of();
         return switch (normalized.toLowerCase()) {
+            // pending = accepted but not yet picked up / started moving
             case "pending" -> List.of(
                     DeliveryStatus.ASSIGNED_PICKUP,
-                    DeliveryStatus.PENDING_PICKUP,
-                    DeliveryStatus.ASSIGNED_DELIVERY
+                    DeliveryStatus.PENDING_PICKUP
             );
+            // in_progress = everything actively moving (pickup leg + delivery leg)
             case "in_progress" -> EnumSet.of(
                     DeliveryStatus.ARRIVED_CUSTOMER,
                     DeliveryStatus.PICKED_UP,

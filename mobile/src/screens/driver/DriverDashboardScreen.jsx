@@ -77,9 +77,18 @@ const DriverDashboardScreen = ({ navigation }) => {
     loadData();
   }, [loadData]);
 
-  const completed = tasks.filter((d) => d.status === 'DELIVERED').length;
-  const active    = tasks.find((d) => ACTIVE_STATUSES.includes(d.status));
-  const pending   = tasks.filter((d) => d.status === 'ASSIGNED_FOR_DELIVERY').length;
+  const DONE_STATUSES   = ['delivered', 'DELIVERED'];
+  const ACTIVE_STATUSES_LOWER = ['assigned_for_delivery', 'en_route_to_branch', 'picked_up_from_branch', 'out_for_delivery', 'delivering'];
+
+  const completed = tasks.filter((d) => DONE_STATUSES.includes(d.status)).length;
+  const active    = tasks.find((d) =>
+    ['ASSIGNED_FOR_DELIVERY', 'EN_ROUTE_TO_BRANCH', 'PICKED_UP_FROM_BRANCH', 'OUT_FOR_DELIVERY'].includes(d.status)
+  );
+  // Assigned = anything not yet delivered/failed
+  const pending   = tasks.filter((d) =>
+    !DONE_STATUSES.includes(d.status) &&
+    !['cancelled', 'COLLECTION_FAILED', 'failed'].includes(d.status)
+  ).length;
 
   if (loading) {
     return (
