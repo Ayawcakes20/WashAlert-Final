@@ -309,11 +309,12 @@ const DriverDeliveriesScreen = ({ navigation }) => {
                         <TouchableOpacity
                           style={styles.viewBtn}
                           onPress={() => {
-                            // The detail screen loads via /api/orders/driver/task/{id}, which
-                            // expects the JobOrder id (delivery.orderId), NOT the Delivery row id.
-                            const orderRef = delivery?.orderId ?? delivery?.id;
+                            // The detail screen loads via /api/orders/driver/task/{orderId}, which
+                            // expects the numeric JobOrder ID — NOT the Delivery row ID (delivery.id).
+                            // Falling back to delivery.id causes a 403 "not assigned to you" error.
+                            const orderRef = delivery?.orderId;
                             if (!orderRef) {
-                              Alert.alert('Unavailable', 'Delivery detail is missing an ID. Please refresh.');
+                              Alert.alert('Unavailable', 'Could not open delivery details. Please pull to refresh the list.');
                               return;
                             }
                             navigation.navigate('DeliveryDetail', { deliveryId: orderRef });
@@ -323,6 +324,7 @@ const DriverDeliveriesScreen = ({ navigation }) => {
                           <Ionicons name="chevron-forward" size={14} color={colors.primary} />
                         </TouchableOpacity>
                       </View>
+
                     </View>
                   );
                 })}

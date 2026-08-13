@@ -526,13 +526,24 @@ export const AuthProvider = ({ children }) => {
       return { success: false, error: 'Current and new passwords are required.' };
     }
 
+    // Step 1: Re-authenticate with current password.
+    // Wrap in its own try/catch: ANY failure here means the current password
+    // is wrong (the email is already known-valid since the user is logged in).
+    let reauth;
     try {
-      const reauth = await firebaseRequest('accounts:signInWithPassword', {
+      reauth = await firebaseRequest('accounts:signInWithPassword', {
         email: accountEmail,
         password: currentPassword,
         returnSecureToken: true,
       });
+    } catch {
+      // Re-auth failed → current password is incorrect, regardless of the
+      // specific Firebase error code/message.
+      return { success: false, error: 'Current password is incorrect.' };
+    }
 
+    // Step 2: Current password was correct — update to new password.
+    try {
       const updated = await firebaseRequest('accounts:update', {
         idToken: reauth.idToken,
         password: newPassword,
@@ -560,20 +571,6 @@ export const AuthProvider = ({ children }) => {
       }
       return { success: true };
     } catch (error) {
-      const rawMessage = String(error?.message || error || '').toUpperCase();
-      const wrongCurrentPassword =
-        rawMessage.includes('INVALID_LOGIN_CREDENTIALS') ||
-        rawMessage.includes('AUTH/INVALID-CREDENTIAL') ||
-        rawMessage.includes('INVALID_CREDENTIAL') ||
-        rawMessage.includes('INVALID_PASSWORD') ||
-        rawMessage.includes('EMAIL_NOT_FOUND');
-      // This screen only has a "Current Password" field, not an email field —
-      // formatAuthError's generic "Invalid email or password." (written for
-      // the login screen) is confusing here, since there's no email input to
-      // point to. Reword it to what the user can actually act on.
-      if (wrongCurrentPassword) {
-        return { success: false, error: 'Current password is incorrect.' };
-      }
       return { success: false, error: formatAuthError(error) };
     }
   }, [firebaseSession?.email, persistOnboardingSeen, user?.email]);
