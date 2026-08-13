@@ -7,6 +7,7 @@ import { AuthProvider } from './src/context/AuthContext';
 import AppNavigator from './src/navigation/AppNavigation';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
+import * as Updates from 'expo-updates';
 import PushNotificationBridge from './src/components/PushNotificationBridge';
 import PriceConfirmationModal from './src/components/PriceConfirmationModal';
 
@@ -26,6 +27,22 @@ export default function App() {
   const [priceModalData, setPriceModalData] = useState(null);
 
   useEffect(() => {
+    // Check and apply OTA updates automatically
+    async function checkOtaUpdates() {
+      try {
+        if (!__DEV__) {
+          const update = await Updates.checkForUpdateAsync();
+          if (update.isAvailable) {
+            await Updates.fetchUpdateAsync();
+            await Updates.reloadAsync();
+          }
+        }
+      } catch (e) {
+        console.log('[OTA] Update check skipped/failed:', e.message);
+      }
+    }
+    checkOtaUpdates();
+
     // Listen for FCM notifications received while app is foregrounded
     const foregroundSub = Notifications.addNotificationReceivedListener(notification => {
       const data = notification?.request?.content?.data || {};
