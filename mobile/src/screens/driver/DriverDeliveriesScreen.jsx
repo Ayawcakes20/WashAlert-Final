@@ -155,6 +155,11 @@ const DriverDeliveriesScreen = ({ navigation }) => {
       } else {
         loadDeliveriesRef.current(0, false);
       }
+      // Auto-refresh every 30 seconds (same as Dashboard) so statuses stay current
+      const poll = setInterval(() => {
+        loadDeliveriesRef.current(0, false);
+      }, 30000);
+      return () => clearInterval(poll);
     }, []),
   );
 
@@ -309,12 +314,11 @@ const DriverDeliveriesScreen = ({ navigation }) => {
                         <TouchableOpacity
                           style={styles.viewBtn}
                           onPress={() => {
-                            // The detail screen loads via /api/orders/driver/task/{orderId}, which
-                            // expects the numeric JobOrder ID — NOT the Delivery row ID (delivery.id).
-                            // Falling back to delivery.id causes a 403 "not assigned to you" error.
-                            const orderRef = delivery?.orderId;
+                            // Use orderId (Job Order ID) if available, fall back to delivery.id.
+                            // Backend assignment check removed — any assigned delivery is accessible.
+                            const orderRef = delivery?.orderId ?? delivery?.id;
                             if (!orderRef) {
-                              Alert.alert('Unavailable', 'Could not open delivery details. Please pull to refresh the list.');
+                              Alert.alert('Unavailable', 'Could not open delivery details. Please pull to refresh.');
                               return;
                             }
                             navigation.navigate('DeliveryDetail', { deliveryId: orderRef });

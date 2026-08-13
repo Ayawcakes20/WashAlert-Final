@@ -143,4 +143,6 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
             @Param("statuses") List<DeliveryStatus> statuses,
             Pageable pageable
     );
+
+    boolean existsByJobOrder_IdAndDriverUser_Id(Long jobOrderId, Long driverUserId);
 }

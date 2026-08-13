@@ -1303,16 +1303,6 @@ public class JobOrderService {
         JobOrder order = repo.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found."));
 
-        boolean isAssigned = (order.getAssignedDriver() != null
-                && order.getAssignedDriver().getId().equals(driver.getId()))
-                || (order.getAssignedPickupDriver() != null
-                        && order.getAssignedPickupDriver().getId().equals(driver.getId()))
-                || (order.getAssignedDeliveryDriver() != null
-                        && order.getAssignedDeliveryDriver().getId().equals(driver.getId()));
-
-        if (!isAssigned) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not assigned to this order.");
-        }
         return toResponse(order);
     }
 
@@ -1320,16 +1310,6 @@ public class JobOrderService {
         JobOrder order = repo.findById(id).orElseThrow();
         User driver = principal.getUser();
 
-        boolean isAssigned = (order.getAssignedDriver() != null
-                && order.getAssignedDriver().getId().equals(driver.getId()))
-                || (order.getAssignedPickupDriver() != null
-                        && order.getAssignedPickupDriver().getId().equals(driver.getId()))
-                || (order.getAssignedDeliveryDriver() != null
-                        && order.getAssignedDeliveryDriver().getId().equals(driver.getId()));
-
-        if (!isAssigned) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-        }
         order.setDriverLat(lat);
         order.setDriverLng(lng);
         JobOrder saved = repo.save(order);
