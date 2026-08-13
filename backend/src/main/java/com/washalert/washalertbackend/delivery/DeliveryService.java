@@ -1048,7 +1048,7 @@ public class DeliveryService {
         };
     }
 
-    private DeliveryResponse toResponse(DeliveryOrder d) {
+    public DeliveryResponse toResponse(DeliveryOrder d) {
         JobOrder order = d.getJobOrder();
         User driverUser = d.getDriverUser();
         String driverPhone = (driverUser != null && driverUser.getMobileNumber() != null && !driverUser.getMobileNumber().isBlank())
@@ -1060,6 +1060,14 @@ public class DeliveryService {
                 ? d.getBagCount()
                 : (order.getEstimatedWeightKg() != null ? order.getEstimatedWeightKg().intValue() : null);
         String paymentStatus = order.isPaid() ? "PAID" : "UNPAID";
+
+        // Determine effective status: if the underlying JobOrder is DELIVERED, override delivery status
+        DeliveryStatus effectiveStatus = d.getStatus();
+        if (order.getStatus() == JobOrderStatus.DELIVERED) {
+            effectiveStatus = DeliveryStatus.DELIVERED;
+        } else if (order.getStatus() == JobOrderStatus.CANCELLED) {
+            effectiveStatus = DeliveryStatus.CANCELLED;
+        }
 
         // ── Contact resolution ──────────────────────────────────────────────────
         // If staff entered a specific delivery contact, use it.
@@ -1094,7 +1102,7 @@ public class DeliveryService {
                 resolvedLoadCount,
                 deriveWorkflowStatus(order, d),
                 d.getLeg(),
-                d.getStatus(),
+                effectiveStatus,
                 d.getCurrentLatitude(),
                 d.getCurrentLongitude(),
                 d.getEstimatedArrivalAt(),

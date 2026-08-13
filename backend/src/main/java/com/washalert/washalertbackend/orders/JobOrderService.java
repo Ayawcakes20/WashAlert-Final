@@ -52,6 +52,10 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.washalert.washalertbackend.delivery.DeliveryOrder;
+import com.washalert.washalertbackend.delivery.DeliveryOrderRepository;
+import com.washalert.washalertbackend.delivery.DeliveryStatus;
+
 @Slf4j
 @Service
 public class JobOrderService {
@@ -65,6 +69,7 @@ public class JobOrderService {
     private final DataReadProperties dataReadProperties;
     private final PaymentRecordRepository paymentRepository;
     private final DeliveryService deliveryService;
+    private final DeliveryOrderRepository deliveryOrderRepo;
     private final UserRepository userRepository;
     private final InventoryService inventoryService;
     private final MachineRepository machineRepository;
@@ -80,6 +85,7 @@ public class JobOrderService {
             DataReadProperties dataReadProperties,
             PaymentRecordRepository paymentRepository,
             DeliveryService deliveryService,
+            DeliveryOrderRepository deliveryOrderRepo,
             UserRepository userRepository,
             InventoryService inventoryService,
             MachineRepository machineRepository,
@@ -93,6 +99,7 @@ public class JobOrderService {
         this.dataReadProperties = dataReadProperties;
         this.paymentRepository = paymentRepository;
         this.deliveryService = deliveryService;
+        this.deliveryOrderRepo = deliveryOrderRepo;
         this.userRepository = userRepository;
         this.inventoryService = inventoryService;
         this.machineRepository = machineRepository;
@@ -983,6 +990,7 @@ public class JobOrderService {
                         JobOrderStatus.EN_ROUTE_TO_BRANCH,
                         JobOrderStatus.ASSIGNED_FOR_DELIVERY,
                         JobOrderStatus.OUT_FOR_DELIVERY,
+                        JobOrderStatus.DELIVERED,
                         JobOrderStatus.COLLECTION_FAILED),
                 pageable);
         Map<Long, PaymentStatus> paymentStatusByOrderId = resolvePaymentStatusByOrderId(page.getContent());
@@ -1210,6 +1218,24 @@ public class JobOrderService {
         order.setStatus(JobOrderStatus.OUT_FOR_DELIVERY);
         JobOrder saved = repo.save(order);
 
+        // Sync corresponding DeliveryOrder records to OUT_FOR_DELIVERY
+        try {
+            List<DeliveryOrder> deliveryOrders = deliveryOrderRepo.findByJobOrder_TrackingNumber(saved.getTrackingNumber());
+            for (DeliveryOrder d : deliveryOrders) {
+                if (d.getStatus() != DeliveryStatus.DELIVERED) {
+                    d.setStatus(DeliveryStatus.OUT_FOR_DELIVERY);
+                    if (d.getDriverUser() == null) {
+                        d.setDriverUser(driver);
+                        d.setDriverName(driver.getFullName());
+                    }
+                    deliveryOrderRepo.save(d);
+                    firestoreSyncService.upsert("deliveries", saved.getTrackingNumber(), deliveryService.toResponse(d));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to sync delivery orders for startDeliveryLeg order {}: {}", saved.getId(), e.getMessage());
+        }
+
         JobOrderResponse response = toResponse(saved);
         
         try {
@@ -1268,6 +1294,23 @@ public class JobOrderService {
             }
         }
         JobOrder saved = repo.save(order);
+
+        // Sync corresponding DeliveryOrder records to DELIVERED status
+        try {
+            List<DeliveryOrder> deliveryOrders = deliveryOrderRepo.findByJobOrder_TrackingNumber(saved.getTrackingNumber());
+            for (DeliveryOrder d : deliveryOrders) {
+                d.setStatus(DeliveryStatus.DELIVERED);
+                if (d.getDriverUser() == null) {
+                    d.setDriverUser(driver);
+                    d.setDriverName(driver.getFullName());
+                }
+                deliveryOrderRepo.save(d);
+                firestoreSyncService.upsert("deliveries", saved.getTrackingNumber(), deliveryService.toResponse(d));
+            }
+        } catch (Exception e) {
+            log.warn("Failed to sync delivery orders to DELIVERED for order {}: {}", saved.getId(), e.getMessage());
+        }
+
         timelineService.log(saved, JobOrderStatus.DELIVERED, driver.getEmail(),
                 codCollected ? "Delivered by driver — COD collected." : "Delivered by driver.");
 
