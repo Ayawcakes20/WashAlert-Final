@@ -2,8 +2,7 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { motion } from "framer-motion";
-import logoLaundryHubs from "@/assets/logo-laundryhubs.webp";
-import logoSpeedyWash from "@/assets/logo-speedywash.webp";
+import logoTriplets from "@/assets/logo-triplets.jpg";
 import { authApi } from "@/lib/api";
 import { firebaseAuthApi } from "@/lib/firebaseAuth";
 import { saveFirebaseWebSession, saveSessionUser, clearFirebaseWebSession } from "@/lib/session";
@@ -200,16 +199,11 @@ export default function LoginPage() {
           </button>
 
           <div className="flex flex-col items-center mb-8">
-            <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="flex items-center gap-3 mb-4">
+            <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="flex items-center justify-center mb-4">
               <img
-                src={logoLaundryHubs}
-                alt="Triplets"
-                className="h-14 w-14 rounded-full object-cover ring-2 ring-secondary/50"
-              />
-              <img
-                src={logoSpeedyWash}
-                alt="SpeedyWash"
-                className="h-14 w-14 rounded-full object-cover ring-2 ring-secondary/50"
+                src={logoTriplets}
+                alt="Triplets Laundry"
+                className="h-20 w-20 rounded-full object-cover ring-2 ring-secondary/50 shadow-md"
               />
             </motion.div>
             <h1 className="text-2xl font-bold text-foreground tracking-tight">WashAlert</h1>
