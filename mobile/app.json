@@ -25,7 +25,6 @@
       "edgeToEdgeEnabled": false,
       "permissions": [
         "POST_NOTIFICATIONS",
-        "ACCESS_BACKGROUND_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION"
       ],
