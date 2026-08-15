@@ -54,6 +54,18 @@
     },
     "plugins": [
       [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#1A2B4A",
+          "dark": {
+            "backgroundColor": "#1A2B4A"
+          }
+        }
+      ],
+      [
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Allow WashAlert to track your location for real-time delivery updates."
