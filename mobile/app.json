@@ -53,6 +53,11 @@
       "favicon": "./assets/images/favicon.png",
       "bundler": "metro"
     },
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1A2B4A"
+    },
     "plugins": [
       [
         "expo-splash-screen",
@@ -60,9 +65,10 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#1A2B4A",
           "dark": {
-            "backgroundColor": "#000000"
+            "image": "./assets/images/splash-icon.png",
+            "backgroundColor": "#1A2B4A"
           }
         }
       ],
@@ -81,21 +87,18 @@
         }
       ]
     ],
-    "experiments": {
-      "reactCompiler": true
-    },
     "updates": {
-      "url": "https://u.expo.dev/6605b3e9-bb0f-48a5-8a1d-6b3494517543",
+      "url": "https://u.expo.dev/df1ad6db-6140-4874-9536-8899437e9838",
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
     },
     "extra": {
       "eas": {
-        "projectId": "6605b3e9-bb0f-48a5-8a1d-6b3494517543"
+        "projectId": "df1ad6db-6140-4874-9536-8899437e9838"
       }
     },
-    "owner": "prince61204",
+    "owner": "princeeee_12",
     "runtimeVersion": {
       "policy": "appVersion"
     }

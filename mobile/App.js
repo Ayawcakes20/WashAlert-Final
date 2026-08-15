@@ -8,8 +8,11 @@ import AppNavigator from './src/navigation/AppNavigation';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
 import * as Updates from 'expo-updates';
+import * as SplashScreen from 'expo-splash-screen';
 import PushNotificationBridge from './src/components/PushNotificationBridge';
 import PriceConfirmationModal from './src/components/PriceConfirmationModal';
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const LOCATION_TRACKING_TASK = 'LOCATION_TRACKING_TASK';
 
@@ -27,6 +30,9 @@ export default function App() {
   const [priceModalData, setPriceModalData] = useState(null);
 
   useEffect(() => {
+    const hideTimer = setTimeout(() => {
+      SplashScreen.hideAsync().catch(() => {});
+    }, 400);
     // Check and apply OTA updates automatically
     async function checkOtaUpdates() {
       try {
@@ -62,6 +68,7 @@ export default function App() {
     });
 
     return () => {
+      clearTimeout(hideTimer);
       foregroundSub.remove();
       responseSub.remove();
     };
