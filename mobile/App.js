@@ -1,18 +1,14 @@
 /* eslint-disable import/no-duplicates */
 import 'react-native-gesture-handler';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from './src/context/AuthContext';
 import AppNavigator from './src/navigation/AppNavigation';
 import * as Notifications from 'expo-notifications';
-import * as SplashScreen from 'expo-splash-screen';
 import PushNotificationBridge from './src/components/PushNotificationBridge';
 import PriceConfirmationModal from './src/components/PriceConfirmationModal';
-
-// Instruct Expo Splash Screen to hold native splash until React root layout is ready
-SplashScreen.preventAutoHideAsync().catch(() => {});
 
 class RootErrorBoundary extends React.Component {
   constructor(props) {
@@ -44,21 +40,9 @@ class RootErrorBoundary extends React.Component {
 }
 
 export default function App() {
-  const [appIsReady, setAppIsReady] = useState(false);
   const [priceModalData, setPriceModalData] = useState(null);
 
   useEffect(() => {
-    async function prepare() {
-      try {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (e) {
-        console.warn('App prepare error:', e);
-      } finally {
-        setAppIsReady(true);
-      }
-    }
-    prepare();
-
     const foregroundSub = Notifications.addNotificationReceivedListener(notification => {
       const data = notification?.request?.content?.data || {};
       if (data.type === 'PRICE_CONFIRMATION_REQUIRED' && data.id) {
@@ -81,19 +65,9 @@ export default function App() {
     };
   }, []);
 
-  const onLayoutRootView = useCallback(async () => {
-    if (appIsReady) {
-      await SplashScreen.hideAsync().catch(() => {});
-    }
-  }, [appIsReady]);
-
-  if (!appIsReady) {
-    return null;
-  }
-
   return (
     <RootErrorBoundary>
-      <GestureHandlerRootView style={{ flex: 1 }} onLayout={onLayoutRootView}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <AuthProvider>
             <PushNotificationBridge />
