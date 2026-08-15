@@ -12,8 +12,6 @@ import * as SplashScreen from 'expo-splash-screen';
 import PushNotificationBridge from './src/components/PushNotificationBridge';
 import PriceConfirmationModal from './src/components/PriceConfirmationModal';
 
-SplashScreen.preventAutoHideAsync().catch(() => {});
-
 const LOCATION_TRACKING_TASK = 'LOCATION_TRACKING_TASK';
 
 TaskManager.defineTask(LOCATION_TRACKING_TASK, async ({ data, error }) => {
@@ -30,24 +28,8 @@ export default function App() {
   const [priceModalData, setPriceModalData] = useState(null);
 
   useEffect(() => {
-    const hideTimer = setTimeout(() => {
-      SplashScreen.hideAsync().catch(() => {});
-    }, 400);
-    // Check and apply OTA updates automatically
-    async function checkOtaUpdates() {
-      try {
-        if (!__DEV__) {
-          const update = await Updates.checkForUpdateAsync();
-          if (update.isAvailable) {
-            await Updates.fetchUpdateAsync();
-            await Updates.reloadAsync();
-          }
-        }
-      } catch (e) {
-        console.log('[OTA] Update check skipped/failed:', e.message);
-      }
-    }
-    checkOtaUpdates();
+    // Ensure native splash screen hides immediately
+    SplashScreen.hideAsync().catch(() => {});
 
     // Listen for FCM notifications received while app is foregrounded
     const foregroundSub = Notifications.addNotificationReceivedListener(notification => {
