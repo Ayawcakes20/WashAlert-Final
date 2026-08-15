@@ -53,11 +53,6 @@
       "favicon": "./assets/images/favicon.png",
       "bundler": "metro"
     },
-    "splash": {
-      "image": "./assets/images/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#1A2B4A"
-    },
     "plugins": [
       [
         "expo-splash-screen",
@@ -67,7 +62,6 @@
           "resizeMode": "contain",
           "backgroundColor": "#1A2B4A",
           "dark": {
-            "image": "./assets/images/splash-icon.png",
             "backgroundColor": "#1A2B4A"
           }
         }

@@ -22,3 +22,6 @@ expo-env.d.ts
 *.pem
 .env*.local
 *.tsbuildinfo
+*.apk
+*.log
+eas_build_log*.txt
