@@ -7,7 +7,7 @@ import { AuthProvider } from './src/context/AuthContext';
 import AppNavigator from './src/navigation/AppNavigation';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
-import * as Updates from 'expo-updates';
+// Updates import removed — OTA checks handled by Expo runtime automatically
 import * as SplashScreen from 'expo-splash-screen';
 import PushNotificationBridge from './src/components/PushNotificationBridge';
 import PriceConfirmationModal from './src/components/PriceConfirmationModal';
@@ -50,7 +50,6 @@ export default function App() {
     });
 
     return () => {
-      clearTimeout(hideTimer);
       foregroundSub.remove();
       responseSub.remove();
     };
