@@ -25,6 +25,7 @@
       "edgeToEdgeEnabled": false,
       "permissions": [
         "POST_NOTIFICATIONS",
+        "ACCESS_BACKGROUND_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION"
       ],
@@ -59,9 +60,9 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#1A2B4A",
+          "backgroundColor": "#ffffff",
           "dark": {
-            "backgroundColor": "#1A2B4A"
+            "backgroundColor": "#000000"
           }
         }
       ],
@@ -80,18 +81,21 @@
         }
       ]
     ],
+    "experiments": {
+      "reactCompiler": true
+    },
     "updates": {
-      "url": "https://u.expo.dev/df1ad6db-6140-4874-9536-8899437e9838",
+      "url": "https://u.expo.dev/6605b3e9-bb0f-48a5-8a1d-6b3494517543",
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
     },
     "extra": {
       "eas": {
-        "projectId": "df1ad6db-6140-4874-9536-8899437e9838"
+        "projectId": "6605b3e9-bb0f-48a5-8a1d-6b3494517543"
       }
     },
-    "owner": "princeeee_12",
+    "owner": "prince61204",
     "runtimeVersion": {
       "policy": "appVersion"
     }

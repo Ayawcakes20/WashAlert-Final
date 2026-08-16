@@ -32,13 +32,13 @@ export default function App() {
       try {
         if (!__DEV__) {
           const update = await Updates.checkForUpdateAsync();
-          if (update?.isAvailable) {
+          if (update.isAvailable) {
             await Updates.fetchUpdateAsync();
             await Updates.reloadAsync();
           }
         }
       } catch (e) {
-        console.log('[OTA] Update check skipped/failed:', e?.message || e);
+        console.log('[OTA] Update check skipped/failed:', e.message);
       }
     }
     checkOtaUpdates();
