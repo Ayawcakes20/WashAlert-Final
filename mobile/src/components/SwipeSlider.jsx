@@ -1,15 +1,5 @@
-import React, { useCallback, useEffect } from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withRepeat,
-  withSequence,
-  withTiming,
-  interpolateColor,
-} from 'react-native-reanimated';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { View, StyleSheet, Dimensions, Animated, PanResponder } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors } from '../theme/colors';
@@ -30,29 +20,49 @@ const SWIPE_RANGE = SLIDER_WIDTH - KNOB_SIZE - 8;
  *   disabled: boolean    - Disable interaction
  */
 const SwipeSlider = ({ label, onComplete, color = colors.primary, disabled = false }) => {
-  const translateX = useSharedValue(0);
-  const pulseScale = useSharedValue(1);
-  const startX = useSharedValue(0);
-  const isDisabled = useSharedValue(disabled);
+  const translateX = useRef(new Animated.Value(0)).current;
+  const pulseScale = useRef(new Animated.Value(1)).current;
+  const pulseLoopRef = useRef(null);
+  const startXRef = useRef(0);
+  const currentXRef = useRef(0);
+  const disabledRef = useRef(disabled);
 
   useEffect(() => {
-    isDisabled.value = disabled;
-    if (!disabled) {
-      pulseScale.value = withRepeat(
-        withSequence(
-          withTiming(1.1, { duration: 750 }),
-          withTiming(1, { duration: 750 })
-        ),
-        -1,
-        true
-      );
-    } else {
-      pulseScale.value = withTiming(1);
+    const id = translateX.addListener(({ value }) => {
+      currentXRef.current = value;
+    });
+    return () => translateX.removeListener(id);
+  }, [translateX]);
+
+  useEffect(() => {
+    disabledRef.current = disabled;
+
+    if (pulseLoopRef.current) {
+      pulseLoopRef.current.stop();
+      pulseLoopRef.current = null;
     }
-  }, [disabled, isDisabled, pulseScale]);
+
+    if (!disabled) {
+      pulseLoopRef.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseScale, { toValue: 1.1, duration: 750, useNativeDriver: true }),
+          Animated.timing(pulseScale, { toValue: 1, duration: 750, useNativeDriver: true }),
+        ])
+      );
+      pulseLoopRef.current.start();
+    } else {
+      Animated.timing(pulseScale, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+    }
+
+    return () => {
+      if (pulseLoopRef.current) {
+        pulseLoopRef.current.stop();
+      }
+    };
+  }, [disabled, pulseScale]);
 
   const handleReset = useCallback(() => {
-    translateX.value = withSpring(0);
+    Animated.spring(translateX, { toValue: 0, useNativeDriver: false }).start();
   }, [translateX]);
 
   const handleComplete = useCallback(() => {
@@ -65,58 +75,59 @@ const SwipeSlider = ({ label, onComplete, color = colors.primary, disabled = fal
     }, 1000);
   }, [handleReset, onComplete]);
 
-  const panGesture = Gesture.Pan()
-    .runOnJS(true)
-    .onBegin(() => {
-      startX.value = translateX.value;
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => !disabledRef.current,
+      onMoveShouldSetPanResponder: () => !disabledRef.current,
+      onPanResponderGrant: () => {
+        startXRef.current = currentXRef.current;
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        if (disabledRef.current) return;
+        const newVal = startXRef.current + gestureState.dx;
+        translateX.setValue(Math.min(Math.max(newVal, 0), SWIPE_RANGE));
+      },
+      onPanResponderRelease: () => {
+        if (disabledRef.current) return;
+        if (currentXRef.current > SWIPE_RANGE * 0.85) {
+          Animated.spring(translateX, { toValue: SWIPE_RANGE, useNativeDriver: false }).start();
+          handleComplete();
+        } else {
+          handleReset();
+        }
+      },
+      onPanResponderTerminate: () => {
+        if (!disabledRef.current) handleReset();
+      },
     })
-    .onUpdate((event) => {
-      if (isDisabled.value) return;
-      const newVal = startX.value + event.translationX;
-      translateX.value = Math.min(Math.max(newVal, 0), SWIPE_RANGE);
-    })
-    .onEnd(() => {
-      if (isDisabled.value) return;
-      if (translateX.value > SWIPE_RANGE * 0.85) {
-        translateX.value = withSpring(SWIPE_RANGE);
-        handleComplete();
-      } else {
-        handleReset();
-      }
-    });
+  ).current;
 
-  const animatedKnobStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }, { scale: pulseScale.value }],
-  }));
-
-  const animatedBgStyle = useAnimatedStyle(() => {
-    const backgroundColor = interpolateColor(
-      translateX.value,
-      [0, SWIPE_RANGE],
-      ['transparent', 'rgba(255,255,255,0.22)']
-    );
-    return { backgroundColor };
+  const animatedBgColor = translateX.interpolate({
+    inputRange: [0, SWIPE_RANGE],
+    outputRange: ['rgba(255,255,255,0)', 'rgba(255,255,255,0.22)'],
   });
 
-  const animatedTextStyle = useAnimatedStyle(() => {
-    const opacity = 1 - translateX.value / (SWIPE_RANGE * 0.6);
-    return { opacity: Math.max(opacity, 0) };
+  const textOpacity = translateX.interpolate({
+    inputRange: [0, SWIPE_RANGE * 0.6, SWIPE_RANGE],
+    outputRange: [1, 0, 0],
+    extrapolate: 'clamp',
   });
 
   return (
     <View style={[styles.container, { backgroundColor: disabled ? colors.disabled : color }]}>
-      <Animated.View style={[styles.backgroundOverlay, animatedBgStyle]} />
+      <Animated.View style={[styles.backgroundOverlay, { backgroundColor: animatedBgColor }]} />
 
-      <GestureDetector gesture={panGesture}>
-        <Animated.View style={[styles.knob, animatedKnobStyle]}>
-          <View style={styles.knobInner}>
-            <Ionicons name="chevron-forward" size={18} color={disabled ? colors.disabled : color} />
-            <Ionicons name="chevron-forward" size={18} color={disabled ? colors.disabled : color} style={{ marginLeft: -10 }} />
-          </View>
-        </Animated.View>
-      </GestureDetector>
+      <Animated.View
+        {...panResponder.panHandlers}
+        style={[styles.knob, { transform: [{ translateX }, { scale: pulseScale }] }]}
+      >
+        <View style={styles.knobInner}>
+          <Ionicons name="chevron-forward" size={18} color={disabled ? colors.disabled : color} />
+          <Ionicons name="chevron-forward" size={18} color={disabled ? colors.disabled : color} style={{ marginLeft: -10 }} />
+        </View>
+      </Animated.View>
 
-      <Animated.Text style={[styles.label, animatedTextStyle]} pointerEvents="none">
+      <Animated.Text style={[styles.label, { opacity: textOpacity }]} pointerEvents="none">
         {label}
       </Animated.Text>
     </View>
