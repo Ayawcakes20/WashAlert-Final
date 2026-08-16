@@ -85,11 +85,17 @@
       "reactCompiler": true
     },
     "updates": {
-      "url": "https://u.expo.dev/6605b3e9-bb0f-48a5-8a1d-6b3494517543",
+      "url": "https://u.expo.dev/4cadc5cf-023b-4d89-8594-fb4701381dfb",
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
     },
+    "extra": {
+      "eas": {
+        "projectId": "4cadc5cf-023b-4d89-8594-fb4701381dfb"
+      }
+    },
+    "owner": "washalert",
     "runtimeVersion": {
       "policy": "appVersion"
     }
