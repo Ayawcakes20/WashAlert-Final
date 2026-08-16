@@ -90,12 +90,6 @@
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
     },
-    "extra": {
-      "eas": {
-        "projectId": "6605b3e9-bb0f-48a5-8a1d-6b3494517543"
-      }
-    },
-    "owner": "prince61204",
     "runtimeVersion": {
       "policy": "appVersion"
     }
