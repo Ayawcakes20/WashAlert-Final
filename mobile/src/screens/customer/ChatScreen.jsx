@@ -164,10 +164,18 @@ const ChatScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      {/*
+        Android already shifts the whole screen up to keep the focused input visible via
+        app.json's softwareKeyboardLayoutMode: "pan" (windowSoftInputMode="adjustPan").
+        Also applying KeyboardAvoidingView's "height" behavior on top of that double-applies
+        the adjustment, pushing content further up than the keyboard actually requires - this
+        was the "too high when typing" bug. Passing no behavior on Android lets the OS handle
+        it alone, which adapts correctly to every device/keyboard size without a hardcoded
+        offset; iOS has no OS-level equivalent, so "padding" behavior is still needed there.
+      */}
       <KeyboardAvoidingView
         style={styles.keyboardWrap}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4 }}>

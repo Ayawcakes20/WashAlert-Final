@@ -256,7 +256,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
               <ReceiptRow
                 label={fullOrderData.detergent || 'Detergent'}
                 value={fmt(p.detCost)}
-                sub={`₱${p.detPPP}/pack × ${p.detQty} pack${p.detQty !== 1 ? 's' : ''}`}
+                sub={`₱${p.detPPP}/sachet × ${p.detQty} sachet${p.detQty !== 1 ? 's' : ''}`}
               />
             )}
 
@@ -265,7 +265,7 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
               <ReceiptRow
                 label={fullOrderData.conditioner || 'Fabric Conditioner'}
                 value={fmt(p.conCost)}
-                sub={`₱${p.conPPP}/pack × ${p.conQty} pack${p.conQty !== 1 ? 's' : ''}`}
+                sub={`₱${p.conPPP}/sachet × ${p.conQty} sachet${p.conQty !== 1 ? 's' : ''}`}
               />
             )}
 
@@ -331,12 +331,15 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
 
 const S = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.88)', justifyContent: 'flex-end' },
-  card: { backgroundColor: '#fff', borderTopLeftRadius: 32, borderTopRightRadius: 32, maxHeight: '92%', elevation: 24 },
+  card: { backgroundColor: '#fff', borderTopLeftRadius: 32, borderTopRightRadius: 32, maxHeight: '92%', elevation: 24, overflow: 'hidden' },
   headerControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingTop: 12, paddingBottom: 4, position: 'relative' },
   closeBtn: { position: 'absolute', right: 16, top: 12 },
   notchBar: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#CBD5E1' },
   receiptDivider: { height: 1, backgroundColor: '#E2E8F0', marginBottom: 0 },
-  scroll: { flexGrow: 0 },
+  // flex: 1 (not flexGrow: 0) bounds the ScrollView to the remaining space inside
+  // card's capped maxHeight, so content past the fold scrolls into view instead of
+  // rendering past the bottom of the screen (this hid the "Confirm & Pay" button).
+  scroll: { flex: 1 },
   scrollContent: { padding: 24, paddingBottom: 40 },
   receiptHeader: { alignItems: 'center', marginBottom: 16 },
   logoWrapper: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 10 },

@@ -278,7 +278,10 @@ const S = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
   title: { fontSize: 18, fontWeight: '800', color: colors.text },
   closeBtn: { padding: 4 },
-  scroll: { flexGrow: 0 },
+  // flex: 1 (not flexGrow: 0) bounds the ScrollView to the remaining space inside
+  // card's capped maxHeight, so content past the fold scrolls into view instead of
+  // rendering past the bottom of the screen.
+  scroll: { flex: 1 },
   scrollContent: { padding: 20 },
   amountBox: { backgroundColor: '#F8FAFC', borderRadius: 16, padding: 16, alignItems: 'center', borderStyle: 'solid', borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 },
   amountLabel: { fontSize: 10, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.8 },
