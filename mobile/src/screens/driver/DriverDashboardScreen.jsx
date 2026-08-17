@@ -112,7 +112,7 @@ const DriverDashboardScreen = ({ navigation }) => {
         </View>
         {/* Actions */}
         <View style={styles.navActions}>
-          <TouchableOpacity style={styles.navBtn}>
+          <TouchableOpacity style={styles.navBtn} onPress={() => navigation.navigate('Chat')}>
             <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.85)" />
           </TouchableOpacity>
           <TouchableOpacity style={styles.navBtn} onPress={() => navigation.navigate('DriverNotifications')}>

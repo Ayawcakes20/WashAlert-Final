@@ -43,16 +43,24 @@ const SwipeSlider = ({ label, onComplete, color = colors.primary, disabled = fal
       pulseLoopRef.current = null;
     }
 
+    // Must stay useNativeDriver: false, matching translateX below: both values are combined
+    // in the same transform array on the knob's Animated.View (see render). React Native
+    // does not support mixing a native-driven and a JS-driven value as siblings in one
+    // transform/style prop on the same node - the native-driven one silently promotes the
+    // whole prop to "native", and the next JS-side update to the other value then throws
+    // "Attempting to run JS driven animation on animated node that has been moved to
+    // native" (facebook/react-native#14075). translateX can't go native here since it also
+    // drives a JS-only color interpolation (animatedBgColor, below) on a sibling view.
     if (!disabled) {
       pulseLoopRef.current = Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseScale, { toValue: 1.1, duration: 750, useNativeDriver: true }),
-          Animated.timing(pulseScale, { toValue: 1, duration: 750, useNativeDriver: true }),
+          Animated.timing(pulseScale, { toValue: 1.1, duration: 750, useNativeDriver: false }),
+          Animated.timing(pulseScale, { toValue: 1, duration: 750, useNativeDriver: false }),
         ])
       );
       pulseLoopRef.current.start();
     } else {
-      Animated.timing(pulseScale, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+      Animated.timing(pulseScale, { toValue: 1, duration: 200, useNativeDriver: false }).start();
     }
 
     return () => {
