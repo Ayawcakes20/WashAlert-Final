@@ -486,6 +486,9 @@ const mapJobOrderToMobile = (jobOrder, previous = {}) => ({
       : jobOrder.serviceType === 'DROP_OFF'
         ? 'Drop Off'
         : previous.serviceType ?? 'Wash & Dry',
+  // Raw backend enum ('DROP_OFF' | 'PICKUP_DELIVERY'), preserved separately from the
+  // human-readable serviceType label above so UI logic can reliably branch on it.
+  serviceTypeRaw: jobOrder.serviceType ?? previous.serviceTypeRaw ?? null,
   serviceName: jobOrder.serviceName ?? previous.serviceName ?? null,
   serviceMode:
     previous.serviceMode ||
@@ -1090,10 +1093,10 @@ export const bookings = {
 
   submitFeedback: async (trackingNumber, rating, comment) => {
     if (!trackingNumber) throw new Error('Cannot submit feedback: tracking number is missing.');
+    // apiRequest() stringifies the body itself - pass a plain object, not a pre-stringified one.
     return apiRequest(`/api/orders/my/${encodeURIComponent(trackingNumber)}/feedback`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rating, comment: comment || '' }),
+      body: { rating, comment: comment || '' },
     });
   },
 
