@@ -861,7 +861,11 @@ export default function OrderDetailScreen({ route, navigation }) {
             activeOpacity={0.8}
           >
             <Ionicons name="call-outline" size={18} color={footerContactPhone ? colors.primary : colors.disabled}/>
-            <Text style={[styles.footerOutlineText, !footerContactPhone && { color: colors.disabled }]}>
+            <Text
+              style={[styles.footerOutlineText, !footerContactPhone && { color: colors.disabled }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
               {footerContactPhone ? `Call ${footerContactLabel}` : 'No Phone'}
             </Text>
           </TouchableOpacity>
@@ -872,7 +876,12 @@ export default function OrderDetailScreen({ route, navigation }) {
             activeOpacity={0.8}
           >
             <Ionicons name="chatbubble-outline" size={18} color={footerContactPhone ? colors.primary : colors.disabled}/>
-            <Text style={[styles.footerOutlineText, !footerContactPhone && { color: colors.disabled }]}>Message</Text>
+            <Text
+              style={[styles.footerOutlineText, !footerContactPhone && { color: colors.disabled }]}
+              numberOfLines={1}
+            >
+              Message
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.footerPrimary}
             onPress={() => navigation.navigate('Tracking', { orderId: order.id })}>
@@ -882,12 +891,13 @@ export default function OrderDetailScreen({ route, navigation }) {
         </View>
         {/* Cancel button — visible for pre-processing statuses only */}
         {(ns === 'pending' || ns === 'received') ? (
-          <TouchableOpacity style={styles.cancelBtn} onPress={cancelOrder}>
+          <TouchableOpacity style={styles.cancelBtn} onPress={cancelOrder} activeOpacity={0.8}>
+            <Ionicons name="close-circle-outline" size={15} color={colors.error}/>
             <Text style={styles.cancelText}>Cancel Booking</Text>
           </TouchableOpacity>
         ) : (ns !== 'delivered' && ns !== 'cancelled') ? (
           <View style={styles.cancelBlockedRow}>
-            <Ionicons name="lock-closed-outline" size={13} color={colors.textSecondary}/>
+            <Ionicons name="lock-closed-outline" size={13} color={colors.textSecondary} style={styles.cancelBlockedIcon}/>
             <Text style={styles.cancelBlockedText}>
               {(ns === 'awaiting_price' || ns === 'washing' || ns === 'drying')
                 ? 'Your laundry is already being processed and cannot be cancelled.'
@@ -996,13 +1006,24 @@ const styles = StyleSheet.create({
   // STICKY FOOTER
   stickyFooter:  { position:'absolute', bottom:0, left:0, right:0, backgroundColor:'#FFF', paddingHorizontal:16, paddingTop:12, paddingBottom:28, borderTopWidth:1, borderTopColor:colors.border, shadowColor:'#000', shadowOffset:{width:0,height:-4}, shadowOpacity:0.06, shadowRadius:8, elevation:8 },
   footerRow:     { flexDirection:'row', gap:10, marginBottom:8 },
-  footerOutline: { flex:0, width:72, height:48, borderWidth:1.5, borderColor:colors.border, borderRadius:14, alignItems:'center', justifyContent:'center', gap:2 },
+  // flex:1 (shared proportionally with footerPrimary) instead of a fixed 72px width —
+  // a fixed box wrapped longer dynamic labels ("Call Driver") onto two lines and threw
+  // off alignment against the single-line "Message" button next to it.
+  footerOutline: { flex:1, height:48, borderWidth:1.5, borderColor:colors.border, borderRadius:14, alignItems:'center', justifyContent:'center', gap:2, paddingHorizontal:4 },
   footerOutlineText: { fontSize:11, fontWeight:'600', color:colors.primary },
-  footerPrimary: { flex:1, height:48, backgroundColor:colors.primary, borderRadius:14, flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8 },
+  footerPrimary: { flex:1.4, height:48, backgroundColor:colors.primary, borderRadius:14, flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8 },
   footerPrimaryText: { fontSize:15, fontWeight:'700', color:'#FFF' },
-  cancelBtn:  { alignItems:'center', paddingVertical:8 },
+  cancelBtn:  {
+    flexDirection:'row', alignItems:'center', justifyContent:'center', gap:6,
+    marginTop:4, paddingVertical:10, borderRadius:12,
+    borderWidth:1, borderColor:'#FEE2E2', backgroundColor:'#FEF2F2',
+  },
   cancelText: { fontSize:13, fontWeight:'700', color:colors.error },
-  cancelBlockedRow: { flexDirection:'row', alignItems:'flex-start', gap:6, paddingVertical:8, paddingHorizontal:4 },
+  cancelBlockedRow: {
+    flexDirection:'row', alignItems:'flex-start', gap:8,
+    marginTop:4, padding:10, borderRadius:12, backgroundColor:'#F9FAFB',
+  },
+  cancelBlockedIcon: { marginTop:2 },
   cancelBlockedText: { flex:1, fontSize:12, color:colors.textSecondary, lineHeight:18 },
 
   // Pay Now Button

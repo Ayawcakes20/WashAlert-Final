@@ -274,21 +274,6 @@ export default function BookingScreen({ route, navigation }) {
     setFabQtyMap({ charm: 0, downy: 0 });
   },[computedLoadCount]);
 
-  // Cap supply quantities to computedLoadCount whenever it decreases
-  useEffect(()=>{
-    if(computedLoadCount<=0) return; // dry-only handled separately
-    setDetQtyMap(m=>{
-      const next={...m};
-      Object.keys(next).forEach(k=>{ if((next[k]??0)>computedLoadCount) next[k]=computedLoadCount; });
-      return next;
-    });
-    setFabQtyMap(m=>{
-      const next={...m};
-      Object.keys(next).forEach(k=>{ if((next[k]??0)>computedLoadCount) next[k]=computedLoadCount; });
-      return next;
-    });
-  },[computedLoadCount]);
-
   // Re-clamp stored qtys to available stock when availability is loaded
   useEffect(()=>{
     if(!supplyAvail) return;
@@ -770,7 +755,7 @@ export default function BookingScreen({ route, navigation }) {
                 >
                   <View style={{flex:1,paddingVertical:14,paddingLeft:14}}>
                     <Text style={{fontSize:14,fontWeight:'700',color:isSel?colors.primary:colors.text}}>{o.label}</Text>
-                    {!isOut&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per pack</Text>}
+                    {!isOut&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per sachet</Text>}
                     {isOut&&<Text style={{fontSize:11,fontWeight:'700',color:'#DC2626',marginTop:2}}>Out of stock</Text>}
                   </View>
                   <View style={{flexDirection:'row',alignItems:'center',paddingRight:12,gap:6}}>
@@ -794,11 +779,7 @@ export default function BookingScreen({ route, navigation }) {
                         setDet(o.id);
                         const cur = detQtyMap[o.id] ?? 0;
                         if(stockMax!==Infinity && cur>=stockMax){
-                          showToast(`Only ${stockMax} pack(s) of ${avail?.label||o.label} available at this branch.`);
-                          return;
-                        }
-                        if(cur >= computedLoadCount){
-                          showToast(`Maximum ${computedLoadCount} pack(s) for this booking.`);
+                          showToast(`Only ${stockMax} sachet(s) of ${avail?.label||o.label} available at this branch.`);
                           return;
                         }
                         setDetQtyMap(m=>({...m,[o.id]:cur+1}));
@@ -877,7 +858,7 @@ export default function BookingScreen({ route, navigation }) {
                 >
                   <View style={{flex:1,paddingVertical:14,paddingLeft:14}}>
                     <Text style={{fontSize:14,fontWeight:'700',color:isSel?colors.primary:colors.text}}>{o.label}</Text>
-                    {!isOut&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per pack</Text>}
+                    {!isOut&&<Text style={{fontSize:12,color:colors.textSecondary,marginTop:2}}>₱{o.price} per sachet</Text>}
                     {isOut&&<Text style={{fontSize:11,fontWeight:'700',color:'#DC2626',marginTop:2}}>Out of stock</Text>}
                   </View>
                   <View style={{flexDirection:'row',alignItems:'center',paddingRight:12,gap:6}}>
@@ -901,11 +882,7 @@ export default function BookingScreen({ route, navigation }) {
                         setFab(o.id);
                         const cur = fabQtyMap[o.id] ?? 0;
                         if(stockMax!==Infinity && cur>=stockMax){
-                          showToast(`Only ${stockMax} pack(s) of ${avail?.label||o.label} available at this branch.`);
-                          return;
-                        }
-                        if(cur >= computedLoadCount){
-                          showToast(`Maximum ${computedLoadCount} pack(s) for this booking.`);
+                          showToast(`Only ${stockMax} sachet(s) of ${avail?.label||o.label} available at this branch.`);
                           return;
                         }
                         setFabQtyMap(m=>({...m,[o.id]:cur+1}));

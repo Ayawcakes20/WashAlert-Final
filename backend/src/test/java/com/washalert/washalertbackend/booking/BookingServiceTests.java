@@ -27,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -69,7 +70,7 @@ class BookingServiceTests {
 
         when(machineRepository.lockByBranch(any())).thenReturn(List.of(activeMachine()));
         when(jobOrderRepository.countByNormalizedBranchAndBookingDateAndSlotStartTime(any(), any(), any())).thenReturn(0L);
-        when(pricingService.estimate(any(), any(), any(), anyBoolean(), any(), any(), any()))
+        when(pricingService.estimate(any(), any(), any(), anyBoolean(), any(), anyInt(), any(), anyInt(), any()))
                 .thenReturn(new PricingService.PriceEstimation(
                         new BigDecimal("240.00"),
                         new BigDecimal("40.00"),

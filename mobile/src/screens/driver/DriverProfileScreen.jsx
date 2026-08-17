@@ -1,19 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { colors } from '../../theme/colors';
 import { deliveries as deliveriesApi } from '../../services/api';
 
 const MENU_GROUPS = [
-  {
-    title: 'Earnings',
-    items: [
-      { label: 'Earnings History', icon: 'cash-outline', color: colors.success },
-      { label: 'This Month', icon: 'calendar-outline', color: colors.primary },
-    ],
-  },
   {
     title: 'Settings',
     items: [
@@ -28,8 +21,6 @@ const MENU_GROUPS = [
 ];
 
 const ZERO_STATS = {
-  totalEarnings: 0,
-  monthEarnings: 0,
   totalDeliveries: 0,
   monthDeliveries: 0,
   rating: null,
@@ -54,8 +45,6 @@ const DriverProfileScreen = ({ navigation }) => {
       }).length;
 
       setStats({
-        totalEarnings: 0,
-        monthEarnings: 0,
         totalDeliveries: rows.length,
         monthDeliveries,
         rating: null,
@@ -80,9 +69,6 @@ const DriverProfileScreen = ({ navigation }) => {
     { label: 'Rating', value: ratingText, icon: 'star-outline', color: colors.warning },
     { label: 'This Month', value: String(stats.monthDeliveries), icon: 'trending-up-outline', color: colors.success },
   ]), [ratingText, stats.monthDeliveries, stats.totalDeliveries]);
-
-  const formatPeso = (amount) =>
-    `₱${Number(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
   const confirmSignOut = () => {
     Alert.alert(
@@ -116,17 +102,6 @@ const DriverProfileScreen = ({ navigation }) => {
               <Text style={styles.ratingVal}>{ratingText}</Text>
               <Text style={styles.deliveriesCount}>- {stats.totalDeliveries} deliveries</Text>
             </View>
-          </View>
-        </View>
-
-        <View style={styles.earningsBlock}>
-          <View>
-            <Text style={styles.earningsLabel}>TOTAL EARNINGS</Text>
-            <Text style={styles.earningsValue}>{formatPeso(stats.totalEarnings)}</Text>
-            <Text style={styles.earningsSub}>This month: {formatPeso(stats.monthEarnings)}</Text>
-          </View>
-          <View style={styles.earningsIcon}>
-            <MaterialCommunityIcons name="wallet-outline" size={28} color={colors.primary} />
           </View>
         </View>
 
@@ -230,34 +205,6 @@ const styles = StyleSheet.create({
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   ratingVal: { fontSize: 13, fontWeight: '700', color: colors.text },
   deliveriesCount: { fontSize: 12, color: colors.textTertiary },
-  earningsBlock: {
-    backgroundColor: colors.primary,
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  earningsLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: 'rgba(255,255,255,0.6)',
-    letterSpacing: 1.5,
-    marginBottom: 4,
-  },
-  earningsValue: { fontSize: 30, fontWeight: '900', color: '#FFFFFF', marginBottom: 2 },
-  earningsSub: { fontSize: 12, color: 'rgba(255,255,255,0.65)' },
-  earningsIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   statsRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
   statTile: {
     flex: 1,

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { View, StyleSheet, Dimensions, Animated, PanResponder } from 'react-native';
+import { View, StyleSheet, Dimensions, Animated } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors } from '../theme/colors';
@@ -75,32 +76,31 @@ const SwipeSlider = ({ label, onComplete, color = colors.primary, disabled = fal
     }, 1000);
   }, [handleReset, onComplete]);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => !disabledRef.current,
-      onMoveShouldSetPanResponder: () => !disabledRef.current,
-      onPanResponderGrant: () => {
-        startXRef.current = currentXRef.current;
-      },
-      onPanResponderMove: (_evt, gestureState) => {
-        if (disabledRef.current) return;
-        const newVal = startXRef.current + gestureState.dx;
-        translateX.setValue(Math.min(Math.max(newVal, 0), SWIPE_RANGE));
-      },
-      onPanResponderRelease: () => {
-        if (disabledRef.current) return;
-        if (currentXRef.current > SWIPE_RANGE * 0.85) {
-          Animated.spring(translateX, { toValue: SWIPE_RANGE, useNativeDriver: false }).start();
-          handleComplete();
-        } else {
-          handleReset();
-        }
-      },
-      onPanResponderTerminate: () => {
-        if (!disabledRef.current) handleReset();
-      },
+  // Gesture.Pan() (react-native-gesture-handler) claims the touch at the native level,
+  // which prevents Android's system "swipe from bottom edge" gesture navigation from
+  // stealing the touch and kicking the user out of the app - a real risk here since this
+  // slider sits at the bottom of the screen. runOnJS(true) runs callbacks as plain JS
+  // functions (no react-native-reanimated/worklets involved).
+  const panGesture = Gesture.Pan()
+    .runOnJS(true)
+    .onBegin(() => {
+      if (disabledRef.current) return;
+      startXRef.current = currentXRef.current;
     })
-  ).current;
+    .onUpdate((event) => {
+      if (disabledRef.current) return;
+      const newVal = startXRef.current + event.translationX;
+      translateX.setValue(Math.min(Math.max(newVal, 0), SWIPE_RANGE));
+    })
+    .onEnd((_event, success) => {
+      if (disabledRef.current) return;
+      if (success && currentXRef.current > SWIPE_RANGE * 0.85) {
+        Animated.spring(translateX, { toValue: SWIPE_RANGE, useNativeDriver: false }).start();
+        handleComplete();
+      } else {
+        handleReset();
+      }
+    });
 
   const animatedBgColor = translateX.interpolate({
     inputRange: [0, SWIPE_RANGE],
@@ -117,15 +117,14 @@ const SwipeSlider = ({ label, onComplete, color = colors.primary, disabled = fal
     <View style={[styles.container, { backgroundColor: disabled ? colors.disabled : color }]}>
       <Animated.View style={[styles.backgroundOverlay, { backgroundColor: animatedBgColor }]} />
 
-      <Animated.View
-        {...panResponder.panHandlers}
-        style={[styles.knob, { transform: [{ translateX }, { scale: pulseScale }] }]}
-      >
-        <View style={styles.knobInner}>
-          <Ionicons name="chevron-forward" size={18} color={disabled ? colors.disabled : color} />
-          <Ionicons name="chevron-forward" size={18} color={disabled ? colors.disabled : color} style={{ marginLeft: -10 }} />
-        </View>
-      </Animated.View>
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={[styles.knob, { transform: [{ translateX }, { scale: pulseScale }] }]}>
+          <View style={styles.knobInner}>
+            <Ionicons name="chevron-forward" size={18} color={disabled ? colors.disabled : color} />
+            <Ionicons name="chevron-forward" size={18} color={disabled ? colors.disabled : color} style={{ marginLeft: -10 }} />
+          </View>
+        </Animated.View>
+      </GestureDetector>
 
       <Animated.Text style={[styles.label, { opacity: textOpacity }]} pointerEvents="none">
         {label}

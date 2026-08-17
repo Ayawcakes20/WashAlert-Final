@@ -78,7 +78,9 @@ public class BookingController {
                 req.weightKg(),
                 req.isRush(),
                 req.detergent(),
+                req.detergentQuantity() != null ? req.detergentQuantity() : 0,
                 req.fabcon(),
+                req.conditionerQuantity() != null ? req.conditionerQuantity() : 0,
                 req.distanceKm()
         );
     }
