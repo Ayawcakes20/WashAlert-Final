@@ -115,7 +115,7 @@ const DriverDashboardScreen = ({ navigation }) => {
           <TouchableOpacity style={styles.navBtn}>
             <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.85)" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.navBtn}>
+          <TouchableOpacity style={styles.navBtn} onPress={() => navigation.navigate('DriverNotifications')}>
             <Ionicons name="notifications-outline" size={20} color="rgba(255,255,255,0.85)" />
             {/* Notification dot */}
             {pending > 0 && <View style={styles.notifDot} />}
