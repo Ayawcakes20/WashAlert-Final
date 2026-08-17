@@ -28,13 +28,19 @@ public class PricingService {
             BigDecimal weightKg,
             boolean isRush,
             String detergent,
+            int detQty,
             String fabcon,
+            int conQty,
             BigDecimal distanceKm
     ) {
         BigDecimal servicePrice = calculateServicePrice(serviceName, weightKg);
         BigDecimal rushPrice = isRush ? new BigDecimal("150.00") : BigDecimal.ZERO;
         int loads = computeLoadCount(serviceName, weightKg);
-        SuppliesBreakdown suppliesBreakdown = calculateSuppliesPriceWithBreakdown(detergent, fabcon, loads);
+        // Priced from the actual requested quantity, not the load count - matches how both
+        // the mobile and web clients already compute the customer-facing price preview
+        // (pricingUtils.js / pricingUtils.ts), and lets a customer buy more sachets than the
+        // load count would imply, capped only by branch inventory (see validateAddonQuantities).
+        SuppliesBreakdown suppliesBreakdown = calculateSuppliesPriceWithBreakdown(detergent, detQty, fabcon, conQty);
         BigDecimal deliveryPrice = calculateDeliveryPrice(distanceKm);
 
         BigDecimal subtotal = servicePrice.add(rushPrice).add(suppliesBreakdown.total()).add(deliveryPrice);
@@ -63,7 +69,9 @@ public class PricingService {
             String fabricConditionerBreakdown
     ) {}
 
-    private int computeLoadCount(String serviceName, BigDecimal weightKg) {
+    // Public so callers (e.g. BookingService) can determine a fallback add-on quantity before
+    // supplies pricing needs it, without duplicating this logic.
+    public int computeLoadCount(String serviceName, BigDecimal weightKg) {
         if (serviceName == null) return 1;
         String name = serviceName.toLowerCase(Locale.ROOT);
         if (name.contains("double")) return 2;
@@ -83,8 +91,11 @@ public class PricingService {
     /**
      * Validates add-on quantities against service-level rules.
      * <p>
-     * Dry-only and Dry-clean services (no washing cycle) must have no add-ons.
-     * All other washing services cap add-on packs at the computed number of loads.
+     * Dry-only and Dry-clean services (no washing cycle) must have no add-ons. Quantity is no
+     * longer capped at the computed load count here — supplies are now priced per actual
+     * quantity (see calculateSuppliesPriceWithBreakdown), so requesting more than the load
+     * count is a legitimate, correctly-billed choice. The real ceiling is branch inventory,
+     * enforced separately by InventoryService#validateSuppliesForBooking.
      *
      * @throws IllegalArgumentException with a user-facing message on violation
      */
@@ -108,19 +119,11 @@ public class PricingService {
             return;
         }
 
-        // Cap add-on packs at the computed number of loads, as documented above. Supply price
-        // is always computed from the load count (see calculateSuppliesPriceWithBreakdown),
-        // never from the requested quantity — without this cap, a booking could request an
-        // arbitrarily large quantity, draining that much inventory while only being charged
-        // for the load-based amount.
-        int computedLoads = computeLoadCount(serviceName, weightKg);
-        if (!isNoSupply(detergent) && detQty > computedLoads) {
-            throw new IllegalArgumentException(
-                    "Detergent quantity cannot exceed " + computedLoads + " pack(s) for this load.");
+        if (!isNoSupply(detergent) && detQty < 0) {
+            throw new IllegalArgumentException("Detergent quantity cannot be negative.");
         }
-        if (!isNoSupply(fabcon) && conQty > computedLoads) {
-            throw new IllegalArgumentException(
-                    "Fabric conditioner quantity cannot exceed " + computedLoads + " pack(s) for this load.");
+        if (!isNoSupply(fabcon) && conQty < 0) {
+            throw new IllegalArgumentException("Fabric conditioner quantity cannot be negative.");
         }
     }
 
@@ -194,44 +197,45 @@ public class PricingService {
         return BigDecimal.ZERO;
     }
 
-    private SuppliesBreakdown calculateSuppliesPriceWithBreakdown(String detergent, String fabcon, int loadCount) {
-        int effectiveLoads = loadCount <= 0 ? 1 : loadCount;
+    private SuppliesBreakdown calculateSuppliesPriceWithBreakdown(String detergent, int detQty, String fabcon, int conQty) {
+        int effectiveDetQty = Math.max(0, detQty);
+        int effectiveConQty = Math.max(0, conQty);
 
-        BigDecimal detergentPricePerLoad = BigDecimal.ZERO;
+        BigDecimal detergentPricePerSachet = BigDecimal.ZERO;
         String detergentLabel = "";
 
         if (detergent != null) {
             String d = detergent.toLowerCase(Locale.ROOT);
             if (d.contains("surf")) {
-                detergentPricePerLoad = new BigDecimal("25.00");
+                detergentPricePerSachet = new BigDecimal("25.00");
                 detergentLabel = "Surf Detergent";
             } else if (d.contains("ariel")) {
-                detergentPricePerLoad = new BigDecimal("30.00");
+                detergentPricePerSachet = new BigDecimal("30.00");
                 detergentLabel = "Ariel Detergent";
             }
         }
 
-        BigDecimal fabconPricePerLoad = BigDecimal.ZERO;
+        BigDecimal fabconPricePerSachet = BigDecimal.ZERO;
         String fabconLabel = "";
 
         if (fabcon != null) {
             String f = fabcon.toLowerCase(Locale.ROOT);
             if (f.contains("charm")) {
-                fabconPricePerLoad = new BigDecimal("15.00");
+                fabconPricePerSachet = new BigDecimal("15.00");
                 fabconLabel = "Charm Fabric Conditioner";
             } else if (f.contains("downy")) {
-                fabconPricePerLoad = new BigDecimal("25.00");
+                fabconPricePerSachet = new BigDecimal("25.00");
                 fabconLabel = "Downy Fabric Conditioner";
             }
         }
 
-        BigDecimal detergentTotal = detergentPricePerLoad.multiply(BigDecimal.valueOf(effectiveLoads));
-        BigDecimal fabconTotal = fabconPricePerLoad.multiply(BigDecimal.valueOf(effectiveLoads));
+        BigDecimal detergentTotal = detergentPricePerSachet.multiply(BigDecimal.valueOf(effectiveDetQty));
+        BigDecimal fabconTotal = fabconPricePerSachet.multiply(BigDecimal.valueOf(effectiveConQty));
 
         String detergentDesc = "";
         if (!detergentLabel.isEmpty()) {
-            if (effectiveLoads > 1) {
-                detergentDesc = detergentLabel + " x" + effectiveLoads + " - ₱" + detergentTotal.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+            if (effectiveDetQty > 1) {
+                detergentDesc = detergentLabel + " x" + effectiveDetQty + " - ₱" + detergentTotal.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
             } else {
                 detergentDesc = detergentLabel + " - ₱" + detergentTotal.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
             }
@@ -239,8 +243,8 @@ public class PricingService {
 
         String fabconDesc = "";
         if (!fabconLabel.isEmpty()) {
-            if (effectiveLoads > 1) {
-                fabconDesc = fabconLabel + " x" + effectiveLoads + " - ₱" + fabconTotal.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+            if (effectiveConQty > 1) {
+                fabconDesc = fabconLabel + " x" + effectiveConQty + " - ₱" + fabconTotal.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
             } else {
                 fabconDesc = fabconLabel + " - ₱" + fabconTotal.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
             }
@@ -252,10 +256,6 @@ public class PricingService {
                 detergentDesc.isEmpty() ? "None" : detergentDesc,
                 fabconDesc.isEmpty() ? "None" : fabconDesc
         );
-    }
-
-    private BigDecimal calculateSuppliesPrice(String detergent, String fabcon) {
-        return calculateSuppliesPriceWithBreakdown(detergent, fabcon, 1).total();
     }
 
     private BigDecimal calculateDeliveryPrice(BigDecimal distanceKm) {

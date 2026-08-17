@@ -8,6 +8,8 @@ public record EstimatePriceRequest(
         BigDecimal weightKg,
         boolean isRush,
         String detergent,
+        Integer detergentQuantity,
         String fabcon,
+        Integer conditionerQuantity,
         BigDecimal distanceKm
 ) {}

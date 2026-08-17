@@ -274,21 +274,6 @@ export default function BookingScreen({ route, navigation }) {
     setFabQtyMap({ charm: 0, downy: 0 });
   },[computedLoadCount]);
 
-  // Cap supply quantities to computedLoadCount whenever it decreases
-  useEffect(()=>{
-    if(computedLoadCount<=0) return; // dry-only handled separately
-    setDetQtyMap(m=>{
-      const next={...m};
-      Object.keys(next).forEach(k=>{ if((next[k]??0)>computedLoadCount) next[k]=computedLoadCount; });
-      return next;
-    });
-    setFabQtyMap(m=>{
-      const next={...m};
-      Object.keys(next).forEach(k=>{ if((next[k]??0)>computedLoadCount) next[k]=computedLoadCount; });
-      return next;
-    });
-  },[computedLoadCount]);
-
   // Re-clamp stored qtys to available stock when availability is loaded
   useEffect(()=>{
     if(!supplyAvail) return;
@@ -797,10 +782,6 @@ export default function BookingScreen({ route, navigation }) {
                           showToast(`Only ${stockMax} sachet(s) of ${avail?.label||o.label} available at this branch.`);
                           return;
                         }
-                        if(cur >= computedLoadCount){
-                          showToast(`Maximum ${computedLoadCount} sachet(s) for this booking.`);
-                          return;
-                        }
                         setDetQtyMap(m=>({...m,[o.id]:cur+1}));
                         setStockError(null);
                       }}
@@ -902,10 +883,6 @@ export default function BookingScreen({ route, navigation }) {
                         const cur = fabQtyMap[o.id] ?? 0;
                         if(stockMax!==Infinity && cur>=stockMax){
                           showToast(`Only ${stockMax} sachet(s) of ${avail?.label||o.label} available at this branch.`);
-                          return;
-                        }
-                        if(cur >= computedLoadCount){
-                          showToast(`Maximum ${computedLoadCount} sachet(s) for this booking.`);
                           return;
                         }
                         setFabQtyMap(m=>({...m,[o.id]:cur+1}));

@@ -173,16 +173,6 @@ public class BookingService {
         // coordinates are unavailable (e.g. drop-off orders with no delivery leg).
         BigDecimal effectiveDistanceKm = resolveDistanceKm(req);
 
-        var est = pricingService.estimate(
-                cleanBranch,
-                req.serviceName(),
-                req.estimatedWeightKg(),
-                req.isRush(),
-                req.detergentPreference(),
-                req.fabricConditionerPreference(),
-                effectiveDistanceKm
-        );
-
         // Reject tampered add-on quantities before any fallback logic runs.
         pricingService.validateAddonQuantities(
                 req.serviceName(),
@@ -193,7 +183,7 @@ public class BookingService {
                 req.conditionerQuantity() != null ? req.conditionerQuantity() : 0
         );
 
-        int computedLoads = est.numberOfLoads();
+        int computedLoads = pricingService.computeLoadCount(req.serviceName(), req.estimatedWeightKg());
         // Only default quantity to computedLoads for actual shop supplies.
         // Customer Provided / None must store qty=0 — no shop inventory involved.
         boolean detIsShop = pricingService.isShopSupply(req.detergentPreference());
@@ -213,6 +203,18 @@ public class BookingService {
                 req.fabricConditionerPreference(),
                 detQty,
                 conQty
+        );
+
+        var est = pricingService.estimate(
+                cleanBranch,
+                req.serviceName(),
+                req.estimatedWeightKg(),
+                req.isRush(),
+                req.detergentPreference(),
+                detQty,
+                req.fabricConditionerPreference(),
+                conQty,
+                effectiveDistanceKm
         );
 
         JobOrder order = JobOrder.builder()
