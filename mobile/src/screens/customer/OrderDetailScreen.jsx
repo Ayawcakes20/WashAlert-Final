@@ -32,6 +32,14 @@ const STEPS = [
   { key: 'delivered',      label: 'Delivered Successfully',          icon: 'checkmark-done-circle-outline' },
 ];
 
+// Step-label overrides applied for pickup-at-branch (DROP_OFF) orders, which have no
+// delivery leg — the customer collects their laundry in person instead of it being
+// delivered to them.
+const PICKUP_STEP_LABELS = {
+  ready: 'Ready for Pickup at Branch',
+  delivered: 'Picked Up',
+};
+
 const STATUS_BADGE = {
   pending:        { bg: '#EFF6FF', text: '#3B82F6', label: 'Order Pending' },
   pickup:         { bg: '#EFF6FF', text: '#2563EB', label: 'Rider Assigned for Pickup' },
@@ -304,17 +312,22 @@ export default function OrderDetailScreen({ route, navigation }) {
 
   const ns  = normalize(order.status);
   const sb  = STATUS_BADGE[ns] || STATUS_BADGE.pending;
-  // Precise label for sub-states (pickup/delivery legs), falling back to the step label.
-  const badgeLabel = rawStatusLabel(order.status) || sb.label;
 
   // DROP_OFF orders have no rider pickup leg and no delivery leg — skip both steps.
-  const isPickupOrder = !order.delivery && (
-    String(order.serviceType || '').toUpperCase() === 'DROP_OFF' ||
-    String(order.serviceMode || '').toUpperCase() === 'PICK_UP'
-  );
+  // Checked against the raw backend enum (serviceTypeRaw), not the human-readable
+  // serviceType label, which never equals 'DROP_OFF'/'PICK_UP'.
+  const isPickupOrder = !order.delivery && order.serviceTypeRaw === 'DROP_OFF';
   const stepsForOrder = isPickupOrder
-    ? STEPS.filter(s => s.key !== 'delivering' && s.key !== 'pickup')
+    ? STEPS
+        .filter(s => s.key !== 'delivering' && s.key !== 'pickup')
+        .map(s => PICKUP_STEP_LABELS[s.key] ? { ...s, label: PICKUP_STEP_LABELS[s.key] } : s)
     : STEPS;
+
+  // Precise label for sub-states (pickup/delivery legs), falling back to the step label.
+  // For pickup orders, the terminal state reads "Picked Up" instead of "Delivered".
+  const badgeLabel = (isPickupOrder && ns === 'delivered')
+    ? 'Picked Up'
+    : rawStatusLabel(order.status) || sb.label;
 
   const idx = stepsForOrder.findIndex(s => s.key === ns);
   const pct = Math.max(5, Math.round(((idx>=0?idx+1:1)/stepsForOrder.length)*100));
@@ -444,7 +457,7 @@ export default function OrderDetailScreen({ route, navigation }) {
         `Customer: ${customer}`,
         order.customerPhone ? `Phone:    ${order.customerPhone}` : null,
         `Service:  ${service}`,
-        order.serviceType === 'PICKUP_DELIVERY' ? 'Type:     Pickup & Delivery' : 'Type:     Drop-Off',
+        order.serviceTypeRaw === 'PICKUP_DELIVERY' ? 'Type:     Pickup & Delivery' : 'Type:     Drop-Off',
         order.loadSize ? `Load:     ${String(order.loadSize).charAt(0) + String(order.loadSize).slice(1).toLowerCase()}` : null,
         order.laundryType ? `Laundry:  ${order.laundryType}` : null,
         order.estimatedWeightKg ? `Est. Wt:  ${order.estimatedWeightKg} kg` : null,
@@ -625,7 +638,7 @@ export default function OrderDetailScreen({ route, navigation }) {
                     ]}>
                       {step.label}
                     </Text>
-                    {isActive && (
+                    {isActive && !isLast && (
                       <Text style={{fontSize:11,color:sb2.text,marginTop:2,fontWeight:'600'}}>
                         In progress...
                       </Text>

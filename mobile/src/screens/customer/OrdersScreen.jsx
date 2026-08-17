@@ -144,7 +144,7 @@ const OrdersScreen = ({ navigation }) => {
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Type</Text>
-          <Text style={styles.detailValue}>{item.serviceMode === 'PICKUP_DELIVERY' ? 'Delivery' : 'Pick Up'}</Text>
+          <Text style={styles.detailValue}>{item.serviceTypeRaw === 'PICKUP_DELIVERY' ? 'Delivery' : 'Pick Up'}</Text>
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Amount</Text>
