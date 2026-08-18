@@ -27,10 +27,16 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
   const [fullOrderData, setFullOrderData] = useState(orderData);
   const slideAnim = useRef(new Animated.Value(400)).current;
 
+  console.log('[ReceiptDebug] PriceConfirmationModal render, visible=', visible, 'orderData present=', !!orderData, 'fullOrderData present=', !!fullOrderData);
+
   // Sync internal state with prop
   useEffect(() => {
     if (orderData) setFullOrderData(orderData);
   }, [orderData]);
+
+  useEffect(() => {
+    console.log('[ReceiptDebug] visible changed to', visible, 'fullOrderData present=', !!fullOrderData);
+  }, [visible]);
 
   // Fetch full details if only ID is provided
   useEffect(() => {
@@ -109,7 +115,10 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
     }
   };
 
-  if (!fullOrderData) return null;
+  if (!fullOrderData) {
+    console.log('[ReceiptDebug] PriceConfirmationModal returning null (no fullOrderData), visible=', visible);
+    return null;
+  }
 
   const logo = String(fullOrderData.branchName || '').toLowerCase().includes('makati') ? logoLaundryHubs : logoSpeedyWash;
 

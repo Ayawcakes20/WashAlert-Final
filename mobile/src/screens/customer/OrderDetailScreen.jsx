@@ -507,9 +507,12 @@ export default function OrderDetailScreen({ route, navigation }) {
         {/* PRICE CONFIRMATION ACTION CARD */}
         {ns === 'awaiting_price' && (
           <TouchableOpacity 
-            style={styles.confirmCard} 
+            style={styles.confirmCard}
             activeOpacity={0.9}
-            onPress={() => setShowReceiptModal(true)}
+            onPress={() => {
+              console.log('[ReceiptDebug] card tapped, ns=', ns, 'order id=', order?.id, 'trackingNumber=', order?.trackingNumber, 'amount=', order?.amount, 'finalPrice=', order?.finalPrice);
+              setShowReceiptModal(true);
+            }}
           >
             <View style={styles.confirmHeader}>
               <View style={styles.confirmIconWrap}>
