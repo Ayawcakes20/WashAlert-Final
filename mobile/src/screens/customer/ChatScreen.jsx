@@ -19,7 +19,7 @@ const QUICK_REPLIES = [
 
 const TRACKING_RE = /WA-\d+/i;
 
-const ChatScreen = ({ navigation }) => {
+const ChatScreen = ({ navigation, route }) => {
   const { user } = useAuth();
   const scrollRef = useRef();
   const [input, setInput] = useState('');
@@ -30,6 +30,14 @@ const ChatScreen = ({ navigation }) => {
   const [pendingMessage, setPendingMessage] = useState('');
 
   const msgId = useRef(2);
+  // Order Details' "Message" button deep-links here with a branch already known, so it can
+  // skip straight to the staff-escalation flow instead of making the customer pick a branch
+  // and type "Talk to Staff" themselves.
+  const autoEscalateRef = useRef({
+    branch: route?.params?.presetBranch || null,
+    text: route?.params?.presetMessage || '',
+    done: !route?.params?.presetBranch,
+  });
 
   useEffect(() => {
     loadChatHistory();
@@ -38,6 +46,14 @@ const ChatScreen = ({ navigation }) => {
     }, 10000); // poll every 10 seconds
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (isLoading || autoEscalateRef.current.done) return;
+    autoEscalateRef.current.done = true;
+    const { branch, text } = autoEscalateRef.current;
+    setPendingMessage(text || 'Talk to Staff');
+    proceedWithEscalation(branch);
+  }, [isLoading]);
 
   const loadChatHistory = async (isSilent = false) => {
     try {

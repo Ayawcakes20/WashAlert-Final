@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, ActivityIndicator,
-  StyleSheet, Animated, Alert, BackHandler, Image, ScrollView,
+  StyleSheet, Animated, Alert, Image, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
@@ -27,16 +27,10 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
   const [fullOrderData, setFullOrderData] = useState(orderData);
   const slideAnim = useRef(new Animated.Value(400)).current;
 
-  console.log('[ReceiptDebug] PriceConfirmationModal render, visible=', visible, 'orderData present=', !!orderData, 'fullOrderData present=', !!fullOrderData);
-
   // Sync internal state with prop
   useEffect(() => {
     if (orderData) setFullOrderData(orderData);
   }, [orderData]);
-
-  useEffect(() => {
-    console.log('[ReceiptDebug] visible changed to', visible, 'fullOrderData present=', !!fullOrderData);
-  }, [visible]);
 
   // Fetch full details if only ID is provided
   useEffect(() => {
@@ -61,12 +55,6 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
     } else {
       slideAnim.setValue(400);
     }
-  }, [visible]);
-
-  useEffect(() => {
-    if (!visible) return;
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
-    return () => sub.remove();
   }, [visible]);
 
   const handleConfirm = async () => {
@@ -116,7 +104,6 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
   };
 
   if (!fullOrderData) {
-    console.log('[ReceiptDebug] PriceConfirmationModal returning null (no fullOrderData), visible=', visible);
     return null;
   }
 
@@ -162,7 +149,13 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
   });
 
   return (
-    <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={onDismiss}>
+    // onRequestClose fires on Android hardware back-press/back-gesture and, per RN's Modal
+    // implementation, always wins over any BackHandler listener even one registered inside
+    // this same component (facebook/react-native#19147) — so it can't be blocked that way.
+    // Left as a no-op instead of wiring it to onDismiss: an accidental edge-swipe while
+    // scrolling the receipt must not silently close it before the customer can confirm the
+    // price. The X button remains the only way to dismiss.
+    <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={() => {}}>
       <View style={S.overlay}>
         <Animated.View style={[S.card, { transform: [{ translateY: slideAnim }] }]}>
           <View style={S.headerControls}>
