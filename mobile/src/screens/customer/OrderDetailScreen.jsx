@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, Animated, Image, Dimensions, TextInput, Share,
+  ActivityIndicator, Alert, Animated, Image, Dimensions, TextInput, Share, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
@@ -185,6 +185,12 @@ export default function OrderDetailScreen({ route, navigation }) {
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [feedbackDone, setFeedbackDone]         = useState(false);
   const [existingFeedback, setExistingFeedback] = useState(null);
+  // { label: 'Driver' | 'Branch', phone: string } | null — drives the in-app contact sheet
+  // used instead of launching tel:/sms: directly. Android lets any installed app (e.g. Viber)
+  // register itself as the default handler for those links with no way for us to override it,
+  // and the branch/driver phone on file isn't always trustworthy at a glance - showing it in an
+  // app-owned sheet first lets the customer see exactly what number they're about to contact.
+  const [contactSheet, setContactSheet] = useState(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -371,6 +377,15 @@ export default function OrderDetailScreen({ route, navigation }) {
     } catch {
       Alert.alert('Unable to open messaging app.', 'Please try again later.');
     }
+  };
+
+  // Opens the in-app contact sheet instead of launching tel:/sms: directly (see contactSheet
+  // state above for why).
+  const openContact = (label, phone) => {
+    if (!phone) {
+      return Alert.alert('Phone number is not available yet.', 'No contact number is on record for this order.');
+    }
+    setContactSheet({ label, phone });
   };
 
   // Driver contact is relevant during both the pickup and delivery legs.
@@ -581,6 +596,45 @@ export default function OrderDetailScreen({ route, navigation }) {
           }}
         />
 
+        <Modal
+          visible={!!contactSheet}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setContactSheet(null)}
+        >
+          <TouchableOpacity
+            style={styles.contactSheetOverlay}
+            activeOpacity={1}
+            onPress={() => setContactSheet(null)}
+          >
+            <TouchableOpacity activeOpacity={1} style={styles.contactSheetCard}>
+              <Text style={styles.contactSheetTitle}>Contact {contactSheet?.label}</Text>
+              <Text style={styles.contactSheetHint}>Long-press the number to copy it.</Text>
+              <Text selectable style={styles.contactSheetNumber}>{contactSheet?.phone}</Text>
+
+              <TouchableOpacity
+                style={[styles.contactSheetBtn, styles.contactSheetCallBtn]}
+                onPress={() => { const p = contactSheet?.phone; setContactSheet(null); call(p); }}
+              >
+                <Ionicons name="call" size={18} color="#fff" />
+                <Text style={styles.contactSheetBtnText}>Call</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.contactSheetBtn, styles.contactSheetMsgBtn]}
+                onPress={() => { const p = contactSheet?.phone; setContactSheet(null); sms(p); }}
+              >
+                <Ionicons name="chatbubble-ellipses" size={18} color={colors.primary} />
+                <Text style={[styles.contactSheetBtnText, { color: colors.primary }]}>Message</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.contactSheetCancelBtn} onPress={() => setContactSheet(null)}>
+                <Text style={styles.contactSheetCancelText}>Close</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+
         {/* HERO STATUS CARD */}
         <View style={styles.heroCard}>
           <Ring pct={pct} status={ns}/>
@@ -674,10 +728,10 @@ export default function OrderDetailScreen({ route, navigation }) {
                 <Text style={styles.driverSub}>{order.delivery.driverVehicle||'Vehicle N/A'}</Text>
               </View>
               <View style={styles.driverContact}>
-                <TouchableOpacity style={styles.contactBtn} onPress={() => call(resolvedDriverPhone)}>
+                <TouchableOpacity style={styles.contactBtn} onPress={() => openContact('Driver', resolvedDriverPhone)}>
                   <Ionicons name="call-outline" size={18} color={colors.primary}/>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.contactBtn} onPress={() => sms(resolvedDriverPhone)}>
+                <TouchableOpacity style={styles.contactBtn} onPress={() => openContact('Driver', resolvedDriverPhone)}>
                   <Ionicons name="chatbubble-outline" size={18} color={colors.primary}/>
                 </TouchableOpacity>
               </View>
@@ -859,7 +913,7 @@ export default function OrderDetailScreen({ route, navigation }) {
         <View style={styles.footerRow}>
           <TouchableOpacity
             style={[styles.footerOutline, !footerContactPhone && { opacity: 0.45, borderColor: colors.border }]}
-            onPress={() => call(footerContactPhone)}
+            onPress={() => openContact(footerContactLabel, footerContactPhone)}
             disabled={!footerContactPhone}
             activeOpacity={0.8}
           >
@@ -874,7 +928,7 @@ export default function OrderDetailScreen({ route, navigation }) {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.footerOutline, !footerContactPhone && { opacity: 0.45, borderColor: colors.border }]}
-            onPress={() => sms(footerContactPhone)}
+            onPress={() => openContact(footerContactLabel, footerContactPhone)}
             disabled={!footerContactPhone}
             activeOpacity={0.8}
           >
@@ -918,6 +972,39 @@ export default function OrderDetailScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   safe:   { flex:1, backgroundColor:colors.background },
   center: { flex:1, justifyContent:'center', alignItems:'center' },
+  contactSheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  contactSheetCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+  },
+  contactSheetTitle: { fontSize: 17, fontWeight: '700', color: colors.text, marginBottom: 4 },
+  contactSheetHint: { fontSize: 12, color: '#888', marginBottom: 10 },
+  contactSheetNumber: { fontSize: 20, fontWeight: '700', color: colors.text, marginBottom: 18 },
+  contactSheetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    height: 48,
+    borderRadius: 12,
+    marginBottom: 10,
+    gap: 8,
+  },
+  contactSheetCallBtn: { backgroundColor: colors.primary },
+  contactSheetMsgBtn: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: colors.primary },
+  contactSheetBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  contactSheetCancelBtn: { marginTop: 4, paddingVertical: 8 },
+  contactSheetCancelText: { fontSize: 14, color: '#888', fontWeight: '600' },
   scroll: { paddingHorizontal:16, paddingTop:8 },
 
   navBar:   { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal:16, paddingVertical:12, backgroundColor:colors.background },
