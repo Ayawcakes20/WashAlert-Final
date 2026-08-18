@@ -379,13 +379,29 @@ export default function OrderDetailScreen({ route, navigation }) {
     }
   };
 
-  // Opens the in-app contact sheet instead of launching tel:/sms: directly (see contactSheet
-  // state above for why).
+  // Opens the in-app "confirm number, then call" sheet instead of launching tel: directly
+  // (see contactSheet state above for why).
   const openContact = (label, phone) => {
     if (!phone) {
       return Alert.alert('Phone number is not available yet.', 'No contact number is on record for this order.');
     }
     setContactSheet({ label, phone });
+  };
+
+  // Messaging the branch goes to the existing in-app staff chat (reuses IkotAsk's "Talk to
+  // Staff" escalation, which already reaches a human) instead of an OS sms: link, since there's
+  // no reliable way to pick which app tel:/sms: opens on Android. Messaging the driver still
+  // uses sms: directly — there is no chat channel to an individual driver.
+  const openMessage = (label, phone) => {
+    if (label === 'Branch') {
+      const branchName = order?.branchName || order?.branch || '';
+      navigation.navigate('Chat', {
+        presetBranch: branchName,
+        presetMessage: `Hi, I have a question about my order ${order?.trackingNumber || ''}.`.trim(),
+      });
+      return;
+    }
+    sms(phone);
   };
 
   // Driver contact is relevant during both the pickup and delivery legs.
@@ -524,10 +540,7 @@ export default function OrderDetailScreen({ route, navigation }) {
           <TouchableOpacity 
             style={styles.confirmCard}
             activeOpacity={0.9}
-            onPress={() => {
-              console.log('[ReceiptDebug] card tapped, ns=', ns, 'order id=', order?.id, 'trackingNumber=', order?.trackingNumber, 'amount=', order?.amount, 'finalPrice=', order?.finalPrice);
-              setShowReceiptModal(true);
-            }}
+            onPress={() => setShowReceiptModal(true)}
           >
             <View style={styles.confirmHeader}>
               <View style={styles.confirmIconWrap}>
@@ -608,7 +621,7 @@ export default function OrderDetailScreen({ route, navigation }) {
             onPress={() => setContactSheet(null)}
           >
             <TouchableOpacity activeOpacity={1} style={styles.contactSheetCard}>
-              <Text style={styles.contactSheetTitle}>Contact {contactSheet?.label}</Text>
+              <Text style={styles.contactSheetTitle}>Call {contactSheet?.label}</Text>
               <Text style={styles.contactSheetHint}>Long-press the number to copy it.</Text>
               <Text selectable style={styles.contactSheetNumber}>{contactSheet?.phone}</Text>
 
@@ -618,14 +631,6 @@ export default function OrderDetailScreen({ route, navigation }) {
               >
                 <Ionicons name="call" size={18} color="#fff" />
                 <Text style={styles.contactSheetBtnText}>Call</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.contactSheetBtn, styles.contactSheetMsgBtn]}
-                onPress={() => { const p = contactSheet?.phone; setContactSheet(null); sms(p); }}
-              >
-                <Ionicons name="chatbubble-ellipses" size={18} color={colors.primary} />
-                <Text style={[styles.contactSheetBtnText, { color: colors.primary }]}>Message</Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.contactSheetCancelBtn} onPress={() => setContactSheet(null)}>
@@ -731,7 +736,7 @@ export default function OrderDetailScreen({ route, navigation }) {
                 <TouchableOpacity style={styles.contactBtn} onPress={() => openContact('Driver', resolvedDriverPhone)}>
                   <Ionicons name="call-outline" size={18} color={colors.primary}/>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.contactBtn} onPress={() => openContact('Driver', resolvedDriverPhone)}>
+                <TouchableOpacity style={styles.contactBtn} onPress={() => sms(resolvedDriverPhone)}>
                   <Ionicons name="chatbubble-outline" size={18} color={colors.primary}/>
                 </TouchableOpacity>
               </View>
@@ -928,7 +933,7 @@ export default function OrderDetailScreen({ route, navigation }) {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.footerOutline, !footerContactPhone && { opacity: 0.45, borderColor: colors.border }]}
-            onPress={() => openContact(footerContactLabel, footerContactPhone)}
+            onPress={() => openMessage(footerContactLabel, footerContactPhone)}
             disabled={!footerContactPhone}
             activeOpacity={0.8}
           >
@@ -1001,7 +1006,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   contactSheetCallBtn: { backgroundColor: colors.primary },
-  contactSheetMsgBtn: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: colors.primary },
   contactSheetBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
   contactSheetCancelBtn: { marginTop: 4, paddingVertical: 8 },
   contactSheetCancelText: { fontSize: 14, color: '#888', fontWeight: '600' },
