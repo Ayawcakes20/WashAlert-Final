@@ -49,9 +49,16 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
     }
   }, [visible, orderData]);
 
+  // useNativeDriver: false — this Modal uses animationType="none" and drives its own slide-up
+  // via this Animated.Value; combining that with a native-driven animation on the content is a
+  // known Android RN conflict (the modal's own view/window mounts separately from where the
+  // native driver expects to attach) that leaves the card stuck off-screen behind the dark
+  // overlay: the backdrop renders but the receipt content never becomes visible. Screen
+  // recordings confirmed exactly this — dim overlay showing, no card content, for 10+ seconds.
+  // See facebook/react-native#21552 and react-native-modal/react-native-modal#730.
   useEffect(() => {
     if (visible) {
-      Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
+      Animated.spring(slideAnim, { toValue: 0, useNativeDriver: false, bounciness: 4 }).start();
     } else {
       slideAnim.setValue(400);
     }
