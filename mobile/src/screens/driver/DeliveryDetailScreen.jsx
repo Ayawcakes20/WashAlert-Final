@@ -498,16 +498,33 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
       if (!actionOrderId) {
         throw new Error('Unable to continue: missing order reference. Please refresh this task.');
       }
-      await driverOrders[method](actionOrderId, args);
+      const actionResponse = await driverOrders[method](actionOrderId, args);
       // Backend returns JobOrderResponse, map to mobile
       const mapped = await driverOrders.getById(actionOrderId);
       setDelivery(mapped);
 
       setEtaInfo({ distance: null, duration: null }); // reset ETA on transition
+
+      // Surfaces the backend's washalert.geofence.enforce setting so a disabled geofence
+      // check (e.g. WASHALERT_GEOFENCE_ENFORCE=false on a test/staging deployment) isn't
+      // silently invisible to the driver — only actionResponse carries this flag, mapped
+      // (from a plain getById refetch) does not.
+      const geofenceDisabled = actionResponse?.geofenceEnforced === false
+        && ['confirmLaundryCollected', 'confirmArrivedAtBranch', 'confirmDelivery'].includes(method);
+
       if (method === 'confirmDelivery' && mapped.status === 'DELIVERED') {
-        Alert.alert('Delivery Completed', 'Great work. Returning to your dashboard.', [
-          { text: 'OK', onPress: () => navigation.navigate('DriverTabs', { screen: 'Dashboard' }) },
-        ]);
+        Alert.alert(
+          'Delivery Completed',
+          geofenceDisabled
+            ? 'Great work. Returning to your dashboard.\n\nNote: geofence location checks are disabled on this build — this confirmation was not location-verified.'
+            : 'Great work. Returning to your dashboard.',
+          [{ text: 'OK', onPress: () => navigation.navigate('DriverTabs', { screen: 'Dashboard' }) }]
+        );
+      } else if (geofenceDisabled) {
+        Alert.alert(
+          'Geofence Check Disabled',
+          'This confirmation was accepted without verifying your location — geofence checks are disabled on this build (test/staging only).'
+        );
       }
     } catch (e) {
       const message = String(e?.message || '').trim();

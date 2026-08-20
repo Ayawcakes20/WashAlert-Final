@@ -1167,7 +1167,8 @@ public class JobOrderService {
         }
 
         JobOrderResponse response = toResponse(saved);
-        
+        response.setGeofenceEnforced(geofenceEnforced);
+
         try {
             firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
         } catch (Exception e) {
@@ -1212,13 +1213,14 @@ public class JobOrderService {
         }
 
         JobOrderResponse response = toResponse(saved);
-        
+        response.setGeofenceEnforced(geofenceEnforced);
+
         try {
             firestoreSyncService.upsert("orders", saved.getTrackingNumber(), response);
         } catch (Exception e) {
             log.warn("Failed to sync order {} to Firestore: {}", saved.getId(), e.getMessage());
         }
-        
+
         return response;
     }
 
@@ -1388,10 +1390,12 @@ public class JobOrderService {
             log.warn("Failed to send delivery notifications for order {}: {}", saved.getId(), e.getMessage());
         }
 
-        JobOrderResponse response = codCollected 
-                ? toResponse(saved, com.washalert.washalertbackend.payment.PaymentStatus.PAID) 
+        JobOrderResponse response = codCollected
+                ? toResponse(saved, com.washalert.washalertbackend.payment.PaymentStatus.PAID)
                 : toResponse(saved);
-        
+        response.setGeofenceEnforced(geofenceEnforced);
+
+
         try {
             firestoreSyncService.upsertBlocking("orders", saved.getTrackingNumber(), response);
         } catch (Exception e) {

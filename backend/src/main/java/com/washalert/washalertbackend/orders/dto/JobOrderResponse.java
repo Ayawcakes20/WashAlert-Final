@@ -88,6 +88,10 @@ public class JobOrderResponse {
     private Double driverLng;
     private String createdByName;
     private String assignedByName;
+    // Reflects JobOrderService's current washalert.geofence.enforce setting at response time
+    // (not something specific to this order) — lets the driver app show a one-time "geofence
+    // checks are disabled" notice on this deployment instead of the bypass being invisible.
+    private Boolean geofenceEnforced;
 
     public static JobOrderResponse from(JobOrder jo, PaymentStatus effectivePaymentStatus) {
         String customerName = jo.getCustomerName() != null ? jo.getCustomerName().trim() : "Customer";
