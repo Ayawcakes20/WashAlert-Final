@@ -68,8 +68,23 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
   // also avoids a separate, documented native-driver conflict inside custom-controlled Modals
   // (facebook/react-native#21552, react-native-modal/react-native-modal#730).
   const handleModalShow = () => {
-    Animated.spring(slideAnim, { toValue: 0, useNativeDriver: false, bounciness: 4 }).start();
+    console.log('[ReceiptDebug] Modal onShow fired, starting slide animation');
+    Animated.spring(slideAnim, { toValue: 0, useNativeDriver: false, bounciness: 4 }).start((result) => {
+      console.log('[ReceiptDebug] slide animation finished, finished=', result?.finished, 'value=', slideAnim.__getValue?.());
+    });
   };
+
+  // Temporary diagnostic: confirms whether the animation is actually progressing at all.
+  useEffect(() => {
+    const id = slideAnim.addListener(({ value }) => {
+      console.log('[ReceiptDebug] slideAnim value=', value);
+    });
+    return () => slideAnim.removeListener(id);
+  }, []);
+
+  useEffect(() => {
+    console.log('[ReceiptDebug] visible=', visible, 'fullOrderData present=', !!fullOrderData);
+  }, [visible, fullOrderData]);
 
   const handleConfirm = async () => {
     if (!fullOrderData) return;
