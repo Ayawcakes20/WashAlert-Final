@@ -390,9 +390,26 @@ const AddressPickerSheet = ({
         setPinnedCoords(coords);
         setMapRegion(nextRegion);
         logMapLocationDebug('SAVED_ADDRESS_COORDS', nextRegion, coords);
-      } else {
-        logMapLocationDebug('SAVED_ADDRESS_INVALID_COORDS', fallbackRegion, safeFallbackCoordinate);
+
+        // A saved address already carries everything onConfirm needs (address, coords,
+        // unit/floor, contact name, phone), so use it directly instead of pushing the
+        // customer back through the map panel and then the "Address Details" form to
+        // re-enter details they already saved. saveThis is false here because this entry
+        // is already in the saved list — re-saving is what was appending a duplicate
+        // "Home" row on every booking.
+        onConfirm({
+          address: item.address,
+          unitFloor: (item.unitFloor || '').trim(),
+          contactName: (item.contactName || '').trim(),
+          phone: (item.phone || '').trim(),
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          label: (item.label || 'Saved').trim(),
+          saveThis: false,
+        });
+        return;
       }
+      logMapLocationDebug('SAVED_ADDRESS_INVALID_COORDS', fallbackRegion, safeFallbackCoordinate);
       setPanel('map');
     } else {
       // try geocoding
@@ -516,8 +533,17 @@ const AddressPickerSheet = ({
 
     // Optionally save to saved addresses
     if (saveThis && saveLabel.trim()) {
-      const newEntry = {
-        id: String(Date.now()),
+      const normalize = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      // Update the matching entry instead of always appending. Previously this pushed a new
+      // row every time, so re-booking to the same place produced repeated identical "Home"
+      // entries in the saved list (visible in the picker as duplicate rows).
+      const existingIndex = savedAddresses.findIndex(
+        (a) => normalize(a.address) === normalize(resolvedAddress)
+          && normalize(a.label) === normalize(saveLabel)
+      );
+      const existing = existingIndex >= 0 ? savedAddresses[existingIndex] : null;
+      const entry = {
+        id: existing?.id ?? String(Date.now()),
         label: saveLabel.trim(),
         address: resolvedAddress,
         unitFloor: unitFloor.trim(),
@@ -525,9 +551,11 @@ const AddressPickerSheet = ({
         phone: phone.trim(),
         latitude: pinnedCoords.latitude,
         longitude: pinnedCoords.longitude,
-        isDefault: savedAddresses.length === 0,
+        isDefault: existing?.isDefault ?? savedAddresses.length === 0,
       };
-      const updated = [...savedAddresses, newEntry];
+      const updated = existingIndex >= 0
+        ? savedAddresses.map((a, i) => (i === existingIndex ? entry : a))
+        : [...savedAddresses, entry];
       await saveSavedAddresses(updated).catch(() => {});
     }
 
