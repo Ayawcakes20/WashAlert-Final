@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Modal, View, Text, TouchableOpacity, ActivityIndicator,
-  StyleSheet, Animated, Alert, Image, ScrollView, Dimensions,
+  View, Text, TouchableOpacity, ActivityIndicator,
+  StyleSheet, Alert, Image, ScrollView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as WebBrowser from 'expo-web-browser';
-import { bookings, payments } from '../services/api';
-import { computeOrderPricing } from '../utils/pricingUtils';
-import logoLaundryHubs from '../../assets/images/logo-laundryhubs.webp';
-import logoSpeedyWash from '../../assets/images/logo-speedywash.webp';
+import { bookings } from '../../services/api';
+import { computeOrderPricing } from '../../utils/pricingUtils';
+import logoLaundryHubs from '../../../assets/images/logo-laundryhubs.webp';
+import logoSpeedyWash from '../../../assets/images/logo-speedywash.webp';
 
 const fmt = (n) => `\u20b1${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -22,19 +22,29 @@ const ReceiptRow = ({ label, value, bold, accent, sub }) => (
   </View>
 );
 
-export default function PriceConfirmationModal({ visible, orderData, onConfirmed, onDismiss, onRejected }) {
+// Full-screen receipt.
+//
+// This was previously a bottom-sheet Modal (PriceConfirmationModal) whose card sized itself
+// with `maxHeight` only, never a real height, while its ScrollView used `flex: 1`. Per React
+// Native's docs, `flex: 1` implicitly sets `flexBasis: 0`, and "a component can only expand to
+// fill available space if its parent has dimensions greater than 0" — a maxHeight is a cap, not
+// a dimension, so the ScrollView had no free space to grow into and collapsed to zero height.
+// The card then rendered as a ~45px sliver of header at the bottom of the screen with no way to
+// pull it up, which is exactly what device recordings showed. A screen gets a real, definite
+// height from the navigator, so `flex: 1` resolves normally and this whole class of bug is gone.
+export default function ReceiptScreen({ navigation, route }) {
+  const orderData = route?.params?.orderData ?? null;
   const [loading, setLoading] = useState(false);
   const [fullOrderData, setFullOrderData] = useState(orderData);
-  const slideAnim = useRef(new Animated.Value(400)).current;
 
-  // Sync internal state with prop
+  // Sync internal state with param
   useEffect(() => {
     if (orderData) setFullOrderData(orderData);
   }, [orderData]);
 
   // Fetch full details if only ID is provided
   useEffect(() => {
-    if (visible && orderData && (!orderData.amount || !orderData.serviceName)) {
+    if (orderData && (!orderData.amount || !orderData.serviceName)) {
       (async () => {
         try {
           const id = orderData.id || orderData.dbId;
@@ -43,34 +53,26 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
             if (full) setFullOrderData(full);
           }
         } catch (e) {
-          console.warn('[PriceModal] Failed to fetch full details:', e);
+          console.warn('[Receipt] Failed to fetch full details:', e);
         }
       })();
     }
-  }, [visible, orderData]);
+  }, [orderData]);
 
-  // Reset for next open. The slide-IN animation itself is triggered from the Modal's onShow
-  // callback below (not from this visible-prop effect) — see the Modal JSX for why.
-  useEffect(() => {
-    if (!visible) {
-      slideAnim.setValue(400);
-    }
-  }, [visible]);
-
-  // Starts the slide-up once the native modal has actually finished mounting/showing, per
-  // React Native's own documented pattern (reactnative.dev/docs/modal#onshow) for animations
-  // tied to a manually-controlled Modal — avoids a useEffect keyed on `visible` racing ahead
-  // of the native Android Dialog window actually being attached/laid out.
-  //
-  // A diagnostic build with a per-frame Animated value listener proved this animation was
-  // never the actual problem: the value reached exactly 0 every time. The real cause was
-  // `card`'s style (see below) — a percentage-string maxHeight with no true bound, which per
-  // React Native's own ScrollView docs left its flex:1 ScrollView child with nothing definite
-  // to size against, collapsing the whole card to zero height regardless of a correct
-  // translateY. Fixed there, not here — this animation logic is otherwise unchanged.
-  const handleModalShow = () => {
-    Animated.spring(slideAnim, { toValue: 0, useNativeDriver: false, bounciness: 4 }).start();
+  // Returns to Order Details, flagging what happened so that screen can refresh and, for an
+  // unpaid GCash order, continue into the payment step (it previously did this from the
+  // modal's onConfirmed/onRejected callbacks).
+  const closeWith = (outcome) => {
+    navigation.navigate({
+      name: 'OrderDetail',
+      params: { receiptOutcome: outcome, receiptOutcomeAt: Date.now() },
+      merge: true,
+    });
   };
+
+  const onConfirmed = () => closeWith('confirmed');
+  const onDismiss = () => navigation.goBack();
+  const onRejected = () => closeWith('rejected');
 
   const handleConfirm = async () => {
     if (!fullOrderData) return;
@@ -119,7 +121,14 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
   };
 
   if (!fullOrderData) {
-    return null;
+    return (
+      <SafeAreaView style={S.screen} edges={['top', 'left', 'right']}>
+        <View style={S.loadingWrap}>
+          <ActivityIndicator size="large" color="#2563EB" />
+          <Text style={S.loadingTxt}>Loading your receipt...</Text>
+        </View>
+      </SafeAreaView>
+    );
   }
 
   const logo = String(fullOrderData.branchName || '').toLowerCase().includes('makati') ? logoLaundryHubs : logoSpeedyWash;
@@ -164,32 +173,19 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
   });
 
   return (
-    // onRequestClose fires on Android hardware back-press/back-gesture and, per RN's Modal
-    // implementation, always wins over any BackHandler listener even one registered inside
-    // this same component (facebook/react-native#19147) — so it can't be blocked that way.
-    // Left as a no-op instead of wiring it to onDismiss: an accidental edge-swipe while
-    // scrolling the receipt must not silently close it before the customer can confirm the
-    // price. The X button remains the only way to dismiss.
-    <Modal
-      visible={visible}
-      transparent
-      animationType="none"
-      statusBarTranslucent
-      onRequestClose={() => {}}
-      onShow={handleModalShow}
-    >
-      <View style={S.overlay}>
-        <Animated.View style={[S.card, { transform: [{ translateY: slideAnim }] }]}>
+    <SafeAreaView style={S.screen} edges={['top', 'left', 'right']}>
+      <View style={S.card}>
           <View style={S.headerControls}>
-            <View style={S.notchBar} />
-            <TouchableOpacity style={S.closeBtn} onPress={onDismiss} activeOpacity={0.7}>
-              <Ionicons name="close-circle" size={32} color="#CBD5E1" />
+            <TouchableOpacity style={S.backBtn} onPress={onDismiss} activeOpacity={0.7}>
+              <Ionicons name="chevron-back" size={24} color="#1E293B" />
             </TouchableOpacity>
+            <Text style={S.headerTitle}>Receipt</Text>
+            <View style={S.headerSpacer} />
           </View>
 
           <View style={S.receiptDivider} />
 
-          <ScrollView style={S.scroll} contentContainerStyle={S.scrollContent} showsVerticalScrollIndicator={false} bounces={false}>
+          <ScrollView style={S.scroll} contentContainerStyle={S.scrollContent} showsVerticalScrollIndicator={false}>
             {/* Header */}
             <View style={S.receiptHeader}>
               <View style={S.logoWrapper}>
@@ -347,36 +343,26 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
 
             <Text style={S.contactSupportTxt}>Question about the price? Contact the branch through support.</Text>
           </ScrollView>
-        </Animated.View>
       </View>
-    </Modal>
+    </SafeAreaView>
   );
 }
 
-// React Native's own docs are explicit: "ScrollViews must have a bounded height in order to
-// work" — either the ScrollView's own height is set directly, or every parent up the chain
-// has a bounded height. `card` previously only had maxHeight: '92%', a percentage-string CAP
-// on intrinsic content size, not a real bound — so its flex:1 ScrollView child had nothing
-// definite to size against. A diagnostic build proved the slide-up animation's value reaches
-// exactly 0 every time (confirmed via an Animated value listener in a captured logcat), yet
-// the card still never became visible — consistent with it collapsing to zero height rather
-// than a positioning/animation problem. Using a computed numeric height (not a percentage
-// string) gives Yoga an unambiguous bound to resolve the ScrollView against.
-const CARD_MAX_HEIGHT = Dimensions.get('window').height * 0.92;
-
 const S = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.88)', justifyContent: 'flex-end' },
-  card: { backgroundColor: '#fff', borderTopLeftRadius: 32, borderTopRightRadius: 32, maxHeight: CARD_MAX_HEIGHT, elevation: 24, overflow: 'hidden' },
-  headerControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingTop: 12, paddingBottom: 4, position: 'relative' },
-  closeBtn: { position: 'absolute', right: 16, top: 12 },
-  notchBar: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#CBD5E1' },
+  // Every level here has a real, definite height: SafeAreaView flex:1 fills the screen the
+  // navigator gives it, `card` flex:1 fills that, and the ScrollView's flex:1 finally has
+  // actual free space to grow into. That chain is what the old bottom-sheet modal lacked —
+  // its card had only a maxHeight cap, so nothing below the header ever got any height.
+  screen: { flex: 1, backgroundColor: '#fff' },
+  card: { flex: 1, backgroundColor: '#fff' },
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  loadingTxt: { fontSize: 14, color: '#64748B', fontWeight: '600' },
+  headerControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, paddingTop: 8, paddingBottom: 10 },
+  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: '#1E293B' },
+  headerSpacer: { width: 40 },
   receiptDivider: { height: 1, backgroundColor: '#E2E8F0', marginBottom: 0 },
-  // flex: 1 (not flexGrow: 0) bounds the ScrollView to the remaining space inside
-  // card's capped maxHeight, so content past the fold scrolls into view instead of
-  // rendering past the bottom of the screen (this hid the "Confirm & Pay" button).
-  // flexShrink: 1 alongside flex: 1 is the pattern RN's own ScrollView docs recommend for a
-  // ScrollView nested in a column flex container with a capped (not fixed) parent height.
-  scroll: { flex: 1, flexShrink: 1 },
+  scroll: { flex: 1 },
   scrollContent: { padding: 24, paddingBottom: 40 },
   receiptHeader: { alignItems: 'center', marginBottom: 16 },
   logoWrapper: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 10 },

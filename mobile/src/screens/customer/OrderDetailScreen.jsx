@@ -12,7 +12,6 @@ import * as Linking from 'expo-linking';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { useFocusEffect } from '@react-navigation/native';
-import PriceConfirmationModal from '../../components/PriceConfirmationModal';
 import GcashQrModal from '../../components/GcashQrModal';
 
 const { width: SW } = Dimensions.get('window');
@@ -177,7 +176,6 @@ export default function OrderDetailScreen({ route, navigation }) {
   const [loading, setLoading]   = useState(true);
   const [branchPhones, setBP]   = useState({});
   const [showFullTL, setShowTL] = useState(false);
-  const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showGcashQrModal, setShowGcashQrModal] = useState(false);
   const [paying, setPaying] = useState(false);
   const [feedbackRating, setFeedbackRating]     = useState(0);
@@ -281,9 +279,32 @@ export default function OrderDetailScreen({ route, navigation }) {
           } catch {}
         }
       }
-    } catch(e) { console.error(e); }
+      return d;
+    } catch(e) { console.error(e); return null; }
     finally { setLoading(false); }
   };
+
+  // The receipt is its own screen now, so the follow-up that used to run in the modal's
+  // onConfirmed/onRejected callbacks is driven by a param it sets on the way back here.
+  // receiptOutcomeAt is a timestamp so the same outcome twice in a row still re-triggers.
+  const receiptOutcome = route.params?.receiptOutcome;
+  const receiptOutcomeAt = route.params?.receiptOutcomeAt;
+  useEffect(() => {
+    if (!receiptOutcome) return;
+    // Clear immediately so this can't re-fire on an unrelated re-render.
+    navigation.setParams({ receiptOutcome: undefined, receiptOutcomeAt: undefined });
+
+    load().then((refreshed) => {
+      if (receiptOutcome !== 'confirmed') return;
+      const target = refreshed || order;
+      const isGcash = String(target?.paymentMethod || '').toLowerCase() === 'gcash';
+      if (isGcash && !isPaymentSettled(target)) {
+        setShowGcashQrModal(true);
+      } else {
+        Alert.alert('✅ Confirmed!', 'Price confirmed! We are now washing your laundry.');
+      }
+    });
+  }, [receiptOutcome, receiptOutcomeAt]);
 
   const submitFeedback = async () => {
     if (feedbackRating < 1) {
@@ -540,7 +561,7 @@ export default function OrderDetailScreen({ route, navigation }) {
           <TouchableOpacity 
             style={styles.confirmCard}
             activeOpacity={0.9}
-            onPress={() => setShowReceiptModal(true)}
+            onPress={() => navigation.navigate('Receipt', { orderData: order })}
           >
             <View style={styles.confirmHeader}>
               <View style={styles.confirmIconWrap}>
@@ -577,27 +598,6 @@ export default function OrderDetailScreen({ route, navigation }) {
             </View>
           </View>
         )}
-
-        <PriceConfirmationModal
-          visible={showReceiptModal}
-          orderData={order}
-          onConfirmed={() => {
-            setShowReceiptModal(false);
-            load().then((refreshed) => {
-              const isGcash = String(order?.paymentMethod || '').toLowerCase() === 'gcash';
-              if (isGcash && !isPaymentSettled(order)) {
-                setShowGcashQrModal(true);
-              } else {
-                Alert.alert('✅ Confirmed!', 'Price confirmed! We are now washing your laundry.');
-              }
-            });
-          }}
-          onDismiss={() => setShowReceiptModal(false)}
-          onRejected={() => {
-            setShowReceiptModal(false);
-            load();
-          }}
-        />
 
         <GcashQrModal
           visible={showGcashQrModal}

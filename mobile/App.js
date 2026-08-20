@@ -1,15 +1,14 @@
 /* eslint-disable import/no-duplicates */
 import 'react-native-gesture-handler';
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from './src/context/AuthContext';
-import AppNavigator from './src/navigation/AppNavigation';
+import AppNavigator, { navigateWhenReady } from './src/navigation/AppNavigation';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
 import * as Updates from 'expo-updates';
 import PushNotificationBridge from './src/components/PushNotificationBridge';
-import PriceConfirmationModal from './src/components/PriceConfirmationModal';
 
 const LOCATION_TRACKING_TASK = 'LOCATION_TRACKING_TASK';
 
@@ -23,8 +22,17 @@ TaskManager.defineTask(LOCATION_TRACKING_TASK, async ({ data, error }) => {
   }
 });
 
+// Opens the full-screen Receipt for a "price is ready" push. This used to render a second
+// PriceConfirmationModal at the root of the app, mounted alongside the one inside
+// OrderDetailScreen — two independent copies of the same modal competing to show the same
+// receipt. Routing to the shared Receipt screen instead means there is exactly one receipt UI.
+const openReceiptFromNotification = (data) => {
+  if (data?.type !== 'PRICE_CONFIRMATION_REQUIRED' || !data?.id) return;
+  const [orderId, trackingNumber] = String(data.id).split(':');
+  navigateWhenReady('Receipt', { orderData: { id: orderId, trackingNumber } });
+};
+
 export default function App() {
-  const [priceModalData, setPriceModalData] = useState(null);
 
   useEffect(() => {
     // Check and apply OTA updates automatically
@@ -45,20 +53,12 @@ export default function App() {
 
     // Listen for FCM notifications received while app is foregrounded
     const foregroundSub = Notifications.addNotificationReceivedListener(notification => {
-      const data = notification?.request?.content?.data || {};
-      if (data.type === 'PRICE_CONFIRMATION_REQUIRED' && data.id) {
-        const [orderId, trackingNumber] = String(data.id).split(':');
-        setPriceModalData({ id: orderId, trackingNumber });
-      }
+      openReceiptFromNotification(notification?.request?.content?.data || {});
     });
 
     // Listen for taps on background notifications
     const responseSub = Notifications.addNotificationResponseReceivedListener(response => {
-      const data = response?.notification?.request?.content?.data || {};
-      if (data.type === 'PRICE_CONFIRMATION_REQUIRED' && data.id) {
-        const [orderId, trackingNumber] = String(data.id).split(':');
-        setPriceModalData({ id: orderId, trackingNumber });
-      }
+      openReceiptFromNotification(response?.notification?.request?.content?.data || {});
     });
 
     return () => {
@@ -73,12 +73,6 @@ export default function App() {
         <AuthProvider>
           <PushNotificationBridge />
           <AppNavigator />
-          <PriceConfirmationModal
-            visible={!!priceModalData}
-            orderData={priceModalData}
-            onConfirmed={() => setPriceModalData(null)}
-            onDismiss={() => setPriceModalData(null)}
-          />
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

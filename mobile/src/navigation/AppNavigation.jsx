@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
@@ -27,6 +27,7 @@ import HomeScreen from '../screens/customer/HomeScreen';
 import BookingScreen from '../screens/customer/BookingScreen';
 import OrdersScreen from '../screens/customer/OrdersScreen';
 import OrderDetailScreen from '../screens/customer/OrderDetailScreen';
+import ReceiptScreen from '../screens/customer/ReceiptScreen';
 import TrackingScreen from '../screens/customer/TrackingScreen';
 import NotificationsScreen from '../screens/customer/NotificationsScreen';
 import ChatScreen from '../screens/customer/ChatScreen';
@@ -52,6 +53,29 @@ import StaffInventoryScreen from '../screens/staff/StaffInventoryScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+// Lets code outside the navigation tree (App.js's push-notification handlers) drive
+// navigation — e.g. opening the Receipt screen when a customer taps a "price is ready"
+// notification. A notification can arrive before the container has mounted (cold start from
+// a notification tap), so anything requested too early is queued and flushed from onReady.
+export const navigationRef = createNavigationContainerRef();
+let pendingNavigation = null;
+
+export const navigateWhenReady = (name, params) => {
+  if (navigationRef.isReady()) {
+    navigationRef.navigate(name, params);
+  } else {
+    pendingNavigation = { name, params };
+  }
+};
+
+const flushPendingNavigation = () => {
+  if (pendingNavigation && navigationRef.isReady()) {
+    const { name, params } = pendingNavigation;
+    pendingNavigation = null;
+    navigationRef.navigate(name, params);
+  }
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Brsh.-style FLOATING rounded bottom tab bar — Customer
@@ -263,6 +287,7 @@ const CustomerStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="CustomerTabs"   component={CustomerTabs} />
     <Stack.Screen name="OrderDetail"    component={OrderDetailScreen}    options={{ headerShown: false }} />
+    <Stack.Screen name="Receipt"        component={ReceiptScreen}        options={{ headerShown: false }} />
     <Stack.Screen name="Tracking"       component={TrackingScreen}       options={{ headerShown: false }} />
     <Stack.Screen name="Chat"           component={ChatScreen}           options={{ headerShown: false }} />
     <Stack.Screen name="EditProfile"    component={EditProfileScreen}    options={stackHeader('Edit Profile')} />
@@ -446,7 +471,7 @@ const AppNavigator = () => {
   };
 
   return (
-    <NavigationContainer linking={linking}>
+    <NavigationContainer ref={navigationRef} linking={linking} onReady={flushPendingNavigation}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
           <Stack.Screen name="Auth">
