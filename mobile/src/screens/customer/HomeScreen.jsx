@@ -167,10 +167,14 @@ function ActiveOrderCard({ order, navigation }) {
         })}
       </View>
 
-      {/* View Details button */}
+      {/* View Details button — OrderDetail is a sibling of the CustomerTabs navigator (not
+          nested inside the Orders tab), so it must be navigated to directly; the previous
+          `navigate('Orders', { screen: 'OrderDetail', params: {...} })` just switched to the
+          Orders tab and dropped the nested params, landing on the plain order list instead of
+          this specific order. */}
       <TouchableOpacity
         style={activeCardStyles.detailsBtn}
-        onPress={() => navigation.navigate('Orders', { screen: 'OrderDetail', params: { orderId: order.id } })}
+        onPress={() => navigation.navigate('OrderDetail', { orderId: order.id })}
         activeOpacity={0.85}
       >
         <Ionicons name="document-text-outline" size={16} color={colors.text} />

@@ -49,20 +49,27 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
     }
   }, [visible, orderData]);
 
-  // useNativeDriver: false — this Modal uses animationType="none" and drives its own slide-up
-  // via this Animated.Value; combining that with a native-driven animation on the content is a
-  // known Android RN conflict (the modal's own view/window mounts separately from where the
-  // native driver expects to attach) that leaves the card stuck off-screen behind the dark
-  // overlay: the backdrop renders but the receipt content never becomes visible. Screen
-  // recordings confirmed exactly this — dim overlay showing, no card content, for 10+ seconds.
-  // See facebook/react-native#21552 and react-native-modal/react-native-modal#730.
+  // Reset for next open. The slide-IN animation itself is triggered from the Modal's onShow
+  // callback below (not from this visible-prop effect) — see the Modal JSX for why.
   useEffect(() => {
-    if (visible) {
-      Animated.spring(slideAnim, { toValue: 0, useNativeDriver: false, bounciness: 4 }).start();
-    } else {
+    if (!visible) {
       slideAnim.setValue(400);
     }
   }, [visible]);
+
+  // Starts the slide-up once the native modal has actually finished mounting/showing, per
+  // React Native's own documented pattern (reactnative.dev/docs/modal#onshow) for animations
+  // tied to a manually-controlled Modal. A `useEffect(() => {...}, [visible])` fires as soon as
+  // React re-renders, which can race ahead of the native Android Dialog window actually being
+  // attached and laid out — especially with animationType="none", where there's no native
+  // transition to implicitly wait for. That race left the card animated to a view that wasn't
+  // attached yet: the dark overlay rendered, but the receipt content never appeared, confirmed
+  // by screen recordings showing 10+ seconds of a dim, empty backdrop. useNativeDriver: false
+  // also avoids a separate, documented native-driver conflict inside custom-controlled Modals
+  // (facebook/react-native#21552, react-native-modal/react-native-modal#730).
+  const handleModalShow = () => {
+    Animated.spring(slideAnim, { toValue: 0, useNativeDriver: false, bounciness: 4 }).start();
+  };
 
   const handleConfirm = async () => {
     if (!fullOrderData) return;
@@ -162,7 +169,14 @@ export default function PriceConfirmationModal({ visible, orderData, onConfirmed
     // Left as a no-op instead of wiring it to onDismiss: an accidental edge-swipe while
     // scrolling the receipt must not silently close it before the customer can confirm the
     // price. The X button remains the only way to dismiss.
-    <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={() => {}}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      statusBarTranslucent
+      onRequestClose={() => {}}
+      onShow={handleModalShow}
+    >
       <View style={S.overlay}>
         <Animated.View style={[S.card, { transform: [{ translateY: slideAnim }] }]}>
           <View style={S.headerControls}>
