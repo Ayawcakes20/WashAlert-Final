@@ -297,7 +297,11 @@ export default function OrderDetailScreen({ route, navigation }) {
     load().then((refreshed) => {
       if (receiptOutcome !== 'confirmed') return;
       const target = refreshed || order;
-      const isGcash = String(target?.paymentMethod || '').toLowerCase() === 'gcash';
+      // includes(), not === 'gcash', to match how the rest of the system already detects this:
+      // PaymentService uses pm.toUpperCase().contains("GCASH") and api.js uses
+      // .toUpperCase().includes('GCASH'). A strict equality here would miss any variant the
+      // backend considers GCash (e.g. "GCASH_ONLINE") and silently skip the payment step.
+      const isGcash = String(target?.paymentMethod || '').toUpperCase().includes('GCASH');
       if (isGcash && !isPaymentSettled(target)) {
         // Goes through the same live PayMongo checkout as the "Pay Now" button (payNow, below)
         // instead of opening the static QR image directly. That static modal predates the live
