@@ -458,10 +458,32 @@ export default function OrderDetailScreen({ route, navigation }) {
       const checkoutUrl = result?.checkoutUrl;
       if (checkoutUrl) {
         await WebBrowser.openBrowserAsync(checkoutUrl);
-        navigation.navigate('PaymentSuccess', {
-          trackingNumber: tracking,
-          amount: resolveTotal(order),
-        });
+
+        // openBrowserAsync resolves when the browser is DISMISSED, which says nothing about
+        // whether payment actually happened — the customer may have closed the tab, or been
+        // unable to pay at all (e.g. PayMongo rendering "No payment methods are available"
+        // when GCash isn't activated on the account). Previously this navigated straight to
+        // PaymentSuccess regardless, reporting a success that never occurred.
+        //
+        // load() re-fetches through bookings.getById, which already performs an active
+        // payment re-verification against the backend for unpaid GCash orders, so the
+        // refreshed order reflects real payment state.
+        const refreshed = await load();
+        if (isPaymentSettled(refreshed || order)) {
+          navigation.navigate('PaymentSuccess', {
+            trackingNumber: tracking,
+            amount: resolveTotal(refreshed || order),
+          });
+        } else {
+          Alert.alert(
+            'Payment Not Completed',
+            "We didn't receive a completed payment for this order. You can try the online checkout again, or pay by scanning the branch GCash QR and uploading your receipt.",
+            [
+              { text: 'Pay via QR instead', onPress: () => setShowGcashQrModal(true) },
+              { text: 'Close', style: 'cancel' },
+            ]
+          );
+        }
         return;
       }
     } catch (err) {
