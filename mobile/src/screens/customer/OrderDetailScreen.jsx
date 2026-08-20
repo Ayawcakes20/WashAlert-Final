@@ -299,7 +299,13 @@ export default function OrderDetailScreen({ route, navigation }) {
       const target = refreshed || order;
       const isGcash = String(target?.paymentMethod || '').toLowerCase() === 'gcash';
       if (isGcash && !isPaymentSettled(target)) {
-        setShowGcashQrModal(true);
+        // Goes through the same live PayMongo checkout as the "Pay Now" button (payNow, below)
+        // instead of opening the static QR image directly. That static modal predates the live
+        // checkout (see git history: d2538fe added it, f9aff27/1ec4a84 added the live PayMongo
+        // flow afterward) and was never wired up to try the live checkout first here — it's
+        // still the fallback payNow() uses if the live checkout call itself fails, so this
+        // keeps that safety net while making the real payment flow the primary path.
+        payNow();
       } else {
         Alert.alert('✅ Confirmed!', 'Price confirmed! We are now washing your laundry.');
       }
