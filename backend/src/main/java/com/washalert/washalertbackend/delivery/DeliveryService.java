@@ -399,12 +399,18 @@ public class DeliveryService {
             outbound.setStatus(DeliveryStatus.ASSIGNED_DELIVERY);
         }
 
-        ensureConfirmationCode(outbound);
+        // No longer generating/sending a confirmation code here: it fired automatically the
+        // moment an order became READY, well before any driver action, and no driver-facing
+        // screen ever asks for or verifies this code (the app's actual delivery flow is the
+        // swipe + geofence confirmation in JobOrderService.confirmDelivery). The customer got
+        // a PIN with instructions to "show this to your rider" that the rider's app never
+        // requested — confusing and pointless. The DeliveryOrder-leg endpoints that use this
+        // code (arriveForDelivery, finalHandover, resendConfirmationCode) are also unreachable
+        // from the current mobile app, left untouched here as they're outside this change.
 
         DeliveryOrder saved = deliveryRepository.save(outbound);
-        dispatchConfirmationCodeNotice(saved, false, false);
         firestoreSyncService.upsert("deliveries", order.getTrackingNumber(), toResponse(saved));
-        log.info("[DeliveryService] Initialized Phase B for order {}, code: {}", order.getTrackingNumber(), saved.getConfirmationCode());
+        log.info("[DeliveryService] Initialized Phase B for order {}", order.getTrackingNumber());
     }
 
     @Transactional
