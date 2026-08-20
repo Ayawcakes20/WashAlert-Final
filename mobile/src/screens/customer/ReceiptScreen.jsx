@@ -62,12 +62,17 @@ export default function ReceiptScreen({ navigation, route }) {
   // Returns to Order Details, flagging what happened so that screen can refresh and, for an
   // unpaid GCash order, continue into the payment step (it previously did this from the
   // modal's onConfirmed/onRejected callbacks).
+  //
+  // navigate(name, params) — not the deprecated navigate({name, params, merge}) object form —
+  // is what actually merges params into an existing screen already in the stack (OrderDetail,
+  // since Receipt was pushed from it) while leaving its other params, like orderId, untouched.
+  // The object form logged a "Passing an object... is deprecated" warning and, worse, replaced
+  // OrderDetail's whole params object instead of merging into it: orderId was lost, order
+  // stayed null after the refetch, and OrderDetailScreen fell into its own "Order not found"
+  // fallback — confirmed by a captured logcat (the deprecation warning) alongside a screen
+  // recording showing exactly that error after confirming a receipt.
   const closeWith = (outcome) => {
-    navigation.navigate({
-      name: 'OrderDetail',
-      params: { receiptOutcome: outcome, receiptOutcomeAt: Date.now() },
-      merge: true,
-    });
+    navigation.navigate('OrderDetail', { receiptOutcome: outcome, receiptOutcomeAt: Date.now() });
   };
 
   const onConfirmed = () => closeWith('confirmed');
