@@ -522,33 +522,20 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
     }
   };
 
-  // Same radius the backend enforces (see JobOrderService.GEOFENCE_RADIUS_METERS) — checked
-  // here first purely for instant UX feedback without a network round-trip; the backend check
-  // is the real gate and cannot be bypassed by a modified client.
-  const GEOFENCE_RADIUS_METERS = 150;
-
-  // Wraps handleAction for the three "I have arrived" confirmations, which require the driver
-  // to actually be near the target address/branch. Blocks the action locally if location is
-  // unavailable or too far, otherwise attaches the driver's current coords to the request so
-  // the backend can enforce the same check server-side.
+  // Wraps handleAction for the three "I have arrived" confirmations. The actual geofence
+  // check (and whether it's enforced at all — see JobOrderService.GEOFENCE_RADIUS_METERS and
+  // the washalert.geofence.enforce toggle) lives entirely on the backend, so it's the single
+  // source of truth. A client-side pre-check was tried here first but had to be removed: it
+  // duplicated the 150m radius locally with no way to know the backend's enforce flag was
+  // off on staging, so it kept blocking test/staging confirmations even after the backend
+  // was configured to allow them. The backend's rejection message (e.g. "You are 850m away
+  // from the branch...") already surfaces via handleAction's existing catch-block Alert.
   const confirmWithLocation = (method, targetLabel, extraArgs = {}) => {
-    if (!driverCoords) {
-      Alert.alert(
-        'Location Required',
-        locationWarning || 'Your location could not be determined yet. Please enable location services and try again.'
-      );
-      return;
-    }
-    const target = getTargetCoords();
-    const distance = target ? distanceMeters(driverCoords, target) : null;
-    if (distance != null && distance > GEOFENCE_RADIUS_METERS) {
-      Alert.alert(
-        'Too Far to Confirm',
-        `You are ${Math.round(distance)}m away from ${targetLabel}. Move within ${GEOFENCE_RADIUS_METERS}m to confirm.`
-      );
-      return;
-    }
-    handleAction(method, { ...extraArgs, latitude: driverCoords.latitude, longitude: driverCoords.longitude });
+    handleAction(method, {
+      ...extraArgs,
+      latitude: driverCoords?.latitude ?? null,
+      longitude: driverCoords?.longitude ?? null,
+    });
   };
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -1008,39 +995,46 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
           />
         )}
 
-        {/* Branch Marker (Always Visible) */}
-        {delivery.branchLatitude && (
-          <Marker
-            coordinate={{ latitude: delivery.branchLatitude, longitude: delivery.branchLongitude }}
-            anchor={{ x: 0.5, y: 1 }}
-          >
-            <View style={styles.pinWrap}>
-              <View style={[styles.destPinOuter, { borderColor: '#7C3AED' }]}>
-                <View style={[styles.destPinInner, { backgroundColor: '#7C3AED' }]}>
-                  <MaterialCommunityIcons name="storefront" size={18} color="#FFF" />
+        {/* Branch Marker (Always Visible) — falls back to the geocoded coords (same
+            derivedBranchCoords used for the route/ETA above) when the order's own
+            branchLatitude/Longitude haven't been geocoded yet, so the pin doesn't silently
+            vanish while the route still renders fine. */}
+        {(() => {
+          const branchPin = (delivery.branchLatitude && delivery.branchLongitude)
+            ? { latitude: delivery.branchLatitude, longitude: delivery.branchLongitude }
+            : derivedBranchCoords;
+          return branchPin && (
+            <Marker coordinate={branchPin} anchor={{ x: 0.5, y: 1 }}>
+              <View style={styles.pinWrap}>
+                <View style={[styles.destPinOuter, { borderColor: '#7C3AED' }]}>
+                  <View style={[styles.destPinInner, { backgroundColor: '#7C3AED' }]}>
+                    <MaterialCommunityIcons name="storefront" size={18} color="#FFF" />
+                  </View>
                 </View>
+                <View style={[styles.destPinArrow, { borderTopColor: '#7C3AED' }]} />
               </View>
-              <View style={[styles.destPinArrow, { borderTopColor: '#7C3AED' }]} />
-            </View>
-          </Marker>
-        )}
+            </Marker>
+          );
+        })()}
 
-        {/* Customer Marker (Always Visible) */}
-        {delivery.deliveryLatitude && (
-          <Marker
-            coordinate={{ latitude: delivery.deliveryLatitude, longitude: delivery.deliveryLongitude }}
-            anchor={{ x: 0.5, y: 1 }}
-          >
-            <View style={styles.pinWrap}>
-              <View style={[styles.destPinOuter, { borderColor: colors.primary }]}>
-                <View style={[styles.destPinInner, { backgroundColor: colors.primary }]}>
-                  <MaterialCommunityIcons name="home-variant" size={18} color="#FFF" />
+        {/* Customer Marker (Always Visible) — same geocoded fallback as the branch pin above. */}
+        {(() => {
+          const customerPin = (delivery.deliveryLatitude && delivery.deliveryLongitude)
+            ? { latitude: delivery.deliveryLatitude, longitude: delivery.deliveryLongitude }
+            : derivedCustomerCoords;
+          return customerPin && (
+            <Marker coordinate={customerPin} anchor={{ x: 0.5, y: 1 }}>
+              <View style={styles.pinWrap}>
+                <View style={[styles.destPinOuter, { borderColor: colors.primary }]}>
+                  <View style={[styles.destPinInner, { backgroundColor: colors.primary }]}>
+                    <MaterialCommunityIcons name="home-variant" size={18} color="#FFF" />
+                  </View>
                 </View>
+                <View style={[styles.destPinArrow, { borderTopColor: colors.primary }]} />
               </View>
-              <View style={[styles.destPinArrow, { borderTopColor: colors.primary }]} />
-            </View>
-          </Marker>
-        )}
+            </Marker>
+          );
+        })()}
       </MapView>
 
       {/* ── HEADER OVERLAY ───────────────────────────────────────────────── */}
