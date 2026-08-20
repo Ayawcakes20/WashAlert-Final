@@ -522,6 +522,35 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
     }
   };
 
+  // Same radius the backend enforces (see JobOrderService.GEOFENCE_RADIUS_METERS) — checked
+  // here first purely for instant UX feedback without a network round-trip; the backend check
+  // is the real gate and cannot be bypassed by a modified client.
+  const GEOFENCE_RADIUS_METERS = 150;
+
+  // Wraps handleAction for the three "I have arrived" confirmations, which require the driver
+  // to actually be near the target address/branch. Blocks the action locally if location is
+  // unavailable or too far, otherwise attaches the driver's current coords to the request so
+  // the backend can enforce the same check server-side.
+  const confirmWithLocation = (method, targetLabel, extraArgs = {}) => {
+    if (!driverCoords) {
+      Alert.alert(
+        'Location Required',
+        locationWarning || 'Your location could not be determined yet. Please enable location services and try again.'
+      );
+      return;
+    }
+    const target = getTargetCoords();
+    const distance = target ? distanceMeters(driverCoords, target) : null;
+    if (distance != null && distance > GEOFENCE_RADIUS_METERS) {
+      Alert.alert(
+        'Too Far to Confirm',
+        `You are ${Math.round(distance)}m away from ${targetLabel}. Move within ${GEOFENCE_RADIUS_METERS}m to confirm.`
+      );
+      return;
+    }
+    handleAction(method, { ...extraArgs, latitude: driverCoords.latitude, longitude: driverCoords.longitude });
+  };
+
   // ─── Helpers ───────────────────────────────────────────────────────────────
   const getTargetCoords = () => {
     if (!delivery) return null;
@@ -870,7 +899,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
           label: 'I have Collected the Laundry',
           color: '#7C3AED',
           disabled: updating,
-          onComplete: () => handleAction('confirmLaundryCollected'),
+          onComplete: () => confirmWithLocation('confirmLaundryCollected', "the customer's address"),
         };
       case 'LAUNDRY_COLLECTED':
       case 'EN_ROUTE_TO_BRANCH':
@@ -878,7 +907,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
           label: 'I have Arrived at Branch',
           color: colors.success,
           disabled: updating,
-          onComplete: () => handleAction('confirmArrivedAtBranch'),
+          onComplete: () => confirmWithLocation('confirmArrivedAtBranch', 'the branch'),
         };
       case 'ASSIGNED_FOR_DELIVERY':
         return {
@@ -903,11 +932,11 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
                   : `Confirm cash collection from ${delivery.customerName}? (Final amount unavailable — verify with branch.)`,
                 [
                   { text: 'Not yet', style: 'cancel' },
-                  { text: 'Yes, Collected', onPress: () => handleAction('confirmDelivery', { codCollected: true }) }
+                  { text: 'Yes, Collected', onPress: () => confirmWithLocation('confirmDelivery', "the customer's address", { codCollected: true }) }
                 ]
               );
             } else {
-              handleAction('confirmDelivery', { codCollected: false });
+              confirmWithLocation('confirmDelivery', "the customer's address", { codCollected: false });
             }
           },
         };
@@ -1074,6 +1103,16 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
             <Text style={styles.noGpsText}>
               Location data unavailable for navigation.
             </Text>
+          </View>
+        )}
+
+        {/* Driver's own GPS/permission warning — previously tracked in state but never
+            shown, so a denied permission or unresolved GPS fix looked identical to "app is
+            broken" (no driver marker, no route, confirm-arrival silently unavailable). */}
+        {!!locationWarning && !['DELIVERED', 'COLLECTION_FAILED'].includes(delivery.status) && (
+          <View style={styles.noGpsBar}>
+            <Ionicons name="warning-outline" size={13} color="#92400E" />
+            <Text style={styles.noGpsText}>{locationWarning}</Text>
           </View>
         )}
 

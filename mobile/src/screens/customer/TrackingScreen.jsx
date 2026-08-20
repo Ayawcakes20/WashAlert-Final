@@ -10,8 +10,10 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { colors } from '../../theme/colors';
 import { bookings as bookingsApi, deliveries as deliveriesApi } from '../../services/api';
-
-const GOOGLE_MAPS_API_KEY = 'AIzaSyAzAGBAijqpEZki3ZZBYe-9rxtzjF55RSY';
+// Was hardcoded to the iOS key literal — if that key is restricted (e.g. to the iOS bundle
+// ID) in Google Cloud Console, this silently broke routing/markers on Android while the
+// driver screen (using this same resolved key) worked fine.
+import { GOOGLE_MAPS_API_KEY } from '../../config/env';
 const { width: SCREEN_W, height: SCREEN_H_DIM } = Dimensions.get('window');
 // Keep the live map the dominant visual (Grab/Lalamove style): compact, responsive
 // sheet height that still fits the milestone tracker + rider card without clipping.

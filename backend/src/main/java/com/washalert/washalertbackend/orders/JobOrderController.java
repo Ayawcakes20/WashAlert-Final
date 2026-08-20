@@ -266,18 +266,20 @@ public class JobOrderController {
     @PreAuthorize("hasRole('DRIVER')")
     public JobOrderResponse confirmLaundryCollected(
             @PathVariable Long id,
+            @Valid @RequestBody com.washalert.washalertbackend.orders.dto.UpdateDriverLocationRequest location,
             @AuthenticationPrincipal AuthUserDetails principal
     ) {
-        return service.confirmLaundryCollected(id, principal);
+        return service.confirmLaundryCollected(id, location.latitude(), location.longitude(), principal);
     }
 
     @PutMapping("/{id}/driver/confirm-arrived-at-branch")
     @PreAuthorize("hasRole('DRIVER')")
     public JobOrderResponse confirmArrivedAtBranch(
             @PathVariable Long id,
+            @Valid @RequestBody com.washalert.washalertbackend.orders.dto.UpdateDriverLocationRequest location,
             @AuthenticationPrincipal AuthUserDetails principal
     ) {
-        return service.confirmArrivedAtBranch(id, principal);
+        return service.confirmArrivedAtBranch(id, location.latitude(), location.longitude(), principal);
     }
 
     @PutMapping("/{id}/assign-delivery-rider")
@@ -306,7 +308,7 @@ public class JobOrderController {
             @Valid @RequestBody DriverConfirmDeliveryRequest req,
             @AuthenticationPrincipal AuthUserDetails principal
     ) {
-        return service.confirmDelivery(id, req.codCollected(), principal);
+        return service.confirmDelivery(id, req.codCollected(), req.latitude(), req.longitude(), principal);
     }
 
     @GetMapping("/driver/tasks")
