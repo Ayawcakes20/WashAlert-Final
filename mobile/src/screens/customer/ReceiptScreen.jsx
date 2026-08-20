@@ -63,16 +63,25 @@ export default function ReceiptScreen({ navigation, route }) {
   // unpaid GCash order, continue into the payment step (it previously did this from the
   // modal's onConfirmed/onRejected callbacks).
   //
-  // navigate(name, params) — not the deprecated navigate({name, params, merge}) object form —
-  // is what actually merges params into an existing screen already in the stack (OrderDetail,
-  // since Receipt was pushed from it) while leaving its other params, like orderId, untouched.
-  // The object form logged a "Passing an object... is deprecated" warning and, worse, replaced
-  // OrderDetail's whole params object instead of merging into it: orderId was lost, order
-  // stayed null after the refetch, and OrderDetailScreen fell into its own "Order not found"
-  // fallback — confirmed by a captured logcat (the deprecation warning) alongside a screen
-  // recording showing exactly that error after confirming a receipt.
+  // React Navigation v7's navigate(name, params, options) defaults BOTH `merge` and `pop` to
+  // false (verified in the installed @react-navigation/routers StackRouter source and
+  // @react-navigation/core types). Without merge:true the router calls createParamsFromAction,
+  // which builds params from initialParams + the new params only and DISCARDS the route's
+  // existing params — so OrderDetail lost its orderId, refetched nothing, and rendered its own
+  // "Order not found" fallback. That also silently broke the GCash step: the receiptOutcome
+  // effect then evaluated a null order, so it couldn't tell the order was GCash and fell
+  // through to the generic "confirmed" alert instead of opening checkout.
+  //
+  // merge:true keeps orderId (and any other existing params) intact; pop:true returns to the
+  // OrderDetail already in the stack instead of pushing a second copy of it. orderId is also
+  // passed explicitly so this no longer depends on merge semantics alone.
   const closeWith = (outcome) => {
-    navigation.navigate('OrderDetail', { receiptOutcome: outcome, receiptOutcomeAt: Date.now() });
+    const orderId = fullOrderData?.id ?? fullOrderData?.dbId ?? orderData?.id ?? orderData?.dbId;
+    navigation.navigate(
+      'OrderDetail',
+      { ...(orderId ? { orderId } : {}), receiptOutcome: outcome, receiptOutcomeAt: Date.now() },
+      { merge: true, pop: true }
+    );
   };
 
   const onConfirmed = () => closeWith('confirmed');
