@@ -29,6 +29,7 @@ import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
 import com.washalert.washalertbackend.user.UserRepository;
 import com.washalert.washalertbackend.orders.dto.*;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -65,6 +66,13 @@ public class JobOrderService {
     // or in dense urban areas) while still rejecting confirmations from clearly elsewhere.
     private static final double GEOFENCE_RADIUS_METERS = 150.0;
     private static final double EARTH_RADIUS_METERS = 6_371_000.0;
+
+    // Defaults to enforced (true) so production behavior is unchanged unless explicitly
+    // overridden. Set WASHALERT_GEOFENCE_ENFORCE=false on a test/staging deployment only, to
+    // test the driver flow without being physically at the branch/customer address — never
+    // set this on production.
+    @Value("${washalert.geofence.enforce:true}")
+    private boolean geofenceEnforced;
 
     private final JobOrderRepository repo;
     private final JobOrderStatusHistoryRepository historyRepository;
@@ -1105,6 +1113,11 @@ public class JobOrderService {
     // blocking a legitimate driver.
     private void enforceGeofence(Double driverLat, Double driverLng, Double targetLat, Double targetLng,
             String targetLabel) {
+        if (!geofenceEnforced) {
+            log.warn("Geofence enforcement is DISABLED (washalert.geofence.enforce=false) — "
+                    + "skipping proximity check for {}. This must never be set on production.", targetLabel);
+            return;
+        }
         if (targetLat == null || targetLng == null) {
             log.warn("Skipping geofence check for {} — no stored coordinates.", targetLabel);
             return;
