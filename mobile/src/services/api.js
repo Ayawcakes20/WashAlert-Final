@@ -1664,12 +1664,20 @@ export const driverOrders = {
     };
   },
   startPickupLeg: async (id) => await apiRequest(`/api/orders/${id}/driver/start-pickup-leg`, { method: 'PUT' }),
-  confirmLaundryCollected: async (id) => await apiRequest(`/api/orders/${id}/driver/confirm-laundry-collected`, { method: 'PUT' }),
-  confirmArrivedAtBranch: async (id) => await apiRequest(`/api/orders/${id}/driver/confirm-arrived-at-branch`, { method: 'PUT' }),
-  startDeliveryLeg: async (id) => await apiRequest(`/api/orders/${id}/driver/start-delivery-leg`, { method: 'PUT' }),
-  confirmDelivery: async (id, { codCollected }) => await apiRequest(`/api/orders/${id}/driver/confirm-delivery`, {
+  // latitude/longitude are the driver's current position, required so the backend can enforce
+  // the geofence (driver must be within 150m of the target address/branch to confirm).
+  confirmLaundryCollected: async (id, { latitude, longitude }) => await apiRequest(`/api/orders/${id}/driver/confirm-laundry-collected`, {
     method: 'PUT',
-    body: { codCollected }
+    body: { latitude, longitude }
+  }),
+  confirmArrivedAtBranch: async (id, { latitude, longitude }) => await apiRequest(`/api/orders/${id}/driver/confirm-arrived-at-branch`, {
+    method: 'PUT',
+    body: { latitude, longitude }
+  }),
+  startDeliveryLeg: async (id) => await apiRequest(`/api/orders/${id}/driver/start-delivery-leg`, { method: 'PUT' }),
+  confirmDelivery: async (id, { codCollected, latitude, longitude }) => await apiRequest(`/api/orders/${id}/driver/confirm-delivery`, {
+    method: 'PUT',
+    body: { codCollected, latitude, longitude }
   }),
   getById: async (id) => {
     try {

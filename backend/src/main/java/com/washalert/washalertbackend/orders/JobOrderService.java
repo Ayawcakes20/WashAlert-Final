@@ -60,6 +60,12 @@ import com.washalert.washalertbackend.delivery.DeliveryStatus;
 @Service
 public class JobOrderService {
 
+    // Max distance (meters) a driver may be from the target address/branch to confirm
+    // arrival there. 150m tolerates normal phone-GPS drift (commonly 10-50m, more indoors
+    // or in dense urban areas) while still rejecting confirmations from clearly elsewhere.
+    private static final double GEOFENCE_RADIUS_METERS = 150.0;
+    private static final double EARTH_RADIUS_METERS = 6_371_000.0;
+
     private final JobOrderRepository repo;
     private final JobOrderStatusHistoryRepository historyRepository;
     private final JobOrderTimelineService timelineService;
@@ -1082,8 +1088,42 @@ public class JobOrderService {
         return response;
     }
 
+    // Haversine great-circle distance in meters between two lat/lng points.
+    private double distanceMeters(double lat1, double lng1, double lat2, double lng2) {
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return EARTH_RADIUS_METERS * c;
+    }
+
+    // Rejects the confirmation if the driver's reported position is further than
+    // GEOFENCE_RADIUS_METERS from the target coordinates. If the target has no stored
+    // coordinates (a data gap, not the driver's fault), the check is skipped rather than
+    // blocking a legitimate driver.
+    private void enforceGeofence(Double driverLat, Double driverLng, Double targetLat, Double targetLng,
+            String targetLabel) {
+        if (targetLat == null || targetLng == null) {
+            log.warn("Skipping geofence check for {} — no stored coordinates.", targetLabel);
+            return;
+        }
+        if (driverLat == null || driverLng == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Your location could not be determined. Please enable location services and try again.");
+        }
+        double distance = distanceMeters(driverLat, driverLng, targetLat, targetLng);
+        if (distance > GEOFENCE_RADIUS_METERS) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    String.format("You are %.0fm away from %s. Move within %.0fm to confirm.",
+                            distance, targetLabel, GEOFENCE_RADIUS_METERS));
+        }
+    }
+
     @Transactional
-    public JobOrderResponse confirmLaundryCollected(Long id, AuthUserDetails principal) {
+    public JobOrderResponse confirmLaundryCollected(Long id, Double driverLat, Double driverLng,
+            AuthUserDetails principal) {
         JobOrder order = findByIdOrThrow(id);
         if (order.getStatus() != JobOrderStatus.EN_ROUTE_TO_CUSTOMER) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid status for laundry collection.");
@@ -1093,6 +1133,8 @@ public class JobOrderService {
                 || !order.getAssignedPickupDriver().getId().equals(driver.getId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not the assigned pickup rider.");
         }
+        enforceGeofence(driverLat, driverLng, order.getDeliveryLatitude(), order.getDeliveryLongitude(),
+                "the customer's address");
 
         order.setStatus(JobOrderStatus.LAUNDRY_COLLECTED);
         order.setLaundryCollectedAt(LocalDateTime.now());
@@ -1123,7 +1165,8 @@ public class JobOrderService {
     }
 
     @Transactional
-    public JobOrderResponse confirmArrivedAtBranch(Long id, AuthUserDetails principal) {
+    public JobOrderResponse confirmArrivedAtBranch(Long id, Double driverLat, Double driverLng,
+            AuthUserDetails principal) {
         JobOrder order = findByIdOrThrow(id);
         if (order.getStatus() != JobOrderStatus.LAUNDRY_COLLECTED) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid status for branch arrival.");
@@ -1133,6 +1176,8 @@ public class JobOrderService {
                 || !order.getAssignedPickupDriver().getId().equals(driver.getId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not the assigned pickup rider.");
         }
+        enforceGeofence(driverLat, driverLng, order.getBranchLatitude(), order.getBranchLongitude(),
+                "the branch");
 
         order.setStatus(JobOrderStatus.ORDER_RECEIVED);
         order.setArrivedAtBranchAt(LocalDateTime.now());
@@ -1248,13 +1293,16 @@ public class JobOrderService {
     }
 
     @Transactional
-    public JobOrderResponse confirmDelivery(Long id, boolean codCollected, AuthUserDetails principal) {
+    public JobOrderResponse confirmDelivery(Long id, boolean codCollected, Double driverLat, Double driverLng,
+            AuthUserDetails principal) {
         JobOrder order = findByIdOrThrow(id);
         User driver = principal.getUser();
         if (order.getAssignedDeliveryDriver() == null
                 || !order.getAssignedDeliveryDriver().getId().equals(driver.getId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not the assigned delivery rider.");
         }
+        enforceGeofence(driverLat, driverLng, order.getDeliveryLatitude(), order.getDeliveryLongitude(),
+                "the customer's address");
 
         // Enforce the same state machine and payment gate as the staff-driven updateStatus()
         // path — this method previously set DELIVERED unconditionally, letting a driver jump
