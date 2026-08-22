@@ -187,7 +187,7 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
             <View style={S.qrContainer}>
               <Text style={S.qrLabel}>Scan QR to Pay</Text>
               <Image
-                source={require('../../assets/images/gcash_qr.jpg')}
+                source={require('../../assets/images/qrph_paymongo.jpg')}
                 style={S.qrImage}
                 resizeMode="contain"
               />
