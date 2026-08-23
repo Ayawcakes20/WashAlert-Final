@@ -199,7 +199,7 @@ export default function ReceiptScreen({ navigation, route }) {
 
           <View style={S.receiptDivider} />
 
-          <ScrollView style={S.scroll} contentContainerStyle={S.scrollContent} showsVerticalScrollIndicator={false}>
+          <ScrollView style={S.scroll} contentContainerStyle={S.scrollContent} showsVerticalScrollIndicator={false} bounces={true} overScrollMode="always" nestedScrollEnabled={true}>
             {/* Header */}
             <View style={S.receiptHeader}>
               <View style={S.logoWrapper}>
@@ -377,7 +377,7 @@ const S = StyleSheet.create({
   headerSpacer: { width: 40 },
   receiptDivider: { height: 1, backgroundColor: '#E2E8F0', marginBottom: 0 },
   scroll: { flex: 1 },
-  scrollContent: { padding: 24, paddingBottom: 120 },
+  scrollContent: { padding: 24, paddingBottom: 200 },
   receiptHeader: { alignItems: 'center', marginBottom: 16 },
   logoWrapper: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 10 },
   logoImg: { width: 40, height: 40 },

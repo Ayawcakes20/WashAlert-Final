@@ -274,24 +274,8 @@ export default function BookingScreen({ route, navigation }) {
     setFabQtyMap({ charm: 0, downy: 0 });
   },[computedLoadCount]);
 
-  // Re-clamp stored qtys to available stock when availability is loaded
-  useEffect(()=>{
-    if(!supplyAvail) return;
-    setDetQtyMap(m=>{
-      const next={...m};
-      supplyAvail.detergent?.forEach(item=>{
-        if((next[item.id]??0)>item.availableQty) next[item.id]=item.availableQty;
-      });
-      return next;
-    });
-    setFabQtyMap(m=>{
-      const next={...m};
-      supplyAvail.conditioner?.forEach(item=>{
-        if((next[item.id]??0)>item.availableQty) next[item.id]=item.availableQty;
-      });
-      return next;
-    });
-  },[supplyAvail]);
+  // NOTE: Removed auto-clamp that forced qty down to availableQty.
+  // Customers are free to pick any quantity. Backend validates at booking time.
 
   // Scroll to top ONLY when the booking step actually changes (not on addon selection,
   // quantity tweaks, or any other state change that leaves `step` the same).
