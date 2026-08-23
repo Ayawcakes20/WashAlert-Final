@@ -760,14 +760,8 @@ export default function BookingScreen({ route, navigation }) {
                     <TouchableOpacity
                       onPress={()=>{
                         if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
-                        const stockMax = (avail?.availableQty != null && avail.availableQty > 0) ? avail.availableQty : 99;
                         setDet(o.id);
-                        const cur = detQtyMap[o.id] ?? 0;
-                        if(stockMax !== Infinity && cur >= stockMax){
-                          showToast(`Only ${stockMax} sachet(s) of ${avail?.label||o.label} available at this branch.`);
-                          return;
-                        }
-                        setDetQtyMap(m=>({...m,[o.id]:cur+1}));
+                        setDetQtyMap(m=>({...m,[o.id]:(m[o.id]??0)+1}));
                         setStockError(null);
                       }}
                       style={{width:28,height:28,borderRadius:14,backgroundColor:isOut?'#D1D5DB':colors.primary,alignItems:'center',justifyContent:'center'}}
@@ -864,14 +858,8 @@ export default function BookingScreen({ route, navigation }) {
                     <TouchableOpacity
                       onPress={()=>{
                         if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
-                        const stockMax = (avail?.availableQty != null && avail.availableQty > 0) ? avail.availableQty : 99;
                         setFab(o.id);
-                        const cur = fabQtyMap[o.id] ?? 0;
-                        if(stockMax !== Infinity && cur >= stockMax){
-                          showToast(`Only ${stockMax} sachet(s) of ${avail?.label||o.label} available at this branch.`);
-                          return;
-                        }
-                        setFabQtyMap(m=>({...m,[o.id]:cur+1}));
+                        setFabQtyMap(m=>({...m,[o.id]:(m[o.id]??0)+1}));
                         setStockError(null);
                       }}
                       style={{width:28,height:28,borderRadius:14,backgroundColor:isOut?'#D1D5DB':colors.primary,alignItems:'center',justifyContent:'center'}}
