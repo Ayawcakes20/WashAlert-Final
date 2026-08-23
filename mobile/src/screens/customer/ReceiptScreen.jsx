@@ -187,7 +187,7 @@ export default function ReceiptScreen({ navigation, route }) {
   });
 
   return (
-    <SafeAreaView style={S.screen} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={S.screen} edges={['top', 'left', 'right', 'bottom']}>
       <View style={S.card}>
           <View style={S.headerControls}>
             <TouchableOpacity style={S.backBtn} onPress={onDismiss} activeOpacity={0.7}>
@@ -377,7 +377,7 @@ const S = StyleSheet.create({
   headerSpacer: { width: 40 },
   receiptDivider: { height: 1, backgroundColor: '#E2E8F0', marginBottom: 0 },
   scroll: { flex: 1 },
-  scrollContent: { padding: 24, paddingBottom: 40 },
+  scrollContent: { padding: 24, paddingBottom: 120 },
   receiptHeader: { alignItems: 'center', marginBottom: 16 },
   logoWrapper: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 10 },
   logoImg: { width: 40, height: 40 },

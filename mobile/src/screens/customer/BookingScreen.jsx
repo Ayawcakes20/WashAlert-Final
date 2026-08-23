@@ -749,6 +749,7 @@ export default function BookingScreen({ route, navigation }) {
                   onPress={()=>{
                     if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                     setDet(o.id);
+                    setDetQtyMap(m => ({ ...m, [o.id]: (m[o.id] && m[o.id] > 0) ? m[o.id] : 1 }));
                     setStockError(null);
                   }}
                   activeOpacity={0.8}
@@ -775,10 +776,10 @@ export default function BookingScreen({ route, navigation }) {
                     <TouchableOpacity
                       onPress={()=>{
                         if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
-                        const stockMax = avail?.availableQty ?? Infinity;
+                        const stockMax = (avail?.availableQty != null && avail.availableQty > 0) ? avail.availableQty : 99;
                         setDet(o.id);
                         const cur = detQtyMap[o.id] ?? 0;
-                        if(stockMax!==Infinity && cur>=stockMax){
+                        if(stockMax !== Infinity && cur >= stockMax){
                           showToast(`Only ${stockMax} sachet(s) of ${avail?.label||o.label} available at this branch.`);
                           return;
                         }
@@ -852,6 +853,7 @@ export default function BookingScreen({ route, navigation }) {
                   onPress={()=>{
                     if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
                     setFab(o.id);
+                    setFabQtyMap(m => ({ ...m, [o.id]: (m[o.id] && m[o.id] > 0) ? m[o.id] : 1 }));
                     setStockError(null);
                   }}
                   activeOpacity={0.8}
@@ -878,10 +880,10 @@ export default function BookingScreen({ route, navigation }) {
                     <TouchableOpacity
                       onPress={()=>{
                         if(isOut){ showToast(`${o.label} is currently out of stock at this branch.`); return; }
-                        const stockMax = avail?.availableQty ?? Infinity;
+                        const stockMax = (avail?.availableQty != null && avail.availableQty > 0) ? avail.availableQty : 99;
                         setFab(o.id);
                         const cur = fabQtyMap[o.id] ?? 0;
-                        if(stockMax!==Infinity && cur>=stockMax){
+                        if(stockMax !== Infinity && cur >= stockMax){
                           showToast(`Only ${stockMax} sachet(s) of ${avail?.label||o.label} available at this branch.`);
                           return;
                         }
