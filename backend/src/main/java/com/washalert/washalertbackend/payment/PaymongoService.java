@@ -71,7 +71,7 @@ public class PaymongoService {
         attributes.put("show_description", true);
         attributes.put("show_line_items", true);
         attributes.put("line_items", List.of(lineItem));
-        attributes.put("payment_method_types", List.of("gcash"));
+        attributes.put("payment_method_types", List.of("qrph", "gcash", "paymaya"));
         attributes.put("description", "Laundry Order Payment for " + order.getTrackingNumber());
         attributes.put("reference_number", order.getTrackingNumber());
         attributes.put("success_url", "washalertmobile://payment-success?tracking=" + order.getTrackingNumber());

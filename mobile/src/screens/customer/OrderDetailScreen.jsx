@@ -445,7 +445,39 @@ export default function OrderDetailScreen({ route, navigation }) {
     ? order.timeline
     : STEPS.map((s,i) => ({step:s.label, time: i===0?order.date:'', done:i<=idx})));
 
-  const payNow = () => {
+  const payNow = async () => {
+    try {
+      setPaying(true);
+      const tracking = order?.trackingNumber || String(order?.id || '');
+      const result = await payments.initiateGcashCheckout(tracking || order);
+      const checkoutUrl = result?.checkoutUrl;
+      if (checkoutUrl) {
+        await WebBrowser.openBrowserAsync(checkoutUrl);
+
+        const refreshed = await load();
+        if (isPaymentSettled(refreshed || order)) {
+          navigation.navigate('PaymentSuccess', {
+            trackingNumber: tracking,
+            amount: resolveTotal(refreshed || order),
+          });
+        } else {
+          Alert.alert(
+            'Payment Verification',
+            "Did you complete the payment via QRPh / GCash? If needed, you can also upload your receipt screenshot manually.",
+            [
+              { text: 'Upload Receipt Proof', onPress: () => setShowGcashQrModal(true) },
+              { text: 'Close', style: 'cancel' },
+            ]
+          );
+        }
+        return;
+      }
+    } catch (err) {
+      console.warn('[OrderDetailScreen] PayMongo live checkout failed:', err);
+      setShowGcashQrModal(true);
+    } finally {
+      setPaying(false);
+    }
     setShowGcashQrModal(true);
   };
 
