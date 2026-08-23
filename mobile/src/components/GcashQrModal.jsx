@@ -170,7 +170,7 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
         <View style={S.card}>
           {/* Header */}
           <View style={S.header}>
-            <Text style={S.title}>GCash Transfer</Text>
+            <Text style={S.title}>GCash / QRPH Payment</Text>
             <TouchableOpacity onPress={handleClose} disabled={loading} style={S.closeBtn}>
               <Ionicons name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
@@ -181,11 +181,14 @@ export default function GcashQrModal({ visible, order, branchPhone, onClose, onP
             <View style={S.amountBox}>
               <Text style={S.amountLabel}>AMOUNT TO PAY</Text>
               <Text style={S.amountVal}>{fmt(amountToPay)}</Text>
+              {trackingNumber ? (
+                <Text style={S.orderTrackingTxt}>Order: {String(trackingNumber).startsWith('WA-') ? trackingNumber : `WA-${trackingNumber}`}</Text>
+              ) : null}
             </View>
 
             {/* QR Code Container */}
             <View style={S.qrContainer}>
-              <Text style={S.qrLabel}>Scan QR to Pay</Text>
+              <Text style={S.qrLabel}>Scan QR Code to Pay (QRPh / GCash)</Text>
               <Image
                 source={require('../../assets/images/qrph_paymongo.jpg')}
                 style={S.qrImage}
@@ -286,6 +289,7 @@ const S = StyleSheet.create({
   amountBox: { backgroundColor: '#F8FAFC', borderRadius: 16, padding: 16, alignItems: 'center', borderStyle: 'solid', borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 },
   amountLabel: { fontSize: 10, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.8 },
   amountVal: { fontSize: 26, fontWeight: '900', color: colors.primary, marginTop: 4 },
+  orderTrackingTxt: { fontSize: 12, fontWeight: '700', color: colors.textSecondary, marginTop: 4 },
   qrContainer: { alignItems: 'center', marginBottom: 16, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 16, padding: 16 },
   qrLabel: { fontSize: 14, fontWeight: '800', color: colors.text, marginBottom: 8 },
   qrImage: { width: SW * 0.65, height: SW * 0.65, marginBottom: 10 },

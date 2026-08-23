@@ -988,12 +988,12 @@ export default function BookingScreen({ route, navigation }) {
               {payMethod==='cod'&&<Ionicons name="checkmark-circle" size={18} color="#fff"/>}
             </TouchableOpacity>
 
-            {/* GCash — selectable for testing; saves paymentMethod: 'gcash' only, does not call PayMongo */}
+            {/* GCash payment option */}
             <TouchableOpacity style={[S.payCard,payMethod==='gcash'&&S.payCardOn]} onPress={()=>setPay('gcash')} activeOpacity={0.8}>
               <MaterialCommunityIcons name="cellphone-wireless" size={22} color={payMethod==='gcash'?'#fff':colors.primary}/>
               <View style={{flex:1}}>
-                <Text style={[S.payName,payMethod==='gcash'&&S.payNameOn]}>GCash</Text>
-                <Text style={{fontSize:11,color:payMethod==='gcash'?'rgba(255,255,255,0.7)':colors.textSecondary}}>Pay online via GCash or QRPh powered by PayMongo</Text>
+                <Text style={[S.payName,payMethod==='gcash'&&S.payNameOn]}>GCash / QRPh</Text>
+                <Text style={{fontSize:11,color:payMethod==='gcash'?'rgba(255,255,255,0.7)':colors.textSecondary}}>Scan QRPh / GCash QR code and upload payment receipt</Text>
               </View>
               {payMethod==='gcash'&&<Ionicons name="checkmark-circle" size={18} color="#fff"/>}
             </TouchableOpacity>

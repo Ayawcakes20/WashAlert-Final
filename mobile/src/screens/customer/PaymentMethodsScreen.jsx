@@ -14,8 +14,8 @@ const PaymentMethodsScreen = () => {
           <View style={styles.row}>
             <Ionicons name="card-outline" size={20} color={colors.primary} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.title}>GCash</Text>
-              <Text style={styles.desc}>Online checkout opens after booking confirmation.</Text>
+              <Text style={styles.title}>GCash / QRPh</Text>
+              <Text style={styles.desc}>Scan QRPh / GCash QR code and upload payment receipt.</Text>
             </View>
           </View>
         </View>

@@ -303,12 +303,7 @@ export default function OrderDetailScreen({ route, navigation }) {
       // backend considers GCash (e.g. "GCASH_ONLINE") and silently skip the payment step.
       const isGcash = String(target?.paymentMethod || '').toUpperCase().includes('GCASH');
       if (isGcash && !isPaymentSettled(target)) {
-        // Goes through the same live PayMongo checkout as the "Pay Now" button (payNow, below)
-        // instead of opening the static QR image directly. That static modal predates the live
-        // checkout (see git history: d2538fe added it, f9aff27/1ec4a84 added the live PayMongo
-        // flow afterward) and was never wired up to try the live checkout first here — it's
-        // still the fallback payNow() uses if the live checkout call itself fails, so this
-        // keeps that safety net while making the real payment flow the primary path.
+        // Open the QRPh GCash modal for scanning & receipt upload
         payNow();
       } else {
         Alert.alert('✅ Confirmed!', 'Price confirmed! We are now washing your laundry.');
@@ -450,51 +445,7 @@ export default function OrderDetailScreen({ route, navigation }) {
     ? order.timeline
     : STEPS.map((s,i) => ({step:s.label, time: i===0?order.date:'', done:i<=idx})));
 
-  const payNow = async () => {
-    try {
-      setPaying(true);
-      const tracking = order?.trackingNumber || String(order?.id || '');
-      const result = await payments.initiateGcashCheckout(tracking || order);
-      const checkoutUrl = result?.checkoutUrl;
-      if (checkoutUrl) {
-        await WebBrowser.openBrowserAsync(checkoutUrl);
-
-        // openBrowserAsync resolves when the browser is DISMISSED, which says nothing about
-        // whether payment actually happened — the customer may have closed the tab, or been
-        // unable to pay at all (e.g. PayMongo rendering "No payment methods are available"
-        // when GCash isn't activated on the account). Previously this navigated straight to
-        // PaymentSuccess regardless, reporting a success that never occurred.
-        //
-        // load() re-fetches through bookings.getById, which already performs an active
-        // payment re-verification against the backend for unpaid GCash orders, so the
-        // refreshed order reflects real payment state.
-        const refreshed = await load();
-        if (isPaymentSettled(refreshed || order)) {
-          navigation.navigate('PaymentSuccess', {
-            trackingNumber: tracking,
-            amount: resolveTotal(refreshed || order),
-          });
-        } else {
-          Alert.alert(
-            'Payment Not Completed',
-            "We didn't receive a completed payment for this order. You can try the online checkout again, or pay by scanning the branch GCash QR and uploading your receipt.",
-            [
-              { text: 'Pay via QR instead', onPress: () => setShowGcashQrModal(true) },
-              { text: 'Close', style: 'cancel' },
-            ]
-          );
-        }
-        return;
-      }
-    } catch (err) {
-      console.warn('[OrderDetailScreen] PayMongo live checkout failed:', err);
-      Alert.alert(
-        'PayMongo Online Checkout',
-        err.message || 'Unable to open live PayMongo checkout page. Falling back to manual receipt upload.'
-      );
-    } finally {
-      setPaying(false);
-    }
+  const payNow = () => {
     setShowGcashQrModal(true);
   };
 
