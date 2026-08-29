@@ -1,6 +1,5 @@
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
-import appMockup from "@/assets/app-mockup.png";
 
 export default function AppSection() {
   return (
@@ -60,12 +59,52 @@ export default function AppSection() {
             <div className="relative">
               <div className="absolute inset-0 rounded-[2.8rem] bg-primary/15 blur-2xl scale-110 -z-10" />
               <div className="w-[200px] h-[400px] bg-[#0f1923] rounded-[2.2rem] p-[8px] shadow-2xl ring-1 ring-white/10">
-                <div className="w-full h-full bg-[#1a2b3c] rounded-[1.8rem] overflow-hidden">
-                  <img
-                    src={appMockup}
-                    alt="WashAlert App"
-                    className="w-full h-full object-cover object-top"
-                  />
+                {/* Punch-hole front camera (Android style) */}
+                <div className="absolute top-[13px] left-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-[#0f1923] ring-1 ring-white/10 z-20" />
+                {/* Screen — mirrors the real app's Home tab layout */}
+                <div className="w-full h-full bg-white rounded-[1.8rem] overflow-hidden flex flex-col text-left">
+                  <div className="bg-primary pt-5 pb-3 px-3">
+                    <p className="text-primary-foreground text-xs font-bold tracking-tight">WashAlert</p>
+                  </div>
+
+                  <div className="flex-1 overflow-hidden px-3 pt-3 space-y-3">
+                    <p className="text-[11px] font-extrabold text-foreground">Our Laundry Services.</p>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-lg border border-border p-2">
+                        <span className="inline-block text-[7px] font-semibold px-1 py-0.5 rounded-full bg-[#D6EAF8] text-[#2E86C1] mb-1.5">Standard</span>
+                        <p className="text-[9px] font-bold text-foreground">Wash</p>
+                        <p className="text-[8px] text-muted-foreground">₱80 / 7kg</p>
+                      </div>
+                      <div className="rounded-lg border border-border p-2">
+                        <span className="inline-block text-[7px] font-semibold px-1 py-0.5 rounded-full bg-[#FFF1F2] text-[#E11D48] mb-1.5">Standard</span>
+                        <p className="text-[9px] font-bold text-foreground">Dry</p>
+                        <p className="text-[8px] text-muted-foreground">₱90 / 7kg</p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-[9px] font-extrabold text-foreground mb-1.5">Active Orders</p>
+                      <div className="rounded-lg bg-muted/60 p-2 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[8px] font-semibold text-foreground">Order #WA-1042</span>
+                          <span className="text-[6.5px] font-semibold px-1 py-0.5 rounded-full bg-primary/15 text-primary">Washing</span>
+                        </div>
+                        <div className="h-1 rounded-full bg-border overflow-hidden">
+                          <div className="h-full w-3/5 rounded-full bg-primary" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-around border-t border-border py-2 bg-white">
+                    {["Home", "Orders", "Book", "Alerts", "Profile"].map((label, i) => (
+                      <div key={label} className="flex flex-col items-center gap-0.5">
+                        <div className={`w-3 h-3 rounded-full ${i === 0 ? "bg-primary" : "bg-muted-foreground/30"}`} />
+                        <span className={`text-[5px] font-medium ${i === 0 ? "text-primary" : "text-muted-foreground"}`}>{label}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
