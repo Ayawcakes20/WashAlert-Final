@@ -41,6 +41,20 @@ export default function Navbar() {
 
   return (
     <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${navBg}`}>
+      {/* The hero behind this nav is a multi-slide carousel, and not every slide is dark —
+          this fixed white nav text becomes unreadable on lighter slides (e.g. a bright,
+          washed-out laundromat photo). A gradient scrim, not per-slide color detection, is
+          the standard fix for text-over-photo-carousel (the site's own hero sections use the
+          same technique): it keeps white nav text legible regardless of which slide is behind
+          it, without needing to know anything about the image. Only shown in the transparent/
+          unscrolled state — once scrolled or off the home page, navBg already provides a solid
+          background and dark text, so the scrim would be redundant there. */}
+      {!scrolled && isHome && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-black/45 via-black/15 to-transparent"
+        />
+      )}
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-[1400px] h-16 lg:h-20 flex items-center">
         {/* Logo */}
