@@ -47,7 +47,7 @@ const BRANCH_CATALOG = [
     name: 'Makati Branch',
     city: 'Makati City',
     address: '7605 Dela Rosa, Corner Wilson Street (inside R&R Carwash), Makati City, Metro Manila',
-    phone: '0969 173 7924',
+    phone: '0915 593 3098',
     hours: '7:00 AM - 10:00 PM',
     distance: 0.0,
     rating: 4.8,

@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { motion } from "framer-motion";
 import logoTriplets from "@/assets/logo-triplets.jpg";
+import heroDetergent from "@/assets/hero-detergent.png";
 import { authApi } from "@/lib/api";
 import { firebaseAuthApi } from "@/lib/firebaseAuth";
 import { saveFirebaseWebSession, saveSessionUser, clearFirebaseWebSession } from "@/lib/session";
@@ -178,36 +179,84 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background relative overflow-hidden">
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-secondary/20 blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full bg-primary/5 blur-3xl" />
+    <div className="min-h-screen flex bg-background">
+      {/* Brand panel — same hero photography as the public marketing site, so the login
+          page reads as part of the same product instead of a generic auth-template card.
+          Hidden below lg: the form still needs to be the whole screen on small viewports. */}
+      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
+        <img
+          src={heroDetergent}
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        <div className="absolute inset-0 gradient-navy opacity-90" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/10" />
+
+        <div className="relative z-10 flex h-full w-full flex-col justify-between p-12 text-primary-foreground">
+          <Link to="/" className="flex items-center gap-3 w-fit">
+            <img
+              src={logoTriplets}
+              alt="Triplets Laundry"
+              className="h-11 w-11 rounded-full object-cover ring-2 ring-white/30"
+            />
+            <span className="text-lg font-bold tracking-tight">WashAlert</span>
+          </Link>
+
+          <div className="max-w-md">
+            <p className="text-xs font-semibold uppercase tracking-widest text-secondary mb-4">
+              Management Portal
+            </p>
+            <h1 className="text-4xl md:text-5xl font-bold leading-tight mb-5">
+              Welcome back to WashAlert
+            </h1>
+            <p className="text-white/75 text-base leading-relaxed">
+              Manage bookings, track live deliveries, and keep every branch of Triplets
+              LaundryHubs and SpeedyWash running smoothly.
+            </p>
+          </div>
+
+          <p className="text-xs text-white/50">
+            WashAlert Copyright 2025 — Triplets LaundryHubs and SpeedyWash
+          </p>
+        </div>
       </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="relative z-10 w-full max-w-md mx-4"
-      >
-        <div className="glass-card-elevated rounded-2xl p-8 md:p-10">
+      {/* Form panel */}
+      <div className="flex-1 flex items-center justify-center p-6 relative overflow-hidden">
+        <div className="absolute inset-0 overflow-hidden lg:hidden">
+          <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-secondary/20 blur-3xl" />
+          <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full bg-primary/5 blur-3xl" />
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className="relative z-10 w-full max-w-sm"
+        >
           <button
             onClick={() => navigate("/")}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-6 transition-colors"
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-8 transition-colors"
           >
             <ArrowLeft className="h-3.5 w-3.5" /> Back to Home
           </button>
 
-          <div className="flex flex-col items-center mb-8">
-            <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="flex items-center justify-center mb-4">
-              <img
-                src={logoTriplets}
-                alt="Triplets Laundry"
-                className="h-20 w-20 rounded-full object-cover ring-2 ring-secondary/50 shadow-md"
-              />
-            </motion.div>
+          {/* Logo + heading only shown here below lg, where the brand panel is hidden */}
+          <div className="flex flex-col items-center mb-8 lg:hidden">
+            <img
+              src={logoTriplets}
+              alt="Triplets Laundry"
+              className="h-16 w-16 rounded-full object-cover ring-2 ring-secondary/50 shadow-md mb-4"
+            />
             <h1 className="text-2xl font-bold text-foreground tracking-tight">WashAlert</h1>
-            <p className="text-sm text-muted-foreground mt-1">Sign in to the Management System</p>
+          </div>
+
+          <div className="mb-8 hidden lg:block">
+            <h2 className="text-2xl font-bold text-foreground tracking-tight">Sign in</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Enter your credentials to access the management system.
+            </p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
@@ -287,11 +336,11 @@ export default function LoginPage() {
             Internal accounts are created by an administrator.
           </p>
 
-          <p className="text-center text-xs text-muted-foreground mt-4">
+          <p className="text-center text-xs text-muted-foreground mt-4 lg:hidden">
             WashAlert Copyright 2025 - Triplets LaundryHubs and SpeedyWash
           </p>
-        </div>
-      </motion.div>
+        </motion.div>
+      </div>
     </div>
   );
 }
