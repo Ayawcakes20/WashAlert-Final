@@ -9,6 +9,8 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { bookings as bookingsApi, branches as branchesApi, payments } from '../../services/api';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
+import * as Sharing from 'expo-sharing';
+import ViewShot from 'react-native-view-shot';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { useFocusEffect } from '@react-navigation/native';
@@ -170,6 +172,57 @@ const Row = ({ label, value, valueStyle }) => (
   </View>
 );
 
+// Renders the same receipt data as handleShareReceiptAsText's plain-text version, but as a
+// styled card so it can be captured to a PNG by ViewShot (GcashQrModal already, this mirrors
+// how GCash saves receipts as photos instead of raw text).
+const ReceiptCard = ({ order, fields }) => {
+  const { tracking, branch, customer, date, service, fmt } = fields;
+  return (
+    <View style={styles.receiptCard}>
+      <Text style={styles.receiptCardTitle}>WashAlert Receipt</Text>
+      <View style={styles.receiptCardDivider} />
+      <Row label="Branch" value={branch} />
+      <Row label="Order" value={tracking} />
+      <Row label="Date" value={date} />
+      <View style={styles.receiptCardDivider} />
+      <Row label="Customer" value={customer} />
+      {order.customerPhone ? <Row label="Phone" value={order.customerPhone} /> : null}
+      <Row label="Service" value={service} />
+      <Row label="Type" value={order.serviceTypeRaw === 'PICKUP_DELIVERY' ? 'Pickup & Delivery' : 'Drop-Off'} />
+      {order.loadSize ? (
+        <Row label="Load" value={String(order.loadSize).charAt(0) + String(order.loadSize).slice(1).toLowerCase()} />
+      ) : null}
+      {order.laundryType ? <Row label="Laundry" value={order.laundryType} /> : null}
+      {order.estimatedWeightKg ? <Row label="Est. Weight" value={`${order.estimatedWeightKg} kg`} /> : null}
+      {order.actualWeightKg ? <Row label="Actual Weight" value={`${order.actualWeightKg} kg`} /> : null}
+      <View style={styles.receiptCardDivider} />
+      {order.servicePrice > 0 ? <Row label={service} value={fmt(order.servicePrice)} /> : null}
+      {order.rushPrice > 0 ? <Row label="Rush Fee" value={fmt(order.rushPrice)} /> : null}
+      {order.detergent && order.detergent !== 'None' && order.detergent !== 'Customer Provided' ? (
+        <Row
+          label={`Detergent (×${order.detergentQty || 1})`}
+          value={fmt((order.detergent.toLowerCase().includes('ariel') ? 30 : 25) * (order.detergentQty || 1))}
+        />
+      ) : null}
+      {order.conditioner && order.conditioner !== 'None' && order.conditioner !== 'Customer Provided' ? (
+        <Row
+          label={`Conditioner (×${order.conditionerQty || 1})`}
+          value={fmt((order.conditioner.toLowerCase().includes('downy') ? 25 : 15) * (order.conditionerQty || 1))}
+        />
+      ) : null}
+      {order.deliveryPrice > 0 ? <Row label="Delivery Fee" value={fmt(order.deliveryPrice)} /> : null}
+      <View style={styles.receiptCardDivider} />
+      <Row label="TOTAL DUE" value={fmt(resolveTotal(order))} valueStyle={styles.receiptCardTotal} />
+      <View style={styles.receiptCardDivider} />
+      <Row label="Payment" value={(order.paymentMethod || 'Cash on Delivery').replace(/_/g, ' ')} />
+      {order.paymentStatus ? <Row label="Status" value={order.paymentStatus} /> : null}
+      <View style={styles.receiptCardDivider} />
+      <Text style={styles.receiptCardFooter}>Thank you for choosing WashAlert!</Text>
+      <Text style={styles.receiptCardFooter}>This receipt is system-generated.</Text>
+    </View>
+  );
+};
+
 export default function OrderDetailScreen({ route, navigation }) {
   const { orderId } = route.params;
   const [order, setOrder]       = useState(null);
@@ -190,6 +243,7 @@ export default function OrderDetailScreen({ route, navigation }) {
   // app-owned sheet first lets the customer see exactly what number they're about to contact.
   const [contactSheet, setContactSheet] = useState(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const receiptShotRef = useRef(null);
 
   useEffect(() => {
     const p = Animated.loop(Animated.sequence([
@@ -502,16 +556,44 @@ export default function OrderDetailScreen({ route, navigation }) {
     ]);
   };
 
+  const getReceiptFields = () => {
+    const tracking = order.trackingNumber ? `WA-${String(order.trackingNumber).replace(/^WA-/, '')}` : `#${order.id}`;
+    const branch = order.branchName || order.branch || 'WashAlert Branch';
+    const customer = order.customerName || 'Customer';
+    const date = order.dateBooked
+      ? new Date(order.dateBooked).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+      : new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+    const service = order.serviceName || order.serviceType || 'Laundry Service';
+    const fmt = (n) => `PHP ${Number(n || 0).toFixed(2)}`;
+    return { tracking, branch, customer, date, service, fmt };
+  };
+
+  // Saves/shares the receipt as a PNG image (captured from the hidden ReceiptCard below),
+  // matching how GCash shares its receipts. Plain-text sharing garbles the monospace layout
+  // when relayed through apps that don't preserve fixed-width formatting, so image sharing is
+  // the primary path; the old text share is kept only as a fallback if image capture fails.
   const handleShareReceipt = async () => {
+    const { tracking } = getReceiptFields();
     try {
-      const tracking = order.trackingNumber ? `WA-${String(order.trackingNumber).replace(/^WA-/, '')}` : `#${order.id}`;
-      const branch = order.branchName || order.branch || 'WashAlert Branch';
-      const customer = order.customerName || 'Customer';
-      const date = order.dateBooked
-        ? new Date(order.dateBooked).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
-        : new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
-      const service = order.serviceName || order.serviceType || 'Laundry Service';
-      const fmt = (n) => `PHP ${Number(n || 0).toFixed(2)}`;
+      const uri = await receiptShotRef.current.capture();
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'image/png',
+          dialogTitle: `WashAlert Receipt — ${tracking}`,
+          UTI: 'public.png',
+        });
+        return;
+      }
+    } catch (err) {
+      console.warn('[OrderDetail] Receipt image capture/share failed, falling back to text:', err?.message);
+    }
+    await handleShareReceiptAsText();
+  };
+
+  const handleShareReceiptAsText = async () => {
+    try {
+      const { tracking, branch, customer, date, service, fmt } = getReceiptFields();
 
       const lines = [
         '━━━━━━━━━━━━━━━━━━━━━━━',
@@ -985,6 +1067,16 @@ export default function OrderDetailScreen({ route, navigation }) {
           </View>
         ) : null}
       </View>
+
+      {/* Off-screen receipt card captured to a PNG for sharing (handleShareReceipt above) —
+          never visible to the user, only used as ViewShot's capture source. */}
+      {order && (
+        <View style={styles.receiptShotWrap} pointerEvents="none">
+          <ViewShot ref={receiptShotRef} options={{ format: 'png', quality: 1 }}>
+            <ReceiptCard order={order} fields={getReceiptFields()} />
+          </ViewShot>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -1172,6 +1264,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+
+  // Off-screen ViewShot capture source for handleShareReceipt — rendered but never visible.
+  receiptShotWrap: { position: 'absolute', top: -9999, left: 0 },
+  receiptCard: { width: 320, backgroundColor: '#FFFFFF', padding: 20 },
+  receiptCardTitle: { fontSize: 18, fontWeight: '800', color: colors.text, textAlign: 'center', marginBottom: 12 },
+  receiptCardDivider: { height: 1, backgroundColor: colors.border, marginVertical: 10 },
+  receiptCardTotal: { fontSize: 15, fontWeight: '800', color: colors.text },
+  receiptCardFooter: { fontSize: 11, color: colors.textSecondary, textAlign: 'center' },
 
   feedbackInput: {
     borderWidth: 1,

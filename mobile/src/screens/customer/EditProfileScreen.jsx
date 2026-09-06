@@ -29,6 +29,7 @@ const EditProfileScreen = ({ navigation }) => {
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
     setForm({
@@ -114,6 +115,7 @@ const EditProfileScreen = ({ navigation }) => {
         profileImageUrl: form.profileImageUrl || '',
       });
       console.log('[Profile][Save] Save complete userId=', user?.id);
+      setIsEditing(false);
       Alert.alert('Profile Updated', 'Your profile details were saved successfully.', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
@@ -123,6 +125,17 @@ const EditProfileScreen = ({ navigation }) => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleCancelEdit = () => {
+    setForm({
+      fullName: user?.fullName || '',
+      phone: user?.phone || '',
+      email: user?.email || '',
+      profileImageUrl: user?.profileImageUrl || '',
+    });
+    setErrors({});
+    setIsEditing(false);
   };
 
   return (
@@ -136,60 +149,106 @@ const EditProfileScreen = ({ navigation }) => {
               <Ionicons name="person-circle-outline" size={64} color={colors.primary} />
             )}
           </View>
-          <TouchableOpacity style={styles.cameraBtn} onPress={handleAvatarUpload} disabled={isBusy}>
-            {uploadingPhoto ? (
-              <ActivityIndicator size="small" color={colors.card} />
-            ) : (
-              <Ionicons name="camera" size={16} color={colors.card} />
-            )}
-          </TouchableOpacity>
+          {isEditing && (
+            <TouchableOpacity style={styles.cameraBtn} onPress={handleAvatarUpload} disabled={isBusy}>
+              {uploadingPhoto ? (
+                <ActivityIndicator size="small" color={colors.card} />
+              ) : (
+                <Ionicons name="camera" size={16} color={colors.card} />
+              )}
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.formContainer}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeaderTitle}>Account Information</Text>
+            {!isEditing && (
+              <TouchableOpacity style={styles.editIconBtn} onPress={() => setIsEditing(true)}>
+                <Ionicons name="pencil-outline" size={16} color={colors.primary} />
+                <Text style={styles.editIconBtnText}>Edit</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
           <View style={styles.fieldBox}>
             <Text style={styles.label}>Full Name</Text>
-            <TextInput
-              style={[styles.input, errors.fullName && styles.inputError]}
-              value={form.fullName}
-              onChangeText={(t) => setField('fullName', t)}
-              placeholder="Your full name"
-            />
-            {errors.fullName ? <Text style={styles.errorText}>{errors.fullName}</Text> : null}
+            {isEditing ? (
+              <>
+                <TextInput
+                  style={[styles.input, errors.fullName && styles.inputError]}
+                  value={form.fullName}
+                  onChangeText={(t) => setField('fullName', t)}
+                  placeholder="Your full name"
+                />
+                {errors.fullName ? <Text style={styles.errorText}>{errors.fullName}</Text> : null}
+              </>
+            ) : (
+              <Text style={styles.viewValue}>{form.fullName || '—'}</Text>
+            )}
           </View>
 
           <View style={styles.fieldBox}>
             <Text style={styles.label}>Mobile Number</Text>
-            <TextInput
-              style={[styles.input, errors.phone && styles.inputError]}
-              value={form.phone}
-              onChangeText={(t) => setField('phone', t)}
-              keyboardType="phone-pad"
-              placeholder="09XXXXXXXXX"
-            />
-            {errors.phone ? <Text style={styles.errorText}>{errors.phone}</Text> : null}
+            {isEditing ? (
+              <>
+                <TextInput
+                  style={[styles.input, errors.phone && styles.inputError]}
+                  value={form.phone}
+                  onChangeText={(t) => setField('phone', t)}
+                  keyboardType="phone-pad"
+                  placeholder="09XXXXXXXXX"
+                />
+                {errors.phone ? <Text style={styles.errorText}>{errors.phone}</Text> : null}
+              </>
+            ) : (
+              <Text style={styles.viewValue}>{form.phone || '—'}</Text>
+            )}
           </View>
 
           <View style={styles.fieldBox}>
             <Text style={styles.label}>Email</Text>
-            <TextInput style={[styles.input, styles.inputDisabled]} value={form.email} editable={false} />
-            <Text style={styles.hintText}>Email cannot be changed here.</Text>
+            {isEditing ? (
+              <>
+                <TextInput style={[styles.input, styles.inputDisabled]} value={form.email} editable={false} />
+                <Text style={styles.hintText}>Email cannot be changed here.</Text>
+              </>
+            ) : (
+              <Text style={styles.viewValue}>{form.email || '—'}</Text>
+            )}
           </View>
 
-          <TouchableOpacity
-            style={styles.pwdBtn}
-            onPress={() => navigation.navigate('ChangePassword')}
-            disabled={isBusy}
-          >
-            <Text style={styles.pwdBtnText}>Change Password</Text>
-          </TouchableOpacity>
+          {isEditing ? (
+            <>
+              <TouchableOpacity
+                style={styles.pwdBtn}
+                onPress={() => navigation.navigate('ChangePassword')}
+                disabled={isBusy}
+              >
+                <Text style={styles.pwdBtnText}>Change Password</Text>
+              </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.saveButton, (!canSave || isBusy) && styles.saveButtonDisabled]}
-            onPress={handleSave}
-            disabled={!canSave || isBusy}
-          >
-            <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save Changes'}</Text>
-          </TouchableOpacity>
+              <View style={styles.editActionsRow}>
+                <TouchableOpacity style={styles.cancelButton} onPress={handleCancelEdit} disabled={isBusy}>
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.saveButton, styles.saveButtonFlex, (!canSave || isBusy) && styles.saveButtonDisabled]}
+                  onPress={handleSave}
+                  disabled={!canSave || isBusy}
+                >
+                  <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save Changes'}</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            <TouchableOpacity
+              style={styles.pwdBtn}
+              onPress={() => navigation.navigate('ChangePassword')}
+            >
+              <Text style={styles.pwdBtnText}>Change Password</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -232,8 +291,28 @@ const styles = StyleSheet.create({
   },
 
   formContainer: { maxWidth: 400, width: '100%', alignSelf: 'center' },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  sectionHeaderTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  editIconBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  editIconBtnText: { color: colors.primary, fontSize: 14, fontWeight: '600' },
   fieldBox: { marginBottom: 16 },
   label: { fontSize: 14, fontWeight: '500', color: colors.text, marginBottom: 6 },
+  viewValue: {
+    fontSize: 14,
+    color: colors.text,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 52,
+    lineHeight: 50,
+  },
   input: {
     backgroundColor: colors.card,
     borderWidth: 1,
@@ -260,6 +339,21 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   pwdBtnText: { color: colors.warning, fontSize: 14, fontWeight: '600' },
+  editActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  cancelButton: {
+    flex: 1,
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButtonText: { color: colors.text, fontSize: 15, fontWeight: '600' },
   saveButton: {
     marginTop: 20,
     height: 50,
@@ -267,6 +361,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  saveButtonFlex: {
+    flex: 1,
+    marginTop: 0,
   },
   saveButtonDisabled: {
     opacity: 0.5,

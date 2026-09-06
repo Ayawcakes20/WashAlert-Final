@@ -61,9 +61,10 @@ public class AuthService {
         throw new IllegalArgumentException("Internal web self-registration is disabled. Use the mobile app signup flow.");
     }
 
-    public User upsertMobileCustomerProfile(String idToken, String fullName) {
+    public User upsertMobileCustomerProfile(String idToken, String fullName, String mobileNumber) {
         FirebaseToken token = firebaseIdentityService.verifyIdToken(idToken);
         String email = normalizeEmail(token.getEmail());
+        String normalizedMobile = (mobileNumber == null || mobileNumber.isBlank()) ? null : mobileNumber.trim();
         log.info("[AUTH][REGISTER] upsertMobileCustomerProfile uid={} email={}", token.getUid(), maskEmail(email));
         if (email.isBlank()) {
             throw new IllegalArgumentException("Firebase token does not contain an email.");
@@ -83,6 +84,9 @@ public class AuthService {
             existing.setFirebaseUid(token.getUid());
             existing.setEmail(email);
             existing.setFullName(fullName.trim());
+            if (normalizedMobile != null) {
+                existing.setMobileNumber(normalizedMobile);
+            }
             // Transition back to PENDING if they were not ACTIVE
             if (existing.getStatus() != UserStatus.ACTIVE) {
                 existing.setStatus(UserStatus.PENDING);
@@ -100,6 +104,7 @@ public class AuthService {
                 .firebaseUid(token.getUid())
                 .email(email)
                 .fullName(fullName.trim())
+                .mobileNumber(normalizedMobile)
                 .passwordHash(encoder.encode("firebase-managed-" + token.getUid()))
                 .role(Role.CUSTOMER)
                 .status(UserStatus.PENDING) // Must be PENDING to trigger OTP

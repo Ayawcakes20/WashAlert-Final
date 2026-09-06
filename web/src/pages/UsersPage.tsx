@@ -515,7 +515,7 @@ export default function UsersPage() {
           setCreateOpen(open);
           if (!open) {
             setCreateErrors({});
-            setCreateForm({ fullName: "", email: "", role: "STAFF", branch: "" });
+            setCreateForm({ fullName: "", email: "", role: "STAFF", branch: "", mobileNumber: "" });
           }
         }}
       >
