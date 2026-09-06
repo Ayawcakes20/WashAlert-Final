@@ -712,7 +712,6 @@ const AddressPickerSheet = ({
               style={styles.fullMap}
               provider={PROVIDER_GOOGLE}
               initialRegion={sanitizeRegion(mapRegion, safeFallbackCoordinate)}
-              region={isMapLoaded ? sanitizeRegion(mapRegion, safeFallbackCoordinate) : undefined}
               onMapReady={handleMapReady}
               onMapLoaded={handleMapLoaded}
               onError={handleMapError}

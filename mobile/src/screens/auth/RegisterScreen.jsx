@@ -20,6 +20,7 @@ const RegisterScreen = ({ navigation }) => {
   const { register, requestOTP } = useAuth();
   const [form, setForm] = useState({ fullName: '', email: '', phone: '', password: '', confirm: '' });
   const [showPw, setShowPw] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
@@ -231,9 +232,16 @@ const RegisterScreen = ({ navigation }) => {
                   placeholderTextColor={colors.textSecondary}
                   value={form.confirm}
                   onChangeText={(val) => set('confirm', val)}
-                  secureTextEntry
+                  secureTextEntry={!showConfirmPw}
                   autoCapitalize="none"
                 />
+                <TouchableOpacity onPress={() => setShowConfirmPw(!showConfirmPw)}>
+                  <Ionicons
+                    name={showConfirmPw ? 'eye-off-outline' : 'eye-outline'}
+                    size={20}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
               </View>
               {errors.confirm ? <Text style={styles.errorText}>{errors.confirm}</Text> : null}
             </View>

@@ -63,29 +63,42 @@ public class ChatSupportService {
         String sessionId = normalizeSessionId(req.sessionId());
         String userMessage = req.message().trim();
 
+        String tracking = resolveTrackingNumber(req.trackingNumber(), userMessage);
+        String intendedBranch = resolveIntendedBranch(tracking, req.selectedBranch());
+
         var openTickets = supportTicketRepository.findTop50BySessionIdOrderByCreatedAtDesc(sessionId).stream()
                 .filter(t -> t.getStatus() == SupportTicketStatus.OPEN)
                 .toList();
 
-        if (!openTickets.isEmpty()) {
-            SupportTicket openTicket = openTickets.get(0);
-            saveMessage(sessionId, ChatResponderType.USER, userMessage, "user", openTicket.getTicketNumber(),
+        // A device only ever has one support sessionId, so a customer can have an open
+        // ticket from an earlier conversation (e.g. Branch A) while starting a new one
+        // from a different order (e.g. Branch B). Only auto-continue an open ticket when
+        // this message is actually about the same branch — otherwise a message meant for
+        // the newly selected branch would silently get appended to the old branch's
+        // ticket instead of reaching the branch the customer is actually messaging.
+        SupportTicket matchingOpenTicket = openTickets.stream()
+                .filter(t -> intendedBranch == null || isSoftMatch(intendedBranch, t.getBranch()))
+                .findFirst()
+                .orElse(null);
+
+        if (matchingOpenTicket != null) {
+            saveMessage(sessionId, ChatResponderType.USER, userMessage, "user", matchingOpenTicket.getTicketNumber(),
                     req.senderName());
 
             notificationService.enqueuePushToRoles(
                     List.of(Role.ADMIN, Role.STAFF),
-                    openTicket.getBranch(),
+                    matchingOpenTicket.getBranch(),
                     "New Customer Message",
-                    "Ticket " + openTicket.getTicketNumber() + ": "
+                    "Ticket " + matchingOpenTicket.getTicketNumber() + ": "
                             + (userMessage.length() > 100 ? userMessage.substring(0, 100) + "..." : userMessage),
                     "SUPPORT_MESSAGE",
-                    openTicket.getTicketNumber());
+                    matchingOpenTicket.getTicketNumber());
 
             return new ChatSupportResponse(
                     "escalated_chat",
                     null, // Handled implicitly by mobile UI via polling
                     true,
-                    openTicket.getTicketNumber(),
+                    matchingOpenTicket.getTicketNumber(),
                     null);
         }
 
@@ -394,10 +407,7 @@ public class ChatSupportService {
         String ticketNumber = "SUP-" + LocalDateTime.now().format(TICKET_TIME)
                 + "-" + ThreadLocalRandom.current().nextInt(100, 1000);
 
-        String branch = resolveBranchFromTracking(trackingNumber);
-        if (branch == null && explicitBranch != null && !explicitBranch.isBlank()) {
-            branch = explicitBranch.trim();
-        }
+        String branch = resolveIntendedBranch(trackingNumber, explicitBranch);
 
         SupportTicket ticket = SupportTicket.builder()
                 .ticketNumber(ticketNumber)
@@ -438,6 +448,14 @@ public class ChatSupportService {
         }
 
         return null;
+    }
+
+    private String resolveIntendedBranch(String trackingNumber, String explicitBranch) {
+        String branch = resolveBranchFromTracking(trackingNumber);
+        if (branch == null && explicitBranch != null && !explicitBranch.isBlank()) {
+            branch = explicitBranch.trim();
+        }
+        return branch;
     }
 
     private String resolveBranchFromTracking(String trackingNumber) {

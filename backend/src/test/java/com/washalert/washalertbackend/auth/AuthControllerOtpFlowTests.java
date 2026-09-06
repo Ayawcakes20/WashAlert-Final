@@ -48,14 +48,14 @@ class AuthControllerOtpFlowTests {
     @Test
     void registerProfileReturns503WhenOtpDispatchFails() {
         User pendingUser = pendingUser();
-        when(authService.upsertMobileCustomerProfile("id-token", "Pending User")).thenReturn(pendingUser);
+        when(authService.upsertMobileCustomerProfile("id-token", "Pending User", null)).thenReturn(pendingUser);
         doThrow(new RuntimeException("SMTP down")).when(otpService).generateAndSend(pendingUser);
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRequestURI("/api/auth/mobile/register-profile");
 
         ResponseEntity<?> response = controller.registerMobileProfile(
-                new MobileCustomerProfileRequest("id-token", "Pending User"),
+                new MobileCustomerProfileRequest("id-token", "Pending User", null),
                 request
         );
 
@@ -84,14 +84,14 @@ class AuthControllerOtpFlowTests {
                 "MOBILE"
         );
 
-        when(authService.upsertMobileCustomerProfile("id-token", "Pending User")).thenReturn(pendingUser);
+        when(authService.upsertMobileCustomerProfile("id-token", "Pending User", null)).thenReturn(pendingUser);
         when(authService.toSessionResponse(pendingUser, "MOBILE")).thenReturn(sessionResponse);
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRequestURI("/api/auth/mobile/register-profile");
 
         ResponseEntity<?> response = controller.registerMobileProfile(
-                new MobileCustomerProfileRequest("id-token", "Pending User"),
+                new MobileCustomerProfileRequest("id-token", "Pending User", null),
                 request
         );
 

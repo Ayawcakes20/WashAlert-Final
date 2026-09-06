@@ -462,6 +462,7 @@ export const AuthProvider = ({ children }) => {
         body: {
           idToken: signup.idToken,
           fullName: data.fullName,
+          mobileNumber: data.phone,
         },
       });
       const createdProfile = requireSessionProfilePayload(registerProfile, 'Registration');
