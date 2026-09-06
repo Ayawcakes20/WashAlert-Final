@@ -18,6 +18,10 @@ import { profileApi } from '../../services/api';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadImageAsync } from '../../services/storageService';
 
+// Same name allowlist as RegisterScreen — letters, spaces, and name punctuation only.
+const NAME_DISALLOWED_RE = /[^a-zA-Z\s'.-]/g;
+const MAX_LEN = { fullName: 60, phone: 11 };
+
 const EditProfileScreen = ({ navigation }) => {
   const { user, firebaseIdToken, updateUserProfile } = useAuth();
   const [form, setForm] = useState({
@@ -47,7 +51,10 @@ const EditProfileScreen = ({ navigation }) => {
   }, [form.fullName, form.phone]);
 
   const setField = (key, value) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    let next = value;
+    if (key === 'fullName') next = value.replace(NAME_DISALLOWED_RE, '');
+    if (key === 'phone') next = value.replace(/\D/g, '');
+    setForm((prev) => ({ ...prev, [key]: next }));
     setErrors((prev) => ({ ...prev, [key]: '' }));
   };
 
@@ -180,6 +187,7 @@ const EditProfileScreen = ({ navigation }) => {
                   value={form.fullName}
                   onChangeText={(t) => setField('fullName', t)}
                   placeholder="Your full name"
+                  maxLength={MAX_LEN.fullName}
                 />
                 {errors.fullName ? <Text style={styles.errorText}>{errors.fullName}</Text> : null}
               </>
@@ -198,6 +206,7 @@ const EditProfileScreen = ({ navigation }) => {
                   onChangeText={(t) => setField('phone', t)}
                   keyboardType="phone-pad"
                   placeholder="09XXXXXXXXX"
+                  maxLength={MAX_LEN.phone}
                 />
                 {errors.phone ? <Text style={styles.errorText}>{errors.phone}</Text> : null}
               </>

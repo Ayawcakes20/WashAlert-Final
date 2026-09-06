@@ -211,8 +211,9 @@ export default function BookingScreen({ route, navigation }) {
     if(det!=='none') p.push(`${detOpt?.label} x${detQty}`);
     if(fab!=='none') p.push(`${fabOpt?.label} x${fabQty}`);
     if(rush) p.push('Rush +₱150');
+    if(deliveryFee>0) p.push(`Delivery ${address?.latitude&&branch?.latitude?'':'(est.) '}+₱${deliveryFee}`);
     return p.filter(Boolean).join(' · ');
-  },[service,det,detQty,fab,fabQty,rush]);
+  },[service,det,detQty,fab,fabQty,rush,deliveryFee,address,branch]);
 
   useEffect(()=>{ load(); },[]);
   useFocusEffect(useCallback(()=>{ getDefaultSavedAddress().then(setDefAddr).catch(()=>{}); },[]));

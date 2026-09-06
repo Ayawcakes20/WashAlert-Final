@@ -18,6 +18,12 @@ import { Switch } from "@/components/ui/switch";
 
 type Role = "STAFF" | "DRIVER" | "ADMIN";
 
+// Same name allowlist used on the mobile app's Register/EditProfile screens — letters,
+// spaces, and the punctuation real names use, stripped as the user types.
+const NAME_DISALLOWED_RE = /[^a-zA-Z\s'.-]/g;
+const MAX_NAME_LEN = 60;
+const sanitizeName = (value: string) => value.replace(NAME_DISALLOWED_RE, "");
+
 interface UserRecord {
   id: number;
   name: string;
@@ -533,9 +539,10 @@ export default function UsersPage() {
                 id="create-name"
                 value={createForm.fullName}
                 onChange={(e) => {
-                  setCreateForm((prev) => ({ ...prev, fullName: e.target.value }));
+                  setCreateForm((prev) => ({ ...prev, fullName: sanitizeName(e.target.value) }));
                   setCreateErrors((prev) => ({ ...prev, fullName: "" }));
                 }}
+                maxLength={MAX_NAME_LEN}
                 className={createErrors.fullName ? "border-destructive focus-visible:ring-destructive/30" : ""}
               />
               {createErrors.fullName ? <p className="text-xs text-destructive">{createErrors.fullName}</p> : null}
@@ -632,7 +639,8 @@ export default function UsersPage() {
               <Input
                 id="edit-name"
                 value={editForm.fullName}
-                onChange={(e) => setEditForm((prev) => ({ ...prev, fullName: e.target.value }))}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, fullName: sanitizeName(e.target.value) }))}
+                maxLength={MAX_NAME_LEN}
               />
             </div>
             <div className="space-y-2">

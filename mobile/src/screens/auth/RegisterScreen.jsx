@@ -16,6 +16,12 @@ import { useAuth } from '../../context/AuthContext';
 import { colors } from '../../theme/colors';
 import { WashingMachineLoader } from '../../components';
 
+// Allowlist for name-type fields: letters, spaces, and the punctuation real names use
+// (apostrophes, periods, hyphens) — strips anything else as the user types instead of
+// only rejecting at submit time.
+const NAME_DISALLOWED_RE = /[^a-zA-Z\s'.-]/g;
+const MAX_LEN = { fullName: 60, email: 100, phone: 11, password: 64, confirm: 64 };
+
 const RegisterScreen = ({ navigation }) => {
   const { register, requestOTP } = useAuth();
   const [form, setForm] = useState({ fullName: '', email: '', phone: '', password: '', confirm: '' });
@@ -54,8 +60,11 @@ const RegisterScreen = ({ navigation }) => {
   };
 
   const set = (key, value) => {
-    setForm(p => ({ ...p, [key]: value }));
-    validateField(key, value);
+    let next = value;
+    if (key === 'fullName') next = value.replace(NAME_DISALLOWED_RE, '');
+    if (key === 'phone') next = value.replace(/\D/g, '');
+    setForm(p => ({ ...p, [key]: next }));
+    validateField(key, next);
   };
 
   const validate = () => {
@@ -186,6 +195,7 @@ const RegisterScreen = ({ navigation }) => {
                     onChangeText={(val) => set(key, val)}
                     keyboardType={keyboardType}
                     autoCapitalize={key === 'email' ? 'none' : 'words'}
+                    maxLength={MAX_LEN[key]}
                   />
                 </View>
                 {errors[key] ? <Text style={styles.errorText}>{errors[key]}</Text> : null}
@@ -207,6 +217,7 @@ const RegisterScreen = ({ navigation }) => {
                   onChangeText={(val) => set('password', val)}
                   secureTextEntry={!showPw}
                   autoCapitalize="none"
+                  maxLength={MAX_LEN.password}
                 />
                 <TouchableOpacity onPress={() => setShowPw(!showPw)}>
                   <Ionicons
@@ -234,6 +245,7 @@ const RegisterScreen = ({ navigation }) => {
                   onChangeText={(val) => set('confirm', val)}
                   secureTextEntry={!showConfirmPw}
                   autoCapitalize="none"
+                  maxLength={MAX_LEN.confirm}
                 />
                 <TouchableOpacity onPress={() => setShowConfirmPw(!showConfirmPw)}>
                   <Ionicons
