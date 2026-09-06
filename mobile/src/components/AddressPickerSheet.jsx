@@ -39,6 +39,11 @@ import {
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
+// Same name allowlist as RegisterScreen/EditProfileScreen — letters, spaces, and name
+// punctuation only, stripped as the user types rather than only rejected at submit.
+const NAME_DISALLOWED_RE = /[^a-zA-Z\s'.-]/g;
+const MAX_LEN = { unitFloor: 40, contactName: 60, phone: 11 };
+
 const formatAddressFromGeo = (geo = {}, lat, lng) => {
   const parts = [geo.name, geo.street, geo.subregion, geo.city, geo.region].filter(Boolean);
   return parts.length ? parts.join(', ') : `Pinned location (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
@@ -837,6 +842,7 @@ const AddressPickerSheet = ({
                 placeholderTextColor={colors.textTertiary}
                 value={unitFloor}
                 onChangeText={setUnitFloor}
+                maxLength={MAX_LEN.unitFloor}
               />
             </View>
 
@@ -847,7 +853,8 @@ const AddressPickerSheet = ({
                 placeholder="Contact name (optional)"
                 placeholderTextColor={colors.textTertiary}
                 value={contactName}
-                onChangeText={setContactName}
+                onChangeText={(val) => setContactName(val.replace(NAME_DISALLOWED_RE, ''))}
+                maxLength={MAX_LEN.contactName}
               />
             </View>
 
@@ -859,7 +866,8 @@ const AddressPickerSheet = ({
                 placeholderTextColor={colors.textTertiary}
                 keyboardType="phone-pad"
                 value={phone}
-                onChangeText={setPhone}
+                onChangeText={(val) => setPhone(val.replace(/\D/g, ''))}
+                maxLength={MAX_LEN.phone}
               />
             </View>
 

@@ -202,17 +202,6 @@ export default function ServicesScreen({ navigation }) {
           </Text>
         </View>
       </ScrollView>
-
-      <View style={styles.stickyFooter}>
-        <TouchableOpacity
-          style={styles.bookBtn}
-          onPress={() => navigation.navigate('Book')}
-          activeOpacity={0.85}
-        >
-          <MaterialCommunityIcons name="washing-machine" size={18} color="#fff" />
-          <Text style={styles.bookBtnTxt}>Book Now</Text>
-        </TouchableOpacity>
-      </View>
     </SafeAreaView>
   );
 }
@@ -323,22 +312,4 @@ const styles = StyleSheet.create({
   noteTxt: { flex: 1, fontSize: 12, color: '#1D4ED8', lineHeight: 18 },
   footerNote: { marginTop: 4, marginBottom: 8 },
   footerText: { fontSize: 12, color: colors.textTertiary, textAlign: 'center', lineHeight: 18 },
-  stickyFooter: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 8,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.background,
-  },
-  bookBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: colors.primary,
-    paddingVertical: 14,
-    borderRadius: 14,
-  },
-  bookBtnTxt: { fontSize: 15, fontWeight: '700', color: '#fff' },
 });
