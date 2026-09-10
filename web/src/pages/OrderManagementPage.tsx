@@ -303,7 +303,7 @@ const serviceTypeLabel: Record<ApiServiceType, string> = {
   PICKUP_DELIVERY: "Pickup & Delivery",
 };
 
-const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
+const item = { hidden: { opacity: 0 }, show: { opacity: 1 } };
 const ORDERS_SERVER_PAGE_SIZE = 60;
 const TABLE_PAGE_SIZE_OPTIONS = [10, 20, 30];
 
@@ -1172,8 +1172,40 @@ export default function OrderManagementPage() {
         ) : null}
       </motion.div>
 
-      {loading ? <p className="text-sm text-brand-muted">Loading orders...</p> : null}
+      {loading ? (
+        <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50/80 text-slate-500 text-[10px] font-black uppercase tracking-[0.15em] border-b border-slate-100">
+                  <th className="text-left p-5 font-black">Order &amp; Date</th>
+                  <th className="text-left p-5 font-black">Customer Details</th>
+                  <th className="text-left p-5 font-black">Service &amp; Mode</th>
+                  <th className="text-left p-5 font-black">Load Detail</th>
+                  <th className="text-left p-5 font-black">Live Status</th>
+                  <th className="text-left p-5 font-black">Logistics</th>
+                  <th className="text-right p-5 font-black">Quick Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <tr key={i}>
+                    <td className="p-5"><div className="h-4 w-20 bg-slate-100 rounded animate-pulse mb-1" /><div className="h-3 w-28 bg-slate-100 rounded animate-pulse" /></td>
+                    <td className="p-5"><div className="h-4 w-32 bg-slate-100 rounded animate-pulse mb-1" /><div className="h-3 w-24 bg-slate-100 rounded animate-pulse" /></td>
+                    <td className="p-5"><div className="h-4 w-20 bg-slate-100 rounded animate-pulse mb-1" /><div className="h-5 w-14 bg-slate-100 rounded animate-pulse" /></td>
+                    <td className="p-5"><div className="h-8 w-16 bg-slate-100 rounded-xl animate-pulse" /></td>
+                    <td className="p-5"><div className="h-6 w-24 bg-slate-100 rounded animate-pulse mb-1.5" /><div className="h-5 w-20 bg-slate-100 rounded animate-pulse" /></td>
+                    <td className="p-5"><div className="h-6 w-16 bg-slate-100 rounded animate-pulse" /></td>
+                    <td className="p-5"><div className="h-8 w-24 bg-slate-100 rounded-xl animate-pulse ml-auto" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
 
       <motion.div variants={item} className="flex flex-wrap items-center gap-4 mb-8">
         <div className="flex items-center gap-3 bg-white rounded-2xl border border-slate-200 px-5 py-3 flex-1 min-w-[280px] max-w-lg shadow-[0_4px_20px_rgba(0,0,0,0.03)] focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500 transition-all">

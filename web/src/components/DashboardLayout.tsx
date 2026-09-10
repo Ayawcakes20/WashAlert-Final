@@ -161,11 +161,24 @@ export default function DashboardLayout() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center text-muted-foreground">
-        Loading dashboard...
+      <div className="min-h-screen flex w-full bg-background">
+        {/* Sidebar skeleton */}
+        <div className="w-[260px] shrink-0 border-r border-border/50 bg-[hsl(var(--sidebar-background))]" />
+        {/* Main content skeleton */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="h-16 border-b border-border/50 bg-card/60" />
+          <div className="flex-1 p-6 lg:p-8">
+            <div className="space-y-4">
+              <div className="h-8 w-48 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-80 bg-muted rounded animate-pulse" />
+              <div className="h-96 w-full bg-muted/50 rounded-3xl animate-pulse mt-6" />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
+
 
   const initials =
     user?.fullName
