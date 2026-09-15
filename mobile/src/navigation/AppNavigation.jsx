@@ -115,6 +115,9 @@ function CustomerTabBar({ state, descriptors, navigation }) {
                 >
                   <MaterialCommunityIcons name="washing-machine" size={26} color="#fff" />
                 </TouchableOpacity>
+                <Text style={[tabStyles.fabLabel, isFocused && tabStyles.tabLabelActive]}>
+                  Book
+                </Text>
               </View>
             );
           }
@@ -220,6 +223,13 @@ const tabStyles = StyleSheet.create({
   },
   fabActive: {
     backgroundColor: colors.primaryDark,
+  },
+  fabLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: colors.textTertiary,
+    letterSpacing: 0.1,
+    marginTop: 2,
   },
 });
 
