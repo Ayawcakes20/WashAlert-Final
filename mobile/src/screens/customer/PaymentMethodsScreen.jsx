@@ -50,12 +50,18 @@ const PaymentMethodsScreen = ({ navigation }) => {
         </View>
 
         <TouchableOpacity
-          style={styles.policyLink}
+          style={styles.policyButton}
           onPress={() => navigation.navigate('PaymentPolicy')}
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
-          <Text style={styles.policyLinkText}>View Full Payment Policy</Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+          <View style={styles.policyButtonIcon}>
+            <Ionicons name="document-text-outline" size={20} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.policyButtonTitle}>View Full Payment Policy</Text>
+            <Text style={styles.policyButtonSub}>Payment timing, accepted methods, and charges</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.primary} />
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -84,14 +90,26 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   noteText: { fontSize: 12, color: colors.textSecondary, lineHeight: 18 },
-  policyLink: {
+  policyButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 10,
+    gap: 12,
+    backgroundColor: colors.primaryLight,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    borderRadius: 14,
+    padding: 14,
   },
-  policyLinkText: { fontSize: 13, fontWeight: '700', color: colors.primary },
+  policyButtonIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  policyButtonTitle: { fontSize: 14, fontWeight: '800', color: colors.primary },
+  policyButtonSub: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
 });
 
 export default PaymentMethodsScreen;

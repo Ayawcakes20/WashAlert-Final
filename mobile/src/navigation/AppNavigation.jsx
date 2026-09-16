@@ -226,8 +226,8 @@ const tabStyles = StyleSheet.create({
     backgroundColor: colors.primaryDark,
   },
   fabLabel: {
-    fontSize: 9,
-    fontWeight: '600',
+    fontSize: 10,
+    fontWeight: '700',
     color: colors.textTertiary,
     letterSpacing: 0.1,
     marginTop: 2,

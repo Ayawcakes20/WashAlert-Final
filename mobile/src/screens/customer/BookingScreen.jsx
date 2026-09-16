@@ -1034,6 +1034,12 @@ export default function BookingScreen({ route, navigation }) {
                 <Text style={S.summaryTitle}>PAYMENT</Text>
               </View>
               <Row label="Method" value={payMethod==='cod'?'Cash on Delivery / Pick Up':'GCash'}/>
+              <Text style={S.paymentPolicyNote}>
+                Payment is required before your laundry is delivered or released for pickup. No downpayment needed — additional charges only apply for exceeding the load limit or Rush service.
+              </Text>
+              <TouchableOpacity onPress={() => navigation.navigate('PaymentPolicy')} activeOpacity={0.7}>
+                <Text style={S.paymentPolicyLink}>View Full Payment Policy</Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -1229,4 +1235,6 @@ const S = StyleSheet.create({
   summarySection:{backgroundColor:colors.surface,borderRadius:16,padding:16,borderWidth:1,borderColor:colors.border,gap:2},
   summaryHeader:{flexDirection:'row',alignItems:'center',gap:8,marginBottom:8,borderBottomWidth:1,borderBottomColor:colors.border,paddingBottom:8},
   summaryTitle:{fontSize:12,fontWeight:'800',color:colors.primary,letterSpacing:0.5},
+  paymentPolicyNote:{fontSize:11,color:colors.textSecondary,lineHeight:16,marginTop:8},
+  paymentPolicyLink:{fontSize:12,fontWeight:'700',color:colors.primary,marginTop:6},
 });
