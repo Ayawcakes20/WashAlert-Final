@@ -1007,7 +1007,7 @@ export default function OrderDetailScreen({ route, navigation }) {
           </View>
         )}
 
-        <View style={{height:100}}/>
+        <View style={{height:170}}/>
       </ScrollView>
 
       {/* STICKY FOOTER */}
