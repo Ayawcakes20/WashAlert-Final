@@ -2,11 +2,20 @@ import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
+import ScrollCue from '../../components/ScrollCue';
+import { useScrollCue } from '../../hooks/useScrollCue';
 
 const PaymentPolicyScreen = () => {
+  const scrollCue = useScrollCue();
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        onScroll={scrollCue.onScroll}
+        scrollEventThrottle={16}
+        onContentSizeChange={scrollCue.onContentSizeChange}
+        onLayout={scrollCue.onLayout}
+      >
         <Text style={styles.heading}>WashAlert Payment Policy</Text>
         <Text style={styles.intro}>
           This policy applies to all orders placed through Triplets LaundryHubs and SpeedyWash, for both branch pickup and pickup-and-delivery orders.
@@ -49,6 +58,7 @@ const PaymentPolicyScreen = () => {
 
         <Text style={styles.footer}>Policy confirmed directly with Triplets LaundryHubs — last updated September 2026.</Text>
       </ScrollView>
+      <ScrollCue visible={scrollCue.showCue} />
     </SafeAreaView>
   );
 };

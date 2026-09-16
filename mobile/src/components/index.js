@@ -5,3 +5,4 @@ export { default as StatusBadge } from './StatusBadge';
 export { default as LoadingSkeleton } from './LoadingSkeleton';
 export { default as EmptyState } from './EmptyState';
 export { default as WashingMachineLoader } from './WashingMachineLoader';
+export { default as ScrollCue } from './ScrollCue';

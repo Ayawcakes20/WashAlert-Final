@@ -3,6 +3,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
+import ScrollCue from '../../components/ScrollCue';
+import { useScrollCue } from '../../hooks/useScrollCue';
 
 const LAUNDRY_SERVICES = [
   {
@@ -115,6 +117,7 @@ const LAUNDRY_SERVICES = [
 
 export default function ServicesScreen({ navigation }) {
   const [expanded, setExpanded] = useState(null);
+  const scrollCue = useScrollCue();
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -131,6 +134,10 @@ export default function ServicesScreen({ navigation }) {
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
+        onScroll={scrollCue.onScroll}
+        scrollEventThrottle={16}
+        onContentSizeChange={scrollCue.onContentSizeChange}
+        onLayout={scrollCue.onLayout}
       >
         {LAUNDRY_SERVICES.map((svc) => {
           const isOpen = expanded === svc.id;
@@ -202,6 +209,7 @@ export default function ServicesScreen({ navigation }) {
           </Text>
         </View>
       </ScrollView>
+      <ScrollCue visible={scrollCue.showCue} />
     </SafeAreaView>
   );
 }

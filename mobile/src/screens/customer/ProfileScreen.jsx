@@ -7,6 +7,8 @@ import { useAuth } from '../../context/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadImageAsync } from '../../services/storageService';
 import { profileApi, bookings as bookingsApi } from '../../services/api';
+import ScrollCue from '../../components/ScrollCue';
+import { useScrollCue } from '../../hooks/useScrollCue';
 
 const MENU_GROUPS = [
   {
@@ -35,6 +37,7 @@ const MENU_GROUPS = [
 ];
 
 const ProfileScreen = ({ navigation }) => {
+  const scrollCue = useScrollCue();
   const { user, logout, firebaseIdToken, updateUserProfile } = useAuth();
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [avatarUri, setAvatarUri] = useState(user?.profileImageUrl || '');
@@ -119,7 +122,14 @@ const ProfileScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        onScroll={scrollCue.onScroll}
+        scrollEventThrottle={16}
+        onContentSizeChange={scrollCue.onContentSizeChange}
+        onLayout={scrollCue.onLayout}
+      >
         <Text style={styles.headerTitle}>My Profile</Text>
 
         {/* Profile Header Card */}
@@ -196,6 +206,7 @@ const ProfileScreen = ({ navigation }) => {
 
         <View style={styles.footerSpacing} />
       </ScrollView>
+      <ScrollCue visible={scrollCue.showCue} bottom={100} />
     </SafeAreaView>
   );
 };

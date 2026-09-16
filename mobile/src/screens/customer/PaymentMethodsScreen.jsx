@@ -3,11 +3,20 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
+import ScrollCue from '../../components/ScrollCue';
+import { useScrollCue } from '../../hooks/useScrollCue';
 
 const PaymentMethodsScreen = ({ navigation }) => {
+  const scrollCue = useScrollCue();
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        onScroll={scrollCue.onScroll}
+        scrollEventThrottle={16}
+        onContentSizeChange={scrollCue.onContentSizeChange}
+        onLayout={scrollCue.onLayout}
+      >
         <Text style={styles.subtitle}>Payment methods currently available in WashAlert booking flow.</Text>
 
         <View style={styles.card}>
@@ -64,6 +73,7 @@ const PaymentMethodsScreen = ({ navigation }) => {
           <Ionicons name="chevron-forward" size={18} color={colors.primary} />
         </TouchableOpacity>
       </ScrollView>
+      <ScrollCue visible={scrollCue.showCue} />
     </SafeAreaView>
   );
 };
