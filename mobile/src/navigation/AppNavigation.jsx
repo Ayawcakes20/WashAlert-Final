@@ -36,6 +36,7 @@ import EditProfileScreen from '../screens/customer/EditProfileScreen';
 import ChangePasswordScreen from '../screens/customer/ChangePasswordScreen';
 import SavedAddressesScreen from '../screens/customer/SavedAddressesScreen';
 import PaymentMethodsScreen from '../screens/customer/PaymentMethodsScreen';
+import PaymentPolicyScreen from '../screens/customer/PaymentPolicyScreen';
 import TermsAndConditionsScreen from '../screens/customer/TermsAndConditionsScreen';
 import PrivacyPolicyScreen from '../screens/customer/PrivacyPolicyScreen';
 import PaymentSuccessScreen from '../screens/customer/PaymentSuccessScreen';
@@ -304,6 +305,7 @@ const CustomerStack = () => (
     <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={stackHeader('Change Password')} />
     <Stack.Screen name="SavedAddresses" component={SavedAddressesScreen} options={stackHeader('Saved Addresses')} />
     <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} options={stackHeader('Payment Methods')} />
+    <Stack.Screen name="PaymentPolicy" component={PaymentPolicyScreen} options={stackHeader('Payment Policy')} />
     <Stack.Screen name="TermsAndConditions" component={TermsAndConditionsScreen} options={stackHeader('Terms & Conditions')} />
     <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={stackHeader('Privacy Policy')} />
     <Stack.Screen name="PaymentSuccess" component={PaymentSuccessScreen} options={stackHeader('Payment Success')} />
