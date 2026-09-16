@@ -14,6 +14,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { colors } from '../../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
 import { notifications as notificationsApi } from '../../services/api';
+import ScrollCue from '../../components/ScrollCue';
+import { useScrollCue } from '../../hooks/useScrollCue';
 
 const NOTIFICATIONS_PAGE_SIZE = 10;
 
@@ -47,6 +49,7 @@ const formatTimeLabel = (isoDate) => {
 };
 
 const NotificationsScreen = () => {
+  const scrollCue = useScrollCue();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -132,6 +135,10 @@ const NotificationsScreen = () => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        onScroll={scrollCue.onScroll}
+        scrollEventThrottle={16}
+        onContentSizeChange={scrollCue.onContentSizeChange}
+        onLayout={scrollCue.onLayout}
       >
         <View style={styles.headerRow}>
           <View />
@@ -207,6 +214,7 @@ const NotificationsScreen = () => {
           </View>
         ) : null}
       </ScrollView>
+      <ScrollCue visible={scrollCue.showCue} bottom={100} />
 
       {/* ── Notification / Announcement Detail Modal ──────────────── */}
       {selectedNotif && (

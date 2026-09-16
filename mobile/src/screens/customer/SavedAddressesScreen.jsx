@@ -15,6 +15,8 @@ import {
   saveSavedAddresses,
 } from '../../services/savedAddresses';
 import AddressPickerSheet from '../../components/AddressPickerSheet';
+import ScrollCue from '../../components/ScrollCue';
+import { useScrollCue } from '../../hooks/useScrollCue';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -34,6 +36,7 @@ const getLabelIcon = (label = '') => {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const SavedAddressesScreen = () => {
+  const scrollCue = useScrollCue();
   const [items, setItems] = useState([]);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [editingItem, setEditingItem] = useState(null); // null = adding new
@@ -124,7 +127,13 @@ const SavedAddressesScreen = () => {
         initialValue={editingItem}
       />
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        onScroll={scrollCue.onScroll}
+        scrollEventThrottle={16}
+        onContentSizeChange={scrollCue.onContentSizeChange}
+        onLayout={scrollCue.onLayout}
+      >
         <Text style={styles.hint}>
           Save addresses for quick booking — pick from your list without retyping every time.
         </Text>
@@ -192,6 +201,7 @@ const SavedAddressesScreen = () => {
         {/* Spacer for FAB */}
         <View style={{ height: 100 }} />
       </ScrollView>
+      <ScrollCue visible={scrollCue.showCue} bottom={90} />
 
       {/* Floating Add Button */}
       <TouchableOpacity style={styles.fab} onPress={handleAddNew} activeOpacity={0.85}>

@@ -9,6 +9,8 @@ import { colors } from '../../theme/colors';
 import { branches, bookings, laundry, createOrder, payments } from '../../services/api';
 import { getDefaultSavedAddress } from '../../services/savedAddresses';
 import AddressPickerSheet from '../../components/AddressPickerSheet';
+import ScrollCue from '../../components/ScrollCue';
+import { useScrollCue } from '../../hooks/useScrollCue';
 
 const { width } = Dimensions.get('window');
 
@@ -95,6 +97,7 @@ const mkDates = (n=7) => {
 
 export default function BookingScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
+  const scrollCue = useScrollCue();
   
   const Row = ({ label, value }) => (
     <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingVertical:4}}>
@@ -524,7 +527,17 @@ export default function BookingScreen({ route, navigation }) {
       <AddressPickerSheet visible={addrSheet} title="Pickup & Delivery Address" onConfirm={a=>{setAddrSheet(false);setAddress(a);if(step===3)setStep(4);}} onClose={()=>setAddrSheet(false)} initialValue={address} fallbackCoordinate={branch?.latitude?{latitude:Number(branch.latitude),longitude:Number(branch.longitude)}:null}/>
       <View style={S.hdr}><Text style={S.hdrTitle}>New Booking</Text><Text style={S.hdrSub}>Step {vis} of {VIS_STEPS.length}</Text></View>
       <Stepper/>
-      <ScrollView ref={scrollRef} style={{flex:1}} contentContainerStyle={S.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollRef}
+        style={{flex:1}}
+        contentContainerStyle={S.scroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        onScroll={scrollCue.onScroll}
+        scrollEventThrottle={16}
+        onContentSizeChange={scrollCue.onContentSizeChange}
+        onLayout={scrollCue.onLayout}
+      >
 
         {step===2&&(
           <View>
@@ -1045,6 +1058,7 @@ export default function BookingScreen({ route, navigation }) {
         )}
 
       </ScrollView>
+      <ScrollCue visible={scrollCue.showCue} bottom={250} />
 
       {/* Floating toast — auto-dismisses after 3.5 s; shown for stock errors and gate blocks */}
       {!!toastMsg && (

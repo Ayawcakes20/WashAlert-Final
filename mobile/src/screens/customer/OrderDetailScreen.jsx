@@ -15,6 +15,8 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { useFocusEffect } from '@react-navigation/native';
 import GcashQrModal from '../../components/GcashQrModal';
+import ScrollCue from '../../components/ScrollCue';
+import { useScrollCue } from '../../hooks/useScrollCue';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -224,6 +226,7 @@ const ReceiptCard = ({ order, fields }) => {
 };
 
 export default function OrderDetailScreen({ route, navigation }) {
+  const scrollCue = useScrollCue();
   const { orderId } = route.params;
   const [order, setOrder]       = useState(null);
   const [loading, setLoading]   = useState(true);
@@ -651,7 +654,14 @@ export default function OrderDetailScreen({ route, navigation }) {
         }
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        onScroll={scrollCue.onScroll}
+        scrollEventThrottle={16}
+        onContentSizeChange={scrollCue.onContentSizeChange}
+        onLayout={scrollCue.onLayout}
+      >
         
         {/* PRICE CONFIRMATION ACTION CARD */}
         {ns === 'awaiting_price' && (
@@ -1009,6 +1019,7 @@ export default function OrderDetailScreen({ route, navigation }) {
 
         <View style={{height:170}}/>
       </ScrollView>
+      <ScrollCue visible={scrollCue.showCue} bottom={150} />
 
       {/* STICKY FOOTER */}
       <View style={styles.stickyFooter}>

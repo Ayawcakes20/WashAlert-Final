@@ -17,6 +17,8 @@ import { useAuth } from '../../context/AuthContext';
 import { profileApi } from '../../services/api';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadImageAsync } from '../../services/storageService';
+import ScrollCue from '../../components/ScrollCue';
+import { useScrollCue } from '../../hooks/useScrollCue';
 
 // Same name allowlist as RegisterScreen — letters, spaces, and name punctuation only.
 const NAME_DISALLOWED_RE = /[^a-zA-Z\s'.-]/g;
@@ -24,6 +26,7 @@ const MAX_LEN = { fullName: 60, phone: 11 };
 
 const EditProfileScreen = ({ navigation }) => {
   const { user, firebaseIdToken, updateUserProfile } = useAuth();
+  const scrollCue = useScrollCue();
   const [form, setForm] = useState({
     fullName: user?.fullName || '',
     phone: user?.phone || '',
@@ -147,7 +150,14 @@ const EditProfileScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        onScroll={scrollCue.onScroll}
+        scrollEventThrottle={16}
+        onContentSizeChange={scrollCue.onContentSizeChange}
+        onLayout={scrollCue.onLayout}
+      >
         <View style={styles.avatarWrap}>
           <View style={styles.avatarBox}>
             {form.profileImageUrl ? (
@@ -260,6 +270,7 @@ const EditProfileScreen = ({ navigation }) => {
           )}
         </View>
       </ScrollView>
+      <ScrollCue visible={scrollCue.showCue} />
     </SafeAreaView>
   );
 };

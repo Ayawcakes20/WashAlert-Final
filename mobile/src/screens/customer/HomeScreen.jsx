@@ -9,7 +9,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { colors } from '../../theme/colors';
-import { LoadingSkeleton } from '../../components';
+import { LoadingSkeleton, ScrollCue } from '../../components';
+import { useScrollCue } from '../../hooks/useScrollCue';
 import { useAuth } from '../../context/AuthContext';
 import { bookings as bookingsApi, announcements as announcementsApi } from '../../services/api';
 import S from './HomeScreenStyles';
@@ -192,6 +193,7 @@ export default function HomeScreen({ navigation }) {
   const [branchTab, setBranchTab] = useState('speedywash');
   const [announcementsList, setAnnouncementsList] = useState([]);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const scrollCue = useScrollCue();
 
   useFocusEffect(
     useCallback(() => {
@@ -301,7 +303,14 @@ export default function HomeScreen({ navigation }) {
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} style={S.scroll}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        style={S.scroll}
+        onScroll={scrollCue.onScroll}
+        scrollEventThrottle={16}
+        onContentSizeChange={scrollCue.onContentSizeChange}
+        onLayout={scrollCue.onLayout}
+      >
 
         {/* ── Announcement Banner ────────────────────────────────────────── */}
         {announcementsList.length > 0 && (
@@ -445,6 +454,7 @@ export default function HomeScreen({ navigation }) {
 
         </View>
       </ScrollView>
+      <ScrollCue visible={scrollCue.showCue} bottom={100} />
     </SafeAreaView>
   );
 }
