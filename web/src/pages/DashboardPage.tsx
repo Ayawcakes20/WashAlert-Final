@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ShoppingCart,
   Clock,
@@ -13,11 +14,12 @@ import {
   Activity,
   BarChart3,
   CalendarDays,
-  Cpu,
   ArrowUpRight,
-  Loader2,
   Info,
   CreditCard,
+  ClipboardList,
+  ChevronRight,
+  Zap,
 } from "lucide-react";
 import {
   BarChart,
@@ -81,7 +83,11 @@ const PAYMENT_COLORS: Record<string, string> = {
 };
 
 const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 }).format(value);
+  new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    minimumFractionDigits: 2,
+  }).format(value);
 
 const timeGreeting = () => {
   const h = new Date().getHours();
@@ -91,7 +97,12 @@ const timeGreeting = () => {
 };
 
 const todayLabel = () =>
-  new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
 
 function mapOrder(order: JobOrderResponse) {
   const timestamp = new Date(order.updatedAt || order.createdAt);
@@ -101,7 +112,8 @@ function mapOrder(order: JobOrderResponse) {
     service: order.serviceType === "PICKUP_DELIVERY" ? "Pickup & Delivery" : "Drop Off",
     branch: order.branch,
     status: STATUS_LABEL[order.status] || order.status,
-    dateTime: timestamp.toLocaleDateString("en-US", { month: "short", day: "numeric" }) +
+    dateTime:
+      timestamp.toLocaleDateString("en-US", { month: "short", day: "numeric" }) +
       " • " +
       timestamp.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
   };
@@ -179,7 +191,10 @@ function LoadingRows({ cols }: { cols: number }) {
         <tr key={i}>
           {[...Array(cols)].map((__, j) => (
             <td key={j} className="py-3 pr-4">
-              <div className="h-4 bg-muted rounded animate-pulse" style={{ width: `${60 + (j % 3) * 20}%` }} />
+              <div
+                className="h-4 bg-muted rounded animate-pulse"
+                style={{ width: `${60 + (j % 3) * 20}%` }}
+              />
             </td>
           ))}
         </tr>
@@ -200,7 +215,10 @@ function RecentOrdersTable({
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 5;
   const totalPages = Math.max(1, Math.ceil(orders.length / PAGE_SIZE));
-  const paginated = useMemo(() => orders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [orders, page]);
+  const paginated = useMemo(
+    () => orders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [orders, page],
+  );
 
   return (
     <div>
@@ -211,7 +229,9 @@ function RecentOrdersTable({
               <th className="text-left pb-3 font-medium">Order ID</th>
               <th className="text-left pb-3 font-medium">Customer</th>
               <th className="text-left pb-3 font-medium hidden sm:table-cell">Service</th>
-              {showBranch && <th className="text-left pb-3 font-medium hidden lg:table-cell">Branch</th>}
+              {showBranch && (
+                <th className="text-left pb-3 font-medium hidden lg:table-cell">Branch</th>
+              )}
               <th className="text-left pb-3 font-medium">Status</th>
               <th className="text-right pb-3 font-medium hidden md:table-cell">Date & Time</th>
             </tr>
@@ -229,7 +249,9 @@ function RecentOrdersTable({
                   <td className="py-3 font-medium text-foreground">{o.customer}</td>
                   <td className="py-3 text-muted-foreground hidden sm:table-cell">{o.service}</td>
                   {showBranch && (
-                    <td className="py-3 text-muted-foreground text-xs hidden lg:table-cell">{o.branch}</td>
+                    <td className="py-3 text-muted-foreground text-xs hidden lg:table-cell">
+                      {o.branch}
+                    </td>
                   )}
                   <td className="py-3">
                     <span
@@ -245,7 +267,10 @@ function RecentOrdersTable({
               ))
             ) : (
               <tr>
-                <td colSpan={showBranch ? 6 : 5} className="py-8 text-center text-sm text-muted-foreground">
+                <td
+                  colSpan={showBranch ? 6 : 5}
+                  className="py-8 text-center text-sm text-muted-foreground"
+                >
                   No recent orders available.
                 </td>
               </tr>
@@ -280,9 +305,99 @@ function RecentOrdersTable({
   );
 }
 
+// ─── Quick Action Card ────────────────────────────────────────────────────────
+
+function QuickActionCard({
+  icon: Icon,
+  label,
+  description,
+  badge,
+  badgeColor,
+  accent,
+  onClick,
+}: {
+  icon: React.ElementType;
+  label: string;
+  description: string;
+  badge?: string | number;
+  badgeColor?: "red" | "amber" | "emerald";
+  accent: "primary" | "mint" | "gold" | "red" | "violet" | "blue";
+  onClick: () => void;
+}) {
+  const accentMap: Record<string, { icon: string; hover: string; border: string }> = {
+    primary: {
+      icon: "bg-primary/10 text-primary",
+      hover: "hover:border-primary/40 hover:bg-primary/5",
+      border: "border-border/50",
+    },
+    mint: {
+      icon: "bg-emerald-100 text-emerald-700",
+      hover: "hover:border-emerald-300 hover:bg-emerald-50/50",
+      border: "border-border/50",
+    },
+    gold: {
+      icon: "bg-amber-100 text-amber-700",
+      hover: "hover:border-amber-300 hover:bg-amber-50/50",
+      border: "border-border/50",
+    },
+    red: {
+      icon: "bg-red-100 text-red-600",
+      hover: "hover:border-red-300 hover:bg-red-50/50",
+      border: "border-border/50",
+    },
+    violet: {
+      icon: "bg-violet-100 text-violet-700",
+      hover: "hover:border-violet-300 hover:bg-violet-50/50",
+      border: "border-border/50",
+    },
+    blue: {
+      icon: "bg-blue-100 text-blue-700",
+      hover: "hover:border-blue-300 hover:bg-blue-50/50",
+      border: "border-border/50",
+    },
+  };
+
+  const badgeColorMap: Record<string, string> = {
+    red: "bg-red-500 text-white",
+    amber: "bg-amber-400 text-white",
+    emerald: "bg-emerald-500 text-white",
+  };
+
+  const { icon: iconClass, hover, border } = accentMap[accent];
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full text-left glass-card rounded-2xl p-4 border ${border} ${hover} transition-all duration-200 hover:shadow-[var(--shadow-elevated)] group active:scale-[0.98]`}
+    >
+      <div className="flex items-start gap-3">
+        <div className={`p-2.5 rounded-xl shrink-0 ${iconClass}`}>
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-semibold text-foreground">{label}</p>
+            {badge != null && (
+              <span
+                className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center ${badgeColorMap[badgeColor || "red"]}`}
+              >
+                {badge}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{description}</p>
+        </div>
+        <ChevronRight className="h-4 w-4 text-muted-foreground/40 shrink-0 mt-0.5 group-hover:text-muted-foreground transition-colors" />
+      </div>
+    </button>
+  );
+}
+
 // ─── Staff Dashboard ──────────────────────────────────────────────────────────
 
 function StaffDashboard() {
+  const navigate = useNavigate();
   const user = getSessionUser();
   const branchName = user?.branch || "Your Branch";
   const fullName = user?.fullName?.split(" ")[0] || "Staff";
@@ -293,72 +408,76 @@ function StaffDashboard() {
   const [ticketsLoading, setTicketsLoading] = useState(true);
   const [announcementsLoading, setAnnouncementsLoading] = useState(true);
 
-  const [orders, setOrders] = useState<{ pending: number; washing: number; drying: number; ready: number }>({
-    pending: 0, washing: 0, drying: 0, ready: 0,
-  });
+  const [orders, setOrders] = useState<{
+    pending: number;
+    washing: number;
+    drying: number;
+    ready: number;
+  }>({ pending: 0, washing: 0, drying: 0, ready: 0 });
   const [recentOrders, setRecentOrders] = useState<ReturnType<typeof mapOrder>[]>([]);
-  const [kpi, setKpi] = useState<{ ordersToday: number; ordersThisWeek: number; avgKgPerOrder30d: number } | null>(null);
+  const [kpi, setKpi] = useState<{
+    ordersToday: number;
+    ordersThisWeek: number;
+    avgKgPerOrder30d: number;
+  } | null>(null);
   const [lowStockItems, setLowStockItems] = useState<InventoryRecord[]>([]);
-  const [openTickets, setOpenTickets] = useState<Array<{ ticketNumber: string; issue: string; createdAt: string; status: string }>>([]);
+  const [openTickets, setOpenTickets] = useState<
+    Array<{ ticketNumber: string; issue: string; createdAt: string; status: string }>
+  >([]);
   const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([]);
 
   useEffect(() => {
     const loadAll = async () => {
-      // Summary
       try {
         const data = await dashboardApi.summary();
         setOrders(data.orders);
         setRecentOrders((data.recentOrders || []).map(mapOrder));
       } catch {
-        // leave defaults
+        /* leave defaults */
       } finally {
         setSummaryLoading(false);
       }
 
-      // KPI
       try {
         const data = await inventoryApi.operationsKpi();
         setKpi(data);
       } catch {
-        // leave null
+        /* leave null */
       } finally {
         setKpiLoading(false);
       }
 
-      // Inventory alerts
       try {
         const data = await inventoryApi.alerts();
-        // Backend already scopes to logged-in staff's branch
         setLowStockItems(data.filter((item) => item.lowStock));
       } catch {
-        // leave empty
+        /* leave empty */
       } finally {
         setInventoryLoading(false);
       }
 
-      // Support tickets
       try {
         const data = await supportApi.allTickets();
-        const open = (data as Array<{ ticketNumber: string; issue: string; createdAt: string; status: string }>)
+        const open = (
+          data as Array<{ ticketNumber: string; issue: string; createdAt: string; status: string }>
+        )
           .filter((t) => t.status === "OPEN")
           .slice(0, 5);
         setOpenTickets(open);
       } catch {
-        // leave empty
+        /* leave empty */
       } finally {
         setTicketsLoading(false);
       }
 
-      // Announcements
       try {
         const data = await announcementsApi.list();
-        // Show announcements for all branches or for this staff's branch
         const relevant = data
           .filter((a) => a.targetAllBranches || !a.branch || a.branch === branchName)
           .slice(0, 4);
         setAnnouncements(relevant);
       } catch {
-        // leave empty
+        /* leave empty */
       } finally {
         setAnnouncementsLoading(false);
       }
@@ -376,6 +495,9 @@ function StaffDashboard() {
     HOLIDAY: "Holiday",
     GENERAL: "General",
   };
+
+  const openTicketCount = openTickets.length;
+  const lowStockCount = lowStockItems.length;
 
   return (
     <motion.div
@@ -402,7 +524,7 @@ function StaffDashboard() {
         </div>
       </motion.div>
 
-      {/* Stat Cards — 3: Pending, In Progress, Ready */}
+      {/* Stat Cards — 3 */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
           icon={Clock}
@@ -427,11 +549,75 @@ function StaffDashboard() {
         />
       </div>
 
+      {/* Quick Actions */}
+      <motion.div variants={ANIM_ITEM}>
+        <div className="flex items-center gap-2 mb-4">
+          <Zap className="h-4 w-4 text-primary" />
+          <h2 className="text-base font-semibold text-foreground">Quick Actions</h2>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <QuickActionCard
+            icon={ClipboardList}
+            label="Process Orders"
+            description={
+              summaryLoading
+                ? "View & manage branch orders"
+                : orders.pending > 0
+                  ? `${orders.pending} pending order${orders.pending !== 1 ? "s" : ""} need attention`
+                  : "View & manage branch orders"
+            }
+            badge={!summaryLoading && orders.pending > 0 ? orders.pending : undefined}
+            badgeColor="red"
+            accent="primary"
+            onClick={() => navigate("/orders")}
+          />
+          <QuickActionCard
+            icon={Package}
+            label="Check Inventory"
+            description={
+              inventoryLoading
+                ? "View branch stock levels"
+                : lowStockCount > 0
+                  ? `${lowStockCount} item${lowStockCount !== 1 ? "s" : ""} below reorder level`
+                  : "All stock levels are sufficient"
+            }
+            badge={!inventoryLoading && lowStockCount > 0 ? lowStockCount : undefined}
+            badgeColor="amber"
+            accent="gold"
+            onClick={() => navigate("/inventory")}
+          />
+          <QuickActionCard
+            icon={MessageSquare}
+            label="Support Tickets"
+            description={
+              ticketsLoading
+                ? "View customer support tickets"
+                : openTicketCount > 0
+                  ? `${openTicketCount} open ticket${openTicketCount !== 1 ? "s" : ""} need response`
+                  : "No open tickets right now"
+            }
+            badge={!ticketsLoading && openTicketCount > 0 ? openTicketCount : undefined}
+            badgeColor="red"
+            accent="red"
+            onClick={() => navigate("/support-tickets")}
+          />
+          <QuickActionCard
+            icon={Megaphone}
+            label="Announcements"
+            description="View branch & system notices"
+            accent="blue"
+            onClick={() => navigate("/announcements")}
+          />
+        </div>
+      </motion.div>
+
       {/* Operational KPI row */}
       {(kpiLoading || kpi) && (
         <motion.div variants={ANIM_ITEM} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="glass-card rounded-2xl p-5">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Orders Today</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
+              Orders Today
+            </p>
             {kpiLoading ? (
               <div className="h-8 w-16 bg-muted rounded animate-pulse" />
             ) : (
@@ -439,7 +625,9 @@ function StaffDashboard() {
             )}
           </div>
           <div className="glass-card rounded-2xl p-5">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">This Week</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
+              This Week
+            </p>
             {kpiLoading ? (
               <div className="h-8 w-16 bg-muted rounded animate-pulse" />
             ) : (
@@ -447,12 +635,16 @@ function StaffDashboard() {
             )}
           </div>
           <div className="glass-card rounded-2xl p-5">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Avg. Weight / Order (30d)</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
+              Avg. Weight / Order (30d)
+            </p>
             {kpiLoading ? (
               <div className="h-8 w-24 bg-muted rounded animate-pulse" />
             ) : (
               <p className="text-3xl font-bold text-foreground">
-                {kpi?.avgKgPerOrder30d != null ? `${kpi.avgKgPerOrder30d.toFixed(1)} kg` : "—"}
+                {kpi?.avgKgPerOrder30d != null
+                  ? `${kpi.avgKgPerOrder30d.toFixed(1)} kg`
+                  : "—"}
               </p>
             )}
           </div>
@@ -472,7 +664,21 @@ function StaffDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Inventory alerts */}
         <motion.div variants={ANIM_ITEM} className="glass-card rounded-2xl p-6">
-          <SectionHeader title="Low Stock Alerts" subtitle="Items below reorder level" />
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Low Stock Alerts</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">Items below reorder level</p>
+            </div>
+            {!inventoryLoading && lowStockCount > 0 && (
+              <button
+                type="button"
+                onClick={() => navigate("/inventory")}
+                className="text-[11px] font-medium text-primary hover:underline flex items-center gap-1"
+              >
+                Manage <ChevronRight className="h-3 w-3" />
+              </button>
+            )}
+          </div>
           {inventoryLoading ? (
             <div className="space-y-3">
               {[...Array(3)].map((_, i) => (
@@ -511,11 +717,20 @@ function StaffDashboard() {
               <h2 className="text-base font-semibold text-foreground">Open Tickets</h2>
               <p className="text-xs text-muted-foreground mt-0.5">Unresolved support issues</p>
             </div>
-            {!ticketsLoading && openTickets.length > 0 && (
-              <span className="flex items-center justify-center h-6 min-w-[24px] px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold">
-                {openTickets.length}
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {!ticketsLoading && openTicketCount > 0 && (
+                <span className="flex items-center justify-center h-6 min-w-[24px] px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold">
+                  {openTicketCount}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => navigate("/support-tickets")}
+                className="text-[11px] font-medium text-primary hover:underline flex items-center gap-1"
+              >
+                View all <ChevronRight className="h-3 w-3" />
+              </button>
+            </div>
           </div>
           {ticketsLoading ? (
             <div className="space-y-3">
@@ -531,9 +746,14 @@ function StaffDashboard() {
                   className="p-3 rounded-xl bg-red-50 border border-red-200"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-xs font-semibold text-red-700 font-mono">{ticket.ticketNumber}</p>
+                    <p className="text-xs font-semibold text-red-700 font-mono">
+                      {ticket.ticketNumber}
+                    </p>
                     <span className="text-[10px] text-red-500 shrink-0">
-                      {new Date(ticket.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      {new Date(ticket.createdAt).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                      })}
                     </span>
                   </div>
                   <p className="text-xs text-foreground mt-1 line-clamp-2">{ticket.issue}</p>
@@ -547,7 +767,19 @@ function StaffDashboard() {
 
         {/* Announcements */}
         <motion.div variants={ANIM_ITEM} className="glass-card rounded-2xl p-6">
-          <SectionHeader title="Announcements" subtitle="Latest branch & system notices" />
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Announcements</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">Latest branch & system notices</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate("/announcements")}
+              className="text-[11px] font-medium text-primary hover:underline flex items-center gap-1"
+            >
+              View all <ChevronRight className="h-3 w-3" />
+            </button>
+          </div>
           {announcementsLoading ? (
             <div className="space-y-3">
               {[...Array(3)].map((_, i) => (
@@ -568,7 +800,10 @@ function StaffDashboard() {
                       {announcementTypeLabel[a.type] || a.type}
                     </span>
                     <span className="text-[10px] text-muted-foreground ml-auto">
-                      {new Date(a.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      {new Date(a.createdAt).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                      })}
                     </span>
                   </div>
                   <p className="text-xs font-semibold text-foreground">{a.title}</p>
@@ -588,6 +823,8 @@ function StaffDashboard() {
 // ─── Admin Dashboard ──────────────────────────────────────────────────────────
 
 function AdminDashboard() {
+  const navigate = useNavigate();
+
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [kpiLoading, setKpiLoading] = useState(true);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
@@ -595,9 +832,12 @@ function AdminDashboard() {
   const [ticketsLoading, setTicketsLoading] = useState(true);
   const [announcementsLoading, setAnnouncementsLoading] = useState(true);
 
-  const [orders, setOrders] = useState<{ pending: number; washing: number; drying: number; ready: number; machines: { available: number } }>({
-    pending: 0, washing: 0, drying: 0, ready: 0, machines: { available: 0 },
-  });
+  const [orders, setOrders] = useState<{
+    pending: number;
+    washing: number;
+    drying: number;
+    ready: number;
+  }>({ pending: 0, washing: 0, drying: 0, ready: 0 });
   const [recentOrders, setRecentOrders] = useState<ReturnType<typeof mapOrder>[]>([]);
   const [kpi, setKpi] = useState<{ ordersToday: number; ordersThisWeek: number } | null>(null);
   const [analytics, setAnalytics] = useState<{
@@ -610,32 +850,29 @@ function AdminDashboard() {
   const [openTicketCount, setOpenTicketCount] = useState(0);
   const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([]);
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   useEffect(() => {
     const loadAll = async () => {
-      // Summary
       try {
         const data = await dashboardApi.summary();
-        setOrders({ ...data.orders, machines: data.machines });
+        setOrders(data.orders);
         setRecentOrders((data.recentOrders || []).map(mapOrder));
       } catch {
-        // leave defaults
+        /* leave defaults */
       } finally {
         setSummaryLoading(false);
       }
 
-      // KPI
       try {
         const data = await inventoryApi.operationsKpi();
         setKpi(data);
       } catch {
-        // leave null
+        /* leave null */
       } finally {
         setKpiLoading(false);
       }
 
-      // Analytics (today for revenue snapshot)
       try {
         const data = await analyticsApi.summary({ fromDate: todayStr, toDate: todayStr });
         setAnalytics({
@@ -645,38 +882,37 @@ function AdminDashboard() {
           paymentMethodBreakdown: data.paymentMethodBreakdown || {},
         });
       } catch {
-        // leave null — do not show revenue if unavailable
+        /* leave null */
       } finally {
         setAnalyticsLoading(false);
       }
 
-      // Inventory alerts
       try {
         const data = await inventoryApi.alerts();
         setLowStockItems(data.filter((item) => item.lowStock));
       } catch {
-        // leave empty
+        /* leave empty */
       } finally {
         setInventoryLoading(false);
       }
 
-      // Support tickets count
       try {
         const data = await supportApi.allTickets();
-        const count = (data as Array<{ status: string }>).filter((t) => t.status === "OPEN").length;
+        const count = (data as Array<{ status: string }>).filter(
+          (t) => t.status === "OPEN",
+        ).length;
         setOpenTicketCount(count);
       } catch {
-        // leave 0
+        /* leave 0 */
       } finally {
         setTicketsLoading(false);
       }
 
-      // Announcements
       try {
         const data = await announcementsApi.list();
         setAnnouncements(data.slice(0, 4));
       } catch {
-        // leave empty
+        /* leave empty */
       } finally {
         setAnnouncementsLoading(false);
       }
@@ -686,10 +922,14 @@ function AdminDashboard() {
 
   const paymentChartData = useMemo(() => {
     if (!analytics?.paymentMethodBreakdown) return [];
-    return Object.entries(analytics.paymentMethodBreakdown).map(([method, count]) => ({ method, count }));
+    return Object.entries(analytics.paymentMethodBreakdown).map(([method, count]) => ({
+      method,
+      count,
+    }));
   }, [analytics]);
 
   const activeOrders = orders.pending + orders.washing + orders.drying + orders.ready;
+  const lowStockCount = lowStockItems.length;
 
   const announcementTypeColor: Record<string, string> = {
     CLOSURE: "bg-red-100 text-red-700",
@@ -713,7 +953,9 @@ function AdminDashboard() {
       <motion.div variants={ANIM_ITEM}>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
           <div>
-            <h1 className="text-2xl font-bold text-foreground tracking-tight">Command Center</h1>
+            <h1 className="text-2xl font-bold text-foreground tracking-tight">
+              Command Center
+            </h1>
             <p className="text-sm text-muted-foreground mt-1">
               Business overview · All branches · {todayLabel()}
             </p>
@@ -725,8 +967,8 @@ function AdminDashboard() {
         </div>
       </motion.div>
 
-      {/* Stat cards — 6 metrics */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+      {/* Stat cards — 5 metrics (Machines Available removed) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <StatCard
           icon={ShoppingCart}
           label="Active Orders"
@@ -744,20 +986,14 @@ function AdminDashboard() {
         <StatCard
           icon={CalendarDays}
           label="Orders Today"
-          value={kpiLoading ? "—" : kpi?.ordersToday ?? "—"}
+          value={kpiLoading ? "—" : (kpi?.ordersToday ?? "—")}
           accent="primary"
         />
         <StatCard
           icon={TrendingUp}
           label="Orders This Week"
-          value={kpiLoading ? "—" : kpi?.ordersThisWeek ?? "—"}
+          value={kpiLoading ? "—" : (kpi?.ordersThisWeek ?? "—")}
           accent="primary"
-        />
-        <StatCard
-          icon={Cpu}
-          label="Machines Available"
-          value={summaryLoading ? "—" : orders.machines?.available ?? "—"}
-          accent="mint"
         />
         <StatCard
           icon={MessageSquare}
@@ -766,6 +1002,82 @@ function AdminDashboard() {
           accent={openTicketCount > 0 ? "red" : "mint"}
         />
       </div>
+
+      {/* Quick Actions */}
+      <motion.div variants={ANIM_ITEM}>
+        <div className="flex items-center gap-2 mb-4">
+          <Zap className="h-4 w-4 text-primary" />
+          <h2 className="text-base font-semibold text-foreground">Quick Actions</h2>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <QuickActionCard
+            icon={Users}
+            label="User Management"
+            description="Manage staff, drivers & account access"
+            accent="primary"
+            onClick={() => navigate("/users")}
+          />
+          <QuickActionCard
+            icon={BarChart3}
+            label="AI Analytics & Reports"
+            description="View revenue trends, branch performance & export reports"
+            accent="violet"
+            onClick={() => navigate("/analytics")}
+          />
+          <QuickActionCard
+            icon={Package}
+            label="Inventory Overview"
+            description={
+              inventoryLoading
+                ? "Check stock levels across all branches"
+                : lowStockCount > 0
+                  ? `${lowStockCount} item${lowStockCount !== 1 ? "s" : ""} need restocking across branches`
+                  : "Check stock levels across all branches"
+            }
+            badge={!inventoryLoading && lowStockCount > 0 ? lowStockCount : undefined}
+            badgeColor="amber"
+            accent="gold"
+            onClick={() => navigate("/inventory")}
+          />
+          <QuickActionCard
+            icon={MessageSquare}
+            label="Support Tickets"
+            description={
+              ticketsLoading
+                ? "Review & respond to customer issues"
+                : openTicketCount > 0
+                  ? `${openTicketCount} open ticket${openTicketCount !== 1 ? "s" : ""} awaiting response`
+                  : "No open tickets right now"
+            }
+            badge={!ticketsLoading && openTicketCount > 0 ? openTicketCount : undefined}
+            badgeColor="red"
+            accent="red"
+            onClick={() => navigate("/support-tickets")}
+          />
+          <QuickActionCard
+            icon={Megaphone}
+            label="Announcements"
+            description="Post notices to branches or all staff"
+            accent="blue"
+            onClick={() => navigate("/announcements")}
+          />
+          <QuickActionCard
+            icon={ClipboardList}
+            label="All Orders"
+            description={
+              summaryLoading
+                ? "View & manage orders across all branches"
+                : activeOrders > 0
+                  ? `${activeOrders} active order${activeOrders !== 1 ? "s" : ""} in progress`
+                  : "View & manage orders across all branches"
+            }
+            badge={!summaryLoading && orders.pending > 0 ? orders.pending : undefined}
+            badgeColor="amber"
+            accent="primary"
+            onClick={() => navigate("/orders")}
+          />
+        </div>
+      </motion.div>
 
       {/* Revenue + Payment method breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -791,20 +1103,38 @@ function AdminDashboard() {
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                From <span className="font-semibold text-foreground">{analytics.totalOrders}</span> orders processed today across all branches
+                From{" "}
+                <span className="font-semibold text-foreground">{analytics.totalOrders}</span>{" "}
+                orders processed today across all branches
               </p>
 
-              {/* Payment method breakdown mini chart */}
               {paymentChartData.length > 0 && (
                 <div className="mt-5">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
                     Payment Method Breakdown
                   </p>
                   <ResponsiveContainer width="100%" height={120}>
-                    <BarChart data={paymentChartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                      <XAxis dataKey="method" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                    <BarChart
+                      data={paymentChartData}
+                      margin={{ top: 0, right: 0, left: -20, bottom: 0 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="hsl(var(--border))"
+                        vertical={false}
+                      />
+                      <XAxis
+                        dataKey="method"
+                        tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                        axisLine={false}
+                        tickLine={false}
+                        allowDecimals={false}
+                      />
                       <Tooltip
                         contentStyle={{
                           background: "hsl(var(--card))",
@@ -827,6 +1157,14 @@ function AdminDashboard() {
                   </ResponsiveContainer>
                 </div>
               )}
+
+              <button
+                type="button"
+                onClick={() => navigate("/analytics")}
+                className="mt-4 text-xs font-medium text-primary hover:underline flex items-center gap-1"
+              >
+                View full analytics report <ChevronRight className="h-3.5 w-3.5" />
+              </button>
             </div>
           ) : (
             <EmptyState icon={CreditCard} message="Revenue data not available for today." />
@@ -864,12 +1202,17 @@ function AdminDashboard() {
                           <div className="flex items-center gap-2">
                             <span
                               className="h-1.5 w-1.5 rounded-full shrink-0"
-                              style={{ background: i === 0 ? "hsl(var(--primary))" : "hsl(var(--border))" }}
+                              style={{
+                                background:
+                                  i === 0 ? "hsl(var(--primary))" : "hsl(var(--border))",
+                              }}
                             />
                             {b.branch}
                           </div>
                         </td>
-                        <td className="py-2.5 text-right font-semibold text-foreground">{b.totalOrders}</td>
+                        <td className="py-2.5 text-right font-semibold text-foreground">
+                          {b.totalOrders}
+                        </td>
                         <td className="py-2.5 text-right text-emerald-700 font-semibold text-xs">
                           {formatCurrency(b.revenue)}
                         </td>
@@ -886,7 +1229,21 @@ function AdminDashboard() {
 
       {/* Recent Orders — all branches */}
       <motion.div variants={ANIM_ITEM} className="glass-card rounded-2xl p-6">
-        <SectionHeader title="Recent Orders" subtitle="Latest orders across all branches" />
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-base font-semibold text-foreground">Recent Orders</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Latest orders across all branches
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate("/orders")}
+            className="text-[11px] font-medium text-primary hover:underline flex items-center gap-1"
+          >
+            View all orders <ChevronRight className="h-3 w-3" />
+          </button>
+        </div>
         <RecentOrdersTable orders={recentOrders} loading={summaryLoading} showBranch={true} />
       </motion.div>
 
@@ -897,14 +1254,25 @@ function AdminDashboard() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-base font-semibold text-foreground">System Inventory Alerts</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">Low-stock items across all branches</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Low-stock items across all branches
+              </p>
             </div>
-            {!inventoryLoading && lowStockItems.length > 0 && (
-              <span className="flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                <AlertTriangle className="h-3 w-3" />
-                {lowStockItems.length} item{lowStockItems.length !== 1 ? "s" : ""}
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {!inventoryLoading && lowStockCount > 0 && (
+                <span className="flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                  <AlertTriangle className="h-3 w-3" />
+                  {lowStockCount} item{lowStockCount !== 1 ? "s" : ""}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => navigate("/inventory")}
+                className="text-[11px] font-medium text-primary hover:underline flex items-center gap-1"
+              >
+                Manage <ChevronRight className="h-3 w-3" />
+              </button>
+            </div>
           </div>
           {inventoryLoading ? (
             <div className="space-y-3">
@@ -925,12 +1293,17 @@ function AdminDashboard() {
                 </thead>
                 <tbody>
                   {lowStockItems.slice(0, 8).map((item) => (
-                    <tr key={item.id} className="border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors">
+                    <tr
+                      key={item.id}
+                      className="border-b border-border/30 last:border-0 hover:bg-muted/20 transition-colors"
+                    >
                       <td className="py-2.5">
                         <p className="text-xs font-medium text-foreground">{item.itemName}</p>
                         <p className="text-[10px] text-muted-foreground">{item.category}</p>
                       </td>
-                      <td className="py-2.5 text-xs text-muted-foreground hidden sm:table-cell">{item.branch}</td>
+                      <td className="py-2.5 text-xs text-muted-foreground hidden sm:table-cell">
+                        {item.branch}
+                      </td>
                       <td className="py-2.5 text-right">
                         <span className="text-xs font-bold text-amber-700">
                           {item.currentStock} {item.unit}
@@ -951,7 +1324,21 @@ function AdminDashboard() {
 
         {/* Announcements */}
         <motion.div variants={ANIM_ITEM} className="glass-card rounded-2xl p-6">
-          <SectionHeader title="Latest Announcements" subtitle="Recent system & branch notices" />
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Latest Announcements</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Recent system & branch notices
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate("/announcements")}
+              className="text-[11px] font-medium text-primary hover:underline flex items-center gap-1"
+            >
+              Post / View all <ChevronRight className="h-3 w-3" />
+            </button>
+          </div>
           {announcementsLoading ? (
             <div className="space-y-3">
               {[...Array(3)].map((_, i) => (
@@ -968,13 +1355,14 @@ function AdminDashboard() {
                     >
                       {announcementTypeLabel[a.type] || a.type}
                     </span>
-                    {a.targetAllBranches ? (
-                      <span className="text-[10px] text-muted-foreground">All Branches</span>
-                    ) : (
-                      <span className="text-[10px] text-muted-foreground">{a.branch || "All Branches"}</span>
-                    )}
+                    <span className="text-[10px] text-muted-foreground">
+                      {a.targetAllBranches ? "All Branches" : (a.branch || "All Branches")}
+                    </span>
                     <span className="text-[10px] text-muted-foreground ml-auto">
-                      {new Date(a.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      {new Date(a.createdAt).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                      })}
                     </span>
                   </div>
                   <p className="text-xs font-semibold text-foreground">{a.title}</p>
