@@ -2,6 +2,14 @@
   "cli": {
     "version": ">= 16.0.0"
   },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleTeamId": "6PF2CSP5TG",
+        "ascAppId": "6807659635"
+      }
+    }
+  },
   "build": {
     "development": {
       "developmentClient": true,

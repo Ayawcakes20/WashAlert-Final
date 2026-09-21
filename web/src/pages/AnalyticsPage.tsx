@@ -187,8 +187,8 @@ export default function AnalyticsPage() {
     };
   };
 
-  // NLQ: generate context-aware answers from real data
-  const handleNlqGenerate = () => {
+  // NLQ: Gemini AI — generates natural-language answers from real analytics data
+  const handleNlqGenerate = async () => {
     if (!nlqQuestion.trim()) return;
     if (!summary) { setNlqAnswer("No analytics data loaded. Please apply a date range first."); return; }
     if (EXPORT_INTENT_REGEX.test(nlqQuestion)) {
@@ -200,45 +200,135 @@ export default function AnalyticsPage() {
     setNlqLoading(true);
     setNlqAnswer("");
 
-    setTimeout(() => {
-      const q = nlqQuestion.toLowerCase();
-      const topRevenueBranch = (summary.branchBreakdown || []).reduce(
-        (max, b) => (b.revenue > max.revenue ? b : max),
-        { branch: "N/A", revenue: 0, totalOrders: 0 }
-      );
-      const topOrderBranch = (summary.branchBreakdown || []).reduce(
-        (max, b) => (b.totalOrders > max.totalOrders ? b : max),
-        { branch: "N/A", revenue: 0, totalOrders: 0 }
-      );
-      const topPaymentMethod = paymentData.length
-        ? paymentData.reduce((max, p) => (p.count > max.count ? p : max))
-        : null;
+    const geminiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
 
-      let answer = "";
-      if (q.includes("revenue") || q.includes("earned") || q.includes("most revenue")) {
-        answer = topRevenueBranch.branch === "N/A"
-          ? "No verified revenue data is available for this period."
-          : `${topRevenueBranch.branch} earned the most revenue at PHP ${Number(topRevenueBranch.revenue).toLocaleString()} during the selected period, with ${topRevenueBranch.totalOrders} orders.`;
-      } else if (q.includes("peak") || q.includes("hour") || q.includes("busiest")) {
-        answer = summary.peakHour != null
-          ? `The peak booking hour is ${summary.peakHour}:00 - ${summary.peakHour + 1}:00. This is when most customers place their orders.`
-          : "No peak hour data is available yet for this period.";
-      } else if (q.includes("in progress") || q.includes("washing") || q.includes("drying")) {
-        answer = `Currently there are ${summary.washing} orders being washed and ${summary.drying} being dried. ${summary.pending} are still pending and ${summary.ready} are ready for pickup.`;
-      } else if (q.includes("payment") || q.includes("gcash") || q.includes("maya") || q.includes("cash")) {
-        answer = topPaymentMethod
-          ? `The most used payment method is ${topPaymentMethod.label} with ${topPaymentMethod.count} verified transactions in this period.`
-          : "No verified payment transactions were found in this period.";
-      } else if (q.includes("most orders") || q.includes("busiest branch")) {
-        answer = topOrderBranch.branch === "N/A"
-          ? "No order data is available for this period."
-          : `${topOrderBranch.branch} has the most orders with ${topOrderBranch.totalOrders} bookings and PHP ${Number(topOrderBranch.revenue).toLocaleString()} revenue.`;
-      } else {
-        answer = `For the period ${summary.fromDate} to ${summary.toDate}: Total orders = ${summary.totalOrders}, Total revenue = PHP ${Number(summary.totalRevenue).toLocaleString()}, Peak hour = ${summary.peakHour != null ? `${summary.peakHour}:00` : "N/A"}. Top branch by revenue: ${topRevenueBranch.branch}.`;
+    if (geminiKey) {
+      // ── Real Gemini AI path ──────────────────────────────────────────────
+      try {
+        const topRevenueBranch = (summary.branchBreakdown || []).reduce(
+          (max, b) => (b.revenue > max.revenue ? b : max),
+          { branch: "N/A", revenue: 0, totalOrders: 0 }
+        );
+        const topOrderBranch = (summary.branchBreakdown || []).reduce(
+          (max, b) => (b.totalOrders > max.totalOrders ? b : max),
+          { branch: "N/A", revenue: 0, totalOrders: 0 }
+        );
+
+        const context = {
+          dateRange: { from: summary.fromDate, to: summary.toDate },
+          totalOrders: summary.totalOrders,
+          totalRevenue: `PHP ${Number(summary.totalRevenue).toLocaleString()}`,
+          orderStatus: {
+            pending: summary.pending,
+            washing: summary.washing,
+            drying: summary.drying,
+            ready: summary.ready,
+          },
+          peakHour:
+            summary.peakHour != null
+              ? `${summary.peakHour}:00 - ${summary.peakHour + 1}:00`
+              : "N/A",
+          branchBreakdown: (summary.branchBreakdown || []).map((b) => ({
+            branch: b.branch,
+            orders: b.totalOrders,
+            revenue: `PHP ${Number(b.revenue).toLocaleString()}`,
+          })),
+          topBranchByRevenue: {
+            branch: topRevenueBranch.branch,
+            revenue: `PHP ${Number(topRevenueBranch.revenue).toLocaleString()}`,
+            orders: topRevenueBranch.totalOrders,
+          },
+          topBranchByOrders: {
+            branch: topOrderBranch.branch,
+            orders: topOrderBranch.totalOrders,
+            revenue: `PHP ${Number(topOrderBranch.revenue).toLocaleString()}`,
+          },
+          paymentMethods: summary.paymentMethodBreakdown || {},
+          hourlyBreakdown: summary.hourlyBreakdown || {},
+        };
+
+        const prompt = `You are WashAlert AI, an analytics assistant for a laundry service business in the Philippines.
+You have access to the following REAL business data for the period ${summary.fromDate} to ${summary.toDate}:
+
+${JSON.stringify(context, null, 2)}
+
+The admin asks: "${nlqQuestion}"
+
+Rules:
+- Answer ONLY based on the real data above. Never invent or estimate numbers.
+- If the question is in Tagalog or Filipino, answer in Tagalog/Filipino.
+- If the question is in English, answer in English.
+- Be concise and natural (2–3 sentences max).
+- Use the actual branch names, PHP amounts, and counts from the data.
+- If the specific data needed is not in the dataset, say so clearly and honestly.
+- Do not mention that you are Gemini or an AI. Respond as WashAlert AI.`;
+
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { temperature: 0.2, maxOutputTokens: 300 },
+            }),
+          }
+        );
+
+        if (!res.ok) throw new Error(`Gemini responded with status ${res.status}`);
+        const json = await res.json();
+        const aiText: string =
+          json?.candidates?.[0]?.content?.parts?.[0]?.text ??
+          "Could not generate an answer. Please try again.";
+        setNlqAnswer(aiText.trim());
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        setNlqAnswer(`AI is temporarily unavailable (${msg}). Please try again in a moment.`);
+      } finally {
+        setNlqLoading(false);
       }
-      setNlqAnswer(answer);
-      setNlqLoading(false);
-    }, 1000);
+    } else {
+      // ── Fallback keyword matcher (no API key set) ────────────────────────
+      setTimeout(() => {
+        const q = nlqQuestion.toLowerCase();
+        const topRevenueBranch = (summary.branchBreakdown || []).reduce(
+          (max, b) => (b.revenue > max.revenue ? b : max),
+          { branch: "N/A", revenue: 0, totalOrders: 0 }
+        );
+        const topOrderBranch = (summary.branchBreakdown || []).reduce(
+          (max, b) => (b.totalOrders > max.totalOrders ? b : max),
+          { branch: "N/A", revenue: 0, totalOrders: 0 }
+        );
+        const topPaymentMethod = paymentData.length
+          ? paymentData.reduce((max, p) => (p.count > max.count ? p : max))
+          : null;
+
+        let answer = "";
+        if (q.includes("revenue") || q.includes("earned") || q.includes("most revenue")) {
+          answer = topRevenueBranch.branch === "N/A"
+            ? "No verified revenue data is available for this period."
+            : `${topRevenueBranch.branch} earned the most revenue at PHP ${Number(topRevenueBranch.revenue).toLocaleString()} during the selected period, with ${topRevenueBranch.totalOrders} orders.`;
+        } else if (q.includes("peak") || q.includes("hour") || q.includes("busiest")) {
+          answer = summary.peakHour != null
+            ? `The peak booking hour is ${summary.peakHour}:00 - ${summary.peakHour + 1}:00. This is when most customers place their orders.`
+            : "No peak hour data is available yet for this period.";
+        } else if (q.includes("in progress") || q.includes("washing") || q.includes("drying")) {
+          answer = `Currently there are ${summary.washing} orders being washed and ${summary.drying} being dried. ${summary.pending} are still pending and ${summary.ready} are ready for pickup.`;
+        } else if (q.includes("payment") || q.includes("gcash") || q.includes("maya") || q.includes("cash")) {
+          answer = topPaymentMethod
+            ? `The most used payment method is ${topPaymentMethod.label} with ${topPaymentMethod.count} verified transactions in this period.`
+            : "No verified payment transactions were found in this period.";
+        } else if (q.includes("most orders") || q.includes("busiest branch")) {
+          answer = topOrderBranch.branch === "N/A"
+            ? "No order data is available for this period."
+            : `${topOrderBranch.branch} has the most orders with ${topOrderBranch.totalOrders} bookings and PHP ${Number(topOrderBranch.revenue).toLocaleString()} revenue.`;
+        } else {
+          answer = `For the period ${summary.fromDate} to ${summary.toDate}: Total orders = ${summary.totalOrders}, Total revenue = PHP ${Number(summary.totalRevenue).toLocaleString()}, Peak hour = ${summary.peakHour != null ? `${summary.peakHour}:00` : "N/A"}. Top branch by revenue: ${topRevenueBranch.branch}.`;
+        }
+        setNlqAnswer(answer);
+        setNlqLoading(false);
+      }, 1000);
+    }
   };
 
   const exportCsv = () => {
