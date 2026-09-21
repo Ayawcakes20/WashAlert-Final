@@ -363,6 +363,74 @@ const ANN_DOT: Record<string, string> = {
 };
 const ANN_LABEL: Record<string, string> = { CLOSURE: "Closure", HOLIDAY: "Holiday", GENERAL: "General" };
 
+// ─── Dashboard Hero ───────────────────────────────────────────────────────────
+function DashboardHero({
+  greeting,
+  name,
+  roleText,
+}: {
+  greeting: string;
+  name: string;
+  roleText: React.ReactNode;
+}) {
+  return (
+    <div className="relative w-full rounded-[2rem] overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.12)] mb-8 bg-[#0c2054]">
+      {/* Dynamic Background Gradient */}
+      <div 
+        className="absolute inset-0 pointer-events-none z-0" 
+        style={{
+          background: "linear-gradient(110deg, #0b1c4a 0%, #17428f 60%, #1e5ab3 100%)",
+        }}
+      />
+      
+      {/* Concentric rings on the right */}
+      <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[350px] h-[350px] sm:w-[500px] sm:h-[500px] border-[1px] border-white/5 rounded-full pointer-events-none z-0 translate-x-[20%]" />
+      <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[250px] h-[250px] sm:w-[350px] sm:h-[350px] border-[1px] border-white/5 rounded-full pointer-events-none z-0 translate-x-[15%]" />
+
+      {/* The Wave Circle (Animated) */}
+      <div className="absolute right-6 sm:right-20 top-1/2 -translate-y-1/2 w-32 h-32 sm:w-48 sm:h-48 rounded-full overflow-hidden z-0"
+           style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        {/* CSS Water Waves via rotating rounded squares */}
+        <style dangerouslySetInnerHTML={{ __html: `
+          @keyframes spin-slow { 100% { transform: rotate(360deg); } }
+          @keyframes spin-slow-reverse { 100% { transform: rotate(-360deg); } }
+        `}} />
+        <div className="absolute w-[250%] h-[250%] rounded-[40%] bg-white/5 left-[-75%] top-[40%]" style={{ animation: 'spin-slow 12s linear infinite' }} />
+        <div className="absolute w-[250%] h-[250%] rounded-[45%] bg-white/10 left-[-75%] top-[50%]" style={{ animation: 'spin-slow-reverse 15s linear infinite' }} />
+        <div className="absolute w-[250%] h-[250%] rounded-[43%] bg-white/10 left-[-75%] top-[60%]" style={{ animation: 'spin-slow 10s linear infinite' }} />
+      </div>
+
+      <div className="relative z-10 p-8 sm:p-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+        <div>
+           <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mb-2">{todayLabel()}</p>
+           <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-2 flex items-center gap-2">
+             {greeting}, {name} <span className="animate-bounce origin-bottom-right inline-block">👋</span>
+           </h1>
+           <p className="text-white/70 text-sm font-medium">
+             {roleText}
+           </p>
+        </div>
+        
+        {/* Live Data Badge */}
+        <div className="relative z-10 flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/20 rounded-full px-4 py-2 self-start sm:self-auto shadow-lg">
+           <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+           <span className="text-white/90 text-xs font-semibold tracking-wide">Live data</span>
+        </div>
+      </div>
+      
+      {/* Wave bottom shape cut-out */}
+      <svg 
+        className="absolute bottom-0 left-0 w-full h-6 sm:h-10 text-background translate-y-px z-10 pointer-events-none" 
+        viewBox="0 0 1440 54" 
+        fill="currentColor" 
+        preserveAspectRatio="none"
+      >
+        <path d="M0,54 L1440,54 L1440,24 C1152,54 864,54 576,28.8 C288,3.6 144,3.6 0,14.6 Z" />
+      </svg>
+    </div>
+  )
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // STAFF DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -410,31 +478,11 @@ function StaffDashboard() {
 
       {/* ── Hero header ── */}
       <motion.div variants={ANIM_ITEM}>
-        <div
-          className="rounded-3xl p-6 sm:p-8 relative overflow-hidden"
-          style={{ background: "linear-gradient(135deg, hsl(218,58%,18%) 0%, hsl(218,58%,28%) 60%, hsl(168,55%,32%) 100%)" }}
-        >
-          {/* Decorative orbs */}
-          <div className="absolute -right-10 -top-10 h-48 w-48 rounded-full opacity-10 bg-white" />
-          <div className="absolute right-20 bottom-0 h-32 w-32 rounded-full opacity-5 bg-white" />
-          <div className="absolute left-1/2 bottom-0 h-20 w-20 rounded-full opacity-10" style={{ background: "hsl(42,86%,64%)" }} />
-
-          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <p className="text-white/60 text-xs font-medium uppercase tracking-widest mb-1">{todayLabel()}</p>
-              <h1 className="text-2xl sm:text-3xl font-bold text-white">
-                {timeGreeting()}, {fullName} 👋
-              </h1>
-              <p className="text-white/70 text-sm mt-1">
-                You're managing <span className="text-white font-semibold">{branchName}</span>
-              </p>
-            </div>
-            <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl px-4 py-2 self-start sm:self-auto">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-white/80 text-xs font-medium">Live data</span>
-            </div>
-          </div>
-        </div>
+        <DashboardHero 
+          greeting={timeGreeting()}
+          name={fullName}
+          roleText={<>You're managing <span className="text-white font-semibold">{branchName}</span></>}
+        />
       </motion.div>
 
       {/* ── 3 Stat Cards ── */}
@@ -690,28 +738,11 @@ function AdminDashboard() {
 
       {/* ── Hero header ── */}
       <motion.div variants={ANIM_ITEM}>
-        <div
-          className="rounded-3xl p-6 sm:p-8 relative overflow-hidden"
-          style={{ background: "linear-gradient(135deg, hsl(218,58%,16%) 0%, hsl(218,58%,26%) 55%, hsl(42,60%,40%) 100%)" }}
-        >
-          <div className="absolute -right-8 -top-8 h-52 w-52 rounded-full opacity-10 bg-white" />
-          <div className="absolute right-32 -bottom-4 h-36 w-36 rounded-full opacity-5 bg-white" />
-          <div className="absolute left-1/3 top-0 h-24 w-24 rounded-full opacity-5" style={{ background: "hsl(42,86%,64%)" }} />
-
-          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <p className="text-white/60 text-xs font-medium uppercase tracking-widest mb-1">{todayLabel()}</p>
-              <h1 className="text-2xl sm:text-3xl font-bold text-white">Command Center</h1>
-              <p className="text-white/70 text-sm mt-1">Business overview · All branches</p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl px-4 py-2 flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-white/80 text-xs font-medium">Live data</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <DashboardHero 
+          greeting={timeGreeting()}
+          name={getSessionUser()?.fullName?.split(" ")[0] || "Admin"}
+          roleText="Business overview · All branches"
+        />
       </motion.div>
 
       {/* ── 5 Stat Cards (no Machines Available) ── */}
