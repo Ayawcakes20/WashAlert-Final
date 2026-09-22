@@ -90,7 +90,7 @@ const App = () => (
             <Route
               path="/orders"
               element={
-                <RequireRole roles={["ADMIN", "STAFF"]}>
+                <RequireRole roles={["STAFF"]}>
                   <OrderManagementPage />
                 </RequireRole>
               }

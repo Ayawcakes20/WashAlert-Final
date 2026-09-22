@@ -943,12 +943,6 @@ function AdminDashboard() {
           title="Recent Orders"
           subtitle="Latest orders across all branches"
           accent="navy"
-          action={
-            <button type="button" onClick={() => navigate("/orders")}
-              className="text-xs font-semibold text-primary hover:underline flex items-center gap-1">
-              View all <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          }
         />
         <RecentOrdersTable orders={recentOrders} loading={summaryLoading} showBranch={true} />
       </motion.div>
