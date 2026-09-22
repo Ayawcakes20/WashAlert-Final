@@ -471,7 +471,12 @@ function StaffDashboard() {
   }, [branchName]);
 
   const openTicketCount = openTickets.length;
-  const lowStockCount = lowStockItems.length;
+  // Split low-stock alerts into consumables (quantity-based) vs assets (condition-based)
+  const lowStockConsumables = lowStockItems.filter(i => !i.assetType || i.assetType !== "Asset");
+  const lowStockConsumableCount = lowStockConsumables.length;
+  const outOfStockConsumables = lowStockConsumables.filter(i => i.currentStock === 0);
+  const outOfStockCount = outOfStockConsumables.length;
+  const lowStockCount = lowStockConsumableCount;
 
   return (
     <motion.div initial="hidden" animate="show" variants={ANIM_CONTAINER} className="space-y-8">
@@ -513,8 +518,14 @@ function StaffDashboard() {
           <QuickActionCard
             icon={Package}
             label="Check Inventory"
-            description={!inventoryLoading && lowStockCount > 0 ? `${lowStockCount} item${lowStockCount !== 1 ? "s" : ""} below reorder level` : "All stock levels are sufficient"}
-            badge={!inventoryLoading && lowStockCount > 0 ? lowStockCount : undefined}
+            description={
+              !inventoryLoading && outOfStockCount > 0
+                ? `${outOfStockCount} supply item${outOfStockCount !== 1 ? "s" : ""} out of stock`
+                : !inventoryLoading && lowStockConsumableCount > 0
+                  ? `${lowStockConsumableCount} item${lowStockConsumableCount !== 1 ? "s" : ""} below reorder level`
+                  : "All stock levels are sufficient"
+            }
+            badge={!inventoryLoading && lowStockConsumableCount > 0 ? lowStockConsumableCount : undefined}
             variant="gold"
             onClick={() => navigate("/inventory")}
           />
@@ -578,37 +589,46 @@ function StaffDashboard() {
         {/* Inventory alerts */}
         <motion.div variants={ANIM_ITEM} className="glass-card rounded-2xl p-6">
           <SectionHeading
-            title="Low Stock Alerts"
-            subtitle="Items below reorder level"
+            title="Supply Alerts"
+            subtitle="Consumable stock · Detergent &amp; Fabric Conditioner"
             accent="gold"
             action={
-              lowStockCount > 0
+              lowStockConsumableCount > 0
                 ? <button type="button" onClick={() => navigate("/inventory")} className="text-xs font-semibold text-amber-700 hover:underline flex items-center gap-1">Manage <ChevronRight className="h-3 w-3" /></button>
                 : undefined
             }
           />
           {inventoryLoading ? (
             <div className="space-y-3">{[...Array(3)].map((_, i) => <div key={i} className="h-12 bg-muted rounded-xl animate-pulse" />)}</div>
-          ) : lowStockItems.length > 0 ? (
+          ) : lowStockConsumables.length > 0 ? (
             <div className="space-y-2">
-              {lowStockItems.slice(0, 6).map(item => (
-                <div key={item.id} className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200">
-                  <div className="p-1.5 rounded-lg bg-amber-100 shrink-0">
-                    <Package className="h-3.5 w-3.5 text-amber-600" />
+              {lowStockConsumables.slice(0, 6).map(item => {
+                const isZero = item.currentStock === 0;
+                return (
+                  <div key={item.id} className={`flex items-center gap-3 p-3 rounded-xl border ${
+                    isZero ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"
+                  }`}>
+                    <div className={`p-1.5 rounded-lg shrink-0 ${isZero ? "bg-red-100" : "bg-amber-100"}`}>
+                      <Package className={`h-3.5 w-3.5 ${isZero ? "text-red-600" : "text-amber-600"}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-foreground truncate">{item.itemName}</p>
+                      <p className={`text-[10px] font-medium ${isZero ? "text-red-600" : "text-amber-600"}`}>
+                        {isZero ? "Out of stock" : "Low stock"}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className={`text-sm font-bold ${isZero ? "text-red-700" : "text-amber-700"}`}>
+                        {item.currentStock}<span className="text-[10px] font-medium ml-0.5">{item.unit}</span>
+                      </p>
+                      <p className={`text-[10px] ${isZero ? "text-red-400" : "text-amber-500"}`}>min {item.reorderLevel}</p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-foreground truncate">{item.itemName}</p>
-                    <p className="text-[10px] text-muted-foreground">{item.category}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-bold text-amber-700">{item.currentStock}<span className="text-[10px] font-medium ml-0.5">{item.unit}</span></p>
-                    <p className="text-[10px] text-amber-500">min {item.reorderLevel}</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
-            <EmptyState icon={Package} message="All inventory levels are sufficient." />
+            <EmptyState icon={Package} message="All consumable stock levels are sufficient." />
           )}
         </motion.div>
 
@@ -731,7 +751,11 @@ function AdminDashboard() {
     [analytics]
   );
   const activeOrders = orders.pending + orders.washing + orders.drying + orders.ready;
-  const lowStockCount = lowStockItems.length;
+  // Split low-stock by type: consumables (quantity-based) vs assets (condition-based)
+  const lowStockConsumables = lowStockItems.filter(i => !i.assetType || i.assetType !== "Asset");
+  const lowStockConsumableCount = lowStockConsumables.length;
+  const outOfStockConsumableCount = lowStockConsumables.filter(i => i.currentStock === 0).length;
+  const lowStockCount = lowStockConsumableCount;
 
   return (
     <motion.div initial="hidden" animate="show" variants={ANIM_CONTAINER} className="space-y-8">
@@ -780,8 +804,14 @@ function AdminDashboard() {
           <QuickActionCard
             icon={Package}
             label="Inventory Overview"
-            description={!inventoryLoading && lowStockCount > 0 ? `${lowStockCount} item${lowStockCount !== 1 ? "s" : ""} need restocking` : "Check stock levels across all branches"}
-            badge={!inventoryLoading && lowStockCount > 0 ? lowStockCount : undefined}
+            description={
+              !inventoryLoading && outOfStockConsumableCount > 0
+                ? `${outOfStockConsumableCount} supply item${outOfStockConsumableCount !== 1 ? "s" : ""} out of stock across branches`
+                : !inventoryLoading && lowStockConsumableCount > 0
+                  ? `${lowStockConsumableCount} item${lowStockConsumableCount !== 1 ? "s" : ""} need restocking`
+                  : "Check stock levels across all branches"
+            }
+            badge={!inventoryLoading && lowStockConsumableCount > 0 ? lowStockConsumableCount : undefined}
             variant="gold"
             onClick={() => navigate("/inventory")}
           />
@@ -926,18 +956,27 @@ function AdminDashboard() {
       {/* ── Bottom row ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-        {/* System inventory alerts */}
+        {/* System consumable supply alerts */}
         <motion.div variants={ANIM_ITEM} className="glass-card rounded-2xl overflow-hidden">
-          <div className="px-6 pt-5 pb-4 border-b border-border/50" style={lowStockCount > 0 ? { borderLeftWidth: 4, borderLeftColor: "#f59e0b", paddingLeft: "1.25rem" } : {}}>
+          <div className="px-6 pt-5 pb-4 border-b border-border/50" style={lowStockConsumableCount > 0 ? {
+            borderLeftWidth: 4,
+            borderLeftColor: outOfStockConsumableCount > 0 ? "#ef4444" : "#f59e0b",
+            paddingLeft: "1.25rem"
+          } : {}}>
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base font-semibold text-foreground">System Inventory Alerts</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">Low-stock items across all branches</p>
+                <h2 className="text-base font-semibold text-foreground">Supply Alerts</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">Consumable stock across all branches</p>
               </div>
               <div className="flex items-center gap-2">
-                {!inventoryLoading && lowStockCount > 0 && (
+                {!inventoryLoading && outOfStockConsumableCount > 0 && (
+                  <span className="flex items-center gap-1 text-xs font-bold text-red-700 bg-red-100 border border-red-200 px-2.5 py-1 rounded-full">
+                    <AlertTriangle className="h-3 w-3" /> {outOfStockConsumableCount} out of stock
+                  </span>
+                )}
+                {!inventoryLoading && lowStockConsumableCount > outOfStockConsumableCount && (
                   <span className="flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full">
-                    <AlertTriangle className="h-3 w-3" /> {lowStockCount}
+                    <AlertTriangle className="h-3 w-3" /> {lowStockConsumableCount - outOfStockConsumableCount} low
                   </span>
                 )}
                 <button type="button" onClick={() => navigate("/inventory")} className="text-xs font-semibold text-primary hover:underline flex items-center gap-1">
@@ -949,34 +988,49 @@ function AdminDashboard() {
           <div className="p-6">
             {inventoryLoading ? (
               <div className="space-y-3">{[...Array(4)].map((_, i) => <div key={i} className="h-10 bg-muted rounded-xl animate-pulse" />)}</div>
-            ) : lowStockItems.length > 0 ? (
+            ) : lowStockConsumables.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-[11px] text-muted-foreground uppercase tracking-wider border-b border-border/50">
                       <th className="text-left pb-2.5 font-semibold">Item</th>
                       <th className="text-left pb-2.5 font-semibold hidden sm:table-cell">Branch</th>
+                      <th className="text-left pb-2.5 font-semibold">Status</th>
                       <th className="text-right pb-2.5 font-semibold">Stock</th>
                       <th className="text-right pb-2.5 font-semibold">Reorder At</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/40">
-                    {lowStockItems.slice(0, 8).map(item => (
-                      <tr key={item.id} className="hover:bg-muted/20 transition-colors">
-                        <td className="py-2.5">
-                          <p className="text-xs font-semibold text-foreground">{item.itemName}</p>
-                          <p className="text-[10px] text-muted-foreground">{item.category}</p>
-                        </td>
-                        <td className="py-2.5 text-xs text-muted-foreground hidden sm:table-cell">{item.branch}</td>
-                        <td className="py-2.5 text-right"><span className="text-xs font-bold text-amber-700">{item.currentStock} {item.unit}</span></td>
-                        <td className="py-2.5 text-right text-xs text-muted-foreground">{item.reorderLevel} {item.unit}</td>
-                      </tr>
-                    ))}
+                    {lowStockConsumables.slice(0, 8).map(item => {
+                      const isZero = item.currentStock === 0;
+                      return (
+                        <tr key={item.id} className="hover:bg-muted/20 transition-colors">
+                          <td className="py-2.5">
+                            <p className="text-xs font-semibold text-foreground">{item.itemName}</p>
+                            <p className="text-[10px] text-muted-foreground">{item.category}</p>
+                          </td>
+                          <td className="py-2.5 text-xs text-muted-foreground hidden sm:table-cell">{item.branch}</td>
+                          <td className="py-2.5">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              isZero ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
+                            }`}>
+                              {isZero ? "Out of Stock" : "Low Stock"}
+                            </span>
+                          </td>
+                          <td className="py-2.5 text-right">
+                            <span className={`text-xs font-bold ${isZero ? "text-red-700" : "text-amber-700"}`}>
+                              {item.currentStock} {item.unit}
+                            </span>
+                          </td>
+                          <td className="py-2.5 text-right text-xs text-muted-foreground">{item.reorderLevel} {item.unit}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             ) : (
-              <EmptyState icon={Package} message="All inventory levels are sufficient." />
+              <EmptyState icon={Package} message="All consumable stock levels are sufficient." />
             )}
           </div>
         </motion.div>

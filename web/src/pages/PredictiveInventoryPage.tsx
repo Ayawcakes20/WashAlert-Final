@@ -84,10 +84,10 @@ type DailyStatsRecord = {
 // ── Catalog ───────────────────────────────────────────────────────────────────
 
 const CONSUMABLE_CATALOG = [
-  { name: "Surf Detergent",           category: "Detergent",          unit: "packs" },
-  { name: "Ariel Detergent",          category: "Detergent",          unit: "packs" },
-  { name: "Charm Fabric Conditioner", category: "Fabric Conditioner", unit: "packs" },
-  { name: "Downy Fabric Conditioner", category: "Fabric Conditioner", unit: "packs" },
+  { name: "Surf Detergent",           category: "Detergent",          unit: "sachets" },
+  { name: "Ariel Detergent",          category: "Detergent",          unit: "sachets" },
+  { name: "Charm Fabric Conditioner", category: "Fabric Conditioner", unit: "sachets" },
+  { name: "Downy Fabric Conditioner", category: "Fabric Conditioner", unit: "sachets" },
 ] as const;
 
 const ASSET_CATALOG = [
@@ -110,7 +110,7 @@ const INVENTORY_CATEGORIES = [
   "Washing Machine", "Dryer", "Aircon", "Electric Fan",
 ] as const;
 
-const INVENTORY_UNITS = ["packs", "liters", "kg", "bottles", "pieces", "units"] as const;
+const INVENTORY_UNITS = ["sachets", "liters", "kg", "bottles", "pieces", "units"] as const;
 const ASSET_STATUSES = ["Active", "Under Maintenance", "Decommissioned"] as const;
 
 const DEFAULT_TABLE_PAGE_SIZE = 10;
@@ -124,10 +124,10 @@ const CONSUMABLE_NAMES = [
 ];
 
 const CONSUMABLE_DEFAULTS: Record<string, { category: string; unit: string; reorderLevel: number }> = {
-  "Surf Detergent":           { category: "Detergent",          unit: "packs", reorderLevel: 2 },
-  "Ariel Detergent":          { category: "Detergent",          unit: "packs", reorderLevel: 5 },
-  "Charm Fabric Conditioner": { category: "Fabric Conditioner", unit: "packs", reorderLevel: 1 },
-  "Downy Fabric Conditioner": { category: "Fabric Conditioner", unit: "packs", reorderLevel: 10 },
+  "Surf Detergent":           { category: "Detergent",          unit: "sachets", reorderLevel: 2 },
+  "Ariel Detergent":          { category: "Detergent",          unit: "sachets", reorderLevel: 5 },
+  "Charm Fabric Conditioner": { category: "Fabric Conditioner", unit: "sachets", reorderLevel: 1 },
+  "Downy Fabric Conditioner": { category: "Fabric Conditioner", unit: "sachets", reorderLevel: 10 },
 };
 
 const ASSET_TYPES = ["Washing Machine", "Dryer", "Aircon", "Electric Fan"] as const;
@@ -388,7 +388,7 @@ function mapInventoryRecord(
   const type: InventoryItem["type"] = catLower.includes("conditioner") ? "Fabric Conditioner"
     : catLower.includes("detergent") ? "Detergent" : isAsset ? "Asset" : "Other";
   // Normalize unit for canonical consumables (prevents "liters" showing for packs items)
-  const unit = (!isAsset && canonical?.unit) ? canonical.unit : (record.unit || (isAsset ? "units" : "packs"));
+  const unit = (!isAsset && canonical?.unit) ? canonical.unit : (record.unit || (isAsset ? "units" : "sachets"));
   const daysRemaining = isAsset ? null : calcDaysRemaining(Number(record.currentStock || 0), dailyUsage);
   const hasUsage = !isAsset && (itemForecast?.usage ?? 0) >= 0.001;
   const status = isAsset ? "Healthy" : getStatus(daysRemaining, hasUsage);
@@ -754,11 +754,11 @@ export default function PredictiveInventoryPage() {
       const shortName = name.replace(" Detergent", "").replace(" Fabric Conditioner", "");
       if (thisSum === 0 && lastSum === 0) return;
       if (lastSum === 0) {
-        insights.push(`📦 ${shortName}: ${thisSum.toFixed(0)} packs used this week (no prior week data)`);
+        insights.push(`📦 ${shortName}: ${thisSum.toFixed(0)} sachets used this week (no prior week data)`);
       } else {
         const pct = Math.round(((thisSum - lastSum) / lastSum) * 100);
         const arrow = pct > 0 ? "📈" : pct < 0 ? "📉" : "➡";
-        insights.push(`${arrow} ${shortName}: ${thisSum.toFixed(0)} packs this week vs ${lastSum.toFixed(0)} last week (${pct > 0 ? "+" : ""}${pct}%)`);
+        insights.push(`${arrow} ${shortName}: ${thisSum.toFixed(0)} sachets this week vs ${lastSum.toFixed(0)} last week (${pct > 0 ? "+" : ""}${pct}%)`);
       }
     });
     return insights;
@@ -841,7 +841,7 @@ export default function PredictiveInventoryPage() {
     heatmapData.forEach((row) => {
       const peakIdx = row.avgs.indexOf(Math.max(...row.avgs));
       if (row.avgs[peakIdx] > 0) {
-        insights.push(`📌 ${row.name} peaks on ${HEATMAP_DAYS_LABELS[peakIdx]} (avg ${row.avgs[peakIdx].toFixed(1)} packs)`);
+        insights.push(`📌 ${row.name} peaks on ${HEATMAP_DAYS_LABELS[peakIdx]} (avg ${row.avgs[peakIdx].toFixed(1)} sachets)`);
       }
     });
     return insights;
@@ -867,7 +867,7 @@ export default function PredictiveInventoryPage() {
     return result;
   }, [effectiveStats]);
 
-  // 1. Demand Rhythm Curve — avg packs per weekday
+  // 1. Demand Rhythm Curve — avg sachets per weekday
   const rhythmData = useMemo(() => {
     return HEATMAP_DAYS_LABELS.map((dayLabel, colIdx) => {
       const row: Record<string, number | string> = { day: dayLabel };
@@ -1166,19 +1166,36 @@ export default function PredictiveInventoryPage() {
       </div>
 
       {/* Action Banner */}
-      {!loading && !bannerDismissed && actionItems.criticalCount > 0 && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2 text-amber-900 text-sm font-medium">
-            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
-            <span>
-              {actionItems.criticalCount} supply item{actionItems.criticalCount > 1 ? "s" : ""} need{actionItems.criticalCount === 1 ? "s" : ""} restocking now — stock will run out within 7 days
-            </span>
+      {!loading && !bannerDismissed && actionItems.criticalCount > 0 && (() => {
+        const outOfStockCount = allConsumables.filter((i) => i.status === "Critical" && i.currentStock === 0).length;
+        const lowStockCount = actionItems.criticalCount - outOfStockCount;
+        const parts: string[] = [];
+        if (outOfStockCount > 0) {
+          parts.push(`${outOfStockCount} supply item${outOfStockCount > 1 ? "s" : ""} ${outOfStockCount === 1 ? "is" : "are"} out of stock and need${outOfStockCount === 1 ? "s" : ""} immediate restocking`);
+        }
+        if (lowStockCount > 0) {
+          parts.push(`${lowStockCount} supply item${lowStockCount > 1 ? "s" : ""} ${lowStockCount === 1 ? "is" : "are"} expected to run out within 7 days`);
+        }
+        const bannerText = parts.join(" · ");
+        const isOutOfStock = outOfStockCount > 0 && lowStockCount === 0;
+        return (
+          <div className={`rounded-2xl border p-4 flex items-start justify-between gap-3 ${
+            isOutOfStock ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"
+          }`}>
+            <div className={`flex items-center gap-2 text-sm font-medium ${
+              isOutOfStock ? "text-red-900" : "text-amber-900"
+            }`}>
+              <AlertTriangle className={`h-4 w-4 shrink-0 ${isOutOfStock ? "text-red-600" : "text-amber-600"}`} />
+              <span>{bannerText}</span>
+            </div>
+            <button onClick={() => setBannerDismissed(true)} className={`shrink-0 transition-colors ${
+              isOutOfStock ? "text-red-700 hover:text-red-900" : "text-amber-700 hover:text-amber-900"
+            }`} aria-label="Dismiss">
+              <X className="h-4 w-4" />
+            </button>
           </div>
-          <button onClick={() => setBannerDismissed(true)} className="shrink-0 text-amber-700 hover:text-amber-900 transition-colors" aria-label="Dismiss">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Summary KPI cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1490,7 +1507,7 @@ export default function PredictiveInventoryPage() {
                   label={{ value: "Packs", angle: -90, position: "insideLeft", offset: 8, fontSize: 12 }} />
                 <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
                   formatter={(value: number, name: string) => [
-                    `${value} packs`, name === "currentStock" ? "Current Stock (on hand)" : "30-Day Projected Demand"
+                    `${value} sachets`, name === "currentStock" ? "Current Stock (on hand)" : "30-Day Projected Demand"
                   ]} />
                 <Legend verticalAlign="top" wrapperStyle={{ fontSize: 12 }} />
                 <Bar dataKey="currentStock" name="Current Stock" radius={[4, 4, 0, 0]}>
@@ -1674,13 +1691,13 @@ export default function PredictiveInventoryPage() {
                       <div key={record.itemName} className="mb-4">
                         <div className="flex items-center justify-between mb-1">
                           <p className="text-sm font-semibold text-foreground">{record.itemName}</p>
-                          <span className="text-xs text-muted-foreground">{totalDemand.toFixed(0)} packs confirmed · peak: {peakDay.date} ({peakDay.quantity})</span>
+                          <span className="text-xs text-muted-foreground">{totalDemand.toFixed(0)} sachets confirmed · peak: {peakDay.date} ({peakDay.quantity})</span>
                         </div>
                         <ResponsiveContainer width="100%" height={120}>
                           <BarChart data={record.upcoming} margin={{ top: 4, right: 8, left: 4, bottom: 24 }}>
                             <XAxis dataKey="date" tick={{ fontSize: 9 }} angle={-35} textAnchor="end" interval={1} />
                             <YAxis tick={{ fontSize: 10 }} allowDecimals={false} label={{ value: "Packs", angle: -90, position: "insideLeft", fontSize: 10 }} />
-                            <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} formatter={(v: number) => [`${v} packs`, "Demand"]} />
+                            <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} formatter={(v: number) => [`${v} sachets`, "Demand"]} />
                             <Bar dataKey="quantity" radius={[2, 2, 0, 0]}>
                               {record.upcoming.map((e, idx) => <Cell key={idx} fill={e.quantity > 0 ? "hsl(218,58%,35%)" : "#e2e8f0"} />)}
                             </Bar>
