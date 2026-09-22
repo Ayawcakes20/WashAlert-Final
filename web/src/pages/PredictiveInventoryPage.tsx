@@ -20,6 +20,9 @@ import {
   BarChart2,
   X,
   Activity,
+  MapPin,
+  Building2,
+  ArrowLeft,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -536,7 +539,7 @@ export default function PredictiveInventoryPage() {
     let items: InventoryItem[];
     if (isStaff) items = inventory;
     else if (selectedTab === "All") items = inventory;
-    else items = inventory.filter((i) => i.branch === selectedTab);
+    else items = inventory.filter((i) => i.branch === selectedTab || normalizeBranchName(i.branch) === normalizeBranchName(selectedTab));
     if (itemTypeFilter === "consumable") items = items.filter((i) => !i.isAsset);
     if (itemTypeFilter === "asset") items = items.filter((i) => i.isAsset);
     if (categoryFilter !== "all") items = items.filter((i) => i.category === categoryFilter);
@@ -554,20 +557,26 @@ export default function PredictiveInventoryPage() {
   const allAssets = useMemo(() => inventory.filter((i) => i.isAsset), [inventory]);
 
   // Always show exactly 4 canonical supply items sorted by urgency.
+  // Strictly scoped to the currently active branch.
   const canonicalFour = useMemo(() => {
     const statusOrder: Record<string, number> = { Critical: 0, Low: 1, Healthy: 2, "No Data": 3 };
+    const currentBranchName = isStaff ? (userBranch || "Your Branch") : selectedTab;
     return CONSUMABLE_CATALOG.map((cat) => {
-      const found = allConsumables.find((i) => i.product === cat.name);
+      const found = consumableItems.find((i) => {
+        if (i.product === cat.name) return true;
+        const baseName = cat.name.split(" ")[0].toLowerCase();
+        return i.product.toLowerCase().includes(baseName);
+      });
       if (found) return found;
       return {
-        id: `placeholder-${cat.name}`,
+        id: `placeholder-${cat.name}-${currentBranchName}`,
         product: cat.name,
-        branch: userBranch || "—",
+        branch: currentBranchName,
         category: cat.category,
         type: cat.category === "Fabric Conditioner" ? "Fabric Conditioner" : "Detergent",
         unit: cat.unit,
         currentStock: 0,
-        reorderLevel: 10,
+        reorderLevel: CONSUMABLE_DEFAULTS[cat.name]?.reorderLevel ?? 5,
         status: "No Data" as const,
         isAsset: false,
         assetType: "Consumable",
@@ -583,7 +592,7 @@ export default function PredictiveInventoryPage() {
         assetStatusField: undefined,
       } as any;
     }).sort((a, b) => (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3));
-  }, [allConsumables, userBranch]);
+  }, [consumableItems, isStaff, selectedTab, userBranch]);
 
   const summary = useMemo(() => {
     const critical = filteredInventory.filter((i) => i.status === "Critical").length;
@@ -636,8 +645,10 @@ export default function PredictiveInventoryPage() {
   }, [consumableItems, tablePage, tablePageSize]);
 
   const branchOverview = useMemo(() => {
+    // Only consumables (not assets) for the all-branches overview
     const grouped = new Map<string, InventoryItem[]>();
-    inventory.forEach((item) => {
+    branches.forEach((b) => grouped.set(b, []));
+    inventory.filter(i => !i.isAsset).forEach((item) => {
       if (!grouped.has(item.branch)) grouped.set(item.branch, []);
       grouped.get(item.branch)?.push(item);
     });
@@ -645,6 +656,7 @@ export default function PredictiveInventoryPage() {
       const critical = items.filter((i) => i.status === "Critical").length;
       const low = items.filter((i) => i.status === "Low").length;
       const healthy = items.filter((i) => i.status === "Healthy").length;
+      const noData = items.filter((i) => i.status === "No Data").length;
       const urgent = items.filter((i) => i.status !== "Healthy").sort((a, b) => {
         if (a.daysUntilEmpty === null) return 1;
         if (b.daysUntilEmpty === null) return -1;
@@ -653,10 +665,13 @@ export default function PredictiveInventoryPage() {
       const daysCandidates = items.map((i) => i.daysUntilEmpty).filter((d): d is number => typeof d === "number");
       const fewestDaysLeft = daysCandidates.length ? Math.min(...daysCandidates) : null;
       const expectedUse7DTotal = items.reduce((sum, i) => sum + Math.max(0, i.forecastedUsage * 7), 0);
+      const overallStatus: "Critical" | "Low" | "Healthy" | "No Data" =
+        critical > 0 ? "Critical" : low > 0 ? "Low" : healthy > 0 ? "Healthy" : "No Data";
       return {
-        branch, totalItems: items.length, critical, low, healthy,
-        urgentItem: urgent?.product ?? "No urgent item", fewestDaysLeft, expectedUse7DTotal,
+        branch, totalItems: items.length || 4, critical, low, healthy, noData,
+        urgentItem: urgent?.product ?? "All items healthy", fewestDaysLeft, expectedUse7DTotal,
         action: urgent ? getRecommendedAction(urgent) : "Healthy",
+        overallStatus,
       };
     }).sort((a, b) => {
       if (b.critical !== a.critical) return b.critical - a.critical;
@@ -665,7 +680,7 @@ export default function PredictiveInventoryPage() {
       const bd = b.fewestDaysLeft ?? Number.POSITIVE_INFINITY;
       return ad - bd;
     });
-  }, [inventory]);
+  }, [branches, inventory]);
 
   const selectedExpandedItem = useMemo(
     () => filteredInventory.find((item) => item.id === expandedRowId) ?? null,
@@ -887,9 +902,9 @@ export default function PredictiveInventoryPage() {
     [rhythmData],
   );
 
-  // 2. Wave-Shaped 30-Day Forecast — weekday-adjusted depletion per item
+  // 2. Wave-Shaped 30-Day Forecast — branch-scoped (uses consumableItems so branch filter applies)
   const waveForecastData = useMemo(() => {
-    return allConsumables.map((item) => {
+    return consumableItems.map((item) => {
       if (item.forecastedUsage < 0.001) return null;
       const multipliers = weekdayMultipliers[item.product] ?? [1, 1, 1, 1, 1, 1, 1];
       const today = new Date();
@@ -910,14 +925,14 @@ export default function PredictiveInventoryPage() {
       });
       return { item, data };
     }).filter(Boolean) as Array<{ item: InventoryItem; data: Array<{ day: string; date: string; stock: number; reorderLevel: number }> }>;
-  }, [allConsumables, weekdayMultipliers]);
+  }, [consumableItems, weekdayMultipliers]);
 
-  // 3. Anomaly Detector — actual vs expected deviation per day (14 days)
+  // 3. Anomaly Detector — branch-scoped
   const anomalyData = useMemo(() => {
     return CONSUMABLE_NAMES.map((name) => {
       const record = effectiveStats.find((r) => r.itemName === name);
       if (!record) return null;
-      const item = allConsumables.find((i) => i.product === name);
+      const item = consumableItems.find((i) => i.product === name);
       const avgDaily = item?.forecastedUsage ?? 0;
       if (avgDaily < 0.001) return null;
       const multipliers = weekdayMultipliers[name] ?? [1, 1, 1, 1, 1, 1, 1];
@@ -940,11 +955,11 @@ export default function PredictiveInventoryPage() {
         points,
       };
     }).filter(Boolean) as Array<{ name: string; fullName: string; points: Array<{ date: string; expected: number; actual: number; deviation: number }> }>;
-  }, [effectiveStats, weekdayMultipliers, allConsumables]);
+  }, [effectiveStats, weekdayMultipliers, consumableItems]);
 
-  // 4. Stock Runway Table
+  // 4. Stock Runway Table — branch-scoped
   const runwayData = useMemo(() => {
-    return allConsumables.map((item) => {
+    return consumableItems.map((item) => {
       const daysLeft = item.daysUntilEmpty;
       const leadTime = item.supplierLeadTimeDays ?? 3;
       const today = new Date();
@@ -967,21 +982,21 @@ export default function PredictiveInventoryPage() {
       }
       return { ...item, stockoutDate, mustOrderBy, urgencyStatus, leadTime };
     });
-  }, [allConsumables]);
+  }, [consumableItems]);
 
-  // Supply vs. 30-Day Demand overview
+  // Supply vs. 30-Day Demand overview — branch-scoped
   const supplyDemandData = useMemo(() => {
-    return allConsumables.map((item) => {
+    return consumableItems.map((item) => {
       const demand30d = Math.round(item.forecastedUsage * 30 * 10) / 10;
       const shortName = item.product.replace(" Detergent", "").replace(" Fabric Conditioner", "");
       const coverage = demand30d > 0 ? Math.min(200, Math.round((item.currentStock / demand30d) * 100)) : null;
       return { name: shortName, currentStock: item.currentStock, demand30d, coverage, unit: item.unit, status: item.status };
     });
-  }, [allConsumables]);
+  }, [consumableItems]);
 
-  // 5. Inventory Risk Score
+  // 5. Inventory Risk Score — branch-scoped
   const riskScoreData = useMemo(() => {
-    return allConsumables.map((item) => {
+    return consumableItems.map((item) => {
       const daysLeft = item.daysUntilEmpty;
       const leadTime = item.supplierLeadTimeDays ?? 3;
       let riskScore = 0;
@@ -1000,7 +1015,7 @@ export default function PredictiveInventoryPage() {
       const shortName = item.product.replace(" Detergent", "").replace(" Fabric Conditioner", "");
       return { name: shortName, branch: item.branch.replace(" Branch", ""), riskScore: Math.round(riskScore), riskLabel, riskColor, daysLeft, leadTime, currentStock: item.currentStock, unit: item.unit };
     }).sort((a, b) => b.riskScore - a.riskScore);
-  }, [allConsumables]);
+  }, [consumableItems]);
 
   const handleTabChange = (branch: string) => {
     setSelectedTab(branch);
@@ -1149,7 +1164,11 @@ export default function PredictiveInventoryPage() {
         <div>
           <h1 className="text-3xl font-bold text-foreground tracking-tight">Consumable Inventory</h1>
           <p className="text-base text-muted-foreground mt-1">
-            {isStaff ? `Viewing inventory for ${userBranch || "your branch"}` : "Actionable restock dashboard for all branches."}
+            {isStaff
+              ? `Viewing inventory for ${userBranch || "your branch"}`
+              : selectedTab === "All"
+              ? "Actionable restock dashboard for all branches."
+              : `Viewing detailed consumable inventory for ${selectedTab}.`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -1166,9 +1185,13 @@ export default function PredictiveInventoryPage() {
       </div>
 
       {/* Action Banner */}
-      {!loading && !bannerDismissed && actionItems.criticalCount > 0 && (() => {
-        const outOfStockCount = allConsumables.filter((i) => i.status === "Critical" && i.currentStock === 0).length;
-        const lowStockCount = actionItems.criticalCount - outOfStockCount;
+      {!loading && !bannerDismissed && (() => {
+        const activePool = (isAdmin && selectedTab === "All") ? allConsumables : consumableItems;
+        const criticalItems = activePool.filter((i) => i.status === "Critical");
+        if (criticalItems.length === 0) return null;
+
+        const outOfStockCount = criticalItems.filter((i) => i.currentStock === 0).length;
+        const lowStockCount = criticalItems.length - outOfStockCount;
         const parts: string[] = [];
         if (outOfStockCount > 0) {
           parts.push(`${outOfStockCount} supply item${outOfStockCount > 1 ? "s" : ""} ${outOfStockCount === 1 ? "is" : "are"} out of stock and need${outOfStockCount === 1 ? "s" : ""} immediate restocking`);
@@ -1207,12 +1230,20 @@ export default function PredictiveInventoryPage() {
                 <Skeleton className="h-4 w-36" />
               </div>
             ))
-          : [
-              { label: "Critical Items", value: summary.critical, icon: AlertTriangle, color: "bg-red-100 text-red-700" },
-              { label: "Low Items", value: summary.low, icon: CalendarClock, color: "bg-amber-100 text-amber-700" },
-              { label: "Healthy Items", value: summary.healthy, icon: TrendingUp, color: "bg-emerald-100 text-emerald-700" },
-              { label: "Next Restock Priority", value: summary.urgent ? `${summary.urgent.product} (${summary.urgent.branch})` : "None", icon: Package, color: "bg-primary/10 text-primary" },
-            ].map((s) => (
+          : (isAdmin && selectedTab === "All"
+              ? [
+                  { label: "Total Branches", value: branches.length || branchOverview.length, icon: Building2, color: "bg-primary/10 text-primary" },
+                  { label: "Critical Items (System-Wide)", value: summary.critical, icon: AlertTriangle, color: "bg-red-100 text-red-700" },
+                  { label: "Low Items (System-Wide)", value: summary.low, icon: CalendarClock, color: "bg-amber-100 text-amber-700" },
+                  { label: "Healthy Items (System-Wide)", value: summary.healthy, icon: TrendingUp, color: "bg-emerald-100 text-emerald-700" },
+                ]
+              : [
+                  { label: "Critical Items", value: summary.critical, icon: AlertTriangle, color: "bg-red-100 text-red-700" },
+                  { label: "Low Items", value: summary.low, icon: CalendarClock, color: "bg-amber-100 text-amber-700" },
+                  { label: "Healthy Items", value: summary.healthy, icon: TrendingUp, color: "bg-emerald-100 text-emerald-700" },
+                  { label: "Next Restock Priority", value: summary.urgent ? summary.urgent.product : "None", icon: Package, color: "bg-primary/10 text-primary" },
+                ]
+            ).map((s) => (
               <div key={s.label} className="glass-card rounded-2xl p-6">
                 <div className={`p-2.5 rounded-xl ${s.color} w-fit mb-3`}><s.icon className="h-5 w-5" /></div>
                 <p className="text-2xl font-bold text-foreground break-words">{s.value}</p>
@@ -1233,25 +1264,290 @@ export default function PredictiveInventoryPage() {
         </div>
       )}
 
-      {/* Branch tabs */}
+      {/* Branch selector — dropdown for Admin, hidden for Staff */}
       {isAdmin && branches.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {["All", ...branches].map((branch) => (
-            <button key={branch} onClick={() => handleTabChange(branch)}
-              className={`px-4 py-2 rounded-lg text-base font-medium transition-colors ${selectedTab === branch ? "bg-primary text-primary-foreground" : "bg-background text-foreground border border-border hover:bg-muted"}`}>
-              {branch}
-            </button>
-          ))}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 glass-card rounded-2xl px-5 py-3.5">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-primary/10 text-primary">
+              <MapPin className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Branch Filter</p>
+              <p className="text-sm font-bold text-foreground">
+                {selectedTab === "All" ? "All Branches (Overview)" : selectedTab}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedTab}
+              onChange={(e) => handleTabChange(e.target.value)}
+              className="h-10 rounded-xl border border-border bg-background px-3.5 text-sm font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer shadow-sm min-w-[220px]"
+            >
+              <option value="All">All Branches (Overview)</option>
+              {branches.map((b) => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+            {selectedTab !== "All" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleTabChange("All")}
+                className="h-10 px-3.5 rounded-xl text-xs font-semibold gap-1.5 shrink-0"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" /> All Branches
+              </Button>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Reorder Suggestion Engine */}
-      {!loading && reorderSuggestions.length > 0 && (
-        <div className="glass-card rounded-2xl overflow-hidden">
-          <div className="p-5 border-b border-border/30 flex items-center gap-2">
-            <ShoppingCart className="h-5 w-5 text-primary" />
-            <h2 className="text-xl font-semibold text-foreground">Reorder Suggestions</h2>
+      {/* ── ALL BRANCHES VIEW (Admin Mode) ────────────────────────────────── */}
+      {isAdmin && selectedTab === "All" ? (
+        <div className="space-y-6">
+          {/* Branch Overview Card Grid */}
+          <div className="glass-card rounded-2xl overflow-hidden">
+            <div className="p-6 border-b border-border/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-foreground tracking-tight">Branch Consumable Inventory Overview</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Compare restocking urgency across all branches. Click any branch to view and manage its 4 canonical supplies.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-muted-foreground bg-muted rounded-xl px-3 py-1.5">
+                  {branchOverview.length} Branches
+                </span>
+                {branchOverview.some((b) => b.critical > 0) && (
+                  <span className="text-xs font-semibold text-red-700 bg-red-100 rounded-xl px-3 py-1.5">
+                    {branchOverview.filter((b) => b.critical > 0).length} Need Restock
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Cards grid */}
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+              {branchOverview.map((row) => {
+                const isCritical = row.critical > 0;
+                const isLow = row.low > 0 && !isCritical;
+                const borderColor = isCritical ? "border-red-300" : isLow ? "border-amber-300" : "border-emerald-200";
+                const badgeStyle = isCritical
+                  ? "bg-red-100 text-red-800 border border-red-200"
+                  : isLow
+                  ? "bg-amber-100 text-amber-800 border border-amber-200"
+                  : "bg-emerald-100 text-emerald-800 border border-emerald-200";
+                const headerBg = isCritical ? "bg-red-50/60" : isLow ? "bg-amber-50/60" : "bg-emerald-50/40";
+                const statusLabel = isCritical ? "Critical Restock" : isLow ? "Low Stock" : "Healthy";
+
+                return (
+                  <div
+                    key={row.branch}
+                    onClick={() => handleTabChange(row.branch)}
+                    className={`rounded-2xl border ${borderColor} bg-card overflow-hidden cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 flex flex-col justify-between group`}
+                  >
+                    <div>
+                      <div className={`${headerBg} p-4 border-b border-border/20 flex items-center justify-between`}>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="p-1.5 rounded-lg bg-background shadow-xs text-foreground">
+                            <Building2 className="h-4 w-4 text-primary" />
+                          </div>
+                          <p className="text-base font-bold text-foreground truncate">{row.branch}</p>
+                        </div>
+                        <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full shrink-0 ${badgeStyle}`}>
+                          {statusLabel}
+                        </span>
+                      </div>
+
+                      <div className="p-4 space-y-4">
+                        {/* 3 Metrics: Critical / Low / Healthy */}
+                        <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-muted/20 border border-border/20 text-center">
+                          <div>
+                            <p className={`text-xl font-black ${row.critical > 0 ? "text-red-600" : "text-foreground"}`}>
+                              {row.critical}
+                            </p>
+                            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mt-0.5">Critical</p>
+                          </div>
+                          <div>
+                            <p className={`text-xl font-black ${row.low > 0 ? "text-amber-600" : "text-foreground"}`}>
+                              {row.low}
+                            </p>
+                            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mt-0.5">Low</p>
+                          </div>
+                          <div>
+                            <p className="text-xl font-black text-emerald-600">
+                              {row.healthy}
+                            </p>
+                            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mt-0.5">Healthy</p>
+                          </div>
+                        </div>
+
+                        {/* Urgency text */}
+                        <div className="text-xs space-y-1">
+                          {row.critical > 0 || row.low > 0 ? (
+                            <p className="text-destructive font-medium flex items-center gap-1.5">
+                              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                              <span className="truncate">Most urgent: <strong>{row.urgentItem}</strong></span>
+                            </p>
+                          ) : (
+                            <p className="text-emerald-700 font-medium flex items-center gap-1.5">
+                              <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+                              <span>All 4 supplies have adequate stock</span>
+                            </p>
+                          )}
+                          <p className="text-muted-foreground">
+                            {row.fewestDaysLeft !== null ? `Fewest days left: ~${row.fewestDaysLeft} day(s)` : "Usage tracking calculating..."}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="px-4 py-3 bg-muted/10 border-t border-border/20 flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground font-medium">4 canonical supplies</span>
+                      <span className="text-primary font-bold group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-1">
+                        View Branch Inventory →
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
+
+          {/* Tabular Branch Overview */}
+          <div className="glass-card rounded-2xl overflow-hidden">
+            <div className="p-5 border-b border-border/30">
+              <h3 className="text-lg font-bold text-foreground">Detailed Branch Comparison</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Summary metrics and recommended actions per branch.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[800px] text-sm">
+                <thead>
+                  <tr className="border-b border-border/30 bg-muted/20">
+                    <th className="text-left p-4 font-semibold text-foreground">Branch</th>
+                    <th className="text-center p-4 font-semibold text-foreground">Supplies</th>
+                    <th className="text-center p-4 font-semibold text-foreground">Critical</th>
+                    <th className="text-center p-4 font-semibold text-foreground">Low</th>
+                    <th className="text-center p-4 font-semibold text-foreground">Healthy</th>
+                    <th className="text-left p-4 font-semibold text-foreground">Most Urgent Item</th>
+                    <th className="text-left p-4 font-semibold text-foreground">Days Remaining</th>
+                    <th className="text-left p-4 font-semibold text-foreground">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {branchOverview.map((row) => (
+                    <tr
+                      key={row.branch}
+                      onClick={() => handleTabChange(row.branch)}
+                      className="border-b border-border/20 hover:bg-muted/30 cursor-pointer transition-colors"
+                    >
+                      <td className="p-4 font-bold text-foreground flex items-center gap-2">
+                        <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                        {row.branch}
+                      </td>
+                      <td className="p-4 text-center font-semibold text-foreground">{row.totalItems || 4}</td>
+                      <td className="p-4 text-center">
+                        <span className={row.critical > 0 ? "font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full" : "text-muted-foreground"}>
+                          {row.critical}
+                        </span>
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className={row.low > 0 ? "font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full" : "text-muted-foreground"}>
+                          {row.low}
+                        </span>
+                      </td>
+                      <td className="p-4 text-center font-semibold text-emerald-600">{row.healthy}</td>
+                      <td className="p-4 text-foreground">{row.urgentItem}</td>
+                      <td className="p-4 text-foreground">{row.fewestDaysLeft !== null ? `${row.fewestDaysLeft} day(s)` : "—"}</td>
+                      <td className="p-4">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => { e.stopPropagation(); handleTabChange(row.branch); }}
+                          className="h-8 px-3 rounded-lg text-xs font-semibold text-primary border-primary/30"
+                        >
+                          View Branch →
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* System-wide Order Volume Trend & Activity Calendar */}
+          {!loading && dailyOrderVolume.length > 0 && (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <div className="glass-card rounded-2xl overflow-hidden">
+                <div className="p-5 border-b border-border/30">
+                  <h2 className="text-lg font-semibold text-foreground">System-Wide Daily Order Volume</h2>
+                  <p className="text-xs text-muted-foreground">Order volume across all branches (last 30 days).</p>
+                </div>
+                <div className="p-5">
+                  <ResponsiveContainer width="100%" height={220}>
+                    <LineChart data={dailyOrderVolume} margin={{ top: 8, right: 16, left: 4, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,25%,90%)" />
+                      <XAxis dataKey="dateLabel" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" interval={Math.floor(dailyOrderVolume.length / 6)} />
+                      <YAxis tick={{ fontSize: 11 }} allowDecimals={false} label={{ value: "Orders", angle: -90, position: "insideLeft", fontSize: 11 }} />
+                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                      <Line type="monotone" dataKey="orderCount" name="Orders" stroke="hsl(218,58%,35%)" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="rollingAvg7d" name="7-Day Avg" stroke="#f97316" strokeWidth={2} strokeDasharray="6 3" dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="glass-card rounded-2xl overflow-hidden">
+                <div className="p-5 border-b border-border/30">
+                  <h2 className="text-lg font-semibold text-foreground">Order Activity Calendar</h2>
+                  <p className="text-xs text-muted-foreground">Daily operations rhythm across all locations.</p>
+                </div>
+                <div className="p-5">
+                  <OperationsHeatmap dailyOrderVolume={dailyOrderVolume} />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* ── SPECIFIC BRANCH VIEW (Admin selected branch OR Staff) ───────────── */
+        <div className="space-y-8">
+          {/* Branch Title Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-muted/20 border border-border/30">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-primary text-primary-foreground">
+                <Building2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-foreground">
+                  {isStaff ? (userBranch || "Your Branch") : selectedTab} Consumable Inventory
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Showing strictly the 4 canonical supplies (Ariel, Charm, Downy, Surf) for this branch.
+                </p>
+              </div>
+            </div>
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleTabChange("All")}
+                className="h-9 px-4 rounded-xl text-xs font-semibold gap-1.5"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" /> Back to All Branches
+              </Button>
+            )}
+          </div>
+
+          {/* Reorder Suggestion Engine */}
+          {!loading && reorderSuggestions.length > 0 && (
+            <div className="glass-card rounded-2xl overflow-hidden">
+              <div className="p-5 border-b border-border/30 flex items-center gap-2">
+                <ShoppingCart className="h-5 w-5 text-primary" />
+                <h2 className="text-xl font-semibold text-foreground">Reorder Suggestions</h2>
+              </div>
           <div className="p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {reorderSuggestions.map((item) => (
               <div key={item.id} className={`rounded-xl border p-4 space-y-2 ${item.status === "Critical" ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"}`}>
@@ -1504,7 +1800,7 @@ export default function PredictiveInventoryPage() {
                 <XAxis dataKey="name" tick={{ fontSize: 12, fill: "hsl(215,20%,35%)" }}
                   label={{ value: "Supply Item", position: "insideBottom", offset: -4, fontSize: 12 }} />
                 <YAxis tick={{ fontSize: 11 }} allowDecimals={false}
-                  label={{ value: "Packs", angle: -90, position: "insideLeft", offset: 8, fontSize: 12 }} />
+                  label={{ value: "Sachets", angle: -90, position: "insideLeft", offset: 8, fontSize: 12 }} />
                 <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
                   formatter={(value: number, name: string) => [
                     `${value} sachets`, name === "currentStock" ? "Current Stock (on hand)" : "30-Day Projected Demand"
@@ -1696,7 +1992,7 @@ export default function PredictiveInventoryPage() {
                         <ResponsiveContainer width="100%" height={120}>
                           <BarChart data={record.upcoming} margin={{ top: 4, right: 8, left: 4, bottom: 24 }}>
                             <XAxis dataKey="date" tick={{ fontSize: 9 }} angle={-35} textAnchor="end" interval={1} />
-                            <YAxis tick={{ fontSize: 10 }} allowDecimals={false} label={{ value: "Packs", angle: -90, position: "insideLeft", fontSize: 10 }} />
+                            <YAxis tick={{ fontSize: 10 }} allowDecimals={false} label={{ value: "Sachets", angle: -90, position: "insideLeft", fontSize: 10 }} />
                             <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} formatter={(v: number) => [`${v} sachets`, "Demand"]} />
                             <Bar dataKey="quantity" radius={[2, 2, 0, 0]}>
                               {record.upcoming.map((e, idx) => <Cell key={idx} fill={e.quantity > 0 ? "hsl(218,58%,35%)" : "#e2e8f0"} />)}
@@ -1726,42 +2022,10 @@ export default function PredictiveInventoryPage() {
           </div>
         </div>
       )}
-
-      {/* Branch Overview (admin only) */}
-      {isAdmin && branchOverview.length > 0 && (
-        <div className="glass-card rounded-2xl overflow-hidden">
-          <div className="p-6 border-b border-border/30">
-            <h2 className="text-xl font-semibold text-foreground">Branch Restock Overview</h2>
-            <p className="text-base text-muted-foreground mt-1">Compare branches by restocking urgency. Click a row to filter the forecast table.</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[880px]">
-              <thead>
-                <tr className="border-b border-border/30 bg-muted/20">
-                  {["Branch", "Total Items", "Critical", "Low", "Healthy", "Most Urgent Item", "Fewest Days Left", "Expected Use (7D)", "Recommended Action"].map((h) => (
-                    <th key={h} className="text-left p-4 font-semibold text-[15px] text-foreground whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {branchOverview.map((row) => (
-                  <tr key={row.branch} className="border-b border-border/20 cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => handleTabChange(row.branch)}>
-                    <td className="p-4 text-base font-medium text-foreground">{row.branch}</td>
-                    <td className="p-4 text-base text-foreground">{row.totalItems}</td>
-                    <td className="p-4 text-base"><span className={row.critical > 0 ? "font-semibold text-destructive" : "text-foreground"}>{row.critical}</span></td>
-                    <td className="p-4 text-base"><span className={row.low > 0 ? "font-semibold text-amber-600" : "text-foreground"}>{row.low}</span></td>
-                    <td className="p-4 text-base text-foreground">{row.healthy}</td>
-                    <td className="p-4 text-base text-foreground break-words">{row.urgentItem}</td>
-                    <td className="p-4 text-base text-foreground">{row.fewestDaysLeft === null ? "—" : `${row.fewestDaysLeft} day(s)`}</td>
-                    <td className="p-4 text-base text-foreground">{row.expectedUse7DTotal > 0 ? row.expectedUse7DTotal.toFixed(1) : "—"}</td>
-                    <td className="p-4 text-base text-foreground">{row.action}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         </div>
       )}
+
+
 
       {/* ── Dialogs ────────────────────────────────────────────────────────── */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

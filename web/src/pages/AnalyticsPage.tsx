@@ -477,22 +477,20 @@ Rules:
           <button
             key={preset.label}
             onClick={() => applyPeriod(preset)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              activePeriod === preset.label
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activePeriod === preset.label
                 ? "bg-primary text-primary-foreground"
                 : "border border-border bg-background text-foreground hover:bg-muted"
-            }`}
+              }`}
           >
             {preset.label}
           </button>
         ))}
         <button
           onClick={() => setActivePeriod("Custom")}
-          className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
-            activePeriod === "Custom"
+          className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${activePeriod === "Custom"
               ? "bg-primary text-primary-foreground border-primary"
               : "border-border bg-background text-foreground hover:bg-muted"
-          }`}
+            }`}
         >
           Custom
         </button>
