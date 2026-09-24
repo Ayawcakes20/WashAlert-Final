@@ -93,6 +93,14 @@ public class BookingController {
         return bookingService.cancelBooking(id, principal);
     }
 
+    @PostMapping("/{id}/cancel")
+    public JobOrderResponse cancelBookingPost(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return bookingService.cancelBooking(id, principal);
+    }
+
     // Safe, customer-accessible supply availability check — no auth required, no stock deducted.
     // Returns { available: true } or HTTP 400 with { available: false, message: "..." }.
     @PostMapping("/check-supplies")

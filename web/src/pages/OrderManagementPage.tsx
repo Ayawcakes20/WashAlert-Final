@@ -969,6 +969,7 @@ export default function OrderManagementPage() {
       );
       setDetailsOpen(false);
       toast.success("Order cancelled successfully.");
+      await loadOrders(Math.max(0, ordersPage - 1), true);
     } catch (err: any) {
       toast.error(err?.message || "Unable to cancel order.");
     } finally {

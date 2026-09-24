@@ -475,6 +475,7 @@ public class BookingService {
             throw new IllegalStateException("This booking already has a driver assigned and can no longer be cancelled.");
         }
 
+        inventoryService.releaseForOrder(order);
         order.setStatus(JobOrderStatus.CANCELLED);
         jobOrderRepository.save(order);
 

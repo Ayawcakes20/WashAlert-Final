@@ -409,8 +409,10 @@ public class JobOrderService {
                                 paymentRepository.save(pr);
                             });
                 }
-            }
             jo.setStatus(req.status());
+            if (req.status() == JobOrderStatus.CANCELLED) {
+                inventoryService.releaseForOrder(jo);
+            }
             if (req.status() == JobOrderStatus.WASHING) {
                 // Block WASHING for GCash orders that have not paid yet.
                 // COD orders may proceed to washing before collection.

@@ -498,6 +498,10 @@ public class InventoryService {
     @Transactional
     public void releaseForOrder(JobOrder order) {
         if (order == null || order.getBranch() == null) return;
+        if (movementRepository.existsByReasonStartingWith("Booking-Release: " + order.getTrackingNumber())) {
+            log.info("[INVENTORY] Release already exists for {} — skipping duplicate release", order.getTrackingNumber());
+            return;
+        }
         String branch = order.getBranch().trim();
         int detQty = (order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0) ? order.getDetergentQuantity() : 1;
         int conQty = (order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0) ? order.getConditionerQuantity() : 1;
