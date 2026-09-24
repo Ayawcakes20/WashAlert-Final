@@ -409,6 +409,7 @@ public class JobOrderService {
                                 paymentRepository.save(pr);
                             });
                 }
+            }
             jo.setStatus(req.status());
             if (req.status() == JobOrderStatus.CANCELLED) {
                 inventoryService.releaseForOrder(jo);
