@@ -4,10 +4,23 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, AreaChart, Area,
 } from "recharts";
-import { analyticsApi } from "@/lib/api";
+import { analyticsApi, branchesApi } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 import { Download, Sparkles, Loader2, TrendingUp } from "lucide-react";
+
+const DEFAULT_BRANCHES = [
+  "Brookside Branch",
+  "Chestnut Branch",
+  "Holy Spirit Branch",
+  "JP Rizal Branch",
+  "Luzon Branch",
+  "Makati Branch",
+  "Republic Branch",
+  "Sta. Catalina Branch",
+  "St. Anthony Branch",
+  "UP Diliman / San Vicente Branch",
+];
 
 const COLORS = [
   "hsl(218, 58%, 20%)",
@@ -81,7 +94,7 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
-  const [knownBranches, setKnownBranches] = useState<string[]>([]);
+  const [knownBranches, setKnownBranches] = useState<string[]>(DEFAULT_BRANCHES);
 
   // NLQ state
   const [nlqQuestion, setNlqQuestion] = useState("");
@@ -100,7 +113,13 @@ export default function AnalyticsPage() {
       });
       setSummary(data as AnalyticsSummary);
       const brs = Array.from(new Set((data.branchBreakdown || []).map((b) => b.branch))).filter(Boolean);
-      if (brs.length) setKnownBranches(brs.sort((a, b) => a.localeCompare(b)));
+      if (brs.length) {
+        setKnownBranches((prev) =>
+          Array.from(new Set([...prev, ...brs]))
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b))
+        );
+      }
     } catch (err: any) {
       setError(err?.message || "Unable to load analytics summary.");
       setSummary(null);
@@ -109,7 +128,23 @@ export default function AnalyticsPage() {
     }
   };
 
-  useEffect(() => { void loadSummary(); }, []); // eslint-disable-line
+  useEffect(() => {
+    void loadSummary();
+    branchesApi
+      .list()
+      .then((list) => {
+        if (Array.isArray(list) && list.length > 0) {
+          setKnownBranches((prev) =>
+            Array.from(new Set([...prev, ...list]))
+              .filter(Boolean)
+              .sort((a, b) => a.localeCompare(b))
+          );
+        }
+      })
+      .catch(() => {
+        // Fallback to DEFAULT_BRANCHES already set in state
+      });
+  }, []); // eslint-disable-line
 
   const applyPeriod = (preset: typeof PERIOD_PRESETS[0]) => {
     const { from, to } = preset.getDates();
