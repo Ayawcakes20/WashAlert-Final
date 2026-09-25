@@ -186,7 +186,19 @@ function calcDaysUntilService(
   return Math.floor((next.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
 }
 
-function getStatus(daysRemaining: number | null, hasUsage: boolean): "Healthy" | "Low" | "Critical" | "No Data" {
+function getStatus(
+  daysRemaining: number | null,
+  hasUsage: boolean,
+  currentStock?: number,
+  reorderLevel?: number,
+): "Healthy" | "Low" | "Critical" | "No Data" {
+  // Safety-net: if stock is at or below the reorder level, it must be at least
+  // Critical — regardless of what the projected-days formula says.
+  // This prevents a very-low-usage rate turning 1 sachet into "Healthy" just
+  // because (1 / 0.05) = 20 projected days.
+  const stock = currentStock ?? 0;
+  const reorder = reorderLevel ?? 0;
+  if (stock <= reorder) return "Critical";
   if (!hasUsage || daysRemaining === null) return "No Data";
   if (daysRemaining <= 7) return "Critical";
   if (daysRemaining <= 14) return "Low";
@@ -394,7 +406,9 @@ function mapInventoryRecord(
   const unit = (!isAsset && canonical?.unit) ? canonical.unit : (record.unit || (isAsset ? "units" : "sachets"));
   const daysRemaining = isAsset ? null : calcDaysRemaining(Number(record.currentStock || 0), dailyUsage);
   const hasUsage = !isAsset && (itemForecast?.usage ?? 0) >= 0.001;
-  const status = isAsset ? "Healthy" : getStatus(daysRemaining, hasUsage);
+  const currentStock = Number(record.currentStock || 0);
+  const reorderLevel = Number(record.reorderLevel || 0);
+  const status = isAsset ? "Healthy" : getStatus(daysRemaining, hasUsage, currentStock, reorderLevel);
   const daysUntilService = calcDaysUntilService(record.lastServicedDate, record.maintenanceIntervalDays);
   return {
     id: record.id,
@@ -595,10 +609,13 @@ export default function PredictiveInventoryPage() {
   }, [consumableItems, isStaff, selectedTab, userBranch]);
 
   const summary = useMemo(() => {
-    const critical = filteredInventory.filter((i) => i.status === "Critical").length;
-    const low = filteredInventory.filter((i) => i.status === "Low").length;
-    const healthy = filteredInventory.filter((i) => i.status === "Healthy").length;
-    const urgent = filteredInventory.filter((i) => i.status !== "Healthy")
+    // Count consumables only — assets always show "Healthy" and inflate the numbers.
+    const consumablePool = filteredInventory.filter((i) => !i.isAsset);
+    const critical = consumablePool.filter((i) => i.status === "Critical").length;
+    const low = consumablePool.filter((i) => i.status === "Low").length;
+    const healthy = consumablePool.filter((i) => i.status === "Healthy").length;
+    const urgent = consumablePool
+      .filter((i) => i.status !== "Healthy" && i.status !== "No Data")
       .sort((a, b) => {
         if (a.daysUntilEmpty === null) return 1;
         if (b.daysUntilEmpty === null) return -1;
@@ -1184,35 +1201,39 @@ export default function PredictiveInventoryPage() {
         </div>
       </div>
 
-      {/* Action Banner */}
+      {/* Action Banner — shown for Critical or Low stock items */}
       {!loading && !bannerDismissed && (() => {
         const activePool = (isAdmin && selectedTab === "All") ? allConsumables : consumableItems;
         const criticalItems = activePool.filter((i) => i.status === "Critical");
-        if (criticalItems.length === 0) return null;
+        const lowItems = activePool.filter((i) => i.status === "Low");
+        if (criticalItems.length === 0 && lowItems.length === 0) return null;
 
         const outOfStockCount = criticalItems.filter((i) => i.currentStock === 0).length;
-        const lowStockCount = criticalItems.length - outOfStockCount;
+        const criticalLowCount = criticalItems.filter((i) => i.currentStock > 0).length;
         const parts: string[] = [];
         if (outOfStockCount > 0) {
           parts.push(`${outOfStockCount} supply item${outOfStockCount > 1 ? "s" : ""} ${outOfStockCount === 1 ? "is" : "are"} out of stock and need${outOfStockCount === 1 ? "s" : ""} immediate restocking`);
         }
-        if (lowStockCount > 0) {
-          parts.push(`${lowStockCount} supply item${lowStockCount > 1 ? "s" : ""} ${lowStockCount === 1 ? "is" : "are"} expected to run out within 7 days`);
+        if (criticalLowCount > 0) {
+          parts.push(`${criticalLowCount} supply item${criticalLowCount > 1 ? "s" : ""} ${criticalLowCount === 1 ? "is" : "are"} critically low (≤7 days remaining)`);
+        }
+        if (lowItems.length > 0) {
+          parts.push(`${lowItems.length} supply item${lowItems.length > 1 ? "s" : ""} ${lowItems.length === 1 ? "is" : "are"} running low (8–14 days remaining)`);
         }
         const bannerText = parts.join(" · ");
-        const isOutOfStock = outOfStockCount > 0 && lowStockCount === 0;
+        const isCritical = criticalItems.length > 0;
         return (
           <div className={`rounded-2xl border p-4 flex items-start justify-between gap-3 ${
-            isOutOfStock ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"
+            isCritical ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"
           }`}>
             <div className={`flex items-center gap-2 text-sm font-medium ${
-              isOutOfStock ? "text-red-900" : "text-amber-900"
+              isCritical ? "text-red-900" : "text-amber-900"
             }`}>
-              <AlertTriangle className={`h-4 w-4 shrink-0 ${isOutOfStock ? "text-red-600" : "text-amber-600"}`} />
+              <AlertTriangle className={`h-4 w-4 shrink-0 ${isCritical ? "text-red-600" : "text-amber-600"}`} />
               <span>{bannerText}</span>
             </div>
             <button onClick={() => setBannerDismissed(true)} className={`shrink-0 transition-colors ${
-              isOutOfStock ? "text-red-700 hover:text-red-900" : "text-amber-700 hover:text-amber-900"
+              isCritical ? "text-red-700 hover:text-red-900" : "text-amber-700 hover:text-amber-900"
             }`} aria-label="Dismiss">
               <X className="h-4 w-4" />
             </button>
