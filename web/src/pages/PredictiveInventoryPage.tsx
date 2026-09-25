@@ -667,8 +667,17 @@ export default function PredictiveInventoryPage() {
 
   const reorderSuggestions = useMemo(() => {
     return needsAttention.map((item) => {
-      const recommended = Math.max(0, Math.round(item.historicalDailyUsage * 30 - item.currentStock));
-      return { ...item, recommended };
+      // Base formula: how many units are needed to bring stock up to a 30-day supply
+      const formulaBased = Math.round(item.historicalDailyUsage * 30 - item.currentStock);
+
+      // Minimum practical reorder floor:
+      // If the item is Critical (especially at 0 stock), never suggest fewer than
+      // 30 units — ordering 3 sachets when you're out is not useful.
+      // If the item is Low, floor at 20 units so the restock is meaningful.
+      const minFloor = item.status === "Critical" ? 30 : 20;
+
+      const recommended = Math.max(minFloor, formulaBased > 0 ? formulaBased : 0);
+      return { ...item, recommended, formulaBased };
     });
   }, [needsAttention]);
 
@@ -1601,11 +1610,18 @@ export default function PredictiveInventoryPage() {
                 </p>
                 {item.recommended > 0 ? (
                   <p className="text-sm font-semibold text-foreground">
-                    Reorder <span className={item.status === "Critical" ? "text-red-700" : "text-amber-700"}>{item.recommended} {item.unit}</span>
-                    <span className="text-xs text-muted-foreground font-normal ml-1">to maintain 30-day supply</span>
+                    Reorder{" "}
+                    <span className={item.status === "Critical" ? "text-red-700" : "text-amber-700"}>
+                      {item.recommended} {item.unit}
+                    </span>
+                    <span className="text-xs text-muted-foreground font-normal ml-1">
+                      {item.historicalDailyUsage > 0.001
+                        ? item.recommended > (item.formulaBased ?? 0)
+                          ? `to maintain 30-day supply (min. restock floor applied)`
+                          : `to maintain 30-day supply`
+                        : `recommended minimum restock`}
+                    </span>
                   </p>
-                ) : item.historicalDailyUsage < 0.001 ? (
-                  <p className="text-sm text-muted-foreground">Enable usage tracking to get reorder quantity suggestion</p>
                 ) : (
                   <p className="text-sm text-muted-foreground">Reorder quantity calculation pending</p>
                 )}
