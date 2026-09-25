@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StyleSheet, Dimensions, Modal } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
@@ -143,6 +143,8 @@ export default function BookingScreen({ route, navigation }) {
   const [notes, setNotes]         = useState('');
   const [payMethod, setPay]       = useState('cod');
   const [loadSize, setLoadSize]   = useState('SMALL'); // SMALL or LARGE
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [policyAgreed, setPolicyAgreed]       = useState(false);
   const dates                     = useMemo(() => mkDates(14), []);
   const mode                      = SERVICE_MODES.find(m=>m.id===svcMode)||SERVICE_MODES[0];
   const needsAddr                 = mode.needsAddress;
@@ -363,9 +365,33 @@ export default function BookingScreen({ route, navigation }) {
       }
     }
     else if(step===5){ if(!ok()) return; setStep(6); }   // Schedule → Payment
-    else if(step===6){ setStep(7); }                      // Payment → Confirm
+    else if(step===6){
+      setStep(7);                                         // Payment → Confirm
+      if(!policyAgreed){
+        setShowPolicyModal(true);
+      }
+    }
     else if(step===7) confirm_();
   };
+
+  const handlePolicyCancel = () => {
+    setShowPolicyModal(false);
+    if (!policyAgreed && step === 7) {
+      setStep(6);
+    }
+  };
+
+  const handlePolicyProceed = () => {
+    if (!policyAgreed) {
+      Alert.alert(
+        'Agreement Required',
+        'Please check the box to confirm that you have read and agree to the Triplets Payment Policy.'
+      );
+      return;
+    }
+    setShowPolicyModal(false);
+  };
+
   const back = ()=>{
     if(step===1){ navigation.goBack(); return; }
     if(step===4&&!needsAddr){ setStep(2); return; }  // Extras → Location (skip Address)
@@ -374,6 +400,10 @@ export default function BookingScreen({ route, navigation }) {
 
   const confirm_ = async()=>{
     if(submittingRef.current) return;
+    if(!policyAgreed){
+      setShowPolicyModal(true);
+      return;
+    }
     if(needsAddr&&!address?.address){ Alert.alert('Address Required','Please set an address.',[{text:'Set',onPress:()=>{setStep(3);setAddrSheet(true);}},{text:'Cancel',style:'cancel'}]); return; }
     // Check if any selected supply is out of stock; ask user to confirm or cancel.
     let submitDet = det, submitFab = fab;
@@ -1050,7 +1080,7 @@ export default function BookingScreen({ route, navigation }) {
               <Text style={S.paymentPolicyNote}>
                 Payment is required before your laundry is delivered or released for pickup. No downpayment needed — additional charges only apply for exceeding the load limit or Rush service.
               </Text>
-              <TouchableOpacity onPress={() => navigation.navigate('PaymentPolicy')} activeOpacity={0.7}>
+              <TouchableOpacity onPress={() => setShowPolicyModal(true)} activeOpacity={0.7}>
                 <Text style={S.paymentPolicyLink}>View Full Payment Policy</Text>
               </TouchableOpacity>
             </View>
@@ -1068,6 +1098,231 @@ export default function BookingScreen({ route, navigation }) {
       )}
 
       <Footer/>
+
+      {/* ── Triplets Payment Policy Modal (matches user screenshot) ── */}
+      <Modal
+        visible={showPolicyModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handlePolicyCancel}
+      >
+        <View style={S.policyModalOverlay}>
+          <View style={S.policyModalCard}>
+            {/* Header */}
+            <View style={S.policyModalHeader}>
+              <View style={S.policyModalHeaderIcon}>
+                <MaterialCommunityIcons name="file-document-outline" size={32} color="#0F2942" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={S.policyModalTitle}>Triplets Payment Policy</Text>
+                <Text style={S.policyModalSub}>*For bookings and transactions made through WashAlert</Text>
+              </View>
+            </View>
+
+            <View style={S.policyDivider} />
+
+            <Text style={S.policyIntroText}>
+              Please read the following Payment Policy before confirming your booking. By proceeding, you acknowledge and agree to the payment terms below.
+            </Text>
+
+            {/* Scrollable Policy Content (Items 1 to 9) */}
+            <ScrollView
+              style={S.policyScroll}
+              contentContainerStyle={S.policyScrollContent}
+              showsVerticalScrollIndicator={true}
+              nestedScrollEnabled={true}
+            >
+              {/* Item 1 */}
+              <View style={S.policyItem}>
+                <View style={S.policyBadge}>
+                  <Text style={S.policyBadgeText}>1</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={S.policyItemTitle}>Payment Requirement</Text>
+                  <Text style={S.policyItemBody}>
+                    <Text style={S.policyBold}>Payment must be completed</Text> before the laundry is released or handed over to the customer.{'\n\n'}
+                    The <Text style={S.policyBold}>payment process</Text> depends on the service and payment method chosen by the customer.
+                  </Text>
+                </View>
+              </View>
+
+              {/* Item 2 */}
+              <View style={S.policyItem}>
+                <View style={S.policyBadge}>
+                  <Text style={S.policyBadgeText}>2</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={S.policyItemTitle}>Final Receipt Confirmation</Text>
+                  <Text style={S.policyItemBody}>
+                    After Triplets receives the laundry at the branch and records the actual weight, the final amount will be calculated based on the applicable service charges. A <Text style={S.policyBold}>Final Receipt</Text> will then be provided through the WashAlert mobile application. The customer can review the following information:
+                  </Text>
+                  <View style={S.policyBulletList}>
+                    <Text style={S.policyBulletItem}>•   Actual laundry weight</Text>
+                    <Text style={S.policyBulletItem}>•   Number of loads</Text>
+                    <Text style={S.policyBulletItem}>•   Applicable service charges</Text>
+                    <Text style={S.policyBulletItem}>•   Additional charges, if any</Text>
+                    <Text style={S.policyBulletItem}>•   Total Amount Due</Text>
+                  </View>
+                  <Text style={[S.policyItemBody, { marginTop: 6 }]}>
+                    The customer may review and confirm the Final Receipt through the application.{'\n\n'}
+                    The customer will have <Text style={S.policyBold}>60 minutes</Text> from the time the Final Receipt is provided to review and confirm the details.{'\n\n'}
+                    If the customer does not confirm the Final Receipt within 60 minutes, the order will automatically proceed to the next processing stage based on the applicable service.{'\n\n'}
+                    Failure to confirm within the 60-minute period will not automatically cancel the order.
+                  </Text>
+                </View>
+              </View>
+
+              {/* Item 3 */}
+              <View style={S.policyItem}>
+                <View style={S.policyBadge}>
+                  <Text style={S.policyBadgeText}>3</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={S.policyItemTitle}>Cancellation of Pending Bookings</Text>
+                  <Text style={S.policyItemBody}>
+                    Cancellation may only be requested while the booking status is <Text style={S.policyBold}>Pending</Text> and before the laundry has been picked up, received, or processed by Triplets.{'\n\n'}
+                    Once the laundry has been received by the branch, weighed, or processed, cancellation through WashAlert will no longer be available.{'\n\n'}
+                    For concerns regarding the Final Receipt, actual weight, charges, or an order that has already been received or processed, please contact the assigned Triplets branch directly for assistance.
+                  </Text>
+                </View>
+              </View>
+
+              {/* Item 4 */}
+              <View style={S.policyItem}>
+                <View style={S.policyBadge}>
+                  <Text style={S.policyBadgeText}>4</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={S.policyItemTitle}>Delivery Service</Text>
+                  <Text style={S.policyItemBody}>
+                    For Delivery Service, Triplets will pick up the customer's laundry from the provided address and deliver it back once the laundry service is completed.
+                  </Text>
+                  <Text style={S.policySubTitle}>GCash Payment</Text>
+                  <Text style={S.policyItemBody}>
+                    If the customer chooses GCash Payment, the customer will be directed to the PayMongo payment page after the final amount has been confirmed. Through the PayMongo checkout page, the customer can complete the payment using the available QRPh option by scanning the displayed QR code with GCash.{'\n\n'}
+                    <Text style={S.policyBold}>Payment must be successfully completed and confirmed</Text> before the completed laundry is released or handed over to the customer.
+                  </Text>
+                  <Text style={S.policySubTitle}>Cash on Delivery (COD)</Text>
+                  <Text style={S.policyItemBody}>
+                    If the customer chooses Cash on Delivery (COD), payment will be collected in cash upon delivery. The customer must pay the required amount before the laundry is released or handed over.
+                  </Text>
+                </View>
+              </View>
+
+              {/* Item 5 */}
+              <View style={S.policyItem}>
+                <View style={S.policyBadge}>
+                  <Text style={S.policyBadgeText}>5</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={S.policyItemTitle}>Pickup Service</Text>
+                  <Text style={S.policyItemBody}>
+                    For Pickup Service, the customer brings or drops off the laundry at the selected Triplets branch and returns to collect it once it is ready.{'\n\n'}
+                    Triplets accepts the following payment methods at the branch:
+                  </Text>
+                  <View style={S.policyBulletList}>
+                    <Text style={S.policyBulletItem}>•   GCash</Text>
+                    <Text style={S.policyBulletItem}>•   Cash</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Item 6 */}
+              <View style={S.policyItem}>
+                <View style={S.policyBadge}>
+                  <Text style={S.policyBadgeText}>6</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={S.policyItemTitle}>Final Amount and Additional Charges</Text>
+                  <Text style={S.policyItemBody}>
+                    The final amount may vary depending on the actual laundry weight, selected service, and applicable additional charges.
+                  </Text>
+                  <View style={S.policyBulletList}>
+                    <Text style={S.policyBulletItem}>•   <Text style={S.policyBold}>Weight Limit:</Text> The standard load is up to 8 kg, depending on the applicable service. If the applicable load limit is exceeded, an additional ₱50 charge may apply or the laundry may be counted as an additional load, depending on the service.</Text>
+                    <Text style={S.policyBulletItem}>•   <Text style={S.policyBold}>Rush Service:</Text> A ₱150 priority fee per load applies to rush service requests.</Text>
+                  </View>
+                  <Text style={[S.policyItemBody, { marginTop: 6 }]}>
+                    These are service-related additional charges and are not general penalties.
+                  </Text>
+                </View>
+              </View>
+
+              {/* Item 7 */}
+              <View style={S.policyItem}>
+                <View style={S.policyBadge}>
+                  <Text style={S.policyBadgeText}>7</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={S.policyItemTitle}>Unclaimed Laundry</Text>
+                  <Text style={S.policyItemBody}>
+                    Laundry that remains unclaimed for 15 days may be charged at double the applicable amount or may be subject to forfeiture and disposal by Triplets to recover expenses.
+                  </Text>
+                </View>
+              </View>
+
+              {/* Item 8 */}
+              <View style={S.policyItem}>
+                <View style={S.policyBadge}>
+                  <Text style={S.policyBadgeText}>8</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={S.policyItemTitle}>Payment Confirmation</Text>
+                  <Text style={S.policyItemBody}>
+                    For payments made through WashAlert, the payment status will be updated after the payment has been successfully completed and confirmed through the available payment service.{'\n\n'}
+                    An order will not be considered paid if the payment is unsuccessful or has not been confirmed.
+                  </Text>
+                </View>
+              </View>
+
+              {/* Item 9 */}
+              <View style={S.policyItem}>
+                <View style={S.policyBadge}>
+                  <Text style={S.policyBadgeText}>9</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={S.policyItemTitle}>Payment and Order Concerns</Text>
+                  <Text style={S.policyItemBody}>
+                    For concerns regarding payment, the Final Receipt, actual laundry weight, additional charges, cancellation, or an order that has already been received or processed, customers may contact the assigned Triplets branch directly for assistance.
+                  </Text>
+                </View>
+              </View>
+            </ScrollView>
+
+            {/* Agreement Checkbox */}
+            <TouchableOpacity
+              style={S.policyAgreeRow}
+              onPress={() => setPolicyAgreed(prev => !prev)}
+              activeOpacity={0.7}
+            >
+              <View style={[S.policyCheckbox, policyAgreed && S.policyCheckboxChecked]}>
+                {policyAgreed && <Ionicons name="checkmark" size={14} color="#fff" />}
+              </View>
+              <Text style={S.policyAgreeText}>
+                I have read and agree to the Triplets Payment Policy.
+              </Text>
+            </TouchableOpacity>
+
+            {/* Buttons */}
+            <View style={S.policyBtnRow}>
+              <TouchableOpacity
+                style={S.policyCancelBtn}
+                onPress={handlePolicyCancel}
+                activeOpacity={0.8}
+              >
+                <Text style={S.policyCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[S.policyProceedBtn, !policyAgreed && S.policyProceedBtnDisabled]}
+                onPress={handlePolicyProceed}
+                activeOpacity={0.8}
+              >
+                <Text style={S.policyProceedBtnText}>Proceed</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1251,4 +1506,34 @@ const S = StyleSheet.create({
   summaryTitle:{fontSize:12,fontWeight:'800',color:colors.primary,letterSpacing:0.5},
   paymentPolicyNote:{fontSize:11,color:colors.textSecondary,lineHeight:16,marginTop:8},
   paymentPolicyLink:{fontSize:12,fontWeight:'700',color:colors.primary,marginTop:6},
+  // ── Triplets Payment Policy Modal Styles (matching user screenshot) ──
+  policyModalOverlay:{flex:1,backgroundColor:'rgba(15, 23, 42, 0.65)',justifyContent:'center',alignItems:'center',paddingHorizontal:16},
+  policyModalCard:{width:'100%',maxWidth:390,maxHeight:'84%',backgroundColor:'#FFFFFF',borderRadius:24,paddingHorizontal:20,paddingTop:20,paddingBottom:18,shadowColor:'#000',shadowOffset:{width:0,height:10},shadowOpacity:0.25,shadowRadius:20,elevation:12},
+  policyModalHeader:{flexDirection:'row',alignItems:'center',gap:12},
+  policyModalHeaderIcon:{width:36,alignItems:'center',justifyContent:'center'},
+  policyModalTitle:{fontSize:19,fontWeight:'800',color:'#0F2942',letterSpacing:-0.3},
+  policyModalSub:{fontSize:12,fontWeight:'700',color:'#1E40AF',marginTop:2},
+  policyDivider:{height:1,backgroundColor:'#E2E8F0',marginTop:14,marginBottom:12},
+  policyIntroText:{fontSize:12,color:'#4B5563',lineHeight:17.5,marginBottom:12},
+  policyScroll:{maxHeight:290},
+  policyScrollContent:{paddingRight:6,gap:14,paddingBottom:6},
+  policyItem:{flexDirection:'row',alignItems:'flex-start'},
+  policyBadge:{width:24,height:24,borderRadius:12,backgroundColor:'#DBEAFE',alignItems:'center',justifyContent:'center',marginRight:10,marginTop:1},
+  policyBadgeText:{fontSize:12,fontWeight:'800',color:'#1E40AF'},
+  policyItemTitle:{fontSize:13.5,fontWeight:'800',color:'#0F2942',marginBottom:4},
+  policyItemBody:{fontSize:12,color:'#475569',lineHeight:17},
+  policyBold:{fontWeight:'700',color:'#0F2942'},
+  policyBulletList:{marginTop:4,gap:2,paddingLeft:4},
+  policyBulletItem:{fontSize:12,color:'#475569',lineHeight:17},
+  policySubTitle:{fontSize:12.5,fontWeight:'800',color:'#0F2942',marginTop:8,marginBottom:2},
+  policyAgreeRow:{flexDirection:'row',alignItems:'center',marginTop:14,marginBottom:14},
+  policyCheckbox:{width:22,height:22,borderRadius:5,borderWidth:1.5,borderColor:'#94A3B8',backgroundColor:'#FFFFFF',alignItems:'center',justifyContent:'center',marginRight:10},
+  policyCheckboxChecked:{backgroundColor:'#2563EB',borderColor:'#2563EB'},
+  policyAgreeText:{fontSize:12,color:'#334155',fontWeight:'500',flex:1},
+  policyBtnRow:{flexDirection:'row',gap:12},
+  policyCancelBtn:{flex:1,backgroundColor:'#D9383A',paddingVertical:13,borderRadius:24,alignItems:'center',justifyContent:'center'},
+  policyCancelBtnText:{color:'#FFFFFF',fontSize:15,fontWeight:'700'},
+  policyProceedBtn:{flex:1,backgroundColor:'#2563EB',paddingVertical:13,borderRadius:24,alignItems:'center',justifyContent:'center'},
+  policyProceedBtnDisabled:{backgroundColor:'#5C768D'},
+  policyProceedBtnText:{color:'#FFFFFF',fontSize:15,fontWeight:'700'},
 });
