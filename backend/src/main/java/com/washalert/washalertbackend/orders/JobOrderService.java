@@ -432,6 +432,16 @@ public class JobOrderService {
             jo.setStatus(req.status());
             if (req.status() == JobOrderStatus.CANCELLED) {
                 inventoryService.releaseForOrder(jo);
+                jo.setPaid(false);
+                jo.setCodCollected(false);
+                paymentRepository.findByJobOrder_TrackingNumberOrderBySubmittedAtDesc(jo.getTrackingNumber())
+                        .forEach(pr -> {
+                            if (pr.getStatus() != com.washalert.washalertbackend.payment.PaymentStatus.REJECTED) {
+                                pr.setStatus(com.washalert.washalertbackend.payment.PaymentStatus.REJECTED);
+                                pr.setNotes("Order cancelled");
+                                paymentRepository.save(pr);
+                            }
+                        });
             }
             if (req.status() == JobOrderStatus.WASHING) {
                 // Block WASHING for GCash orders that have not paid yet.
@@ -1519,6 +1529,16 @@ public class JobOrderService {
             ? "Customer rejected final price and cancelled"
             : "Cancelled by customer";
         jo.setStatus(JobOrderStatus.CANCELLED);
+        jo.setPaid(false);
+        jo.setCodCollected(false);
+        paymentRepository.findByJobOrder_TrackingNumberOrderBySubmittedAtDesc(jo.getTrackingNumber())
+                .forEach(pr -> {
+                    if (pr.getStatus() != com.washalert.washalertbackend.payment.PaymentStatus.REJECTED) {
+                        pr.setStatus(com.washalert.washalertbackend.payment.PaymentStatus.REJECTED);
+                        pr.setNotes("Cancelled by customer");
+                        paymentRepository.save(pr);
+                    }
+                });
         timelineService.log(jo, jo.getStatus(), actor.getEmail(), cancelReason);
         notificationService.enqueuePushToRoles(
                 List.of(Role.STAFF, Role.ADMIN),

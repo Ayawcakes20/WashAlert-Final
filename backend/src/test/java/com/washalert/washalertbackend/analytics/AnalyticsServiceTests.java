@@ -140,6 +140,67 @@ class AnalyticsServiceTests {
         assertThat(response.branchBreakdown().get(0).totalOrders()).isEqualTo(2L);
     }
 
+    @Test
+    void summaryExcludesCancelledOrdersFromTotalOrdersAndRevenue() {
+        JobOrderRepository orderRepository = mock(JobOrderRepository.class);
+        PaymentRecordRepository paymentRepository = mock(PaymentRecordRepository.class);
+        AnalyticsService service = new AnalyticsService(orderRepository, paymentRepository);
+
+        JobOrder deliveredOrder = JobOrder.builder()
+                .id(201L)
+                .branch("Holy Spirit Branch")
+                .status(com.washalert.washalertbackend.orders.JobOrderStatus.DELIVERED)
+                .createdAt(LocalDateTime.now())
+                .isPaid(true)
+                .paymentMethod("GCASH")
+                .finalPrice(new BigDecimal("300.00"))
+                .build();
+
+        JobOrder cancelledOrder = JobOrder.builder()
+                .id(202L)
+                .branch("Holy Spirit Branch")
+                .status(com.washalert.washalertbackend.orders.JobOrderStatus.CANCELLED)
+                .createdAt(LocalDateTime.now())
+                .isPaid(false)
+                .paymentMethod("COD")
+                .finalPrice(new BigDecimal("400.00"))
+                .build();
+
+        PaymentRecord deliveredPayment = PaymentRecord.builder()
+                .id(11L)
+                .jobOrder(deliveredOrder)
+                .method(com.washalert.washalertbackend.payment.PaymentMethod.GCASH)
+                .status(PaymentStatus.PAID)
+                .amount(new BigDecimal("300.00"))
+                .submittedAt(LocalDateTime.now())
+                .build();
+
+        PaymentRecord cancelledPayment = PaymentRecord.builder()
+                .id(12L)
+                .jobOrder(cancelledOrder)
+                .method(com.washalert.washalertbackend.payment.PaymentMethod.CASH)
+                .status(PaymentStatus.REJECTED)
+                .amount(new BigDecimal("400.00"))
+                .submittedAt(LocalDateTime.now())
+                .build();
+
+        when(orderRepository.findByCreatedAtBetween(any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(List.of(deliveredOrder, cancelledOrder));
+        when(paymentRepository.findBySubmittedAtBetween(any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(List.of(deliveredPayment, cancelledPayment));
+
+        AnalyticsSummaryResponse response = service.summary(LocalDate.now().minusDays(1), LocalDate.now(), "All", adminPrincipal());
+
+        // Cancelled order must NOT be counted in total orders: totalOrders = 1 (only deliveredOrder)
+        assertThat(response.totalOrders()).isEqualTo(1);
+        // Cancelled order must NOT be included in revenue: totalRevenue = 300.00
+        assertThat(response.totalRevenue()).isEqualByComparingTo(new BigDecimal("300.00"));
+        // Branch breakdown should only count 1 active order and 300 revenue
+        assertThat(response.branchBreakdown()).hasSize(1);
+        assertThat(response.branchBreakdown().get(0).totalOrders()).isEqualTo(1L);
+        assertThat(response.branchBreakdown().get(0).revenue()).isEqualByComparingTo(new BigDecimal("300.00"));
+    }
+
     private AuthUserDetails adminPrincipal() {
         User admin = User.builder()
                 .id(1L)

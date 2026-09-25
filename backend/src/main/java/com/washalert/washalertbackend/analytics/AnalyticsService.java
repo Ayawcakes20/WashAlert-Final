@@ -68,10 +68,15 @@ public class AnalyticsService {
         List<JobOrder> orders = safeOrders(queriedOrders);
         List<PaymentRecord> payments = safePayments(queriedPayments);
 
-        long pending = orders.stream().filter(o -> o.getStatus() == JobOrderStatus.PENDING).count();
-        long washing = orders.stream().filter(o -> o.getStatus() == JobOrderStatus.WASHING).count();
-        long drying = orders.stream().filter(o -> o.getStatus() == JobOrderStatus.DRYING).count();
-        long ready = orders.stream().filter(o -> o.getStatus() == JobOrderStatus.READY).count();
+        // Exclude CANCELLED and FAILED orders from all active analytics counts and revenue
+        List<JobOrder> activeOrders = orders.stream()
+                .filter(o -> o != null && o.getStatus() != JobOrderStatus.CANCELLED && o.getStatus() != JobOrderStatus.FAILED)
+                .toList();
+
+        long pending = activeOrders.stream().filter(o -> o.getStatus() == JobOrderStatus.PENDING).count();
+        long washing = activeOrders.stream().filter(o -> o.getStatus() == JobOrderStatus.WASHING).count();
+        long drying = activeOrders.stream().filter(o -> o.getStatus() == JobOrderStatus.DRYING).count();
+        long ready = activeOrders.stream().filter(o -> o.getStatus() == JobOrderStatus.READY).count();
 
         // Order IDs that already have a completed PaymentRecord in queriedPayments
         Set<Long> paidViaPaymentRecord = payments.stream()
@@ -87,25 +92,24 @@ public class AnalyticsService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         // Revenue from COD / Cash orders that are marked isPaid or codCollected but do not
-        // have a completed PaymentRecord in queriedPayments (covers historical COD collections)
-        BigDecimal revenueFromCodPaid = orders.stream()
-                .filter(o -> o != null && (o.isPaid() || o.isCodCollected()) && !paidViaPaymentRecord.contains(o.getId()))
-                .filter(o -> o.getStatus() != JobOrderStatus.CANCELLED && o.getStatus() != JobOrderStatus.FAILED)
+        // have a completed PaymentRecord in queriedPayments (active orders only, excluding CANCELLED/FAILED)
+        BigDecimal revenueFromCodPaid = activeOrders.stream()
+                .filter(o -> (o.isPaid() || o.isCodCollected()) && !paidViaPaymentRecord.contains(o.getId()))
                 .map(this::orderAmountOrZero)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal totalRevenue = revenueFromRecords.add(revenueFromCodPaid);
 
-        Integer peakHour = findPeakHour(orders);
+        Integer peakHour = findPeakHour(activeOrders);
 
-        List<BranchAnalyticsResponse> branchBreakdown = computeBranchBreakdown(orders, payments, effectiveBranch, paidViaPaymentRecord);
-        Map<String, Long> hourlyBreakdown = computeHourlyBreakdown(orders);
-        Map<String, Long> paymentMethodBreakdown = computePaymentMethodBreakdown(payments, orders, paidViaPaymentRecord);
+        List<BranchAnalyticsResponse> branchBreakdown = computeBranchBreakdown(activeOrders, payments, effectiveBranch, paidViaPaymentRecord);
+        Map<String, Long> hourlyBreakdown = computeHourlyBreakdown(activeOrders);
+        Map<String, Long> paymentMethodBreakdown = computePaymentMethodBreakdown(payments, activeOrders, paidViaPaymentRecord);
 
         return new AnalyticsSummaryResponse(
                 from,
                 to,
-                orders.size(),
+                activeOrders.size(),
                 pending,
                 washing,
                 drying,
@@ -131,9 +135,9 @@ public class AnalyticsService {
         return normalizedBranch;
     }
 
-    private Integer findPeakHour(List<JobOrder> orders) {
+    private Integer findPeakHour(List<JobOrder> activeOrders) {
         Map<Integer, Long> byHour = new HashMap<>();
-        for (JobOrder order : orders) {
+        for (JobOrder order : activeOrders) {
             if (order.getCreatedAt() == null) {
                 continue;
             }
@@ -147,12 +151,12 @@ public class AnalyticsService {
                 .orElse(null);
     }
 
-    private Map<String, Long> computeHourlyBreakdown(List<JobOrder> orders) {
+    private Map<String, Long> computeHourlyBreakdown(List<JobOrder> activeOrders) {
         Map<String, Long> result = new LinkedHashMap<>();
         for (int h = 0; h < 24; h++) {
             result.put(String.format("%02d:00", h), 0L);
         }
-        for (JobOrder order : orders) {
+        for (JobOrder order : activeOrders) {
             if (order.getCreatedAt() == null) {
                 continue;
             }
@@ -164,7 +168,7 @@ public class AnalyticsService {
 
     private Map<String, Long> computePaymentMethodBreakdown(
             List<PaymentRecord> payments,
-            List<JobOrder> orders,
+            List<JobOrder> activeOrders,
             Set<Long> paidViaPaymentRecord
     ) {
         Map<String, Long> result = new LinkedHashMap<>();
@@ -178,9 +182,8 @@ public class AnalyticsService {
             result.put(key, result.getOrDefault(key, 0L) + 1);
         }
 
-        for (JobOrder o : orders) {
-            if (o != null && (o.isPaid() || o.isCodCollected()) && !paidViaPaymentRecord.contains(o.getId())) {
-                if (o.getStatus() == JobOrderStatus.CANCELLED || o.getStatus() == JobOrderStatus.FAILED) continue;
+        for (JobOrder o : activeOrders) {
+            if ((o.isPaid() || o.isCodCollected()) && !paidViaPaymentRecord.contains(o.getId())) {
                 String pm = o.getPaymentMethod();
                 String key = "CASH";
                 if (pm != null) {
@@ -199,13 +202,13 @@ public class AnalyticsService {
     }
 
     private List<BranchAnalyticsResponse> computeBranchBreakdown(
-            List<JobOrder> orders,
+            List<JobOrder> activeOrders,
             List<PaymentRecord> payments,
             String effectiveBranch,
             Set<Long> paidViaPaymentRecord
     ) {
         Map<String, Long> orderCountByBranch = new HashMap<>();
-        for (JobOrder o : orders) {
+        for (JobOrder o : activeOrders) {
             String key = normalizeBranchName(o.getBranch());
             orderCountByBranch.put(key, orderCountByBranch.getOrDefault(key, 0L) + 1);
         }
@@ -217,11 +220,12 @@ public class AnalyticsService {
             revenueByBranch.put(key, revenueByBranch.getOrDefault(key, BigDecimal.ZERO).add(amountOrZero(p)));
         }
 
-        for (JobOrder o : orders) {
-            if (o != null && (o.isPaid() || o.isCodCollected()) && !paidViaPaymentRecord.contains(o.getId())) {
-                if (o.getStatus() == JobOrderStatus.CANCELLED || o.getStatus() == JobOrderStatus.FAILED) continue;
-                String key = normalizeBranchName(o.getBranch());
-                revenueByBranch.put(key, revenueByBranch.getOrDefault(key, BigDecimal.ZERO).add(orderAmountOrZero(o)));
+        for (JobOrder o : activeOrders) {
+            if (o.isPaid() || o.isCodCollected()) {
+                if (!paidViaPaymentRecord.contains(o.getId())) {
+                    String key = normalizeBranchName(o.getBranch());
+                    revenueByBranch.put(key, revenueByBranch.getOrDefault(key, BigDecimal.ZERO).add(orderAmountOrZero(o)));
+                }
             }
         }
 
@@ -265,12 +269,20 @@ public class AnalyticsService {
         if (payment == null) {
             return false;
         }
-        if (payment.getJobOrder() != null &&
-                (payment.getJobOrder().getStatus() == JobOrderStatus.CANCELLED ||
-                 payment.getJobOrder().getStatus() == JobOrderStatus.FAILED)) {
+        if (payment.getStatus() != PaymentStatus.VERIFIED && payment.getStatus() != PaymentStatus.PAID) {
             return false;
         }
-        return payment.getStatus() == PaymentStatus.VERIFIED || payment.getStatus() == PaymentStatus.PAID;
+        try {
+            if (payment.getJobOrder() != null) {
+                JobOrderStatus status = payment.getJobOrder().getStatus();
+                if (status == JobOrderStatus.CANCELLED || status == JobOrderStatus.FAILED) {
+                    return false;
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("[ANALYTICS] Unable to resolve job order status for paymentId={}", payment.getId(), ex);
+        }
+        return true;
     }
 
     private BigDecimal amountOrZero(PaymentRecord payment) {

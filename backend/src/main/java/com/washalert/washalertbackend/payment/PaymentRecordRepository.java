@@ -41,12 +41,18 @@ public interface PaymentRecordRepository extends JpaRepository<PaymentRecord, Lo
             """)
     List<PaymentRecord> findAllWithJobOrderOrderBySubmittedAtDesc();
 
-    List<PaymentRecord> findBySubmittedAtBetween(LocalDateTime start, LocalDateTime end);
+    @Query("""
+            select p
+            from PaymentRecord p
+            left join fetch p.jobOrder jo
+            where p.submittedAt between :start and :end
+            """)
+    List<PaymentRecord> findBySubmittedAtBetween(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 
     @Query("""
             select p
             from PaymentRecord p
-            join p.jobOrder jo
+            left join fetch p.jobOrder jo
             where replace(lower(jo.branch), ' branch', '') = replace(lower(:branch), ' branch', '')
               and p.submittedAt between :start and :end
             """)
