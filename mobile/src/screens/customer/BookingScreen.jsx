@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StyleSheet, Dimensions, Modal } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StyleSheet, Dimensions, Modal, useWindowDimensions } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
@@ -97,6 +97,8 @@ const mkDates = (n=7) => {
 
 export default function BookingScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const cardWidth = Math.floor((windowWidth - 52) / 2);
   const scrollCue = useScrollCue();
   
   const Row = ({ label, value }) => (
@@ -292,6 +294,13 @@ export default function BookingScreen({ route, navigation }) {
     prevStepRef.current = step;
     setTimeout(()=>{ scrollRef.current?.scrollTo({ y: 0, animated: false }); }, 0);
   },[step]);
+
+  // Ensure scroll resets to top when initial loading finishes
+  useEffect(() => {
+    if (!loading) {
+      setTimeout(() => { scrollRef.current?.scrollTo({ y: 0, animated: false }); }, 50);
+    }
+  }, [loading]);
 
   const load = async()=>{
     try{ 
@@ -624,7 +633,12 @@ export default function BookingScreen({ route, navigation }) {
             <Text style={S.sec}>Laundry Package</Text>
             <View style={S.svcGrid}>
               {services_.map(svc=>(
-                <TouchableOpacity key={svc.id} style={[S.svcCard,service?.id===svc.id&&S.svcCardOn]} onPress={()=>setService(svc)} activeOpacity={0.8}>
+                <TouchableOpacity
+                  key={svc.id}
+                  style={[S.svcCard, { width: cardWidth || '48.5%' }, service?.id===svc.id&&S.svcCardOn]}
+                  onPress={()=>setService(svc)}
+                  activeOpacity={0.8}
+                >
                   <MaterialCommunityIcons name={getSvcIcon(svc)} size={26} color={service?.id===svc.id?'#fff':colors.primary}/>
                   <Text style={[S.svcName,service?.id===svc.id&&S.svcNameOn]}>{svc.name}</Text>
                   <Text style={[S.svcPrice,service?.id===svc.id&&S.svcPriceOn]} numberOfLines={2}>{getServicePriceLabel(svc)}</Text>
@@ -1088,7 +1102,7 @@ export default function BookingScreen({ route, navigation }) {
         )}
 
       </ScrollView>
-      <ScrollCue visible={scrollCue.showCue} bottom={250} />
+      <ScrollCue visible={scrollCue.showCue} bottom={insets.bottom + 110} />
 
       {/* Floating toast — auto-dismisses after 3.5 s; shown for stock errors and gate blocks */}
       {!!toastMsg && (
@@ -1402,8 +1416,8 @@ const S = StyleSheet.create({
   toggleTxtOn:{color:colors.primary},
   toggleSub:{fontSize:11,color:colors.textTertiary},
   toggleSubOn:{color:colors.primary},
-  svcGrid:{flexDirection:'row',flexWrap:'wrap',gap:10},
-  svcCard:{width:(width-50)/2,backgroundColor:colors.surface,borderRadius:14,padding:14,alignItems:'center',gap:6,borderWidth:1,borderColor:colors.border},
+  svcGrid:{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',rowGap:10},
+  svcCard:{width:'48.5%',backgroundColor:colors.surface,borderRadius:14,padding:14,alignItems:'center',gap:6,borderWidth:1,borderColor:colors.border},
   svcCardOn:{backgroundColor:colors.primary,borderColor:colors.primary},
   svcName:{fontSize:12,fontWeight:'700',color:colors.text,textAlign:'center'},
   svcNameOn:{color:'#fff'},
