@@ -193,11 +193,12 @@ export default function BookingScreen({ route, navigation }) {
 
 
   const deliveryFee = useMemo(()=>{
+    if(step === 1) return 0;
     if(!needsAddr) return 0;
     if(!address?.latitude||!branch?.latitude) return 50;
     const d=distKm(branch.latitude,branch.longitude,address.latitude,address.longitude);
     return Math.min(100,Math.max(40,Math.round(40+d*12)));
-  },[needsAddr,address,branch]);
+  },[step,needsAddr,address,branch]);
 
   const detOpt  = DET_OPTS.find(o=>o.id===det);
   const fabOpt  = FAB_OPTS.find(o=>o.id===fab);
