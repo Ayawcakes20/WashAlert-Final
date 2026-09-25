@@ -110,15 +110,6 @@ public class PricingService {
         if (serviceName == null) return;
         String name = serviceName.toLowerCase(Locale.ROOT);
 
-        if (isDryOnlyService(name)) {
-            boolean detActive = !isNoSupply(detergent);
-            boolean fabActive = !isNoSupply(fabcon);
-            if (detActive || fabActive) {
-                throw new IllegalArgumentException("Add-ons are not needed for Dry-only service.");
-            }
-            return;
-        }
-
         if (!isNoSupply(detergent) && detQty < 0) {
             throw new IllegalArgumentException("Detergent quantity cannot be negative.");
         }

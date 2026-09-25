@@ -147,20 +147,15 @@ export default function BookingScreen({ route, navigation }) {
   const needsAddr                 = mode.needsAddress;
 
   // Mirrors PricingService.computeLoadCount() — caps add-on qty per booking.
-  // Returns 0 for Dry-only because drying does not use detergent or fabric conditioner.
   const computedLoadCount = useMemo(() => {
     if (!service) return 1;
     const name = (service.name || '').toLowerCase();
-    if (name.includes('dry')) return 0;
     const kg = loadSize === 'LARGE' ? 8 : 5;
     if (name.includes('double')) return 2;
     if (name.includes('ecowash')) return Math.max(1, Math.ceil(kg / 5));
     if (name.includes('full') || name.includes('handwash')) return Math.max(1, Math.ceil(kg / 8));
     return 1;
   }, [service, loadSize]);
-
-  // True when the selected service is Dry-only (no washing cycle, add-ons not applicable).
-  const isDryOnly = computedLoadCount === 0;
 
   // Active qty for the selected addon.
   // Returns 0 if the item is out of stock (supplyAvail loaded and available=false),
@@ -267,16 +262,6 @@ export default function BookingScreen({ route, navigation }) {
       .finally(()=>setAvailLoading(false));
   },[step,branch?.name]);
 
-  // Force add-ons to None when Dry-only is selected — drying has no wash cycle
-  useEffect(()=>{
-    if(computedLoadCount !== 0) return;
-    setDet('none');
-    setFab('none');
-    setDetSource(null);
-    setFabSource(null);
-    setDetQtyMap({ surf: 0, ariel: 0 });
-    setFabQtyMap({ charm: 0, downy: 0 });
-  },[computedLoadCount]);
 
   // NOTE: Removed auto-clamp that forced qty down to availableQty.
   // Customers are free to pick any quantity. Backend validates at booking time.
@@ -335,7 +320,14 @@ export default function BookingScreen({ route, navigation }) {
     if(step===2) return !!branch;             // Service Type + Branch
     if(step===3) return !!address?.address;   // Address
     // Block Continue while there is a confirmed inventory error from a previous attempt.
-    if(step===4) return !stockError;          // Extras
+    if(step===4){
+      if(stockError) return false;
+      if(!detSource) return false;
+      if(detSource === 'shop' && (det === 'none' || detQty <= 0)) return false;
+      if(!fabSource) return false;
+      if(fabSource === 'shop' && (fab === 'none' || fabQty <= 0)) return false;
+      return true;
+    }
     if(step===5) return !!schTime&&!!slots.find(s=>s.label===schTime&&s.available); // Schedule
     if(step===6) return !!payMethod;          // Payment Method
     return true;
@@ -348,8 +340,13 @@ export default function BookingScreen({ route, navigation }) {
     else if(step===4){
       // Hard gate: if a stock error was set by a previous attempt, block until selection changes.
       if(stockError){ showToast('Stock unavailable — please adjust your extras before continuing.'); return; }
-      // If no extras selected, skip the network check entirely.
-      if(det==='none' && fab==='none'){ setStep(5); return; }
+      if(!detSource){ showToast('Please select if Detergent is Customer Provided or Laundry Shop Provided.'); return; }
+      if(detSource === 'shop' && (det === 'none' || detQty <= 0)){ showToast('Please select a detergent brand and quantity.'); return; }
+      if(!fabSource){ showToast('Please select if Fabric Conditioner is Customer Provided or Laundry Shop Provided.'); return; }
+      if(fabSource === 'shop' && (fab === 'none' || fabQty <= 0)){ showToast('Please select a fabric conditioner brand and quantity.'); return; }
+
+      // If both are Customer Provided, skip network check entirely.
+      if(detSource === 'customer' && fabSource === 'customer'){ setStep(5); return; }
       // Pre-flight supply availability check — keeps user on Extras if stock is insufficient.
       setChecking(true);
       try {
@@ -686,16 +683,6 @@ export default function BookingScreen({ route, navigation }) {
             <Text style={S.q}>Any extras?</Text>
             <Text style={S.hint}>Add detergent or fabric conditioner — or bring your own.</Text>
 
-            {/* ── Dry-only notice ── add-ons are not applicable for drying-only orders ── */}
-            {isDryOnly && (
-              <View style={{backgroundColor:'#FEF9C3',borderRadius:12,padding:14,borderWidth:1,borderColor:'#FDE047',flexDirection:'row',alignItems:'flex-start',gap:10}}>
-                <Ionicons name="information-circle" size={18} color="#CA8A04" style={{marginTop:1}}/>
-                <Text style={{flex:1,fontSize:13,color:'#78350F',lineHeight:18}}>
-                  Add-ons are not needed for Dry-only service. Detergent and fabric conditioner have been cleared.
-                </Text>
-              </View>
-            )}
-
             {/* ── Inventory Stock Error ── shown when booking failed due to insufficient stock ── */}
             {stockError && (
               <View style={{backgroundColor:'#FEF2F2',borderRadius:12,padding:14,borderWidth:1,borderColor:'#FECACA',flexDirection:'row',alignItems:'flex-start',gap:10}}>
@@ -724,7 +711,19 @@ export default function BookingScreen({ route, navigation }) {
             </View>
 
             {/* ── DETERGENT — Two-step: first choose source, then choose item ── */}
-            <Text style={S.sec}>Detergent</Text>
+            <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:10,marginTop:16}}>
+              <Text style={[S.sec,{marginBottom:0,marginTop:0}]}>Detergent</Text>
+              {!detSource ? (
+                <Text style={{fontSize:11,fontWeight:'700',color:'#D97706'}}>Required</Text>
+              ) : detSource==='shop'&&(det==='none'||detQty<=0) ? (
+                <Text style={{fontSize:11,fontWeight:'700',color:'#D97706'}}>Select brand & qty</Text>
+              ) : (
+                <View style={{flexDirection:'row',alignItems:'center',gap:4}}>
+                  <Ionicons name="checkmark-circle" size={14} color="#16A34A"/>
+                  <Text style={{fontSize:11,fontWeight:'700',color:'#16A34A'}}>Selected</Text>
+                </View>
+              )}
+            </View>
             {availLoading&&<ActivityIndicator size="small" color={colors.primary} style={{alignSelf:'flex-start',marginBottom:8}}/>}
 
             {/* Step 1: source selection */}
@@ -737,10 +736,8 @@ export default function BookingScreen({ route, navigation }) {
                     style={{flex:1,paddingVertical:14,paddingHorizontal:12,borderRadius:14,borderWidth:1.5,
                       borderColor:isSrc?colors.primary:colors.border,
                       backgroundColor:isSrc?colors.primaryLight:colors.surface,
-                      opacity:isDryOnly&&src.id==='shop'?0.4:1,
                       alignItems:'center'}}
                     onPress={()=>{
-                      if(isDryOnly&&src.id==='shop'){ showToast('Add-ons are not needed for Dry-only service.'); return; }
                       setDetSource(src.id);
                       if(src.id==='customer'){
                         setDet('none');
@@ -825,7 +822,19 @@ export default function BookingScreen({ route, navigation }) {
             })}
 
             {/* ── FABRIC CONDITIONER — same two-step pattern ── */}
-            <Text style={S.sec}>Fabric Conditioner</Text>
+            <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:10,marginTop:16}}>
+              <Text style={[S.sec,{marginBottom:0,marginTop:0}]}>Fabric Conditioner</Text>
+              {!fabSource ? (
+                <Text style={{fontSize:11,fontWeight:'700',color:'#D97706'}}>Required</Text>
+              ) : fabSource==='shop'&&(fab==='none'||fabQty<=0) ? (
+                <Text style={{fontSize:11,fontWeight:'700',color:'#D97706'}}>Select brand & qty</Text>
+              ) : (
+                <View style={{flexDirection:'row',alignItems:'center',gap:4}}>
+                  <Ionicons name="checkmark-circle" size={14} color="#16A34A"/>
+                  <Text style={{fontSize:11,fontWeight:'700',color:'#16A34A'}}>Selected</Text>
+                </View>
+              )}
+            </View>
 
             <View style={{flexDirection:'row',gap:10,marginBottom:8}}>
               {[{id:'customer',label:'Customer Provided'},{id:'shop',label:'Laundry Shop Provided'}].map(src=>{
@@ -836,10 +845,8 @@ export default function BookingScreen({ route, navigation }) {
                     style={{flex:1,paddingVertical:14,paddingHorizontal:12,borderRadius:14,borderWidth:1.5,
                       borderColor:isSrc?colors.primary:colors.border,
                       backgroundColor:isSrc?colors.primaryLight:colors.surface,
-                      opacity:isDryOnly&&src.id==='shop'?0.4:1,
                       alignItems:'center'}}
                     onPress={()=>{
-                      if(isDryOnly&&src.id==='shop'){ showToast('Add-ons are not needed for Dry-only service.'); return; }
                       setFabSource(src.id);
                       if(src.id==='customer'){
                         setFab('none');
