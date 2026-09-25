@@ -186,22 +186,40 @@ function calcDaysUntilService(
   return Math.floor((next.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
 }
 
+// ── Absolute stock thresholds ────────────────────────────────────────────────
+// These kick in BEFORE the projected-days formula so that items are never
+// misclassified as "Healthy" or "No Data" simply because usage history is
+// sparse or zero.
+//
+//   ≤  7 units  → Critical  (dangerously low, needs immediate restock)
+//   ≤ 15 units  → Low       (running low, plan restock soon)
+//
+// The reorderLevel safety-net still applies on top: if the configured
+// reorder point is higher than these thresholds it will take precedence.
+const CRITICAL_STOCK_THRESHOLD = 7;
+const LOW_STOCK_THRESHOLD = 15;
+
 function getStatus(
   daysRemaining: number | null,
   hasUsage: boolean,
   currentStock?: number,
   reorderLevel?: number,
 ): "Healthy" | "Low" | "Critical" | "No Data" {
-  // Safety-net: if stock is at or below the reorder level, it must be at least
-  // Critical — regardless of what the projected-days formula says.
-  // This prevents a very-low-usage rate turning 1 sachet into "Healthy" just
-  // because (1 / 0.05) = 20 projected days.
   const stock = currentStock ?? 0;
   const reorder = reorderLevel ?? 0;
-  if (stock <= reorder) return "Critical";
+
+  // 1. Absolute stock count — fires regardless of usage data
+  if (stock <= CRITICAL_STOCK_THRESHOLD) return "Critical";
+  if (stock <= LOW_STOCK_THRESHOLD) return "Low";
+
+  // 2. Configured reorder level (may be higher than the absolute thresholds)
+  if (reorder > 0 && stock <= reorder) return "Critical";
+
+  // 3. Projected-days formula (requires usage history)
   if (!hasUsage || daysRemaining === null) return "No Data";
   if (daysRemaining <= 7) return "Critical";
   if (daysRemaining <= 14) return "Low";
+
   return "Healthy";
 }
 
