@@ -52,20 +52,30 @@ type AnalyticsSummary = {
   paymentMethodBreakdown?: Record<string, number>;
 };
 
+const toLocalDateString = (d: Date) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const PERIOD_PRESETS = [
-  { label: "Today", getDates: () => { const d = new Date().toISOString().slice(0, 10); return { from: d, to: d }; } },
+  { label: "Today", getDates: () => { const d = toLocalDateString(new Date()); return { from: d, to: d }; } },
   {
     label: "This Week",
     getDates: () => {
-      const to = new Date(); const from = new Date(to); from.setDate(to.getDate() - 6);
-      return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+      const to = new Date();
+      const from = new Date(to);
+      from.setDate(to.getDate() - 6);
+      return { from: toLocalDateString(from), to: toLocalDateString(to) };
     },
   },
   {
     label: "This Month",
     getDates: () => {
-      const to = new Date(); const from = new Date(to); from.setDate(1);
-      return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+      const to = new Date();
+      const from = new Date(to.getFullYear(), to.getMonth(), 1);
+      return { from: toLocalDateString(from), to: toLocalDateString(to) };
     },
   },
 ];
@@ -81,10 +91,10 @@ const EXPORT_INTENT_REGEX = /\b(export|excel|csv|pdf|report|download|document)\b
 
 const initialDates = () => {
   const today = new Date();
-  const toDate = today.toISOString().slice(0, 10);
+  const toDate = toLocalDateString(today);
   const from = new Date(today);
   from.setDate(today.getDate() - 7);
-  return { fromDate: from.toISOString().slice(0, 10), toDate };
+  return { fromDate: toLocalDateString(from), toDate };
 };
 
 export default function AnalyticsPage() {
@@ -566,7 +576,7 @@ Rules:
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
-          { label: "Total Revenue (Range)", value: `PHP ${Number(summary?.totalRevenue || 0).toLocaleString()}`, sub: "Verified & paid orders only" },
+          { label: "Total Revenue (Range)", value: `PHP ${Number(summary?.totalRevenue || 0).toLocaleString()}`, sub: "Cash & GCash collected" },
           { label: "Total Orders (Range)", value: `${summary?.totalOrders || 0}`, sub: "Across selected branches" },
           { label: "Peak Order Hour", value: summary?.peakHour != null ? `${summary.peakHour}:00 - ${summary.peakHour + 1}:00` : "N/A", sub: "Highest booking activity window" },
         ].map((s) => (

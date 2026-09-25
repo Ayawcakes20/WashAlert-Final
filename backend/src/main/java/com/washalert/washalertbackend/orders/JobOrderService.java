@@ -395,19 +395,38 @@ public class JobOrderService {
                             "Payment must be verified before marking this order as delivered. "
                             + "Ask the customer to complete their GCash payment first.");
                 }
-                // If staff confirms COD collection at delivery time, mark the order as paid.
+                // If staff confirms COD collection at delivery time, mark the order as paid and ensure PaymentRecord exists.
                 if (Boolean.TRUE.equals(req.codCollected()) && !jo.isPaid()) {
                     jo.setPaid(true);
                     jo.setCodCollected(true);
                     jo.setCodCollectedAt(java.time.LocalDateTime.now());
-                    paymentRepository.findByJobOrder_TrackingNumberOrderBySubmittedAtDesc(jo.getTrackingNumber()).stream().findFirst()
-                            .filter(pr -> pr.getStatus() != com.washalert.washalertbackend.payment.PaymentStatus.PAID)
-                            .ifPresent(pr -> {
-                                pr.setStatus(com.washalert.washalertbackend.payment.PaymentStatus.PAID);
-                                pr.setVerifiedAt(java.time.LocalDateTime.now());
-                                pr.setVerifiedBy("Staff — COD collected");
-                                paymentRepository.save(pr);
-                            });
+                    java.math.BigDecimal amount = (jo.getFinalPrice() != null && jo.getFinalPrice().compareTo(java.math.BigDecimal.ZERO) > 0)
+                            ? jo.getFinalPrice()
+                            : (jo.getTotalPrice() != null ? jo.getTotalPrice() : java.math.BigDecimal.ZERO);
+                    java.util.Optional<com.washalert.washalertbackend.payment.PaymentRecord> existingPr =
+                            paymentRepository.findByJobOrder_TrackingNumberOrderBySubmittedAtDesc(jo.getTrackingNumber()).stream().findFirst();
+                    if (existingPr.isPresent()) {
+                        com.washalert.washalertbackend.payment.PaymentRecord pr = existingPr.get();
+                        pr.setStatus(com.washalert.washalertbackend.payment.PaymentStatus.PAID);
+                        pr.setVerifiedAt(java.time.LocalDateTime.now());
+                        pr.setVerifiedBy("Staff — COD collected");
+                        if (pr.getAmount() == null || pr.getAmount().compareTo(java.math.BigDecimal.ZERO) == 0) {
+                            pr.setAmount(amount);
+                        }
+                        paymentRepository.save(pr);
+                    } else {
+                        com.washalert.washalertbackend.payment.PaymentRecord newPr = com.washalert.washalertbackend.payment.PaymentRecord.builder()
+                                .jobOrder(jo)
+                                .method(com.washalert.washalertbackend.payment.PaymentMethod.CASH)
+                                .amount(amount)
+                                .status(com.washalert.washalertbackend.payment.PaymentStatus.PAID)
+                                .submittedAt(java.time.LocalDateTime.now())
+                                .verifiedAt(java.time.LocalDateTime.now())
+                                .verifiedBy("Staff — COD collected")
+                                .notes("Staff confirmed COD collection at delivery")
+                                .build();
+                        paymentRepository.save(newPr);
+                    }
                 }
             }
             jo.setStatus(req.status());
@@ -499,12 +518,18 @@ public class JobOrderService {
         JobOrder saved = repo.save(jo);
 
         // Synchronize PaymentRecord
+        java.math.BigDecimal amount = (jo.getFinalPrice() != null && jo.getFinalPrice().compareTo(java.math.BigDecimal.ZERO) > 0)
+                ? jo.getFinalPrice()
+                : (jo.getTotalPrice() != null ? jo.getTotalPrice() : java.math.BigDecimal.ZERO);
         java.util.Optional<PaymentRecord> existing = paymentRepository.findByJobOrder_TrackingNumberOrderBySubmittedAtDesc(jo.getTrackingNumber()).stream().findFirst();
         if (existing.isPresent()) {
             PaymentRecord pr = existing.get();
             pr.setStatus(PaymentStatus.PAID);
             pr.setVerifiedAt(LocalDateTime.now());
             pr.setVerifiedBy(actor.getEmail());
+            if (pr.getAmount() == null || pr.getAmount().compareTo(java.math.BigDecimal.ZERO) == 0) {
+                pr.setAmount(amount);
+            }
             paymentRepository.save(pr);
         } else {
             PaymentMethod method = PaymentMethod.CASH;
@@ -519,7 +544,7 @@ public class JobOrderService {
             PaymentRecord newRecord = PaymentRecord.builder()
                     .jobOrder(jo)
                     .method(method)
-                    .amount(jo.getTotalPrice() != null ? jo.getTotalPrice() : java.math.BigDecimal.ZERO)
+                    .amount(amount)
                     .status(PaymentStatus.PAID)
                     .submittedAt(LocalDateTime.now())
                     .verifiedAt(LocalDateTime.now())
@@ -1345,16 +1370,35 @@ public class JobOrderService {
             order.setPaid(true);
             order.setCodCollected(true);
             order.setCodCollectedAt(LocalDateTime.now());
-            // Also update the PaymentRecord so paymentStatus = PAID for all consumers.
+            // Also update or create the PaymentRecord so paymentStatus = PAID for all consumers and analytics.
             try {
-                paymentRepository.findByJobOrder_TrackingNumberOrderBySubmittedAtDesc(order.getTrackingNumber()).stream().findFirst()
-                        .filter(pr -> pr.getStatus() != com.washalert.washalertbackend.payment.PaymentStatus.PAID)
-                        .ifPresent(pr -> {
-                            pr.setStatus(com.washalert.washalertbackend.payment.PaymentStatus.PAID);
-                            pr.setVerifiedAt(LocalDateTime.now());
-                            pr.setVerifiedBy("Driver COD: " + driver.getEmail());
-                            paymentRepository.save(pr);
-                        });
+                java.math.BigDecimal amount = (order.getFinalPrice() != null && order.getFinalPrice().compareTo(java.math.BigDecimal.ZERO) > 0)
+                        ? order.getFinalPrice()
+                        : (order.getTotalPrice() != null ? order.getTotalPrice() : java.math.BigDecimal.ZERO);
+                java.util.Optional<com.washalert.washalertbackend.payment.PaymentRecord> existingPr =
+                        paymentRepository.findByJobOrder_TrackingNumberOrderBySubmittedAtDesc(order.getTrackingNumber()).stream().findFirst();
+                if (existingPr.isPresent()) {
+                    com.washalert.washalertbackend.payment.PaymentRecord pr = existingPr.get();
+                    pr.setStatus(com.washalert.washalertbackend.payment.PaymentStatus.PAID);
+                    pr.setVerifiedAt(LocalDateTime.now());
+                    pr.setVerifiedBy("Driver COD: " + driver.getEmail());
+                    if (pr.getAmount() == null || pr.getAmount().compareTo(java.math.BigDecimal.ZERO) == 0) {
+                        pr.setAmount(amount);
+                    }
+                    paymentRepository.save(pr);
+                } else {
+                    com.washalert.washalertbackend.payment.PaymentRecord newPr = com.washalert.washalertbackend.payment.PaymentRecord.builder()
+                            .jobOrder(order)
+                            .method(com.washalert.washalertbackend.payment.PaymentMethod.CASH)
+                            .amount(amount)
+                            .status(com.washalert.washalertbackend.payment.PaymentStatus.PAID)
+                            .submittedAt(LocalDateTime.now())
+                            .verifiedAt(LocalDateTime.now())
+                            .verifiedBy("Driver COD: " + driver.getEmail())
+                            .notes("COD collected by driver " + driver.getFullName())
+                            .build();
+                    paymentRepository.save(newPr);
+                }
             } catch (Exception e) {
                 log.warn("Failed to update payment record for order {}: {}", order.getId(), e.getMessage());
             }

@@ -83,6 +83,63 @@ class AnalyticsServiceTests {
         assertThat(response.branchBreakdown()).isNotNull();
     }
 
+    @Test
+    void summaryIncludesCodPaidOrdersInRevenueAndCashMethod() {
+        JobOrderRepository orderRepository = mock(JobOrderRepository.class);
+        PaymentRecordRepository paymentRepository = mock(PaymentRecordRepository.class);
+        AnalyticsService service = new AnalyticsService(orderRepository, paymentRepository);
+
+        JobOrder gcashOrder = JobOrder.builder()
+                .id(101L)
+                .branch("Makati Branch")
+                .status(com.washalert.washalertbackend.orders.JobOrderStatus.DELIVERED)
+                .createdAt(LocalDateTime.now())
+                .isPaid(true)
+                .paymentMethod("GCASH")
+                .finalPrice(new BigDecimal("300.00"))
+                .build();
+
+        JobOrder codOrder = JobOrder.builder()
+                .id(102L)
+                .branch("Makati Branch")
+                .status(com.washalert.washalertbackend.orders.JobOrderStatus.DELIVERED)
+                .createdAt(LocalDateTime.now())
+                .isPaid(true)
+                .codCollected(true)
+                .paymentMethod("COD")
+                .finalPrice(new BigDecimal("250.00"))
+                .build();
+
+        PaymentRecord gcashPayment = PaymentRecord.builder()
+                .id(1L)
+                .jobOrder(gcashOrder)
+                .method(com.washalert.washalertbackend.payment.PaymentMethod.GCASH)
+                .status(PaymentStatus.PAID)
+                .amount(new BigDecimal("300.00"))
+                .submittedAt(LocalDateTime.now())
+                .build();
+
+        when(orderRepository.findByCreatedAtBetween(any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(List.of(gcashOrder, codOrder));
+        // Only gcashPayment is in payment records table; codOrder has no payment record yet
+        when(paymentRepository.findBySubmittedAtBetween(any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(List.of(gcashPayment));
+
+        AnalyticsSummaryResponse response = service.summary(LocalDate.now().minusDays(1), LocalDate.now(), "All", adminPrincipal());
+
+        // Total orders should be 2
+        assertThat(response.totalOrders()).isEqualTo(2);
+        // Total revenue must combine GCash (300) + COD paid (250) = 550
+        assertThat(response.totalRevenue()).isEqualByComparingTo(new BigDecimal("550.00"));
+        // Payment methods: 1 GCash, 1 Cash
+        assertThat(response.paymentMethodBreakdown().get("GCASH")).isEqualTo(1L);
+        assertThat(response.paymentMethodBreakdown().get("CASH")).isEqualTo(1L);
+        // Branch breakdown revenue should also reflect 550
+        assertThat(response.branchBreakdown()).hasSize(1);
+        assertThat(response.branchBreakdown().get(0).revenue()).isEqualByComparingTo(new BigDecimal("550.00"));
+        assertThat(response.branchBreakdown().get(0).totalOrders()).isEqualTo(2L);
+    }
+
     private AuthUserDetails adminPrincipal() {
         User admin = User.builder()
                 .id(1L)

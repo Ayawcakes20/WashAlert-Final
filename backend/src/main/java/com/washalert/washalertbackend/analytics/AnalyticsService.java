@@ -5,7 +5,6 @@ import com.washalert.washalertbackend.analytics.dto.BranchAnalyticsResponse;
 import com.washalert.washalertbackend.orders.JobOrder;
 import com.washalert.washalertbackend.orders.JobOrderRepository;
 import com.washalert.washalertbackend.orders.JobOrderStatus;
-import com.washalert.washalertbackend.payment.PaymentMethod;
 import com.washalert.washalertbackend.payment.PaymentRecord;
 import com.washalert.washalertbackend.payment.PaymentRecordRepository;
 import com.washalert.washalertbackend.payment.PaymentStatus;
@@ -14,7 +13,6 @@ import com.washalert.washalertbackend.user.Role;
 import com.washalert.washalertbackend.user.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,10 +21,13 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class AnalyticsService {
@@ -41,11 +42,7 @@ public class AnalyticsService {
         this.paymentRepository = paymentRepository;
     }
 
-    // Keyed on the ACTOR'S OWN branch (principal.user.branch), not just the raw #branch
-    // argument — for STAFF, resolveBranch() below ignores #branch entirely and substitutes
-    // the caller's own branch, so the cache key must reflect that resolved scope too, or
-    // Staff at different branches collide on the same cache entry and read each other's data.
-    @Cacheable(value = "analytics-summary", key = "#principal.user.role.name() + ':' + (#principal.user.branch ?: '') + ':' + (#branch ?: 'global') + ':' + #fromDate + ':' + #toDate")
+    // Removed @Cacheable so analytics reflect live orders and payments in real-time
     @Transactional(readOnly = true)
     public AnalyticsSummaryResponse summary(LocalDate fromDate, LocalDate toDate, String branch, AuthUserDetails principal) {
         LocalDate from = (fromDate == null) ? LocalDate.now().minusDays(6) : fromDate;
@@ -76,16 +73,34 @@ public class AnalyticsService {
         long drying = orders.stream().filter(o -> o.getStatus() == JobOrderStatus.DRYING).count();
         long ready = orders.stream().filter(o -> o.getStatus() == JobOrderStatus.READY).count();
 
-        BigDecimal totalRevenue = payments.stream()
+        // Order IDs that already have a completed PaymentRecord in queriedPayments
+        Set<Long> paidViaPaymentRecord = payments.stream()
+                .filter(this::isCompletedPayment)
+                .filter(p -> p.getJobOrder() != null && p.getJobOrder().getId() != null)
+                .map(p -> p.getJobOrder().getId())
+                .collect(Collectors.toSet());
+
+        // Revenue from verified PaymentRecords (GCash, Maya, and staff/driver-created cash records)
+        BigDecimal revenueFromRecords = payments.stream()
                 .filter(this::isCompletedPayment)
                 .map(this::amountOrZero)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        // Revenue from COD / Cash orders that are marked isPaid or codCollected but do not
+        // have a completed PaymentRecord in queriedPayments (covers historical COD collections)
+        BigDecimal revenueFromCodPaid = orders.stream()
+                .filter(o -> o != null && (o.isPaid() || o.isCodCollected()) && !paidViaPaymentRecord.contains(o.getId()))
+                .filter(o -> o.getStatus() != JobOrderStatus.CANCELLED && o.getStatus() != JobOrderStatus.FAILED)
+                .map(this::orderAmountOrZero)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalRevenue = revenueFromRecords.add(revenueFromCodPaid);
+
         Integer peakHour = findPeakHour(orders);
 
-        List<BranchAnalyticsResponse> branchBreakdown = computeBranchBreakdown(orders, payments, effectiveBranch);
+        List<BranchAnalyticsResponse> branchBreakdown = computeBranchBreakdown(orders, payments, effectiveBranch, paidViaPaymentRecord);
         Map<String, Long> hourlyBreakdown = computeHourlyBreakdown(orders);
-        Map<String, Long> paymentMethodBreakdown = computePaymentMethodBreakdown(payments);
+        Map<String, Long> paymentMethodBreakdown = computePaymentMethodBreakdown(payments, orders, paidViaPaymentRecord);
 
         return new AnalyticsSummaryResponse(
                 from,
@@ -134,7 +149,6 @@ public class AnalyticsService {
 
     private Map<String, Long> computeHourlyBreakdown(List<JobOrder> orders) {
         Map<String, Long> result = new LinkedHashMap<>();
-        // Initialize all 24 hours to 0
         for (int h = 0; h < 24; h++) {
             result.put(String.format("%02d:00", h), 0L);
         }
@@ -148,23 +162,47 @@ public class AnalyticsService {
         return result;
     }
 
-    private Map<String, Long> computePaymentMethodBreakdown(List<PaymentRecord> payments) {
+    private Map<String, Long> computePaymentMethodBreakdown(
+            List<PaymentRecord> payments,
+            List<JobOrder> orders,
+            Set<Long> paidViaPaymentRecord
+    ) {
         Map<String, Long> result = new LinkedHashMap<>();
         result.put("GCASH", 0L);
         result.put("MAYA", 0L);
         result.put("CASH", 0L);
+
         for (PaymentRecord p : payments) {
             if (!isCompletedPayment(p)) continue;
             String key = p.getMethod() == null ? "CASH" : p.getMethod().name();
             result.put(key, result.getOrDefault(key, 0L) + 1);
         }
+
+        for (JobOrder o : orders) {
+            if (o != null && (o.isPaid() || o.isCodCollected()) && !paidViaPaymentRecord.contains(o.getId())) {
+                if (o.getStatus() == JobOrderStatus.CANCELLED || o.getStatus() == JobOrderStatus.FAILED) continue;
+                String pm = o.getPaymentMethod();
+                String key = "CASH";
+                if (pm != null) {
+                    String upper = pm.toUpperCase();
+                    if (upper.contains("GCASH")) {
+                        key = "GCASH";
+                    } else if (upper.contains("MAYA")) {
+                        key = "MAYA";
+                    }
+                }
+                result.put(key, result.getOrDefault(key, 0L) + 1);
+            }
+        }
+
         return result;
     }
 
     private List<BranchAnalyticsResponse> computeBranchBreakdown(
             List<JobOrder> orders,
             List<PaymentRecord> payments,
-            String effectiveBranch
+            String effectiveBranch,
+            Set<Long> paidViaPaymentRecord
     ) {
         Map<String, Long> orderCountByBranch = new HashMap<>();
         for (JobOrder o : orders) {
@@ -179,6 +217,14 @@ public class AnalyticsService {
             revenueByBranch.put(key, revenueByBranch.getOrDefault(key, BigDecimal.ZERO).add(amountOrZero(p)));
         }
 
+        for (JobOrder o : orders) {
+            if (o != null && (o.isPaid() || o.isCodCollected()) && !paidViaPaymentRecord.contains(o.getId())) {
+                if (o.getStatus() == JobOrderStatus.CANCELLED || o.getStatus() == JobOrderStatus.FAILED) continue;
+                String key = normalizeBranchName(o.getBranch());
+                revenueByBranch.put(key, revenueByBranch.getOrDefault(key, BigDecimal.ZERO).add(orderAmountOrZero(o)));
+            }
+        }
+
         if (effectiveBranch != null) {
             String normalizedBranch = normalizeBranchName(effectiveBranch);
             return List.of(new BranchAnalyticsResponse(
@@ -188,7 +234,10 @@ public class AnalyticsService {
             ));
         }
 
-        return orderCountByBranch.keySet().stream()
+        Set<String> allBranches = new HashSet<>(orderCountByBranch.keySet());
+        allBranches.addAll(revenueByBranch.keySet());
+
+        return allBranches.stream()
                 .sorted(String::compareToIgnoreCase)
                 .map(branch -> new BranchAnalyticsResponse(
                         branch,
@@ -216,6 +265,11 @@ public class AnalyticsService {
         if (payment == null) {
             return false;
         }
+        if (payment.getJobOrder() != null &&
+                (payment.getJobOrder().getStatus() == JobOrderStatus.CANCELLED ||
+                 payment.getJobOrder().getStatus() == JobOrderStatus.FAILED)) {
+            return false;
+        }
         return payment.getStatus() == PaymentStatus.VERIFIED || payment.getStatus() == PaymentStatus.PAID;
     }
 
@@ -224,6 +278,17 @@ public class AnalyticsService {
             return BigDecimal.ZERO;
         }
         return payment.getAmount();
+    }
+
+    private BigDecimal orderAmountOrZero(JobOrder order) {
+        if (order == null) return BigDecimal.ZERO;
+        if (order.getFinalPrice() != null && order.getFinalPrice().compareTo(BigDecimal.ZERO) > 0) {
+            return order.getFinalPrice();
+        }
+        if (order.getTotalPrice() != null && order.getTotalPrice().compareTo(BigDecimal.ZERO) > 0) {
+            return order.getTotalPrice();
+        }
+        return BigDecimal.ZERO;
     }
 
     private String resolvePaymentBranch(PaymentRecord payment) {
