@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StyleSheet, Dimensions, Modal, useWindowDimensions } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, StyleSheet, Dimensions, Modal } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
@@ -9,8 +9,6 @@ import { colors } from '../../theme/colors';
 import { branches, bookings, laundry, createOrder, payments } from '../../services/api';
 import { getDefaultSavedAddress } from '../../services/savedAddresses';
 import AddressPickerSheet from '../../components/AddressPickerSheet';
-import ScrollCue from '../../components/ScrollCue';
-import { useScrollCue } from '../../hooks/useScrollCue';
 
 const { width } = Dimensions.get('window');
 
@@ -97,9 +95,6 @@ const mkDates = (n=7) => {
 
 export default function BookingScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
-  const { width: windowWidth } = useWindowDimensions();
-  const cardWidth = Math.floor((windowWidth - 52) / 2);
-  const scrollCue = useScrollCue();
   
   const Row = ({ label, value }) => (
     <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingVertical:4}}>
@@ -573,10 +568,6 @@ export default function BookingScreen({ route, navigation }) {
         contentContainerStyle={S.scroll}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        onScroll={scrollCue.onScroll}
-        scrollEventThrottle={16}
-        onContentSizeChange={scrollCue.onContentSizeChange}
-        onLayout={scrollCue.onLayout}
       >
 
         {step===2&&(
@@ -636,11 +627,11 @@ export default function BookingScreen({ route, navigation }) {
               {services_.map(svc=>(
                 <TouchableOpacity
                   key={svc.id}
-                  style={[S.svcCard, { width: cardWidth || '48.5%' }, service?.id===svc.id&&S.svcCardOn]}
+                  style={[S.svcCard, service?.id===svc.id&&S.svcCardOn]}
                   onPress={()=>setService(svc)}
                   activeOpacity={0.8}
                 >
-                  <MaterialCommunityIcons name={getSvcIcon(svc)} size={26} color={service?.id===svc.id?'#fff':colors.primary}/>
+                  <MaterialCommunityIcons name={getSvcIcon(svc)} size={28} color={service?.id===svc.id?'#fff':colors.primary}/>
                   <Text style={[S.svcName,service?.id===svc.id&&S.svcNameOn]}>{svc.name}</Text>
                   <Text style={[S.svcPrice,service?.id===svc.id&&S.svcPriceOn]} numberOfLines={2}>{getServicePriceLabel(svc)}</Text>
                 </TouchableOpacity>
@@ -1103,7 +1094,6 @@ export default function BookingScreen({ route, navigation }) {
         )}
 
       </ScrollView>
-      <ScrollCue visible={scrollCue.showCue} bottom={insets.bottom + 110} />
 
       {/* Floating toast — auto-dismisses after 3.5 s; shown for stock errors and gate blocks */}
       {!!toastMsg && (
@@ -1417,13 +1407,13 @@ const S = StyleSheet.create({
   toggleTxtOn:{color:colors.primary},
   toggleSub:{fontSize:11,color:colors.textTertiary},
   toggleSubOn:{color:colors.primary},
-  svcGrid:{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',rowGap:10},
-  svcCard:{width:'48.5%',backgroundColor:colors.surface,borderRadius:14,padding:14,alignItems:'center',gap:6,borderWidth:1,borderColor:colors.border},
+  svcGrid:{gap:12,marginBottom:12},
+  svcCard:{width:'100%',backgroundColor:colors.surface,borderRadius:16,paddingVertical:18,paddingHorizontal:16,alignItems:'center',justifyContent:'center',gap:6,borderWidth:1,borderColor:colors.border},
   svcCardOn:{backgroundColor:colors.primary,borderColor:colors.primary},
-  svcName:{fontSize:12,fontWeight:'700',color:colors.text,textAlign:'center'},
+  svcName:{fontSize:15,fontWeight:'700',color:colors.text,textAlign:'center'},
   svcNameOn:{color:'#fff'},
-  svcPrice:{fontSize:12,color:colors.textSecondary},
-  svcPriceOn:{color:'rgba(255,255,255,0.8)'},
+  svcPrice:{fontSize:13,color:colors.textSecondary,textAlign:'center'},
+  svcPriceOn:{color:'rgba(255,255,255,0.85)'},
   loadSizeCard:{flex:1,backgroundColor:colors.surface,borderRadius:16,padding:16,borderWidth:1.5,borderColor:colors.border,gap:4},
   loadSizeCardOn:{backgroundColor:colors.primary,borderColor:colors.primary},
   loadSizeName:{fontSize:14,fontWeight:'700',color:colors.text},
