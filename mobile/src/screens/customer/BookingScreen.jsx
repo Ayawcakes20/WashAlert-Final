@@ -146,6 +146,31 @@ export default function BookingScreen({ route, navigation }) {
   const mode                      = SERVICE_MODES.find(m=>m.id===svcMode)||SERVICE_MODES[0];
   const needsAddr                 = mode.needsAddress;
 
+  const isDryOnly = useMemo(() => {
+    const id = String(service?.id || '').toLowerCase();
+    const name = String(service?.name || '').toLowerCase();
+    return id === 'dry' || (name.includes('dry') && !name.includes('wash') && !name.includes('full') && !name.includes('eco'));
+  }, [service]);
+
+  // When Dry-only is selected, detergent and fabric conditioner are not needed
+  useEffect(() => {
+    if (isDryOnly) {
+      setDet('none');
+      setFab('none');
+      setDetSource('customer');
+      setFabSource('customer');
+      setDetQtyMap({ surf: 0, ariel: 0 });
+      setFabQtyMap({ charm: 0, downy: 0 });
+    } else {
+      setDet('none');
+      setFab('none');
+      setDetSource(null);
+      setFabSource(null);
+      setDetQtyMap({ surf: 0, ariel: 0 });
+      setFabQtyMap({ charm: 0, downy: 0 });
+    }
+  }, [isDryOnly]);
+
   // Mirrors PricingService.computeLoadCount() — caps add-on qty per booking.
   const computedLoadCount = useMemo(() => {
     if (!service) return 1;
@@ -322,6 +347,7 @@ export default function BookingScreen({ route, navigation }) {
     // Block Continue while there is a confirmed inventory error from a previous attempt.
     if(step===4){
       if(stockError) return false;
+      if(isDryOnly) return true; // Dry Only does not need detergent or fabric conditioner
       if(!detSource) return false;
       if(detSource === 'shop' && (det === 'none' || detQty <= 0)) return false;
       if(!fabSource) return false;
@@ -334,12 +360,23 @@ export default function BookingScreen({ route, navigation }) {
   };
 
   const next = async ()=>{
-    if(step===1){ if(!service) return; setStep(2); }                                     // Package → Location
-    else if(step===2){ if(!branch) return; setStep(needsAddr?3:4); }                    // Location → Address or Extras
-    else if(step===3){ if(!address?.address){ setAddrSheet(true); return; } setStep(4); } // Address → Extras
+    if(step===1){
+      if(!service) return;
+      setStep(2);
+    }
+    else if(step===2){
+      if(!branch) return;
+      if(needsAddr) setStep(3);
+      else setStep(isDryOnly ? 5 : 4);
+    }
+    else if(step===3){
+      if(!address?.address){ setAddrSheet(true); return; }
+      setStep(isDryOnly ? 5 : 4);
+    }
     else if(step===4){
       // Hard gate: if a stock error was set by a previous attempt, block until selection changes.
       if(stockError){ showToast('Stock unavailable — please adjust your extras before continuing.'); return; }
+      if(isDryOnly){ setStep(5); return; }
       if(!detSource){ showToast('Please select if Detergent is Customer Provided or Laundry Shop Provided.'); return; }
       if(detSource === 'shop' && (det === 'none' || detQty <= 0)){ showToast('Please select a detergent brand and quantity.'); return; }
       if(!fabSource){ showToast('Please select if Fabric Conditioner is Customer Provided or Laundry Shop Provided.'); return; }
@@ -397,6 +434,11 @@ export default function BookingScreen({ route, navigation }) {
   const back = ()=>{
     if(step===1){ navigation.goBack(); return; }
     if(step===4&&!needsAddr){ setStep(2); return; }  // Extras → Location (skip Address)
+    if(step===5&&isDryOnly){
+      // From Schedule on Dry Only, skip Extras and go back to Address (if delivery) or Location (if pickup)
+      setStep(needsAddr ? 3 : 2);
+      return;
+    }
     setStep(s=>s-1);
   };
 
@@ -501,7 +543,7 @@ export default function BookingScreen({ route, navigation }) {
         // Set inline banner AND show toast so the user gets immediate feedback
         setStockError(msg);
         showToast(msg); // toast tells the user which item failed
-        setStep(4); // return to Extras (step 4) — ok() now blocks Continue until selection changes
+        setStep(isDryOnly ? 5 : 4); // return to Extras (or Schedule if dry-only)
       } else {
         const friendlyMessage =
           /internal server error/i.test(msg)
@@ -512,8 +554,22 @@ export default function BookingScreen({ route, navigation }) {
     }finally{ submittingRef.current = false; setSub(false); }
   };
 
-  const vis = VIS_MAP[step]||1;
-  const progress = vis / VIS_STEPS.length;
+  const visSteps = useMemo(() => {
+    return isDryOnly
+      ? ['Package', 'Location', 'Schedule', 'Payment', 'Confirm']
+      : ['Package', 'Location', 'Extras', 'Schedule', 'Payment', 'Confirm'];
+  }, [isDryOnly]);
+
+  const vis = useMemo(() => {
+    if (isDryOnly) {
+      const dryMap = { 1: 1, 2: 2, 3: 2, 4: 3, 5: 3, 6: 4, 7: 5 };
+      return dryMap[step] || 1;
+    }
+    const washMap = { 1: 1, 2: 2, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6 };
+    return washMap[step] || 1;
+  }, [isDryOnly, step]);
+
+  const progress = vis / visSteps.length;
 
   // Clean progress bar (no labels) — like Image 3
   const Stepper = ()=>(
@@ -521,7 +577,7 @@ export default function BookingScreen({ route, navigation }) {
       <View style={S.progressTrack}>
         <View style={[S.progressFill,{width:`${progress*100}%`}]}/>
       </View>
-      <Text style={S.stepCounter}>{vis} / {VIS_STEPS.length}</Text>
+      <Text style={S.stepCounter}>{vis} / {visSteps.length}</Text>
     </View>
   );
 
@@ -556,8 +612,8 @@ export default function BookingScreen({ route, navigation }) {
 
   return(
     <SafeAreaView style={S.container} edges={['top']}>
-      <AddressPickerSheet visible={addrSheet} title="Pickup & Delivery Address" onConfirm={a=>{setAddrSheet(false);setAddress(a);if(step===3)setStep(4);}} onClose={()=>setAddrSheet(false)} initialValue={address} fallbackCoordinate={branch?.latitude?{latitude:Number(branch.latitude),longitude:Number(branch.longitude)}:null}/>
-      <View style={S.hdr}><Text style={S.hdrTitle}>New Booking</Text><Text style={S.hdrSub}>Step {vis} of {VIS_STEPS.length}</Text></View>
+      <AddressPickerSheet visible={addrSheet} title="Pickup & Delivery Address" onConfirm={a=>{setAddrSheet(false);setAddress(a);if(step===3)setStep(isDryOnly?5:4);}} onClose={()=>setAddrSheet(false)} initialValue={address} fallbackCoordinate={branch?.latitude?{latitude:Number(branch.latitude),longitude:Number(branch.longitude)}:null}/>
+      <View style={S.hdr}><Text style={S.hdrTitle}>New Booking</Text><Text style={S.hdrSub}>Step {vis} of {visSteps.length}</Text></View>
       <Stepper/>
       <ScrollView
         ref={scrollRef}
@@ -1047,15 +1103,21 @@ export default function BookingScreen({ route, navigation }) {
             </View>
 
             {/* ── Section 2: EXTRAS ── */}
-            <View style={S.summarySection}>
-              <View style={S.summaryHeader}>
-                <Ionicons name="sparkles-outline" size={14} color={colors.primary}/>
-                <Text style={S.summaryTitle}>EXTRAS</Text>
+            {(!isDryOnly || rush) && (
+              <View style={S.summarySection}>
+                <View style={S.summaryHeader}>
+                  <Ionicons name="sparkles-outline" size={14} color={colors.primary}/>
+                  <Text style={S.summaryTitle}>EXTRAS</Text>
+                </View>
+                {!isDryOnly && (
+                  <>
+                    <Row label="Detergent" value={det==='none'||detQty===0?'Customer Provided':`${detOpt?.label} x${detQty} (₱${detCost})`}/>
+                    <Row label="Fabric Conditioner" value={fab==='none'||fabQty===0?'Customer Provided':`${fabOpt?.label} x${fabQty} (₱${fabCost})`}/>
+                  </>
+                )}
+                {rush && <Row label="Rush Service" value="Yes (+₱150)"/>}
               </View>
-              <Row label="Detergent" value={det==='none'||detQty===0?'Customer Provided':`${detOpt?.label} x${detQty} (₱${detCost})`}/>
-              <Row label="Fabric Conditioner" value={fab==='none'||fabQty===0?'Customer Provided':`${fabOpt?.label} x${fabQty} (₱${fabCost})`}/>
-              {rush && <Row label="Rush Service" value="Yes (+₱150)"/>}
-            </View>
+            )}
 
             {/* ── Section 3: LOGISTICS ── */}
             <View style={S.summarySection}>
