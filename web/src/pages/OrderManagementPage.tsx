@@ -30,12 +30,14 @@ import {
   feedbackApi,
   usersApi,
   paymentsApi,
+  isNetworkError,
   type CreateOrderPayload,
   type FeedbackResponse,
   type JobOrderResponse,
   type UpdateOrderPayload,
   type UserAdminRecord,
 } from "@/lib/api";
+import { ConnectivityErrorState } from "@/components/ConnectivityErrorState";
 import { FinalizeWeightModal, type FinalizeOrderData } from "@/components/FinalizeWeightModal";
 import { printOrderReceipt, downloadOrderReceipt } from "@/lib/receiptPrinter";
 import logoLaundryHubs from "@/assets/logo-laundryhubs.webp";
@@ -666,15 +668,12 @@ export default function OrderManagementPage() {
       setHasPreviousOrders(Boolean(response.hasPrevious));
       setLastRefreshed(new Date());
     } catch (err: any) {
-      const message = err?.message || "Unable to load orders.";
+      const isNet = isNetworkError(err);
+      const message = isNet
+        ? "Unable to load data. Please check your internet connection and try again."
+        : (err?.message || "Unable to load orders.");
       setError(message);
-      setOrders([]);
-      setOrdersPage(1);
-      setTotalOrders(0);
-      setTotalOrdersPages(1);
-      setHasNextOrders(false);
-      setHasPreviousOrders(false);
-      if (!silent) toast.error(message);
+      if (!silent) toast.error(isNet ? "Unable to connect. Please check your internet connection." : message);
     } finally {
       if (!silent) setLoading(false);
     }
@@ -1205,7 +1204,16 @@ export default function OrderManagementPage() {
           </div>
         </div>
       ) : null}
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {error ? (
+        <ConnectivityErrorState
+          variant="banner"
+          title="Unable to load data"
+          message="Please check your internet connection and try again."
+          onRetry={() => void loadOrders(Math.max(0, ordersPage - 1), false)}
+          retrying={loading}
+          className="mb-6"
+        />
+      ) : null}
 
 
       <motion.div variants={item} className="flex flex-wrap items-center gap-4 mb-8">
@@ -1519,7 +1527,16 @@ export default function OrderManagementPage() {
                   </tr>
                 );
               })}
-              {!pagedOrders.length ? (
+              {error && !pagedOrders.length ? (
+                <ConnectivityErrorState
+                  variant="table-row"
+                  colSpan={10}
+                  title="Unable to load data"
+                  message="Please check your internet connection and try again."
+                  onRetry={() => void loadOrders(Math.max(0, ordersPage - 1), false)}
+                  retrying={loading}
+                />
+              ) : !pagedOrders.length ? (
                 <tr>
                   <td colSpan={10} className="p-6 text-center text-sm text-brand-muted">
                     No orders found for the current filters.

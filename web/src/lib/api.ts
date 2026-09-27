@@ -263,6 +263,43 @@ const parseResponse = async <T>(response: Response): Promise<T> => {
   return data as T;
 };
 
+export const isNetworkError = (error: unknown): boolean => {
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    return true;
+  }
+  if (!error) return false;
+  if (error instanceof TypeError) {
+    return true;
+  }
+  const err = error as { name?: string; message?: string; status?: number; code?: string; isNetworkError?: boolean };
+  if (err.isNetworkError) return true;
+  if (err.status === undefined || err.status === 0) {
+    const msg = (err.message || "").toLowerCase();
+    if (
+      msg.includes("failed to fetch") ||
+      msg.includes("networkerror") ||
+      msg.includes("network request failed") ||
+      msg.includes("load failed") ||
+      msg.includes("aborted") ||
+      msg.includes("timeout") ||
+      msg.includes("connection refused") ||
+      msg.includes("err_connection") ||
+      msg.includes("err_internet_disconnected") ||
+      err.name === "TypeError" ||
+      err.name === "NetworkError"
+    ) {
+      return true;
+    }
+  }
+  return false;
+};
+
+export const isAuthError = (error: unknown): boolean => {
+  if (!error) return false;
+  const err = error as { status?: number };
+  return err.status === 401;
+};
+
 /**
  * Ensures the XSRF-TOKEN cookie is present by issuing a lightweight GET.
  * The CsrfCookieFilter on the backend writes the cookie on every response,
@@ -271,11 +308,15 @@ const parseResponse = async <T>(response: Response): Promise<T> => {
 const ensureCsrfCookie = async (): Promise<string | null> => {
   let token = getCsrfToken();
   if (token) return token;
-  // Fire a lightweight GET to force the backend to set the cookie
-  const res = await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: "include" });
-  const headerToken = res.headers.get("X-XSRF-TOKEN");
-  if (headerToken) memoryCsrfToken = headerToken;
-  return getCsrfToken();
+  try {
+    // Fire a lightweight GET to force the backend to set the cookie
+    const res = await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: "include" });
+    const headerToken = res.headers.get("X-XSRF-TOKEN");
+    if (headerToken) memoryCsrfToken = headerToken;
+    return getCsrfToken();
+  } catch {
+    return null;
+  }
 };
 
 export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {}): Promise<T> => {
@@ -285,16 +326,29 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
   // For mutating requests, ensure the CSRF cookie exists before sending
   const csrfToken = isMutating ? await ensureCsrfCookie() : null;
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(csrfToken ? { "X-XSRF-TOKEN": csrfToken } : {}),
-      ...headers,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(csrfToken ? { "X-XSRF-TOKEN": csrfToken } : {}),
+        ...headers,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (error: any) {
+    if (isNetworkError(error)) {
+      const netError = new Error("Unable to load data. Please check your internet connection and try again.") as Error & {
+        isNetworkError?: boolean;
+        status?: number;
+      };
+      netError.isNetworkError = true;
+      throw netError;
+    }
+    throw error;
+  }
 
   const responseToken = response.headers.get("X-XSRF-TOKEN");
   if (responseToken) {
@@ -304,22 +358,39 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
   // If we still get a 403, the token may have been stale — refresh and retry once
   if (isMutating && response.status === 403) {
     // Force-refresh the CSRF cookie regardless of what's currently cached
-    const refreshRes = await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: "include" });
-    const headerToken = refreshRes.headers.get("X-XSRF-TOKEN");
-    if (headerToken) memoryCsrfToken = headerToken;
+    try {
+      const refreshRes = await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: "include" });
+      const headerToken = refreshRes.headers.get("X-XSRF-TOKEN");
+      if (headerToken) memoryCsrfToken = headerToken;
+    } catch {
+      // best-effort
+    }
 
     const freshToken = getCsrfToken();
     if (freshToken) {
-      const retryResponse = await fetch(`${API_BASE_URL}${path}`, {
-        method,
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          "X-XSRF-TOKEN": freshToken,
-          ...headers,
-        },
-        body: body ? JSON.stringify(body) : undefined,
-      });
+      let retryResponse: Response;
+      try {
+        retryResponse = await fetch(`${API_BASE_URL}${path}`, {
+          method,
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            "X-XSRF-TOKEN": freshToken,
+            ...headers,
+          },
+          body: body ? JSON.stringify(body) : undefined,
+        });
+      } catch (retryError: any) {
+        if (isNetworkError(retryError)) {
+          const netError = new Error("Unable to load data. Please check your internet connection and try again.") as Error & {
+            isNetworkError?: boolean;
+            status?: number;
+          };
+          netError.isNetworkError = true;
+          throw netError;
+        }
+        throw retryError;
+      }
       return parseResponse<T>(retryResponse);
     }
   }

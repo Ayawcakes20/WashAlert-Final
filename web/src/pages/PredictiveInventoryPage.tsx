@@ -42,7 +42,8 @@ import {
   Bar,
   Legend,
 } from "recharts";
-import { inventoryApi, branchesApi, type InventoryRecord, type BookingPipelineRecord, type OperationsKpiRecord, type DailyOrderVolumeRecord } from "@/lib/api";
+import { inventoryApi, branchesApi, isNetworkError, type InventoryRecord, type BookingPipelineRecord, type OperationsKpiRecord, type DailyOrderVolumeRecord } from "@/lib/api";
+import { ConnectivityErrorState } from "@/components/ConnectivityErrorState";
 import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -469,6 +470,7 @@ export default function PredictiveInventoryPage() {
   const [bookingPipelineData, setBookingPipelineData] = useState<BookingPipelineRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [retrying, setRetrying] = useState(false);
   const [selectedTab, setSelectedTab] = useState("All");
   const [branches, setBranches] = useState<string[]>([]);
   const [dynamicBranches, setDynamicBranches] = useState<string[]>([]);
@@ -512,8 +514,9 @@ export default function PredictiveInventoryPage() {
 
   const [orderedItemIds, setOrderedItemIds] = useState<Set<number>>(new Set());
 
-  const loadInventory = async () => {
+  const loadInventory = async (isManualRetry = false) => {
     try {
+      if (isManualRetry) setRetrying(true);
       setError("");
       const [items, _alerts, forecastResp, pending, stats, activityStats, pipelineData, kpi, volumeData] = await Promise.all([
         inventoryApi.list(),
@@ -553,9 +556,15 @@ export default function PredictiveInventoryPage() {
       });
       setInventory(deduped);
       setBranches(Array.from(new Set(deduped.map((i) => i.branch))).sort());
+      setError("");
     } catch (err: any) {
-      setError(err?.message || "Unable to load inventory data.");
-      setInventory([]);
+      const isNet = isNetworkError(err);
+      const message = isNet
+        ? "Unable to load data. Please check your internet connection and try again."
+        : (err?.message || "Unable to load inventory data.");
+      setError(message);
+    } finally {
+      if (isManualRetry) setRetrying(false);
     }
   };
 
@@ -1228,7 +1237,28 @@ export default function PredictiveInventoryPage() {
         </div>
       </div>
 
-      {/* Action Banner — shown for Critical or Low stock items */}
+      {error && inventory.length === 0 ? (
+        <ConnectivityErrorState
+          variant="card"
+          title="Unable to load data"
+          message="Please check your internet connection and try again."
+          onRetry={() => { setLoading(true); void loadInventory(true).finally(() => setLoading(false)); }}
+          retrying={retrying || loading}
+        />
+      ) : (
+        <>
+          {error && (
+            <ConnectivityErrorState
+              variant="banner"
+              title="Unable to load data"
+              message="Please check your internet connection and try again."
+              onRetry={() => { setLoading(true); void loadInventory(true).finally(() => setLoading(false)); }}
+              retrying={retrying || loading}
+              className="mb-4"
+            />
+          )}
+
+          {/* Action Banner — shown for Critical or Low stock items */}
       {!loading && !bannerDismissed && (() => {
         const activePool = (isAdmin && selectedTab === "All") ? allConsumables : consumableItems;
         const criticalItems = activePool.filter((i) => i.status === "Critical");
@@ -1300,7 +1330,7 @@ export default function PredictiveInventoryPage() {
             ))}
       </div>
 
-      {error && <p className="text-base text-destructive">{error}</p>}
+
 
       {!loading && inventory.length === 0 && !error && (
         <div className="glass-card rounded-2xl p-12 text-center">
@@ -2078,6 +2108,8 @@ export default function PredictiveInventoryPage() {
         </div>
       )}
         </div>
+      )}
+        </>
       )}
 
 
