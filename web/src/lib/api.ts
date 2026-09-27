@@ -1,3 +1,5 @@
+import { clearFirebaseWebSession, clearSessionUser } from "./session";
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
 export type MeResponse = {
@@ -242,7 +244,46 @@ const getCsrfToken = (): string | null => {
   return match ? decodeURIComponent(match[1]) : memoryCsrfToken;
 };
 
-const parseResponse = async <T>(response: Response): Promise<T> => {
+let isRedirectingToLogin = false;
+
+const isAuthEndpoint = (path?: string): boolean => {
+  if (!path) return false;
+  return (
+    path.startsWith("/api/auth/login") ||
+    path.startsWith("/api/auth/firebase/direct-login") ||
+    path.startsWith("/api/auth/firebase/login-challenge") ||
+    path.startsWith("/api/auth/firebase/verify-otp") ||
+    path.startsWith("/api/auth/forgot-password") ||
+    path.startsWith("/api/auth/reset-password")
+  );
+};
+
+const handleUnauthorized = (path?: string, rawMessage?: string) => {
+  if (isAuthEndpoint(path)) {
+    return;
+  }
+
+  // Clear local authenticated session
+  clearSessionUser();
+  clearFirebaseWebSession();
+
+  if (typeof window !== "undefined" && !isRedirectingToLogin) {
+    const currentPath = window.location.pathname;
+    if (currentPath !== "/login") {
+      isRedirectingToLogin = true;
+      const lower = (rawMessage || "").toLowerCase();
+      let reason = "expired";
+      if (lower.includes("deactivated")) {
+        reason = "deactivated";
+      } else if (lower.includes("suspended")) {
+        reason = "suspended";
+      }
+      window.location.replace(`/login?reason=${reason}`);
+    }
+  }
+};
+
+const parseResponse = async <T>(response: Response, path?: string): Promise<T> => {
   const text = await response.text();
   let data: any = null;
   if (text) {
@@ -257,6 +298,11 @@ const parseResponse = async <T>(response: Response): Promise<T> => {
     const message = data?.message || data?.error || `Request failed (${response.status})`;
     const error = new Error(message) as Error & { status?: number };
     error.status = response.status;
+
+    if (response.status === 401) {
+      handleUnauthorized(path, message);
+    }
+
     throw error;
   }
 
@@ -391,11 +437,11 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
         }
         throw retryError;
       }
-      return parseResponse<T>(retryResponse);
+      return parseResponse<T>(retryResponse, path);
     }
   }
 
-  return parseResponse<T>(response);
+  return parseResponse<T>(response, path);
 };
 
 export const authApi = {
@@ -543,7 +589,7 @@ export const ordersApi = {
   exportCsv: async (fromDate?: string, toDate?: string): Promise<string> => {
     const q = new URLSearchParams();
     if (fromDate) q.set("fromDate", fromDate);
-    if (toDate)   q.set("toDate",   toDate);
+    if (toDate) q.set("toDate", toDate);
     const suffix = q.toString() ? `?${q.toString()}` : "";
     const response = await fetch(`${API_BASE_URL}/api/orders/export${suffix}`, {
       credentials: "include",

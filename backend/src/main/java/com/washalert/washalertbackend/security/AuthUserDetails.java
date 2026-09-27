@@ -10,7 +10,7 @@ import java.util.*;
 
 public class AuthUserDetails implements UserDetails, OAuth2User {
 
-    private final User user;
+    private User user;
     private final Map<String, Object> attributes;
 
     public AuthUserDetails(User user) {
@@ -24,6 +24,10 @@ public class AuthUserDetails implements UserDetails, OAuth2User {
 
     public User getUser() {
         return user;
+    }
+
+    public void setUser(User user) {
+        this.user = user;
     }
 
     // ---- UserDetails ----
@@ -56,7 +60,7 @@ public class AuthUserDetails implements UserDetails, OAuth2User {
 
     @Override
     public boolean isEnabled() {
-        return user.isEnabled();
+        return user.isEnabled() && user.getStatus() != com.washalert.washalertbackend.user.UserStatus.DEACTIVATED;
     }
 
     // ---- OAuth2User ----

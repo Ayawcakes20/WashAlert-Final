@@ -38,10 +38,14 @@ public class RestAuthHandlers implements AuthenticationEntryPoint, AccessDeniedH
     ) throws IOException {
 
         String msg;
-        if (ex instanceof BadCredentialsException) {
+        if (ex != null && ex.getMessage() != null && !ex.getMessage().isBlank()
+                && !ex.getMessage().equalsIgnoreCase("disabled")
+                && !ex.getMessage().equalsIgnoreCase("user is disabled")) {
+            msg = ex.getMessage();
+        } else if (ex instanceof BadCredentialsException) {
             msg = "Email or password is incorrect.";
         } else if (ex instanceof DisabledException) {
-            msg = "Please verify your email before logging in.";
+            msg = "Your account has been deactivated. Please contact admin.";
         } else if (ex instanceof LockedException) {
             msg = "Your account is locked. Please contact support.";
         } else {

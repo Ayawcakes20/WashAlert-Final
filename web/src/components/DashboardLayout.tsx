@@ -3,7 +3,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { Bell } from "lucide-react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
-import { authApi, notificationsApi, isNetworkError, isAuthError, type AppNotification, type MeResponse } from "@/lib/api";
+import { authApi, notificationsApi, type AppNotification, type MeResponse } from "@/lib/api";
 import {
   SESSION_KEY,
   clearFirebaseWebSession,
@@ -41,7 +41,7 @@ const writeSeenIds = (ids: Set<string>) => {
 export default function DashboardLayout() {
   const navigate = useNavigate();
   const [user, setUser] = useState<MeResponse | null>(getSessionUser());
-  const [loading, setLoading] = useState(() => !getSessionUser());
+  const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [seenIds, setSeenIds] = useState<Set<string>>(() => readSeenIds());
@@ -62,14 +62,12 @@ export default function DashboardLayout() {
       setTotalNotificationPages(Math.max(1, response.totalPages || 1));
       setHasNextNotifications(Boolean(response.hasNext));
       setHasPreviousNotifications(Boolean(response.hasPrevious));
-    } catch (err: unknown) {
-      if (!isNetworkError(err)) {
-        setNotifications([]);
-        setNotificationsPage(1);
-        setTotalNotificationPages(1);
-        setHasNextNotifications(false);
-        setHasPreviousNotifications(false);
-      }
+    } catch {
+      setNotifications([]);
+      setNotificationsPage(1);
+      setTotalNotificationPages(1);
+      setHasNextNotifications(false);
+      setHasPreviousNotifications(false);
     } finally {
       setNotificationsLoading(false);
     }
@@ -82,56 +80,22 @@ export default function DashboardLayout() {
         saveSessionUser(me);
         setUser(me);
         await loadNotifications();
-      } catch (err: unknown) {
-        if (isAuthError(err)) {
-          // Legitimate 401 Unauthorized / expired token: trigger logout
-          clearSessionUser();
-          clearFirebaseWebSession();
-          navigate("/login");
-        } else if (isNetworkError(err)) {
-          // Network / connectivity issue: DO NOT LOG OUT!
-          // Retain current session from cache
-          const cachedUser = getSessionUser();
-          if (cachedUser) {
-            setUser(cachedUser);
-          }
-        } else {
-          // Other error (e.g. 500 server error)
-          const cachedUser = getSessionUser();
-          if (cachedUser) {
-            setUser(cachedUser);
-          } else {
-            clearSessionUser();
-            clearFirebaseWebSession();
-            navigate("/login");
-          }
+      } catch (err: any) {
+        clearSessionUser();
+        clearFirebaseWebSession();
+        const lower = (err?.message || "").toLowerCase();
+        let reason = "expired";
+        if (lower.includes("deactivated")) {
+          reason = "deactivated";
+        } else if (lower.includes("suspended")) {
+          reason = "suspended";
         }
+        navigate(`/login?reason=${reason}`, { replace: true });
       } finally {
         setLoading(false);
       }
     };
     void validateSession();
-  }, [navigate]);
-
-  useEffect(() => {
-    const handleOnline = () => {
-      void authApi
-        .me()
-        .then((me) => {
-          saveSessionUser(me);
-          setUser(me);
-          void loadNotifications();
-        })
-        .catch((err) => {
-          if (isAuthError(err)) {
-            clearSessionUser();
-            clearFirebaseWebSession();
-            navigate("/login");
-          }
-        });
-    };
-    window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
   }, [navigate]);
 
   // This browser only keeps one shared login session (one cookie, one
@@ -279,9 +243,8 @@ export default function DashboardLayout() {
                       >
                         <div className="flex items-center gap-2 w-full">
                           <span
-                            className={`h-2 w-2 rounded-full ${
-                              seenIds.has(notification.id) ? "bg-muted-foreground/30" : "bg-destructive"
-                            }`}
+                            className={`h-2 w-2 rounded-full ${seenIds.has(notification.id) ? "bg-muted-foreground/30" : "bg-destructive"
+                              }`}
                           />
                           <p className="text-sm font-semibold text-foreground">{notification.title}</p>
                         </div>

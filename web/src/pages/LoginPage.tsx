@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { motion } from "framer-motion";
 import logoTriplets from "@/assets/logo-triplets.jpg";
@@ -50,8 +50,23 @@ const toFriendlyLoginMessage = (error: unknown) => {
     return "Invalid email or password.";
   }
 
+  if (
+    normalized.includes("DEACTIVATED") ||
+    normalized.includes("ACCOUNT IS DEACTIVATED") ||
+    normalized.includes("ACCOUNT HAS BEEN DEACTIVATED")
+  ) {
+    return "Your account has been deactivated. Please contact admin.";
+  }
+
+  if (
+    normalized.includes("SUSPENDED") ||
+    normalized.includes("ACCOUNT IS SUSPENDED")
+  ) {
+    return "Your account has been suspended. Please contact admin.";
+  }
+
   if (normalized.includes("USER_DISABLED") || normalized.includes("AUTH/USER-DISABLED")) {
-    return "This account is disabled.";
+    return "This account is disabled. Please contact admin.";
   }
 
   if (
@@ -68,12 +83,30 @@ const toFriendlyLoginMessage = (error: unknown) => {
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<LoginFieldErrors>({});
+
+  useEffect(() => {
+    const reason = searchParams.get("reason");
+    if (reason === "deactivated") {
+      const msg = "Your account has been deactivated. Please contact admin.";
+      setError(msg);
+      toast.error(msg);
+    } else if (reason === "suspended") {
+      const msg = "Your account has been suspended. Please contact admin.";
+      setError(msg);
+      toast.error(msg);
+    } else if (reason === "expired") {
+      const msg = "Your session has expired. Please sign in again.";
+      setError(msg);
+      toast.error(msg);
+    }
+  }, [searchParams]);
 
   const clearFieldError = (field: LoginField) => {
     setFieldErrors((prev) => ({

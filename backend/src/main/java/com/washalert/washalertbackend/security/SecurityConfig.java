@@ -14,6 +14,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.RememberMeServices;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.csrf.CsrfFilter;
@@ -39,6 +40,7 @@ public class SecurityConfig {
     private final RestAuthHandlers restAuthHandlers;
     private final RememberMeServices rememberMeServices;
     private final RateLimitFilter rateLimitFilter;
+    private final UserAccountStatusFilter userAccountStatusFilter;
     private final String frontendBaseUrl;
     private final List<String> allowedOrigins;
 
@@ -46,11 +48,13 @@ public class SecurityConfig {
             RestAuthHandlers restAuthHandlers,
             RememberMeServices rememberMeServices,
             RateLimitFilter rateLimitFilter,
+            UserAccountStatusFilter userAccountStatusFilter,
             @Value("${washalert.frontend-base-url:http://localhost:5173}") String frontendBaseUrl,
             @Value("${washalert.cors.allowed-origins:http://localhost:5173,http://127.0.0.1:5173}") String allowedOrigins) {
         this.restAuthHandlers = restAuthHandlers;
         this.rememberMeServices = rememberMeServices;
         this.rateLimitFilter = rateLimitFilter;
+        this.userAccountStatusFilter = userAccountStatusFilter;
         this.frontendBaseUrl = frontendBaseUrl;
         this.allowedOrigins = Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim)
@@ -124,6 +128,7 @@ public class SecurityConfig {
                 // Force CSRF cookie to be written on every response (including GET requests)
                 .addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class)
                 .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(userAccountStatusFilter, AuthorizationFilter.class)
                 .rememberMe(rm -> rm.rememberMeServices(rememberMeServices))
 
                 .oauth2Login(oauth -> oauth
