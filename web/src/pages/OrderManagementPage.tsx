@@ -146,7 +146,21 @@ const statusLabel: Record<ApiOrderStatus, string> = {
   FAILED: "Failed",
 };
 
-const getAllowedStatusTransitions = (status: ApiOrderStatus): ApiOrderStatus[] => {
+/**
+ * Returns the valid next statuses for a given order status, taking the
+ * service type into account.
+ *
+ * DROP_OFF orders must NEVER enter the delivery workflow:
+ *   READY → DELIVERED  (customer collects at branch – no driver required)
+ *
+ * PICKUP_DELIVERY orders follow the full delivery workflow:
+ *   READY → OUT_FOR_DELIVERY → DELIVERED
+ */
+const getAllowedStatusTransitions = (
+  status: ApiOrderStatus,
+  serviceType: ApiServiceType = "PICKUP_DELIVERY",
+): ApiOrderStatus[] => {
+  const isDropOff = serviceType === "DROP_OFF";
   switch (status) {
     case "PENDING":
       return ["ORDER_RECEIVED"];
@@ -161,8 +175,11 @@ const getAllowedStatusTransitions = (status: ApiOrderStatus): ApiOrderStatus[] =
     case "DRYING":
       return ["READY"];
     case "READY":
-      return ["OUT_FOR_DELIVERY"];
+      // DROP_OFF: customer picks up at branch → completed immediately (no delivery)
+      // PICKUP_DELIVERY: dispatch driver → OUT_FOR_DELIVERY first
+      return isDropOff ? ["DELIVERED"] : ["OUT_FOR_DELIVERY"];
     case "OUT_FOR_DELIVERY":
+      // Only reachable by PICKUP_DELIVERY orders
       return ["DELIVERED"];
     default:
       return [];
@@ -742,7 +759,21 @@ export default function OrderManagementPage() {
   const applyStatusUpdate = async (order: Order, codCollected?: boolean) => {
     let currentOrder = order;
 
-    const allowed = getAllowedStatusTransitions(currentOrder.status);
+    // Hard guard: DROP_OFF orders must never enter the delivery workflow.
+    // This prevents any code path from accidentally pushing a drop-off into
+    // OUT_FOR_DELIVERY or later delivery statuses.
+    const DELIVERY_STATUSES: ApiOrderStatus[] = [
+      "ASSIGNED_FOR_DELIVERY",
+      "EN_ROUTE_TO_BRANCH",
+      "PICKED_UP_FROM_BRANCH",
+      "OUT_FOR_DELIVERY",
+    ];
+    if (currentOrder.serviceType === "DROP_OFF" && DELIVERY_STATUSES.includes(currentOrder.status)) {
+      toast.error("Drop-Off orders cannot enter the delivery workflow.");
+      return;
+    }
+
+    const allowed = getAllowedStatusTransitions(currentOrder.status, currentOrder.serviceType);
     const fallbackStatus = allowed[0];
     const nextStatus = fallbackStatus || currentOrder.status;
 
@@ -1337,7 +1368,7 @@ export default function OrderManagementPage() {
                 const driverName = order.serviceType === "PICKUP_DELIVERY"
                   ? (deliveryMetaByTracking[order.orderId]?.driverName || "Unassigned")
                   : "-";
-                const nextStatuses = getAllowedStatusTransitions(order.status);
+                const nextStatuses = getAllowedStatusTransitions(order.status, order.serviceType);
                 return (
                   <tr key={order.id} className={`group hover:bg-slate-50/80 transition-all duration-200 ${isEscalated(order) ? "bg-red-50/50" : ""
                     }`}>
@@ -2319,6 +2350,27 @@ export default function OrderManagementPage() {
                         <Eye className="mr-2 h-4 w-4" /> Receipt
                       </Button>
                     </>
+                  ) : selectedOrder.status === 'READY' && selectedOrder.serviceType === 'DROP_OFF' ? (
+                    // DROP_OFF: customer collects at branch — no driver, no delivery task
+                    <>
+                      <Button
+                        className="flex-[2] bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl h-14 shadow-lg shadow-emerald-200"
+                        onClick={() => void applyStatusUpdate(selectedOrder)}
+                        disabled={statusUpdatingId === selectedOrder.id}
+                      >
+                        {statusUpdatingId === selectedOrder.id
+                          ? <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                          : <CheckCircle2 className="mr-2 h-5 w-5" />}
+                        Mark as Picked Up
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="flex-1 border-slate-200 text-slate-600 font-black rounded-xl h-14"
+                        onClick={() => setShowReceiptPreview(true)}
+                      >
+                        <Eye className="mr-2 h-4 w-4" /> Receipt
+                      </Button>
+                    </>
                   ) : ['CANCELLED', 'FAILED'].includes(selectedOrder.status) ? (
                     <div className="w-full bg-red-50 border border-red-200 rounded-lg p-3 text-center">
                       <p className="text-[11px] font-bold text-red-500 uppercase tracking-widest italic">
@@ -2328,7 +2380,7 @@ export default function OrderManagementPage() {
                   ) : (
                     <>
                       {(() => {
-                        const nextStatus = getAllowedStatusTransitions(selectedOrder.status)[0];
+                        const nextStatus = getAllowedStatusTransitions(selectedOrder.status, selectedOrder.serviceType)[0];
                         const isGcash = selectedOrder.paymentMethod?.toUpperCase().includes("GCASH");
                         const isCash = isCashPaymentMethod(selectedOrder.paymentMethod);
                         const washingPaymentBlocked = nextStatus === "WASHING" && isGcash && !selectedOrder.isPaid;
