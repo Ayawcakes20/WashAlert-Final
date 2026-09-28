@@ -138,13 +138,13 @@ function ReceiptPreview({ order, actualKg, loadType, pricing: p, deliveryFee, ma
             </p>
             <ReceiptLineItem
               label={order.serviceName || "Service"}
-              sub={`₱${p.pricePerLoad} × ${p.isHandwash ? `${actualKg} kg` : `${p.numberOfLoads} load${p.numberOfLoads !== 1 ? "s" : ""}`}`}
+              sub={`₱${p.pricePerLoad} × ${p.isHandwash ? `${actualKg} kg` : `${p.completedLoads} load${p.completedLoads !== 1 ? "s" : ""}`}`}
               amount={p.serviceTotal}
             />
             {p.overloadFee > 0 && (
               <ReceiptLineItem
                 label="Overload / Additional charge"
-                sub={`(${actualKg} kg − ${p.numberOfLoads * p.baseServiceLimit} kg capacity: ${p.overloadKg} kg excess × ₱50)`}
+                sub={`(${actualKg} kg − ${p.completedLoads * p.baseServiceLimit} kg capacity: ${p.overloadKg} kg excess × ₱50)`}
                 amount={p.overloadFee}
                 className="text-orange-700 font-bold"
               />
@@ -820,7 +820,7 @@ export function FinalizeWeightModal({
                             sub={`₱${pricing.pricePerLoad} × ${
                               pricing.isHandwash
                                 ? `${actualKg} kg`
-                                : `${pricing.numberOfLoads} load${pricing.numberOfLoads !== 1 ? "s" : ""}`
+                                : `${pricing.completedLoads} load${pricing.completedLoads !== 1 ? "s" : ""}`
                             }`}
                             amount={pricing.serviceTotal}
                           />
@@ -829,7 +829,7 @@ export function FinalizeWeightModal({
                           {pricing.overloadFee > 0 && (
                             <BreakdownRow
                               label="Overload / Additional charge"
-                              sub={`(${actualKg} kg − ${pricing.numberOfLoads * pricing.baseServiceLimit} kg capacity: ${pricing.overloadKg} kg excess × ₱50)`}
+                              sub={`(${actualKg} kg − ${pricing.completedLoads * pricing.baseServiceLimit} kg capacity: ${pricing.overloadKg} kg excess × ₱50)`}
                               amount={pricing.overloadFee}
                               className="text-orange-600 font-semibold"
                             />

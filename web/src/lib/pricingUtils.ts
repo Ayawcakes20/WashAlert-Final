@@ -16,13 +16,14 @@ export interface OrderForPricing {
 }
 
 export interface PricingResult {
-  numberOfLoads: number;
+  numberOfLoads: number;   // Automatic load count: Math.ceil(weight / applicableCapacity)
+  completedLoads: number;  // Full completed loads for base service pricing
   pricePerLoad: number;
-  serviceTotal: number;
-  overloadFee: number;
-  overloadKg: number;
-  madnessFee: number; // alias for backwards compatibility
-  madnessKg: number;  // alias for backwards compatibility
+  serviceTotal: number;    // Base service charge = completedLoads × pricePerLoad
+  overloadFee: number;     // ₱50 per additional 1 kg above completed load capacity
+  overloadKg: number;      // Ceil rounded excess kg
+  madnessFee: number;      // alias for backwards compatibility
+  madnessKg: number;       // alias for backwards compatibility
   detPPP: number;
   detQty: number;
   detCost: number;
@@ -38,7 +39,7 @@ export interface PricingResult {
   maxKgPerLoad: number;
   isHandwash: boolean;
   isRush: boolean;
-  baseServiceLimit: number; // The effective kg capacity per load
+  baseServiceLimit: number; // The applicable kg capacity per load
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -128,24 +129,22 @@ export const getConditionerPricePerPack = (name?: string): number => {
 /**
  * Compute full order pricing given actual weighed kg and load type.
  *
- * Fixed-Load Services (Wash, Dry, Ecowash, Basic Full, Premium Full):
- *  - 0 to applicable capacity: 1 full load
- *  - Above capacity but below 2× capacity: 1 full load + ₱50 per additional 1 kg
- *  - 2× capacity: 2 full loads
- *  - Above 2× capacity but below 3× capacity: 2 full loads + ₱50 per additional 1 kg
- *  - Pattern continues for N full loads.
+ * 1. Automatic Load Adjustment (REQUIRED):
+ *    numberOfLoads = Math.ceil(weight / applicableCapacity)
+ *    Increases immediately when weight exceeds applicable capacity.
  *
- * Overload Surcharge:
- *  - ₱50 for each additional 1 kg above completed full load capacity
- *  - Math.ceil(excessWeight) * ₱50
+ * 2. Pricing & Overload Charge (SEPARATE from load count):
+ *    completedLoads = Math.max(1, Math.floor(weight / applicableCapacity))
+ *    Base service amount = completedLoads × baseServicePrice
+ *    excessWeight = Math.max(0, weight − completedLoads × applicableCapacity)
+ *    overloadFee  = Math.ceil(excessWeight) × ₱50
  *
- * Handwash pricing:
- *  - 1–3 kg: ₱150/kg
- *  - Above 3 kg: ₱90/kg
- *  - Handwash is strictly per-kilogram and is never charged overload or fixed load pricing.
+ * 3. Handwash:
+ *    1–3 kg: ₱150/kg; Above 3 kg: ₱90/kg.
+ *    Strictly per-kg; never charged overload or fixed load pricing.
  *
- * Customer-Provided Supplies:
- *  - Always ₱0.00 regardless of weight or load count.
+ * 4. Customer-Provided Supplies:
+ *    Always ₱0.00 regardless of weight or load changes.
  */
 export const computeOrderPricing = (
   order: OrderForPricing,
@@ -159,6 +158,7 @@ export const computeOrderPricing = (
   const isHandwash = name.includes('handwash');
 
   let numberOfLoads = 1;
+  let completedLoads = 1;
   let pricePerLoad = 0;
   let serviceTotal = 0;
   let overloadKg = 0;
@@ -169,6 +169,7 @@ export const computeOrderPricing = (
     pricePerLoad = actualKg <= 3 ? 150 : 90;
     serviceTotal = Math.round(pricePerLoad * actualKg * 100) / 100;
     numberOfLoads = 1;
+    completedLoads = 1;
     overloadKg = 0;
     overloadFee = 0;
   } else {
@@ -208,18 +209,23 @@ export const computeOrderPricing = (
       }
     }
 
-    // Number of full loads: 1 load minimum, reaches next load when weight completes the next capacity
-    // 0–8 kg = 1 load, 8.1–15.9 kg = 1 load + overload, 16.0 kg = 2 loads, etc.
-    const fullLoads = actualKg <= 0 ? 1 : Math.max(1, Math.floor(actualKg / baseServiceLimit));
-    const completedCapacity = fullLoads * baseServiceLimit;
+    // ── 1. AUTOMATIC LOAD ADJUSTMENT ──
+    // Load count MUST increase immediately when weight exceeds applicable capacity:
+    // loads = Math.ceil(weight / applicableCapacity)
+    numberOfLoads = actualKg <= 0 ? 1 : Math.ceil(actualKg / baseServiceLimit);
+
+    // ── 2. PRICING & OVERLOAD CALCULATION (Separate from load count) ──
+    // Full loads completed:
+    completedLoads = actualKg <= 0 ? 1 : Math.max(1, Math.floor(actualKg / baseServiceLimit));
+    const completedCapacity = completedLoads * baseServiceLimit;
     const excessWeight = Math.max(0, actualKg - completedCapacity);
 
     // ₱50 for each additional 1 kg above completed load capacity
     overloadKg = Math.ceil(excessWeight);
     overloadFee = overloadKg * 50;
 
-    numberOfLoads = fullLoads;
-    serviceTotal = pricePerLoad * fullLoads;
+    // Base service price applies to completed full loads:
+    serviceTotal = pricePerLoad * completedLoads;
   }
 
   // Detergent — customer-provided is always ₱0
@@ -232,9 +238,9 @@ export const computeOrderPricing = (
   const conQty = order.conditionerQuantity ?? 0;
   const conCost = conPPP * conQty;
 
-  // Rush fee: ₱150/load
+  // Rush fee: ₱150/load based on completed loads
   const isRush = (order.rushPrice ?? 0) > 0;
-  const rushFee = isRush ? 150 * numberOfLoads : 0;
+  const rushFee = isRush ? 150 * completedLoads : 0;
 
   // Pickup fee — removed per client request
   const pickupFee = 0;
@@ -255,6 +261,7 @@ export const computeOrderPricing = (
 
   return {
     numberOfLoads,
+    completedLoads,
     pricePerLoad,
     serviceTotal,
     overloadFee,
