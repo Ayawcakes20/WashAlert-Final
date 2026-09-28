@@ -30,23 +30,14 @@ import {
   feedbackApi,
   usersApi,
   paymentsApi,
-  isNetworkError,
   type CreateOrderPayload,
   type FeedbackResponse,
   type JobOrderResponse,
   type UpdateOrderPayload,
   type UserAdminRecord,
 } from "@/lib/api";
-import { ConnectivityErrorState } from "@/components/ConnectivityErrorState";
 import { FinalizeWeightModal, type FinalizeOrderData } from "@/components/FinalizeWeightModal";
 import { printOrderReceipt, downloadOrderReceipt } from "@/lib/receiptPrinter";
-import {
-  getBaseServiceLimit,
-  getDetergentPricePerPack,
-  getConditionerPricePerPack,
-  isCustomerProvided,
-  type LoadType,
-} from "@/lib/pricingUtils";
 import logoLaundryHubs from "@/assets/logo-laundryhubs.webp";
 import logoSpeedyWash from "@/assets/logo-speedywash.webp";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -509,11 +500,15 @@ export default function OrderManagementPage() {
   const openAssignRiderModal = async (order: Order, mode: 'pickup' | 'delivery' = 'delivery') => {
     setAssignRiderOrderId(order.id);
     setAssignmentMode(mode);
+    setSelectedDriverId("");
     setAssignRiderOpen(true);
     setAssignRiderSubmitting(true);
     try {
       const drivers = await usersApi.listDrivers(order.branch);
-      setAvailableDrivers(drivers);
+      // Only expose ACTIVE driver accounts in the assignment dropdown.
+      // Deactivated, suspended, or pending riders must never be selectable.
+      const activeDrivers = drivers.filter((d) => d.status === "ACTIVE");
+      setAvailableDrivers(activeDrivers);
     } catch (err) {
       console.error("Failed to fetch drivers", err);
       toast.error("Failed to load available drivers.");
@@ -526,6 +521,21 @@ export default function OrderManagementPage() {
     if (!assignRiderOrderId || !selectedDriverId) return;
     const driver = availableDrivers.find(d => d.id === parseInt(selectedDriverId));
     if (!driver) return;
+    // Guard: prevent assigning a rider whose status is no longer ACTIVE
+    // (e.g., deactivated while the modal was open).
+    if (driver.status !== "ACTIVE") {
+      toast.error(`${driver.fullName} is no longer active and cannot be assigned. Please select an active rider.`);
+      setSelectedDriverId("");
+      // Refresh the driver list to remove the now-inactive rider.
+      try {
+        const order = orders.find(o => o.id === assignRiderOrderId);
+        if (order) {
+          const fresh = await usersApi.listDrivers(order.branch);
+          setAvailableDrivers(fresh.filter((d) => d.status === "ACTIVE"));
+        }
+      } catch { /* ignore refresh errors */ }
+      return;
+    }
 
     setAssignRiderSubmitting(true);
     try {
@@ -675,12 +685,15 @@ export default function OrderManagementPage() {
       setHasPreviousOrders(Boolean(response.hasPrevious));
       setLastRefreshed(new Date());
     } catch (err: any) {
-      const isNet = isNetworkError(err);
-      const message = isNet
-        ? "Unable to load data. Please check your internet connection and try again."
-        : (err?.message || "Unable to load orders.");
+      const message = err?.message || "Unable to load orders.";
       setError(message);
-      if (!silent) toast.error(isNet ? "Unable to connect. Please check your internet connection." : message);
+      setOrders([]);
+      setOrdersPage(1);
+      setTotalOrders(0);
+      setTotalOrdersPages(1);
+      setHasNextOrders(false);
+      setHasPreviousOrders(false);
+      if (!silent) toast.error(message);
     } finally {
       if (!silent) setLoading(false);
     }
@@ -749,7 +762,7 @@ export default function OrderManagementPage() {
           const mapped = mapOrder(freshOrder);
           setOrders((prev) => prev.map((o) => (o.id === mapped.id ? mapped : o)));
           setSelectedOrder(mapped);
-          
+
           currentOrder = mapped;
           isUnpaidGcash = isGcash && !currentOrder.isPaid;
           toast.success("GCash payment successfully verified!");
@@ -1211,16 +1224,7 @@ export default function OrderManagementPage() {
           </div>
         </div>
       ) : null}
-      {error ? (
-        <ConnectivityErrorState
-          variant="banner"
-          title="Unable to load data"
-          message="Please check your internet connection and try again."
-          onRetry={() => void loadOrders(Math.max(0, ordersPage - 1), false)}
-          retrying={loading}
-          className="mb-6"
-        />
-      ) : null}
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
 
       <motion.div variants={item} className="flex flex-wrap items-center gap-4 mb-8">
@@ -1516,8 +1520,8 @@ export default function OrderManagementPage() {
                           <Button
                             size="sm"
                             className={`h-9 px-4 rounded-xl font-black text-xs text-white shadow-lg transition-all ${order.status === "PENDING"
-                                ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20"
-                                : "bg-slate-900 hover:bg-black shadow-slate-900/20"
+                              ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20"
+                              : "bg-slate-900 hover:bg-black shadow-slate-900/20"
                               }`}
                             onClick={() => void applyStatusUpdate(order)}
                             disabled={
@@ -1534,16 +1538,7 @@ export default function OrderManagementPage() {
                   </tr>
                 );
               })}
-              {error && !pagedOrders.length ? (
-                <ConnectivityErrorState
-                  variant="table-row"
-                  colSpan={10}
-                  title="Unable to load data"
-                  message="Please check your internet connection and try again."
-                  onRetry={() => void loadOrders(Math.max(0, ordersPage - 1), false)}
-                  retrying={loading}
-                />
-              ) : !pagedOrders.length ? (
+              {!pagedOrders.length ? (
                 <tr>
                   <td colSpan={10} className="p-6 text-center text-sm text-brand-muted">
                     No orders found for the current filters.
@@ -1848,11 +1843,15 @@ export default function OrderManagementPage() {
                     className="w-full h-16 rounded-2xl border-2 border-slate-200 bg-white px-6 text-sm font-semibold text-slate-900 focus:ring-4 focus:ring-brand-navy/10 focus:border-brand-navy transition-all outline-none appearance-none cursor-pointer"
                   >
                     <option value="">Choose a rider from the fleet...</option>
-                    {availableDrivers.map((driver) => (
-                      <option key={driver.id} value={driver.id}>
-                        {driver.fullName} ({driver.email})
-                      </option>
-                    ))}
+                    {availableDrivers
+                      // Defensive filter: ensures only ACTIVE riders are rendered
+                      // even if the state somehow becomes stale after modal open.
+                      .filter((driver) => driver.status === "ACTIVE")
+                      .map((driver) => (
+                        <option key={driver.id} value={driver.id}>
+                          {driver.fullName} ({driver.email})
+                        </option>
+                      ))}
                   </select>
                   <div className="absolute inset-y-0 right-5 flex items-center pointer-events-none text-slate-400">
                     <Plus className="h-5 w-5 rotate-45" />
@@ -1902,10 +1901,10 @@ export default function OrderManagementPage() {
                 </div>
                 <div className="flex max-w-[220px] flex-col items-end gap-1.5 shrink-0 text-right">
                   <Badge className={`px-3 py-1.5 rounded-full text-[12px] font-black uppercase tracking-wide border-none whitespace-nowrap ${selectedOrder.status === 'READY' || selectedOrder.status === 'PRICE_CONFIRMED' ? 'bg-emerald-500 text-white' :
-                      selectedOrder.status === 'AWAITING_PRICE_CONFIRMATION' ? 'bg-amber-500 text-white' :
-                        selectedOrder.status === 'WASHING' || selectedOrder.status === 'DRYING' ? 'bg-blue-600 text-white' :
-                          selectedOrder.status === 'CANCELLED' ? 'bg-red-500 text-white' :
-                            'bg-slate-600 text-white'
+                    selectedOrder.status === 'AWAITING_PRICE_CONFIRMATION' ? 'bg-amber-500 text-white' :
+                      selectedOrder.status === 'WASHING' || selectedOrder.status === 'DRYING' ? 'bg-blue-600 text-white' :
+                        selectedOrder.status === 'CANCELLED' ? 'bg-red-500 text-white' :
+                          'bg-slate-600 text-white'
                     }`}>
                     {statusLabel[selectedOrder.status]}
                   </Badge>
@@ -2008,8 +2007,8 @@ export default function OrderManagementPage() {
                     <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Delivery Details</p>
                       <div className={`px-2 py-0.5 rounded text-[8px] font-black uppercase border ${selectedOrder.status === 'DELIVERED' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                          selectedOrder.status === 'COLLECTION_FAILED' ? 'bg-rose-50 text-rose-700 border-rose-100' :
-                            'bg-blue-50 text-blue-700 border-blue-100'
+                        selectedOrder.status === 'COLLECTION_FAILED' ? 'bg-rose-50 text-rose-700 border-rose-100' :
+                          'bg-blue-50 text-blue-700 border-blue-100'
                         }`}>
                         {statusLabel[selectedOrder.status]}
                       </div>
@@ -2667,43 +2666,32 @@ export default function OrderManagementPage() {
               const o = selectedOrder;
               const actualKg = o.actualWeightKg ?? 0;
               const serviceBase = o.servicePrice ?? 0;
+              const extraWeight = o.extraWeightCost ?? 0;
               const rush = o.rushPrice ?? 0;
-              const detPPP = getDetergentPricePerPack(o.detergent);
+              const isShopSupply = (s?: string | null) =>
+                !!s && s.toLowerCase() !== "none" && s.toLowerCase() !== "customer provided";
+              const detPPP = isShopSupply(o.detergent)
+                ? (o.detergent!.toLowerCase().includes("ariel") ? 30 : 25) : 0;
               const detCost = detPPP * (o.detergentQuantity || 1);
-              const conPPP = getConditionerPricePerPack(o.conditioner);
+              const conPPP = isShopSupply(o.conditioner)
+                ? (o.conditioner!.toLowerCase().includes("downy") ? 25 : 15) : 0;
               const conCost = conPPP * (o.conditionerQuantity || 1);
               const delivery = o.deliveryPrice ?? 0;
-
-              const nm = (o.serviceName ?? "").toLowerCase();
-              const lt: LoadType = (o.laundryType?.toUpperCase() === 'BEDDINGS' || o.loadSize?.toUpperCase() === 'BEDDINGS')
-                ? 'BEDDINGS'
-                : (o.loadSize?.toUpperCase() === 'WITH_TOWELS' || o.loadSize?.toLowerCase().includes('towel'))
-                ? 'WITH_TOWELS'
-                : 'PURE_CLOTHES';
-              const limit = getBaseServiceLimit(nm, lt);
-              const isHw = nm.includes("handwash");
-
-              let loadsText = "N/A";
-              let computedOverload = 0;
-              let excessKg = 0;
-              if (actualKg > 0) {
-                if (isHw) {
-                  loadsText = "1 load (by kg)";
-                } else {
-                  const fullLoads = Math.max(1, Math.floor(actualKg / limit));
-                  const excess = Math.max(0, actualKg - fullLoads * limit);
-                  excessKg = Math.ceil(excess);
-                  computedOverload = excessKg * 50;
-                  loadsText = `${fullLoads} load${fullLoads !== 1 ? "s" : ""}`;
-                }
-              }
-
-              const extraWeight = (o.extraWeightCost !== undefined && o.extraWeightCost > 0)
-                ? o.extraWeightCost
-                : computedOverload;
               const subtotal = serviceBase + extraWeight + rush + detCost + conCost + delivery;
               const sysFee = o.systemFee ?? Math.round(subtotal * 0.02 * 100) / 100;
               const total = o.finalPrice ?? o.totalPrice ?? (subtotal + sysFee);
+
+              const nm = (o.serviceName ?? "").toLowerCase();
+              let loadsText = "N/A";
+              if (actualKg > 0) {
+                if (nm.includes("handwash")) {
+                  loadsText = "1 load (by kg)";
+                } else {
+                  const limit = nm.includes("ecowash") ? 5 : (nm.includes("wash") && !nm.includes("full")) ? 7 : 8;
+                  const loads = Math.ceil(actualKg / limit);
+                  loadsText = `${loads} load${loads !== 1 ? "s" : ""}`;
+                }
+              }
 
               const infoRow = (label: string, value: string) => (
                 <div key={label} className="flex justify-between py-0.5">
@@ -2741,16 +2729,12 @@ export default function OrderManagementPage() {
                     {infoRow("Est. Weight", o.estimatedWeightKg ? `${o.estimatedWeightKg} kg` : "N/A")}
                     {infoRow("Actual Weight", o.actualWeightKg ? `${o.actualWeightKg} kg` : "N/A")}
                     {infoRow("No. of Loads", loadsText)}
-                    {isCustomerProvided(o.detergent)
-                      ? infoRow("Detergent", `${o.detergent} (₱0.00)`)
-                      : o.detergent && o.detergent.toLowerCase() !== "none"
+                    {isShopSupply(o.detergent)
                       ? infoRow("Detergent", `${o.detergent} ×${o.detergentQuantity || 1} (₱${detPPP}/pack)`)
-                      : null}
-                    {isCustomerProvided(o.conditioner)
-                      ? infoRow("Fabric Conditioner", `${o.conditioner} (₱0.00)`)
-                      : o.conditioner && o.conditioner.toLowerCase() !== "none"
+                      : infoRow("Detergent", o.detergent || "Customer Provided")}
+                    {isShopSupply(o.conditioner)
                       ? infoRow("Fabric Conditioner", `${o.conditioner} ×${o.conditionerQuantity || 1} (₱${conPPP}/pack)`)
-                      : null}
+                      : infoRow("Fabric Conditioner", o.conditioner || "Customer Provided")}
                     {infoRow("Order Status", statusLabel[o.status] || o.status)}
                   </div>
 
@@ -2758,7 +2742,7 @@ export default function OrderManagementPage() {
                   <div className="border-t border-dashed border-slate-200 pt-2 space-y-0.5">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Charges</p>
                     {serviceBase > 0 && amtRow(o.serviceName || "Service Fee", serviceBase)}
-                    {extraWeight > 0 && amtRow(`Overload / Additional Weight (${excessKg > 0 ? `${excessKg}kg` : "excess"} × ₱50)`, extraWeight)}
+                    {extraWeight > 0 && amtRow(`Extra Weight${actualKg > 8 ? ` (${(actualKg - 8).toFixed(1)} kg × ₱50)` : ""}`, extraWeight)}
                     {rush > 0 && amtRow("⚡ Rush Fee", rush)}
                     {detCost > 0 && amtRow(`${o.detergent} Detergent ×${o.detergentQuantity || 1}`, detCost)}
                     {conCost > 0 && amtRow(`${o.conditioner} Conditioner ×${o.conditionerQuantity || 1}`, conCost)}
@@ -2789,11 +2773,7 @@ export default function OrderManagementPage() {
               <Button
                 variant="outline"
                 className="flex-1 font-bold"
-                onClick={() => printOrderReceipt({
-                  ...selectedOrder,
-                  loadSize: selectedOrder.loadSize ?? undefined,
-                  laundryType: selectedOrder.laundryType ?? undefined
-                })}
+                onClick={() => printOrderReceipt({ ...selectedOrder, loadSize: selectedOrder.loadSize ?? undefined, laundryType: selectedOrder.laundryType ?? undefined })}
               >
                 <Printer className="h-4 w-4 mr-2" /> Print Receipt
               </Button>
