@@ -99,16 +99,25 @@ function chargeRow(label: string, amount: number, muted = false): string {
     </tr>`;
 }
 
+import {
+  getBaseServiceLimit,
+  getDetergentPricePerPack,
+  getConditionerPricePerPack,
+  isCustomerProvided,
+  type LoadType,
+} from "./pricingUtils";
+
 function computeLoadsDisplay(order: ReceiptOrder): string {
   const actualKg = order.actualWeightKg ?? 0;
   if (actualKg <= 0) return "N/A";
   const name = (order.serviceName ?? "").toLowerCase();
   if (name.includes("handwash")) return "1 load (by kg)";
-  const limit = name.includes("ecowash")
-    ? 5
-    : name.includes("wash") && !name.includes("full")
-    ? 7
-    : 8;
+  const lt: LoadType = (order.laundryType?.toUpperCase() === "BEDDINGS" || order.loadSize?.toUpperCase() === "BEDDINGS")
+    ? "BEDDINGS"
+    : (order.loadSize?.toUpperCase() === "WITH_TOWELS" || order.loadSize?.toLowerCase().includes("towel"))
+    ? "WITH_TOWELS"
+    : "PURE_CLOTHES";
+  const limit = getBaseServiceLimit(name, lt);
   const loads = Math.ceil(actualKg / limit);
   return `${loads} load${loads !== 1 ? "s" : ""}`;
 }
@@ -116,20 +125,10 @@ function computeLoadsDisplay(order: ReceiptOrder): string {
 function buildReceiptHtml(order: ReceiptOrder, autoPrint = true): { html: string; trackingDisplay: string } {
   const trackingDisplay = String(order.orderId || "").replace(/^WA-/, "");
 
-  const detPPP =
-    order.detergent && order.detergent.toLowerCase() !== "none"
-      ? order.detergent.toLowerCase().includes("ariel")
-        ? 30
-        : 25
-      : 0;
+  const detPPP = getDetergentPricePerPack(order.detergent);
   const detCost = detPPP * (order.detergentQuantity || 1);
 
-  const conPPP =
-    order.conditioner && order.conditioner.toLowerCase() !== "none"
-      ? order.conditioner.toLowerCase().includes("downy")
-        ? 25
-        : 15
-      : 0;
+  const conPPP = getConditionerPricePerPack(order.conditioner);
   const conCost = conPPP * (order.conditionerQuantity || 1);
 
   const serviceBase = order.servicePrice ?? 0;
@@ -334,7 +333,9 @@ function buildReceiptHtml(order: ReceiptOrder, autoPrint = true): { html: string
         order.detergent && order.detergent.toLowerCase() !== "none"
           ? infoRow(
               "Detergent",
-              `${esc(order.detergent)} &times; ${order.detergentQuantity || 1} pack(s) &mdash; ${fmtMoney(detPPP)}/pack`
+              isCustomerProvided(order.detergent)
+                ? `${esc(order.detergent)} (₱0.00)`
+                : `${esc(order.detergent)} &times; ${order.detergentQuantity || 1} pack(s) &mdash; ${fmtMoney(detPPP)}/pack`
             )
           : ""
       }
@@ -342,7 +343,9 @@ function buildReceiptHtml(order: ReceiptOrder, autoPrint = true): { html: string
         order.conditioner && order.conditioner.toLowerCase() !== "none"
           ? infoRow(
               "Fabric Conditioner",
-              `${esc(order.conditioner)} &times; ${order.conditionerQuantity || 1} pack(s) &mdash; ${fmtMoney(conPPP)}/pack`
+              isCustomerProvided(order.conditioner)
+                ? `${esc(order.conditioner)} (₱0.00)`
+                : `${esc(order.conditioner)} &times; ${order.conditionerQuantity || 1} pack(s) &mdash; ${fmtMoney(conPPP)}/pack`
             )
           : ""
       }

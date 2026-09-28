@@ -40,6 +40,13 @@ import {
 import { ConnectivityErrorState } from "@/components/ConnectivityErrorState";
 import { FinalizeWeightModal, type FinalizeOrderData } from "@/components/FinalizeWeightModal";
 import { printOrderReceipt, downloadOrderReceipt } from "@/lib/receiptPrinter";
+import {
+  getBaseServiceLimit,
+  getDetergentPricePerPack,
+  getConditionerPricePerPack,
+  isCustomerProvided,
+  type LoadType,
+} from "@/lib/pricingUtils";
 import logoLaundryHubs from "@/assets/logo-laundryhubs.webp";
 import logoSpeedyWash from "@/assets/logo-speedywash.webp";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -2662,13 +2669,9 @@ export default function OrderManagementPage() {
               const serviceBase = o.servicePrice ?? 0;
               const extraWeight = o.extraWeightCost ?? 0;
               const rush = o.rushPrice ?? 0;
-              const isShopSupply = (s?: string | null) =>
-                !!s && s.toLowerCase() !== "none" && s.toLowerCase() !== "customer provided";
-              const detPPP = isShopSupply(o.detergent)
-                ? (o.detergent!.toLowerCase().includes("ariel") ? 30 : 25) : 0;
+              const detPPP = getDetergentPricePerPack(o.detergent);
               const detCost = detPPP * (o.detergentQuantity || 1);
-              const conPPP = isShopSupply(o.conditioner)
-                ? (o.conditioner!.toLowerCase().includes("downy") ? 25 : 15) : 0;
+              const conPPP = getConditionerPricePerPack(o.conditioner);
               const conCost = conPPP * (o.conditionerQuantity || 1);
               const delivery = o.deliveryPrice ?? 0;
               const subtotal = serviceBase + extraWeight + rush + detCost + conCost + delivery;
@@ -2681,7 +2684,12 @@ export default function OrderManagementPage() {
                 if (nm.includes("handwash")) {
                   loadsText = "1 load (by kg)";
                 } else {
-                  const limit = nm.includes("ecowash") ? 5 : (nm.includes("wash") && !nm.includes("full")) ? 7 : 8;
+                  const lt: LoadType = (o.laundryType?.toUpperCase() === 'BEDDINGS' || o.loadSize?.toUpperCase() === 'BEDDINGS')
+                    ? 'BEDDINGS'
+                    : (o.loadSize?.toUpperCase() === 'WITH_TOWELS' || o.loadSize?.toLowerCase().includes('towel'))
+                    ? 'WITH_TOWELS'
+                    : 'PURE_CLOTHES';
+                  const limit = getBaseServiceLimit(nm, lt);
                   const loads = Math.ceil(actualKg / limit);
                   loadsText = `${loads} load${loads !== 1 ? "s" : ""}`;
                 }
@@ -2723,12 +2731,16 @@ export default function OrderManagementPage() {
                     {infoRow("Est. Weight", o.estimatedWeightKg ? `${o.estimatedWeightKg} kg` : "N/A")}
                     {infoRow("Actual Weight", o.actualWeightKg ? `${o.actualWeightKg} kg` : "N/A")}
                     {infoRow("No. of Loads", loadsText)}
-                    {isShopSupply(o.detergent)
+                    {isCustomerProvided(o.detergent)
+                      ? infoRow("Detergent", `${o.detergent} (₱0.00)`)
+                      : o.detergent && o.detergent.toLowerCase() !== "none"
                       ? infoRow("Detergent", `${o.detergent} ×${o.detergentQuantity || 1} (₱${detPPP}/pack)`)
-                      : infoRow("Detergent", o.detergent || "Customer Provided")}
-                    {isShopSupply(o.conditioner)
+                      : null}
+                    {isCustomerProvided(o.conditioner)
+                      ? infoRow("Fabric Conditioner", `${o.conditioner} (₱0.00)`)
+                      : o.conditioner && o.conditioner.toLowerCase() !== "none"
                       ? infoRow("Fabric Conditioner", `${o.conditioner} ×${o.conditionerQuantity || 1} (₱${conPPP}/pack)`)
-                      : infoRow("Fabric Conditioner", o.conditioner || "Customer Provided")}
+                      : null}
                     {infoRow("Order Status", statusLabel[o.status] || o.status)}
                   </div>
 

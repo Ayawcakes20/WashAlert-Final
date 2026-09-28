@@ -2,7 +2,8 @@
 // Centralized pricing computation used by the Finalize Weight & Receipt screen.
 // All monetary values are in Philippine Peso (₱).
 
-export type LoadType = 'PURE_CLOTHES' | 'WITH_TOWELS';
+// Load types — BEDDINGS forces 5 kg/load regardless of service.
+export type LoadType = 'PURE_CLOTHES' | 'WITH_TOWELS' | 'BEDDINGS';
 
 export interface OrderForPricing {
   serviceName?: string;
@@ -35,46 +36,106 @@ export interface PricingResult {
   maxKgPerLoad: number;
   isHandwash: boolean;
   isRush: boolean;
-  baseServiceLimit: number; // The kg limit per load (7, 8, or 5)
+  baseServiceLimit: number; // The effective kg capacity per load used for calculation
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-/** Max kg per load based on load composition and service type */
+/**
+ * Returns the effective kg capacity per load for a given service and load type.
+ *
+ * Rules (Triplets official pricing policy):
+ *  - BEDDINGS        → always 5 kg/load, overrides the service capacity
+ *  - Ecowash         → 5 kg/load
+ *  - Handwash        → per-kg (return 1 as a sentinel; pricing handled separately)
+ *  - Wash Only / Dry Only → 7 kg/load
+ *  - Full Service 7kg variant → 7 kg/load
+ *  - Full Service 8kg variant:
+ *      * Pure Clothes → 8 kg/load
+ *      * With Towels  → 7 kg/load
+ *  - Default Full Service (unspecified kg):
+ *      * Pure Clothes → 8 kg/load
+ *      * With Towels  → 7 kg/load
+ */
 export const getBaseServiceLimit = (serviceName: string, lt: LoadType): number => {
   const name = serviceName.toLowerCase();
-  
-  // Ecowash is strictly 5kg
-  if (name.includes('ecowash')) return 5;
-  
-  // Wash only and Dry only are strictly 7kg
-  if ((name.includes('wash') || name.includes('dry')) && !name.includes('full')) return 7;
-  
-  // Handwash is per kg (base 1 for computation)
-  if (name.includes('handwash')) return 1; 
 
-  // Full services depend on load type: 8kg (Pure) or 7kg (Towel)
+  // BEDDINGS always forces 5 kg/load regardless of selected service
+  if (lt === 'BEDDINGS') return 5;
+
+  // Ecowash is strictly 5 kg/load
+  if (name.includes('ecowash')) return 5;
+
+  // Handwash uses per-kg pricing — 1 is a sentinel value
+  if (name.includes('handwash')) return 1;
+
+  // Wash Only and Dry Only are strictly 7 kg/load
+  if (name.includes('wash') && !name.includes('full')) return 7;
+  if (name.includes('dry') && !name.includes('full')) return 7;
+
+  // Explicit 7kg full service
+  if (name.includes('7kg') || name.includes('7 kg')) return 7;
+
+  // Explicit 8kg full service
+  if (name.includes('8kg') || name.includes('8 kg')) {
+    return lt === 'PURE_CLOTHES' ? 8 : 7;
+  }
+
+  // Default Full Service
   return lt === 'PURE_CLOTHES' ? 8 : 7;
 };
 
-/** Detergent price per pack */
-export const getDetergentPricePerPack = (name?: string): number => {
-  if (!name || name.toLowerCase() === 'none') return 0;
-  // Ariel = premium ₱30, Surf = basic ₱25
-  return name.toLowerCase().includes('ariel') ? 30 : 25;
+/**
+ * Returns true when the supply selection is customer-provided
+ * (i.e., no system supply should be charged).
+ */
+export const isCustomerProvided = (name?: string): boolean => {
+  if (!name) return false;
+  const lower = name.toLowerCase().trim();
+  return lower.includes('customer') || lower.includes('provided') || /\bown\b/.test(lower);
 };
 
-/** Conditioner/fabric softener price per pack */
+/**
+ * Returns the price-per-pack for a detergent selection.
+ * Returns ₱0 for "None" or any customer-provided selection.
+ */
+export const getDetergentPricePerPack = (name?: string): number => {
+  if (!name) return 0;
+  const lower = name.toLowerCase().trim();
+  if (lower === 'none' || isCustomerProvided(lower)) return 0;
+  return lower.includes('ariel') ? 30 : 25;
+};
+
+/**
+ * Returns the price-per-pack for a fabric conditioner selection.
+ * Returns ₱0 for "None" or any customer-provided selection.
+ */
 export const getConditionerPricePerPack = (name?: string): number => {
-  if (!name || name.toLowerCase() === 'none') return 0;
-  // Downy = premium ₱25, Charm Fabcon = basic ₱15
-  return name.toLowerCase().includes('downy') ? 25 : 15;
+  if (!name) return 0;
+  const lower = name.toLowerCase().trim();
+  if (lower === 'none' || isCustomerProvided(lower)) return 0;
+  return lower.includes('downy') ? 25 : 15;
 };
 
 // ── Core pricing engine ────────────────────────────────────────────────────────
 
 /**
  * Compute full order pricing given actual weighed kg and load type.
+ *
+ * Load-count formula (fixed-capacity services):
+ *   numberOfLoads = CEILING(actualKg / baseServiceLimit)
+ *
+ * Handwash pricing:
+ *   1–3 kg: ₱150/kg
+ *   >3 kg:  ₱90/kg
+ *   Handwash is per-kilogram and is never charged overload or fixed load pricing.
+ *
+ * Surcharge / Overload:
+ *   totalCapacity = numberOfLoads × baseServiceLimit
+ *   madnessKg     = max(0, actualKg − totalCapacity)
+ *   madnessFee    = madnessKg × ₱50 (0 when load count scales with weight)
+ *
+ * Customer-provided supplies are always ₱0.00 regardless of weight or loads.
  */
 export const computeOrderPricing = (
   order: OrderForPricing,
@@ -87,63 +148,78 @@ export const computeOrderPricing = (
   const baseServiceLimit = getBaseServiceLimit(name, lt);
   const isHandwash = name.includes('handwash');
 
-  // Apply 5 kg minimum billing floor: if actual weight is below 5 kg,
-  // we still proceed but price the order as 5 kg per business rule.
-  const MIN_BILLING_KG = 5;
-  const billingKg = Math.max(MIN_BILLING_KG, actualKg);
-
   let numberOfLoads = 1;
   let pricePerLoad = 0;
   let serviceTotal = 0;
 
   if (isHandwash) {
-    // Handwash: ₱150/kg for 1–3 kg, ₱90/kg for 3 kg+
-    // Handwash is per-kg so billing minimum still applies
-    pricePerLoad = billingKg <= 3 ? 150 : 90;
-    serviceTotal = pricePerLoad * billingKg;
+    // Handwash: strictly per-kg (1-3 kg = ₱150/kg, >3 kg = ₱90/kg)
+    pricePerLoad = actualKg <= 3 ? 150 : 90;
+    serviceTotal = Math.round(pricePerLoad * actualKg * 100) / 100;
     numberOfLoads = 1;
   } else {
-    // Standard Load Calculation — uses billingKg (minimum 5 kg) for pricing
-    numberOfLoads = Math.ceil(billingKg / 9);
+    // Fixed capacity services: numberOfLoads = CEILING(actualKg / baseServiceLimit)
+    numberOfLoads = actualKg <= 0 ? 1 : Math.ceil(actualKg / baseServiceLimit);
 
-    // Service pricing per load based on specific client rules
+    // Determine base rate per load based on service and variant:
     if (name.includes('ecowash')) {
-      pricePerLoad = 220; // Ecowash Full Service (5 kg)
+      pricePerLoad = 220; // Ecowash Full Service (5 kg/load)
     } else if (name.includes('dry') && !name.includes('full')) {
-      pricePerLoad = 90;  // Dry Only (7 kg)
-    } else if (name.includes('wash only') || (name.includes('wash') && !name.includes('full'))) {
-      pricePerLoad = 80;  // Wash Only (7 kg)
-    } else if (name.includes('basic full')) {
-      // Basic Full Service: ₱245 (8kg) or ₱240 (7kg)
-      pricePerLoad = baseServiceLimit === 8 ? 245 : 240;
+      pricePerLoad = 90;  // Dry Only (7 kg/load)
+    } else if (name.includes('wash') && !name.includes('full')) {
+      pricePerLoad = 80;  // Wash Only (7 kg/load)
     } else if (name.includes('premium full')) {
-      // Premium Full Service: ₱275 (8kg) or ₱270 (7kg)
-      pricePerLoad = baseServiceLimit === 8 ? 275 : 270;
+      // Premium Full Service: 8kg variant = ₱275, 7kg variant = ₱270
+      if (name.includes('8kg') || name.includes('8 kg')) {
+        pricePerLoad = 275;
+      } else if (name.includes('7kg') || name.includes('7 kg')) {
+        pricePerLoad = 270;
+      } else {
+        pricePerLoad = baseServiceLimit === 8 ? 275 : 270;
+      }
+    } else if (name.includes('basic full')) {
+      // Basic Full Service: 8kg variant = ₱245, 7kg variant = ₱240
+      if (name.includes('8kg') || name.includes('8 kg')) {
+        pricePerLoad = 245;
+      } else if (name.includes('7kg') || name.includes('7 kg')) {
+        pricePerLoad = 240;
+      } else {
+        pricePerLoad = baseServiceLimit === 8 ? 245 : 240;
+      }
     } else {
-      // Default fallback
-      pricePerLoad = baseServiceLimit === 8 ? 245 : 240;
+      // Fallback
+      if (name.includes('8kg') || name.includes('8 kg')) {
+        pricePerLoad = 245;
+      } else if (name.includes('7kg') || name.includes('7 kg')) {
+        pricePerLoad = 240;
+      } else {
+        pricePerLoad = baseServiceLimit === 8 ? 245 : 240;
+      }
     }
 
     serviceTotal = pricePerLoad * numberOfLoads;
   }
 
-  // Madness surcharge — ₱50/kg over combined base capacity (Panel-Recommended Logic)
-  // Total capacity = Loads * Service Limit (e.g., 2 loads @ 8kg = 16kg capacity)
-  // Uses billingKg so sub-5kg orders always price against the 5 kg minimum floor.
-  const totalBaseCapacity = numberOfLoads * baseServiceLimit;
-  const madnessKg = Math.max(0, billingKg - totalBaseCapacity);
-  const madnessFee = Math.round(madnessKg * 50);
+  // Madness / overload surcharge (₱50/kg over total capacity; Handwash excluded)
+  let madnessKg = 0;
+  let madnessFee = 0;
+  if (!isHandwash) {
+    const totalBaseCapacity = numberOfLoads * baseServiceLimit;
+    madnessKg = Math.max(0, actualKg - totalBaseCapacity);
+    madnessFee = Math.round(madnessKg * 50);
+  }
 
-  // Detergent & Conditioner
+  // Detergent — customer-provided is always ₱0
   const detPPP = getDetergentPricePerPack(order.detergent);
   const detQty = order.detergentQuantity ?? 0;
   const detCost = detPPP * detQty;
 
+  // Conditioner — customer-provided is always ₱0
   const conPPP = getConditionerPricePerPack(order.conditioner);
   const conQty = order.conditionerQuantity ?? 0;
   const conCost = conPPP * conQty;
 
-  // Rush fee — ₱150 per load
+  // Rush fee: ₱150/load
   const isRush = (order.rushPrice ?? 0) > 0;
   const rushFee = isRush ? 150 * numberOfLoads : 0;
 

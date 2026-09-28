@@ -32,6 +32,8 @@ import {
   type LoadType,
   type PricingResult,
   computeOrderPricing,
+  getBaseServiceLimit,
+  isCustomerProvided,
 } from "@/lib/pricingUtils";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -118,7 +120,7 @@ function ReceiptPreview({ order, actualKg, loadType, pricing: p, deliveryFee, ma
         <ReceiptRow label="Actual weight" value={actualKg > 0 ? `${actualKg} kg${actualKg < 5 ? ` (billed as 5 kg)` : ""}` : "—"} bold />
         <ReceiptRow
           label="Load type"
-          value={loadType === "PURE_CLOTHES" ? "Pure clothes" : "With towels/beddings"}
+          value={loadType === "PURE_CLOTHES" ? "Pure clothes" : loadType === "BEDDINGS" ? "Beddings (5 kg/load)" : "With towels"}
           bold
         />
         {p && (
@@ -331,12 +333,10 @@ export function FinalizeWeightModal({
   const actualKg = parseFloat(actualWeightRaw) || 0;
   const deliveryFee = parseFloat(deliveryFeeRaw) || 0;
   const manualAdjustment = parseFloat(manualAdjustmentRaw) || 0;
-  // Any positive weight is valid — pricing will apply a 5 kg minimum billing floor.
   const weightValid = actualKg > 0;
-  const isBelowMinimum = actualKg > 0 && actualKg < 5;
-  // Use billing kg (min 5) for load calculation so quantities match invoice.
-  const billingKg = Math.max(5, actualKg);
-  const calculatedLoads = isHandwash ? 1 : Math.ceil(billingKg / 9);
+  const isBelowMinimum = !isHandwash && actualKg > 0 && actualKg < 5;
+  const serviceLimit = getBaseServiceLimit(order?.serviceName ?? "", loadType);
+  const calculatedLoads = isHandwash ? 1 : (actualKg <= 0 ? 1 : Math.ceil(actualKg / serviceLimit));
 
   const prevLoadsRef = useRef<number | null>(null);
 
@@ -381,14 +381,15 @@ export function FinalizeWeightModal({
     // Initialize prevLoadsRef on first valid load calculation
     if (prevLoadsRef.current === null || prevLoadsRef.current === 0) {
       if (prevLoadsRef.current === 0) {
-        // Came from 0 weight, auto-scale now
+        // Came from 0 weight, auto-scale now.
+        // Skip customer-provided items — they are never charged or stocked.
         const detMax = getAvailQty(order.detergent);
         const conMax = getAvailQty(order.conditioner);
 
-        if (order.detergent && order.detergent.toLowerCase() !== "none") {
+        if (order.detergent && order.detergent.toLowerCase() !== "none" && !isCustomerProvided(order.detergent)) {
           setDetQty(Math.min(detMax, currentLoads));
         }
-        if (order.conditioner && order.conditioner.toLowerCase() !== "none") {
+        if (order.conditioner && order.conditioner.toLowerCase() !== "none" && !isCustomerProvided(order.conditioner)) {
           setConQty(Math.min(conMax, currentLoads));
         }
       }
@@ -397,14 +398,15 @@ export function FinalizeWeightModal({
     }
 
     if (prevLoadsRef.current !== currentLoads) {
-      // The number of loads has changed — auto-adjust quantities
+      // The number of loads has changed — auto-adjust quantities.
+      // Never auto-scale customer-provided supplies (they remain at ₱0).
       const detMax = getAvailQty(order.detergent);
       const conMax = getAvailQty(order.conditioner);
 
-      if (order.detergent && order.detergent.toLowerCase() !== "none") {
+      if (order.detergent && order.detergent.toLowerCase() !== "none" && !isCustomerProvided(order.detergent)) {
         setDetQty(Math.min(detMax, currentLoads));
       }
-      if (order.conditioner && order.conditioner.toLowerCase() !== "none") {
+      if (order.conditioner && order.conditioner.toLowerCase() !== "none" && !isCustomerProvided(order.conditioner)) {
         setConQty(Math.min(conMax, currentLoads));
       }
 
@@ -616,13 +618,19 @@ export function FinalizeWeightModal({
                           <SelectItem value="PURE_CLOTHES">
                             <div>
                               <p className="font-bold">Pure clothes</p>
-                              <p className="text-[10px] text-slate-400">max 8 kg/load</p>
+                              <p className="text-[10px] text-slate-400">max 8 kg/load (Full 8kg service)</p>
                             </div>
                           </SelectItem>
                           <SelectItem value="WITH_TOWELS">
                             <div>
-                              <p className="font-bold">With towels / beddings</p>
+                              <p className="font-bold">With towels</p>
                               <p className="text-[10px] text-slate-400">max 7 kg/load</p>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="BEDDINGS">
+                            <div>
+                              <p className="font-bold">Beddings</p>
+                              <p className="text-[10px] text-slate-400">always 5 kg/load</p>
                             </div>
                           </SelectItem>
                         </SelectContent>
@@ -751,8 +759,11 @@ export function FinalizeWeightModal({
                       {pricing.numberOfLoads}
                     </p>
                     <p className="text-sm font-bold text-blue-200 mt-2 relative z-10">
-                      {billingKg} kg ÷ {pricing.maxKgPerLoad} kg/load
-                      {isBelowMinimum && <span className="ml-1 text-amber-300">(5 kg min)</span>}
+                      {pricing.isHandwash ? (
+                        `${actualKg} kg (${actualKg <= 3 ? "₱150" : "₱90"}/kg)`
+                      ) : (
+                        `${actualKg} kg ÷ ${pricing.maxKgPerLoad} kg/load`
+                      )}
                     </p>
                     {pricing.madnessFee > 0 && (
                       <Badge className="mt-3 bg-orange-500 hover:bg-orange-500 text-white font-bold relative z-10">
