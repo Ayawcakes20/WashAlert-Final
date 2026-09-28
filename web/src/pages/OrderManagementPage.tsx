@@ -199,6 +199,22 @@ const isEscalated = (order: Order) => {
   return new Date(order.priceConfirmationDeadline).getTime() - Date.now() < 30 * 60 * 1000;
 };
 
+/**
+ * Returns the human-readable label for an order status, taking serviceType
+ * into account so DROP_OFF orders never display delivery-specific text.
+ *
+ * Key mapping:
+ *   DROP_OFF  + DELIVERED → "Picked Up"   (customer collected at branch)
+ *   PICKUP_DELIVERY + DELIVERED → "Delivered" (driver delivered to door)
+ */
+const getStatusDisplayLabel = (
+  status: ApiOrderStatus,
+  serviceType: ApiServiceType = "PICKUP_DELIVERY",
+): string => {
+  if (status === "DELIVERED" && serviceType === "DROP_OFF") return "Picked Up";
+  return statusLabel[status] || status;
+};
+
 const statusBadgeVariant = (status: ApiOrderStatus): "default" | "secondary" | "destructive" | "outline" => {
   if (status === "DELIVERED") return "default";
   if (status === "CANCELLED" || status === "FAILED") return "destructive";
@@ -206,8 +222,12 @@ const statusBadgeVariant = (status: ApiOrderStatus): "default" | "secondary" | "
   return "secondary";
 };
 
-const renderStatusBadge = (status: ApiOrderStatus) => {
-  const label = statusLabel[status] || status;
+/**
+ * Renders the coloured Live Status badge for an order.
+ * Pass serviceType so DROP_OFF orders show "Picked Up" instead of "Delivered".
+ */
+const renderStatusBadge = (status: ApiOrderStatus, serviceType: ApiServiceType = "PICKUP_DELIVERY") => {
+  const label = getStatusDisplayLabel(status, serviceType);
 
   if (status === "WASHING" || status === "DRYING") {
     return (
@@ -263,7 +283,18 @@ const renderStatusBadge = (status: ApiOrderStatus) => {
     );
   }
 
-  if (status === "DELIVERED" || status === "COMPLETED" as any) {
+  // DELIVERED with DROP_OFF = customer picked up at branch (teal/emerald badge, not grey)
+  if (status === "DELIVERED" && serviceType === "DROP_OFF") {
+    return (
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-teal-50 text-teal-700 border border-teal-200 w-fit">
+        <CheckCircle2 className="h-3 w-3" />
+        <span className="text-[10px] font-black uppercase tracking-tight">{label}</span>
+      </div>
+    );
+  }
+
+  // DELIVERED with PICKUP_DELIVERY = actual home delivery completed (grey badge)
+  if (status === "DELIVERED" || (status as string) === "COMPLETED") {
     return (
       <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 text-slate-600 border border-slate-200 w-fit opacity-80">
         <CheckCircle2 className="h-3 w-3" />
@@ -1463,7 +1494,7 @@ export default function OrderManagementPage() {
                     </td>
                     <td className="p-5">
                       <div className="space-y-2.5">
-                        {renderStatusBadge(order.status)}
+                        {renderStatusBadge(order.status, order.serviceType)}
                         <div className={`px-2 py-1 rounded-lg w-fit text-[9px] font-black uppercase tracking-[0.1em] flex items-center gap-2 ${order.isPaid ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-amber-50 text-amber-600 border border-amber-100"
                           }`}>
                           <div className={`h-1.5 w-1.5 rounded-full ${order.isPaid ? "bg-emerald-500 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.5)]" : "bg-amber-400"}`} />
@@ -2351,25 +2382,67 @@ export default function OrderManagementPage() {
                       </Button>
                     </>
                   ) : selectedOrder.status === 'READY' && selectedOrder.serviceType === 'DROP_OFF' ? (
-                    // DROP_OFF: customer collects at branch — no driver, no delivery task
+                    // DROP_OFF: customer collects at branch — no driver, no delivery task.
+                    // Staff can also confirm cash/COD payment at this point.
                     <>
-                      <Button
-                        className="flex-[2] bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl h-14 shadow-lg shadow-emerald-200"
-                        onClick={() => void applyStatusUpdate(selectedOrder)}
-                        disabled={statusUpdatingId === selectedOrder.id}
-                      >
-                        {statusUpdatingId === selectedOrder.id
-                          ? <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                          : <CheckCircle2 className="mr-2 h-5 w-5" />}
-                        Mark as Picked Up
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="flex-1 border-slate-200 text-slate-600 font-black rounded-xl h-14"
-                        onClick={() => setShowReceiptPreview(true)}
-                      >
-                        <Eye className="mr-2 h-4 w-4" /> Receipt
-                      </Button>
+                      {(() => {
+                        const isCash = isCashPaymentMethod(selectedOrder.paymentMethod);
+                        const isGcash = selectedOrder.paymentMethod?.toUpperCase().includes("GCASH");
+                        const needsCodConfirm = isCash && !selectedOrder.isPaid;
+                        const isGcashUnpaid = isGcash && !selectedOrder.isPaid;
+                        const handlePickup = () => {
+                          if (needsCodConfirm) {
+                            if (window.confirm(
+                              `Confirm customer pickup for order ${selectedOrder.trackingNumber}?\n\nDid the customer pay in cash?\n\nClick OK to mark as Picked Up + Payment Collected, or Cancel to mark as Picked Up without payment.`
+                            )) {
+                              void applyStatusUpdate(selectedOrder, true);
+                            } else {
+                              void applyStatusUpdate(selectedOrder, false);
+                            }
+                          } else {
+                            void applyStatusUpdate(selectedOrder);
+                          }
+                        };
+                        return (
+                          <>
+                            <Button
+                              className="flex-[2] bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl h-14 shadow-lg shadow-emerald-200"
+                              onClick={handlePickup}
+                              disabled={statusUpdatingId === selectedOrder.id || (isGcashUnpaid ? true : false)}
+                            >
+                              {statusUpdatingId === selectedOrder.id
+                                ? <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                                : <CheckCircle2 className="mr-2 h-5 w-5" />}
+                              Mark as Picked Up
+                            </Button>
+                            <Button
+                              variant="outline"
+                              className="flex-1 border-slate-200 text-slate-600 font-black rounded-xl h-14"
+                              onClick={() => setShowReceiptPreview(true)}
+                            >
+                              <Eye className="mr-2 h-4 w-4" /> Receipt
+                            </Button>
+                            {isGcashUnpaid && (
+                              <div className="w-full bg-amber-50 border border-amber-200 rounded-lg p-3 text-center flex flex-col items-center gap-2">
+                                <p className="text-[11px] font-bold text-amber-600 uppercase tracking-widest italic">
+                                  GCash payment must be confirmed before marking as picked up.
+                                </p>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 px-3 text-xs font-bold border-amber-300 text-amber-700 hover:bg-amber-100/50"
+                                  onClick={() => void handleManualMarkAsPaid(selectedOrder.id)}
+                                  disabled={markingPaidId === selectedOrder.id}
+                                >
+                                  {markingPaidId === selectedOrder.id
+                                    ? <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                    : "Confirm GCash Payment Manually"}
+                                </Button>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </>
                   ) : ['CANCELLED', 'FAILED'].includes(selectedOrder.status) ? (
                     <div className="w-full bg-red-50 border border-red-200 rounded-lg p-3 text-center">
