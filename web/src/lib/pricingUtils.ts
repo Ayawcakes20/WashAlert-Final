@@ -1,5 +1,5 @@
 // ─── WashAlert Pricing Utilities ──────────────────────────────────────────────
-// Centralized pricing computation used by the Finalize Weight & Receipt screen.
+// Centralized pricing computation used across the WashAlert web application.
 // All monetary values are in Philippine Peso (₱).
 
 // Load types — BEDDINGS forces 5 kg/load regardless of service.
@@ -19,8 +19,10 @@ export interface PricingResult {
   numberOfLoads: number;
   pricePerLoad: number;
   serviceTotal: number;
-  madnessFee: number;
-  madnessKg: number;
+  overloadFee: number;
+  overloadKg: number;
+  madnessFee: number; // alias for backwards compatibility
+  madnessKg: number;  // alias for backwards compatibility
   detPPP: number;
   detQty: number;
   detCost: number;
@@ -36,7 +38,7 @@ export interface PricingResult {
   maxKgPerLoad: number;
   isHandwash: boolean;
   isRush: boolean;
-  baseServiceLimit: number; // The effective kg capacity per load used for calculation
+  baseServiceLimit: number; // The effective kg capacity per load
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -49,8 +51,12 @@ export interface PricingResult {
  *  - Ecowash         → 5 kg/load
  *  - Handwash        → per-kg (return 1 as a sentinel; pricing handled separately)
  *  - Wash Only / Dry Only → 7 kg/load
- *  - Full Service 7kg variant → 7 kg/load
- *  - Full Service 8kg variant:
+ *  - Basic Full Service 7kg variant → 7 kg/load
+ *  - Basic Full Service 8kg variant:
+ *      * Pure Clothes → 8 kg/load
+ *      * With Towels  → 7 kg/load
+ *  - Premium Full Service 7kg variant → 7 kg/load
+ *  - Premium Full Service 8kg variant:
  *      * Pure Clothes → 8 kg/load
  *      * With Towels  → 7 kg/load
  *  - Default Full Service (unspecified kg):
@@ -122,20 +128,24 @@ export const getConditionerPricePerPack = (name?: string): number => {
 /**
  * Compute full order pricing given actual weighed kg and load type.
  *
- * Load-count formula (fixed-capacity services):
- *   numberOfLoads = CEILING(actualKg / baseServiceLimit)
+ * Fixed-Load Services (Wash, Dry, Ecowash, Basic Full, Premium Full):
+ *  - 0 to applicable capacity: 1 full load
+ *  - Above capacity but below 2× capacity: 1 full load + ₱50 per additional 1 kg
+ *  - 2× capacity: 2 full loads
+ *  - Above 2× capacity but below 3× capacity: 2 full loads + ₱50 per additional 1 kg
+ *  - Pattern continues for N full loads.
+ *
+ * Overload Surcharge:
+ *  - ₱50 for each additional 1 kg above completed full load capacity
+ *  - Math.ceil(excessWeight) * ₱50
  *
  * Handwash pricing:
- *   1–3 kg: ₱150/kg
- *   >3 kg:  ₱90/kg
- *   Handwash is per-kilogram and is never charged overload or fixed load pricing.
+ *  - 1–3 kg: ₱150/kg
+ *  - Above 3 kg: ₱90/kg
+ *  - Handwash is strictly per-kilogram and is never charged overload or fixed load pricing.
  *
- * Surcharge / Overload:
- *   totalCapacity = numberOfLoads × baseServiceLimit
- *   madnessKg     = max(0, actualKg − totalCapacity)
- *   madnessFee    = madnessKg × ₱50 (0 when load count scales with weight)
- *
- * Customer-provided supplies are always ₱0.00 regardless of weight or loads.
+ * Customer-Provided Supplies:
+ *  - Always ₱0.00 regardless of weight or load count.
  */
 export const computeOrderPricing = (
   order: OrderForPricing,
@@ -151,16 +161,17 @@ export const computeOrderPricing = (
   let numberOfLoads = 1;
   let pricePerLoad = 0;
   let serviceTotal = 0;
+  let overloadKg = 0;
+  let overloadFee = 0;
 
   if (isHandwash) {
     // Handwash: strictly per-kg (1-3 kg = ₱150/kg, >3 kg = ₱90/kg)
     pricePerLoad = actualKg <= 3 ? 150 : 90;
     serviceTotal = Math.round(pricePerLoad * actualKg * 100) / 100;
     numberOfLoads = 1;
+    overloadKg = 0;
+    overloadFee = 0;
   } else {
-    // Fixed capacity services: numberOfLoads = CEILING(actualKg / baseServiceLimit)
-    numberOfLoads = actualKg <= 0 ? 1 : Math.ceil(actualKg / baseServiceLimit);
-
     // Determine base rate per load based on service and variant:
     if (name.includes('ecowash')) {
       pricePerLoad = 220; // Ecowash Full Service (5 kg/load)
@@ -197,16 +208,18 @@ export const computeOrderPricing = (
       }
     }
 
-    serviceTotal = pricePerLoad * numberOfLoads;
-  }
+    // Number of full loads: 1 load minimum, reaches next load when weight completes the next capacity
+    // 0–8 kg = 1 load, 8.1–15.9 kg = 1 load + overload, 16.0 kg = 2 loads, etc.
+    const fullLoads = actualKg <= 0 ? 1 : Math.max(1, Math.floor(actualKg / baseServiceLimit));
+    const completedCapacity = fullLoads * baseServiceLimit;
+    const excessWeight = Math.max(0, actualKg - completedCapacity);
 
-  // Madness / overload surcharge (₱50/kg over total capacity; Handwash excluded)
-  let madnessKg = 0;
-  let madnessFee = 0;
-  if (!isHandwash) {
-    const totalBaseCapacity = numberOfLoads * baseServiceLimit;
-    madnessKg = Math.max(0, actualKg - totalBaseCapacity);
-    madnessFee = Math.round(madnessKg * 50);
+    // ₱50 for each additional 1 kg above completed load capacity
+    overloadKg = Math.ceil(excessWeight);
+    overloadFee = overloadKg * 50;
+
+    numberOfLoads = fullLoads;
+    serviceTotal = pricePerLoad * fullLoads;
   }
 
   // Detergent — customer-provided is always ₱0
@@ -231,7 +244,7 @@ export const computeOrderPricing = (
 
   const grandTotal =
     serviceTotal +
-    madnessFee +
+    overloadFee +
     detCost +
     conCost +
     rushFee +
@@ -244,8 +257,10 @@ export const computeOrderPricing = (
     numberOfLoads,
     pricePerLoad,
     serviceTotal,
-    madnessFee,
-    madnessKg,
+    overloadFee,
+    overloadKg,
+    madnessFee: overloadFee, // alias
+    madnessKg: overloadKg,   // alias
     detPPP,
     detQty,
     detCost,

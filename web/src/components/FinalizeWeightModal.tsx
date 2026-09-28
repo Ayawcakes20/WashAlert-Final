@@ -141,12 +141,12 @@ function ReceiptPreview({ order, actualKg, loadType, pricing: p, deliveryFee, ma
               sub={`₱${p.pricePerLoad} × ${p.isHandwash ? `${actualKg} kg` : `${p.numberOfLoads} load${p.numberOfLoads !== 1 ? "s" : ""}`}`}
               amount={p.serviceTotal}
             />
-            {p.madnessFee > 0 && (
+            {p.overloadFee > 0 && (
               <ReceiptLineItem
-                label="Madness surcharge"
-                sub={`(${actualKg}kg - ${p.numberOfLoads * p.baseServiceLimit}kg capacity) × ₱50`}
-                amount={p.madnessFee}
-                className="text-orange-700"
+                label="Overload / Additional charge"
+                sub={`(${actualKg} kg − ${p.numberOfLoads * p.baseServiceLimit} kg capacity: ${p.overloadKg} kg excess × ₱50)`}
+                amount={p.overloadFee}
+                className="text-orange-700 font-bold"
               />
             )}
             {p.detCost > 0 && (
@@ -765,9 +765,9 @@ export function FinalizeWeightModal({
                         `${actualKg} kg ÷ ${pricing.maxKgPerLoad} kg/load`
                       )}
                     </p>
-                    {pricing.madnessFee > 0 && (
+                    {pricing.overloadFee > 0 && (
                       <Badge className="mt-3 bg-orange-500 hover:bg-orange-500 text-white font-bold relative z-10">
-                        +{pricing.madnessKg.toFixed(1)} kg madness surcharge
+                        +{pricing.overloadKg} kg excess (+₱{pricing.overloadFee} overload)
                       </Badge>
                     )}
                   </motion.div>
@@ -825,13 +825,13 @@ export function FinalizeWeightModal({
                             amount={pricing.serviceTotal}
                           />
 
-                          {/* Madness */}
-                          {pricing.madnessFee > 0 && (
+                          {/* Overload / Additional charge */}
+                          {pricing.overloadFee > 0 && (
                             <BreakdownRow
-                              label="Madness surcharge"
-                              sub={`(${actualKg}kg - ${pricing.numberOfLoads * pricing.baseServiceLimit}kg capacity) × ₱50`}
-                              amount={pricing.madnessFee}
-                              className="text-orange-600"
+                              label="Overload / Additional charge"
+                              sub={`(${actualKg} kg − ${pricing.numberOfLoads * pricing.baseServiceLimit} kg capacity: ${pricing.overloadKg} kg excess × ₱50)`}
+                              amount={pricing.overloadFee}
+                              className="text-orange-600 font-semibold"
                             />
                           )}
 
@@ -1011,6 +1011,7 @@ export function FinalizeWeightModal({
                         rushPrice: order.rushPrice,
                         deliveryPrice: deliveryFee,
                         servicePrice: pricing.serviceTotal,
+                        extraWeightCost: pricing.overloadFee,
                         systemFee: pricing.convenienceFee,
                         finalPrice: pricing.grandTotal,
                         paymentMethod: order.paymentMethod,

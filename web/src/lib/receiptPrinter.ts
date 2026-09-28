@@ -131,8 +131,28 @@ function buildReceiptHtml(order: ReceiptOrder, autoPrint = true): { html: string
   const conPPP = getConditionerPricePerPack(order.conditioner);
   const conCost = conPPP * (order.conditionerQuantity || 1);
 
+  const actualKg = order.actualWeightKg ?? 0;
+  const lt: LoadType = (order.laundryType?.toUpperCase() === "BEDDINGS" || order.loadSize?.toUpperCase() === "BEDDINGS")
+    ? "BEDDINGS"
+    : (order.loadSize?.toUpperCase() === "WITH_TOWELS" || order.loadSize?.toLowerCase().includes("towel"))
+    ? "WITH_TOWELS"
+    : "PURE_CLOTHES";
+  const serviceLimit = getBaseServiceLimit(order.serviceName ?? "", lt);
+  const isHandwash = (order.serviceName ?? "").toLowerCase().includes("handwash");
+
+  let computedOverload = 0;
+  let excessKg = 0;
+  if (!isHandwash && actualKg > 0 && serviceLimit > 1) {
+    const fullLoads = Math.max(1, Math.floor(actualKg / serviceLimit));
+    const excess = Math.max(0, actualKg - fullLoads * serviceLimit);
+    excessKg = Math.ceil(excess);
+    computedOverload = excessKg * 50;
+  }
+
   const serviceBase = order.servicePrice ?? 0;
-  const extraWeight = order.extraWeightCost ?? 0;
+  const extraWeight = (order.extraWeightCost !== undefined && order.extraWeightCost > 0)
+    ? order.extraWeightCost
+    : computedOverload;
   const rush = order.rushPrice ?? 0;
   const delivery = order.deliveryPrice ?? 0;
   const subtotal = serviceBase + extraWeight + rush + detCost + conCost + delivery;
@@ -359,7 +379,7 @@ function buildReceiptHtml(order: ReceiptOrder, autoPrint = true): { html: string
   <table class="charge-table">
     <tbody>
       ${serviceBase > 0 ? chargeRow(esc(order.serviceName || "Service Fee"), serviceBase) : ""}
-      ${extraWeight > 0 ? chargeRow("Extra Weight Surcharge", extraWeight) : ""}
+      ${extraWeight > 0 ? chargeRow(`Overload / Additional Weight (${excessKg > 0 ? `${excessKg}kg` : "excess"} &times; ₱50)`, extraWeight) : ""}
       ${rush > 0 ? chargeRow("Rush Service Fee", rush) : ""}
       ${
         detCost > 0

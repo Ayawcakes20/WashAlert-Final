@@ -2667,33 +2667,43 @@ export default function OrderManagementPage() {
               const o = selectedOrder;
               const actualKg = o.actualWeightKg ?? 0;
               const serviceBase = o.servicePrice ?? 0;
-              const extraWeight = o.extraWeightCost ?? 0;
               const rush = o.rushPrice ?? 0;
               const detPPP = getDetergentPricePerPack(o.detergent);
               const detCost = detPPP * (o.detergentQuantity || 1);
               const conPPP = getConditionerPricePerPack(o.conditioner);
               const conCost = conPPP * (o.conditionerQuantity || 1);
               const delivery = o.deliveryPrice ?? 0;
+
+              const nm = (o.serviceName ?? "").toLowerCase();
+              const lt: LoadType = (o.laundryType?.toUpperCase() === 'BEDDINGS' || o.loadSize?.toUpperCase() === 'BEDDINGS')
+                ? 'BEDDINGS'
+                : (o.loadSize?.toUpperCase() === 'WITH_TOWELS' || o.loadSize?.toLowerCase().includes('towel'))
+                ? 'WITH_TOWELS'
+                : 'PURE_CLOTHES';
+              const limit = getBaseServiceLimit(nm, lt);
+              const isHw = nm.includes("handwash");
+
+              let loadsText = "N/A";
+              let computedOverload = 0;
+              let excessKg = 0;
+              if (actualKg > 0) {
+                if (isHw) {
+                  loadsText = "1 load (by kg)";
+                } else {
+                  const fullLoads = Math.max(1, Math.floor(actualKg / limit));
+                  const excess = Math.max(0, actualKg - fullLoads * limit);
+                  excessKg = Math.ceil(excess);
+                  computedOverload = excessKg * 50;
+                  loadsText = `${fullLoads} load${fullLoads !== 1 ? "s" : ""}`;
+                }
+              }
+
+              const extraWeight = (o.extraWeightCost !== undefined && o.extraWeightCost > 0)
+                ? o.extraWeightCost
+                : computedOverload;
               const subtotal = serviceBase + extraWeight + rush + detCost + conCost + delivery;
               const sysFee = o.systemFee ?? Math.round(subtotal * 0.02 * 100) / 100;
               const total = o.finalPrice ?? o.totalPrice ?? (subtotal + sysFee);
-
-              const nm = (o.serviceName ?? "").toLowerCase();
-              let loadsText = "N/A";
-              if (actualKg > 0) {
-                if (nm.includes("handwash")) {
-                  loadsText = "1 load (by kg)";
-                } else {
-                  const lt: LoadType = (o.laundryType?.toUpperCase() === 'BEDDINGS' || o.loadSize?.toUpperCase() === 'BEDDINGS')
-                    ? 'BEDDINGS'
-                    : (o.loadSize?.toUpperCase() === 'WITH_TOWELS' || o.loadSize?.toLowerCase().includes('towel'))
-                    ? 'WITH_TOWELS'
-                    : 'PURE_CLOTHES';
-                  const limit = getBaseServiceLimit(nm, lt);
-                  const loads = Math.ceil(actualKg / limit);
-                  loadsText = `${loads} load${loads !== 1 ? "s" : ""}`;
-                }
-              }
 
               const infoRow = (label: string, value: string) => (
                 <div key={label} className="flex justify-between py-0.5">
@@ -2748,7 +2758,7 @@ export default function OrderManagementPage() {
                   <div className="border-t border-dashed border-slate-200 pt-2 space-y-0.5">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Charges</p>
                     {serviceBase > 0 && amtRow(o.serviceName || "Service Fee", serviceBase)}
-                    {extraWeight > 0 && amtRow(`Extra Weight${actualKg > 8 ? ` (${(actualKg - 8).toFixed(1)} kg × ₱50)` : ""}`, extraWeight)}
+                    {extraWeight > 0 && amtRow(`Overload / Additional Weight (${excessKg > 0 ? `${excessKg}kg` : "excess"} × ₱50)`, extraWeight)}
                     {rush > 0 && amtRow("⚡ Rush Fee", rush)}
                     {detCost > 0 && amtRow(`${o.detergent} Detergent ×${o.detergentQuantity || 1}`, detCost)}
                     {conCost > 0 && amtRow(`${o.conditioner} Conditioner ×${o.conditionerQuantity || 1}`, conCost)}
@@ -2779,7 +2789,11 @@ export default function OrderManagementPage() {
               <Button
                 variant="outline"
                 className="flex-1 font-bold"
-                onClick={() => printOrderReceipt({ ...selectedOrder, loadSize: selectedOrder.loadSize ?? undefined, laundryType: selectedOrder.laundryType ?? undefined })}
+                onClick={() => printOrderReceipt({
+                  ...selectedOrder,
+                  loadSize: selectedOrder.loadSize ?? undefined,
+                  laundryType: selectedOrder.laundryType ?? undefined
+                })}
               >
                 <Printer className="h-4 w-4 mr-2" /> Print Receipt
               </Button>
