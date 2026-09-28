@@ -105,7 +105,14 @@ const App = () => (
             />
             <Route path="/delivery" element={<DeliveryManagementPage />} />
             <Route path="/inventory" element={<InventoryPage />} />
-            <Route path="/analytics" element={<AnalyticsPage />} />
+            <Route
+              path="/analytics"
+              element={
+                <RequireRole roles={["ADMIN"]}>
+                  <AnalyticsPage />
+                </RequireRole>
+              }
+            />
             <Route path="/chat-support" element={<AIChatSupportPage />} />
             <Route path="/support-tickets" element={<SupportTicketsPage />} />
             <Route path="/announcements" element={<AnnouncementsPage />} />
