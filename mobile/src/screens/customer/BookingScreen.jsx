@@ -17,9 +17,11 @@ const SERVICE_MODES = [
   { id: 'PICK_UP',   label: 'Pick Up',   hint: 'Drop off your laundry at our branch and pick it up when done', icon: 'store-outline', backendServiceType: 'DROP_OFF',        needsAddress: false },
 ];
 const DET_OPTS = [
-  { id: 'none',  label: 'Customer Provided',           price: 0  },
-  { id: 'surf',  label: 'Surf (Basic Det.)',            price: 25 },
-  { id: 'ariel', label: 'Ariel (Premium Det.)',         price: 30 },
+  { id: 'none',         label: 'Customer Provided',              price: 0  },
+  { id: 'surf',         label: 'Surf (Basic Det.)',               price: 25 },
+  { id: 'ariel',        label: 'Ariel (Premium Det.)',            price: 30 },
+  { id: 'breeze_baby',  label: 'Breeze Baby (Hypoallergenic)',    price: 35 },
+  { id: 'unilove',      label: 'UniLove Baby (Hypoallergenic)',   price: 35 },
 ];
 const FAB_OPTS = [
   { id: 'none',  label: 'Customer Provided',           price: 0  },
@@ -112,7 +114,7 @@ export default function BookingScreen({ route, navigation }) {
   const [fabSource, setFabSource] = useState(null); // 'customer' | 'shop' | null
   // Per-addon qty map — initialised to 0 so unselected items display 0 until the
   // customer explicitly selects or taps +. Switches between items do not cross-copy.
-  const [detQtyMap, setDetQtyMap] = useState({ surf: 0, ariel: 0 });
+  const [detQtyMap, setDetQtyMap] = useState({ surf: 0, ariel: 0, breeze_baby: 0, unilove: 0 });
   const [fabQtyMap, setFabQtyMap] = useState({ charm: 0, downy: 0 });
   // Supply availability fetched when entering step 4. null = not yet loaded.
   const [supplyAvail, setSupplyAvail] = useState(null);
@@ -1329,7 +1331,7 @@ export default function BookingScreen({ route, navigation }) {
                 <View style={{ flex: 1 }}>
                   <Text style={S.policyItemTitle}>Unclaimed Laundry</Text>
                   <Text style={S.policyItemBody}>
-                    Laundry that remains unclaimed for 15 days may be charged at double the applicable amount or may be subject to forfeiture and disposal by Triplets to recover expenses.
+                    Laundry that remains unclaimed within 15 days after completion shall be subject to a storage fee of ₱25.00 per day. If the laundry remains unclaimed within 30 days, it shall be subject to disposal and shall be in favor of Triplets Laundry Hubs to auction, sell, or dispose of in any manner deemed appropriate.
                   </Text>
                 </View>
               </View>

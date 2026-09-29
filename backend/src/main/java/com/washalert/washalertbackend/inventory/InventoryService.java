@@ -68,6 +68,8 @@ public class InventoryService {
     private static final java.util.Map<String, String> CANONICAL_ITEM_NAMES = new java.util.LinkedHashMap<>() {{
         put("surf", "Surf Detergent");
         put("ariel", "Ariel Detergent");
+        put("breeze_baby", "Breeze Baby Detergent");
+        put("unilove", "UniLove Baby Detergent");
         put("charm", "Charm Fabric Conditioner");
         put("downy", "Downy Fabric Conditioner");
     }};

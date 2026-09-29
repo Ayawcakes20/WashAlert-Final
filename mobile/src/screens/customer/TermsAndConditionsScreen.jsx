@@ -52,8 +52,14 @@ const TermsAndConditionsScreen = () => {
             Users are responsible for account security and should not share credentials. Suspicious account activity should be reported promptly.
           </Text>
         </View>
+        <View style={styles.section}>
+          <Text style={styles.title}>6. Unclaimed Laundry</Text>
+          <Text style={styles.body}>
+            Laundry that remains unclaimed within 15 days after completion shall be subject to a storage fee of ₱25.00 per day. If the laundry remains unclaimed within 30 days, it shall be subject to disposal and shall be in favor of Triplets Laundry Hubs to auction, sell, or dispose of in any manner deemed appropriate.
+          </Text>
+        </View>
 
-        <Text style={styles.footer}>Last updated: April 13, 2026</Text>
+        <Text style={styles.footer}>Last updated: September 29, 2026</Text>
       </ScrollView>
       <ScrollCue visible={scrollCue.showCue} />
     </SafeAreaView>

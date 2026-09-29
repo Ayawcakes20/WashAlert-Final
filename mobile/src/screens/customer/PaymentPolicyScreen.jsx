@@ -99,7 +99,7 @@ const PaymentPolicyScreen = () => {
         <View style={styles.section}>
           <Text style={styles.title}>7. Unclaimed Laundry</Text>
           <Text style={styles.body}>
-            Laundry that remains unclaimed for 15 days may be charged at double the applicable amount or may be subject to forfeiture and disposal by Triplets to recover expenses.
+            Laundry that remains unclaimed within 15 days after completion shall be subject to a storage fee of ₱25.00 per day. If the laundry remains unclaimed within 30 days, it shall be subject to disposal and shall be in favor of Triplets Laundry Hubs to auction, sell, or dispose of in any manner deemed appropriate.
           </Text>
         </View>
 

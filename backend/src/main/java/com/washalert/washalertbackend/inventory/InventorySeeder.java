@@ -18,7 +18,8 @@ public class InventorySeeder {
     private static final String BRANCH = "Triplets - Makati";
 
     private static final Set<String> VALID_CONSUMABLE_NAMES = Set.of(
-            "Surf Detergent", "Ariel Detergent", "Charm Fabric Conditioner", "Downy Fabric Conditioner"
+            "Surf Detergent", "Ariel Detergent", "Breeze Baby Detergent", "UniLove Baby Detergent",
+            "Charm Fabric Conditioner", "Downy Fabric Conditioner"
     );
     private static final Set<String> VALID_ASSET_CATEGORIES = Set.of(
             "Washing Machine", "Dryer", "Aircon", "Electric Fan"
@@ -57,10 +58,14 @@ public class InventorySeeder {
         LocalDate today = LocalDate.now();
 
         List<SeedItem> items = List.of(
-            // Consumables — the 4 real items used in orders
+            // Consumables — the 6 real items used in orders
             new SeedItem("Surf Detergent",           "Detergent",          "packs",  new BigDecimal("50"), new BigDecimal("10"),
                 "Consumable", null, null, null, null),
             new SeedItem("Ariel Detergent",          "Detergent",          "packs",  new BigDecimal("40"), new BigDecimal("10"),
+                "Consumable", null, null, null, null),
+            new SeedItem("Breeze Baby Detergent",    "Detergent",          "packs",  new BigDecimal("30"), new BigDecimal("10"),
+                "Consumable", null, null, null, null),
+            new SeedItem("UniLove Baby Detergent",   "Detergent",          "packs",  new BigDecimal("30"), new BigDecimal("10"),
                 "Consumable", null, null, null, null),
             new SeedItem("Charm Fabric Conditioner", "Fabric Conditioner", "packs",  new BigDecimal("40"), new BigDecimal("10"),
                 "Consumable", null, null, null, null),

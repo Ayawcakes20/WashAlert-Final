@@ -110,8 +110,9 @@ const LAUNDRY_SERVICES = [
       'Folding',
       'Detergent — 1 pack (optional add-on)',
       'Fabric conditioner — not recommended for delicates',
+      'Baby-safe detergent available (Breeze Baby / UniLove)',
     ],
-    note: 'Recommended for lingerie, silk, linen, and other delicates.',
+    note: 'Recommended for lingerie, silk, linen, baby clothes, and other delicates.',
   },
 ];
 
