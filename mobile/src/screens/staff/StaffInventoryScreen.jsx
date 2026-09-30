@@ -302,7 +302,7 @@ const calcDaysRemaining = (stock, avgDailyUsage) => {
 
 const getStatus = (currentStock, reorderLevel, stockAfter7) => {
   if (currentStock <= reorderLevel || stockAfter7 < 0) return 'Critical';
-  if (currentStock <= reorderLevel * 1.5) return 'Low Stock';
+  if (currentStock <= 20 || currentStock <= reorderLevel * 1.5) return 'Low Stock';
   return 'Healthy';
 };
 
