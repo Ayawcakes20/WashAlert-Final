@@ -77,16 +77,16 @@ public class InventoryScheduler {
                 boolean lowStock;
 
                 // 5. Calculate projectedDaysRemaining
-                double currentQty = (item.getCurrentStock() != null) ? item.getCurrentStock().doubleValue() : 0.0;
                 if (weeklyAverage <= 0) {
                     // Edge case: item never ordered in past 28 days
                     projectedDays = 999;
-                    lowStock = currentQty <= 20.0;
+                    lowStock = false;
                 } else {
+                    double currentQty = (item.getCurrentStock() != null) ? item.getCurrentStock().doubleValue() : 0.0;
                     projectedDays = (int) Math.round((currentQty / weeklyAverage) * 7);
                     
-                    // 6. Set warning flag if 7 days or less remaining or stock is 20 or below (20-1)
-                    lowStock = projectedDays <= 7 || currentQty <= 20.0;
+                    // 6. Set warning flag if 7 days or less remaining
+                    lowStock = projectedDays <= 7;
                 }
 
                 // 7. Save updated projections back to database

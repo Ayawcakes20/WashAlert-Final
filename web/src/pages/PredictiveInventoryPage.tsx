@@ -190,12 +190,9 @@ function calcDaysUntilService(
   return Math.floor((next.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
 }
 
-function getStatus(daysRemaining: number | null, hasUsage: boolean, currentStock: number = 0): "Healthy" | "Low" | "Critical" | "No Data" {
-  if (currentStock <= 0) return "Critical";
-  if (hasUsage && daysRemaining !== null && daysRemaining <= 7) return "Critical";
-  // Predictive low stock alert when items are down to 20-1
-  if (currentStock >= 1 && currentStock <= 20) return "Low";
+function getStatus(daysRemaining: number | null, hasUsage: boolean): "Healthy" | "Low" | "Critical" | "No Data" {
   if (!hasUsage || daysRemaining === null) return "No Data";
+  if (daysRemaining <= 7) return "Critical";
   if (daysRemaining <= 14) return "Low";
   return "Healthy";
 }
@@ -402,7 +399,8 @@ function mapInventoryRecord(
   // Use the unit stored in the record (respects what was saved); fall back to canonical or a safe default.
   const unit = record.unit || (canonical?.unit ?? (isAsset ? "units" : "packs"));
   const daysRemaining = isAsset ? null : calcDaysRemaining(Number(record.currentStock || 0), dailyUsage);
-  const status = isAsset ? "Healthy" : getStatus(daysRemaining, hasUsage, Number(record.currentStock || 0));
+  const hasUsage = !isAsset && (itemForecast?.usage ?? 0) >= 0.001;
+  const status = isAsset ? "Healthy" : getStatus(daysRemaining, hasUsage);
   const daysUntilService = calcDaysUntilService(record.lastServicedDate, record.maintenanceIntervalDays);
   return {
     id: record.id,
@@ -1202,24 +1200,19 @@ export default function PredictiveInventoryPage() {
       {!loading && !bannerDismissed && (() => {
         const activePool = (isAdmin && selectedTab === "All") ? allConsumables : consumableItems;
         const criticalItems = activePool.filter((i) => i.status === "Critical");
-        const lowItems = activePool.filter((i) => i.status === "Low");
-        if (criticalItems.length === 0 && lowItems.length === 0) return null;
+        if (criticalItems.length === 0) return null;
 
         const outOfStockCount = criticalItems.filter((i) => i.currentStock === 0).length;
-        const criticalRunoutCount = criticalItems.length - outOfStockCount;
-        const lowStockCount = lowItems.length;
+        const lowStockCount = criticalItems.length - outOfStockCount;
         const parts: string[] = [];
         if (outOfStockCount > 0) {
           parts.push(`${outOfStockCount} supply item${outOfStockCount > 1 ? "s" : ""} ${outOfStockCount === 1 ? "is" : "are"} out of stock and need${outOfStockCount === 1 ? "s" : ""} immediate restocking`);
         }
-        if (criticalRunoutCount > 0) {
-          parts.push(`${criticalRunoutCount} supply item${criticalRunoutCount > 1 ? "s" : ""} ${criticalRunoutCount === 1 ? "is" : "are"} expected to run out within 7 days`);
-        }
         if (lowStockCount > 0) {
-          parts.push(`${lowStockCount} supply item${lowStockCount > 1 ? "s" : ""} reaching low stock (20 or fewer remaining)`);
+          parts.push(`${lowStockCount} supply item${lowStockCount > 1 ? "s" : ""} ${lowStockCount === 1 ? "is" : "are"} expected to run out within 7 days`);
         }
         const bannerText = parts.join(" · ");
-        const isOutOfStock = outOfStockCount > 0 && criticalRunoutCount === 0 && lowStockCount === 0;
+        const isOutOfStock = outOfStockCount > 0 && lowStockCount === 0;
         return (
           <div className={`rounded-2xl border p-4 flex items-start justify-between gap-3 ${isOutOfStock ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"
             }`}>
@@ -1655,7 +1648,7 @@ export default function PredictiveInventoryPage() {
             <div className="px-6 py-3 border-b border-border/20 bg-muted/10 flex flex-wrap gap-x-6 gap-y-2 text-sm">
               <span className="font-semibold text-muted-foreground">Status:</span>
               <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-red-500" /> Critical = ≤7 days stock remaining</span>
-              <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-amber-500" /> Low = 1–20 items left or 8–14 days remaining</span>
+              <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-amber-500" /> Low = 8–14 days remaining</span>
               <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-emerald-500" /> Healthy = &gt;14 days remaining</span>
               <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-slate-400" /> No Data = no order history yet</span>
             </div>

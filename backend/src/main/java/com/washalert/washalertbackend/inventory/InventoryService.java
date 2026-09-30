@@ -708,24 +708,15 @@ public class InventoryService {
             BigDecimal reorderLevel, BigDecimal dailyUsage,
             BigDecimal daysUntilStockout, int horizonDays) {
         if (dailyUsage == null || dailyUsage.compareTo(BigDecimal.ZERO) == 0) {
-            if (currentStock != null && currentStock.compareTo(LOW_STOCK_THRESHOLD) <= 0) {
-                return itemName + " at " + branch + " has low stock (" + currentStock.stripTrailingZeros().toPlainString() + " remaining). Restock recommended.";
-            }
             return itemName + " at " + branch + " shows no recent usage. No restock action needed.";
         }
         if (daysUntilStockout == null) {
-            if (currentStock != null && currentStock.compareTo(LOW_STOCK_THRESHOLD) <= 0) {
-                return itemName + " at " + branch + " has low stock (" + currentStock.stripTrailingZeros().toPlainString() + " remaining). Restock recommended.";
-            }
             return itemName + " at " + branch + " has sufficient stock for the foreseeable future.";
         }
         int daysLeft = daysUntilStockout.intValue();
-        boolean isLowOrReorder = (currentStock != null && currentStock.compareTo(LOW_STOCK_THRESHOLD) <= 0)
-                || (currentStock != null && reorderLevel != null && currentStock.compareTo(reorderLevel) <= 0);
-        if (isLowOrReorder) {
-            BigDecimal effectiveThreshold = (reorderLevel != null && reorderLevel.compareTo(LOW_STOCK_THRESHOLD) > 0) ? reorderLevel : LOW_STOCK_THRESHOLD;
-            long restockQty = Math.max(10, effectiveThreshold.multiply(new BigDecimal("2")).longValue() - currentStock.longValue());
-            return itemName + " at " + branch + " has reached low stock (" + currentStock.stripTrailingZeros().toPlainString() + " remaining). " +
+        if (currentStock != null && reorderLevel != null && currentStock.compareTo(reorderLevel) <= 0) {
+            long restockQty = Math.max(10, reorderLevel.multiply(new BigDecimal("2")).longValue() - currentStock.longValue());
+            return itemName + " at " + branch + " has ALREADY reached the reorder level (" + currentStock.stripTrailingZeros().toPlainString() + " remaining). " +
                    "Recommended immediate restock: " + restockQty + " units.";
         }
         if (daysLeft <= horizonDays) {
@@ -939,7 +930,7 @@ public class InventoryService {
                 item.getUnit(),
                 item.getCurrentStock(),
                 item.getReorderLevel(),
-                isLowStock(item),
+                item.getCurrentStock().compareTo(item.getReorderLevel()) <= 0,
                 item.getProjectedDaysRemaining(),
                 item.isLowStockWarning(),
                 item.getUpdatedAt(),
@@ -976,21 +967,11 @@ public class InventoryService {
         return BranchNames.matches(a, b);
     }
 
-    private static final BigDecimal LOW_STOCK_THRESHOLD = new BigDecimal("20");
-
     private boolean isLowStock(InventoryItem item) {
-        if (item == null || item.getCurrentStock() == null) {
-            return false;
-        }
-        boolean isAsset = "Asset".equalsIgnoreCase(item.getAssetType());
-        if (isAsset) {
-            return item.getReorderLevel() != null
-                    && item.getCurrentStock().compareTo(item.getReorderLevel()) <= 0;
-        }
-        boolean belowThreshold = item.getCurrentStock().compareTo(LOW_STOCK_THRESHOLD) <= 0;
-        boolean belowReorder = item.getReorderLevel() != null
+        return item != null
+                && item.getCurrentStock() != null
+                && item.getReorderLevel() != null
                 && item.getCurrentStock().compareTo(item.getReorderLevel()) <= 0;
-        return belowThreshold || belowReorder;
     }
 
     private void maybeNotifyLowStockCrossed(
