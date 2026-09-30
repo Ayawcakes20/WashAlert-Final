@@ -958,6 +958,8 @@ export const createOrder = async (orderData) => {
     preferredSlotStartTime,
     detergentPreference: orderData.detergent || 'None',
     fabricConditionerPreference: orderData.conditioner || 'None',
+    detergentQuantity: Number(orderData.detergentQuantity ?? 0),
+    conditionerQuantity: Number(orderData.conditionerQuantity ?? 0),
     loadSize: orderData.loadSize || getLoadSize(Number(orderData.loadKg || 0)),
     estimatedWeightKg: Number(orderData.loadKg || (orderData.loadSize === 'LARGE' ? 8 : 5)),
     containsBulkyItems: Boolean(orderData.containsBulkyItems),
