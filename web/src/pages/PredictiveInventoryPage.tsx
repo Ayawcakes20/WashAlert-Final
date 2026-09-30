@@ -42,8 +42,7 @@ import {
   Bar,
   Legend,
 } from "recharts";
-import { inventoryApi, branchesApi, isNetworkError, type InventoryRecord, type BookingPipelineRecord, type OperationsKpiRecord, type DailyOrderVolumeRecord } from "@/lib/api";
-import { ConnectivityErrorState } from "@/components/ConnectivityErrorState";
+import { inventoryApi, branchesApi, type InventoryRecord, type BookingPipelineRecord, type OperationsKpiRecord, type DailyOrderVolumeRecord } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,50 +87,54 @@ type DailyStatsRecord = {
 // ── Catalog ───────────────────────────────────────────────────────────────────
 
 const CONSUMABLE_CATALOG = [
-  { name: "Surf Detergent",           category: "Detergent",          unit: "sachets" },
-  { name: "Ariel Detergent",          category: "Detergent",          unit: "sachets" },
-  { name: "Charm Fabric Conditioner", category: "Fabric Conditioner", unit: "sachets" },
-  { name: "Downy Fabric Conditioner", category: "Fabric Conditioner", unit: "sachets" },
-] as const;
+  { name: "Surf Detergent",           category: "Detergent",          unit: "packs" },
+  { name: "Ariel Detergent",          category: "Detergent",          unit: "packs" },
+  { name: "Breeze Baby Detergent",    category: "Detergent",          unit: "packs" },
+  { name: "UniLove Baby Detergent",   category: "Detergent",          unit: "packs" },
+  { name: "Charm Fabric Conditioner", category: "Fabric Conditioner", unit: "packs" },
+  { name: "Downy Fabric Conditioner", category: "Fabric Conditioner", unit: "packs" },
+];
 
 const ASSET_CATALOG = [
-  { name: "LG Washing Machine",        brand: "LG",        category: "Washing Machine", unit: "units" },
-  { name: "Samsung Washing Machine",   brand: "Samsung",   category: "Washing Machine", unit: "units" },
+  { name: "LG Washing Machine", brand: "LG", category: "Washing Machine", unit: "units" },
+  { name: "Samsung Washing Machine", brand: "Samsung", category: "Washing Machine", unit: "units" },
   { name: "Whirlpool Washing Machine", brand: "Whirlpool", category: "Washing Machine", unit: "units" },
-  { name: "Condura Washing Machine",   brand: "Condura",   category: "Washing Machine", unit: "units" },
-  { name: "LG Dryer",                  brand: "LG",        category: "Dryer",           unit: "units" },
-  { name: "Samsung Dryer",             brand: "Samsung",   category: "Dryer",           unit: "units" },
-  { name: "Condura Dryer",             brand: "Condura",   category: "Dryer",           unit: "units" },
-  { name: "Carrier Aircon",            brand: "Carrier",   category: "Aircon",          unit: "units" },
-  { name: "Panasonic Aircon",          brand: "Panasonic", category: "Aircon",          unit: "units" },
-  { name: "Samsung Aircon",            brand: "Samsung",   category: "Aircon",          unit: "units" },
-  { name: "Generic Electric Fan",      brand: "Generic",   category: "Electric Fan",    unit: "units" },
-  { name: "Panasonic Electric Fan",    brand: "Panasonic", category: "Electric Fan",    unit: "units" },
+  { name: "Condura Washing Machine", brand: "Condura", category: "Washing Machine", unit: "units" },
+  { name: "LG Dryer", brand: "LG", category: "Dryer", unit: "units" },
+  { name: "Samsung Dryer", brand: "Samsung", category: "Dryer", unit: "units" },
+  { name: "Condura Dryer", brand: "Condura", category: "Dryer", unit: "units" },
+  { name: "Carrier Aircon", brand: "Carrier", category: "Aircon", unit: "units" },
+  { name: "Panasonic Aircon", brand: "Panasonic", category: "Aircon", unit: "units" },
+  { name: "Samsung Aircon", brand: "Samsung", category: "Aircon", unit: "units" },
+  { name: "Generic Electric Fan", brand: "Generic", category: "Electric Fan", unit: "units" },
+  { name: "Panasonic Electric Fan", brand: "Panasonic", category: "Electric Fan", unit: "units" },
 ] as const;
+
+const CONSUMABLE_CATEGORIES = ["Detergent", "Fabric Conditioner"] as const;
 
 const INVENTORY_CATEGORIES = [
   "Detergent", "Fabric Conditioner",
   "Washing Machine", "Dryer", "Aircon", "Electric Fan",
 ] as const;
 
-const INVENTORY_UNITS = ["sachets", "liters", "kg", "bottles", "pieces", "units"] as const;
+const INVENTORY_UNITS = ["packs", "sachets", "liters", "kg", "bottles", "pieces", "units"] as const;
 const ASSET_STATUSES = ["Active", "Under Maintenance", "Decommissioned"] as const;
 
 const DEFAULT_TABLE_PAGE_SIZE = 10;
 const TABLE_PAGE_SIZES = [10, 25, 50] as const;
 const ATTENTION_DEFAULT_LIMIT = 5;
-const CONSUMABLE_NAMES = [
-  "Surf Detergent",
-  "Ariel Detergent",
-  "Charm Fabric Conditioner",
-  "Downy Fabric Conditioner",
-];
+
+// CONSUMABLE_NAMES is derived from the catalog so new items added to the catalog
+// are automatically included in all charts and stats.
+const CONSUMABLE_NAMES = CONSUMABLE_CATALOG.map((c) => c.name);
 
 const CONSUMABLE_DEFAULTS: Record<string, { category: string; unit: string; reorderLevel: number }> = {
-  "Surf Detergent":           { category: "Detergent",          unit: "sachets", reorderLevel: 2 },
-  "Ariel Detergent":          { category: "Detergent",          unit: "sachets", reorderLevel: 5 },
-  "Charm Fabric Conditioner": { category: "Fabric Conditioner", unit: "sachets", reorderLevel: 1 },
-  "Downy Fabric Conditioner": { category: "Fabric Conditioner", unit: "sachets", reorderLevel: 10 },
+  "Surf Detergent":           { category: "Detergent",          unit: "packs", reorderLevel: 2 },
+  "Ariel Detergent":          { category: "Detergent",          unit: "packs", reorderLevel: 5 },
+  "Breeze Baby Detergent":    { category: "Detergent",          unit: "packs", reorderLevel: 5 },
+  "UniLove Baby Detergent":   { category: "Detergent",          unit: "packs", reorderLevel: 5 },
+  "Charm Fabric Conditioner": { category: "Fabric Conditioner", unit: "packs", reorderLevel: 1 },
+  "Downy Fabric Conditioner": { category: "Fabric Conditioner", unit: "packs", reorderLevel: 10 },
 };
 
 const ASSET_TYPES = ["Washing Machine", "Dryer", "Aircon", "Electric Fan"] as const;
@@ -187,40 +190,10 @@ function calcDaysUntilService(
   return Math.floor((next.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
 }
 
-// ── Absolute stock thresholds ────────────────────────────────────────────────
-// These kick in BEFORE the projected-days formula so that items are never
-// misclassified as "Healthy" or "No Data" simply because usage history is
-// sparse or zero.
-//
-//   ≤  7 units  → Critical  (dangerously low, needs immediate restock)
-//   ≤ 15 units  → Low       (running low, plan restock soon)
-//
-// The reorderLevel safety-net still applies on top: if the configured
-// reorder point is higher than these thresholds it will take precedence.
-const CRITICAL_STOCK_THRESHOLD = 7;
-const LOW_STOCK_THRESHOLD = 15;
-
-function getStatus(
-  daysRemaining: number | null,
-  hasUsage: boolean,
-  currentStock?: number,
-  reorderLevel?: number,
-): "Healthy" | "Low" | "Critical" | "No Data" {
-  const stock = currentStock ?? 0;
-  const reorder = reorderLevel ?? 0;
-
-  // 1. Absolute stock count — fires regardless of usage data
-  if (stock <= CRITICAL_STOCK_THRESHOLD) return "Critical";
-  if (stock <= LOW_STOCK_THRESHOLD) return "Low";
-
-  // 2. Configured reorder level (may be higher than the absolute thresholds)
-  if (reorder > 0 && stock <= reorder) return "Critical";
-
-  // 3. Projected-days formula (requires usage history)
+function getStatus(daysRemaining: number | null, hasUsage: boolean): "Healthy" | "Low" | "Critical" | "No Data" {
   if (!hasUsage || daysRemaining === null) return "No Data";
   if (daysRemaining <= 7) return "Critical";
   if (daysRemaining <= 14) return "Low";
-
   return "Healthy";
 }
 
@@ -418,16 +391,16 @@ function mapInventoryRecord(
   const dailyUsage = itemForecast?.usage ?? 0;
   // Normalize type by item name first (canonical), then fall back to category field
   const canonical = CONSUMABLE_DEFAULTS[record.itemName];
-  const catLower = (canonical?.category ?? record.category ?? "").toLowerCase();
+  // Determine category: prefer canonical defaults, fall back to the record's own category field.
+  const resolvedCategory = canonical?.category ?? record.category ?? "";
+  const catLower = resolvedCategory.toLowerCase();
   const type: InventoryItem["type"] = catLower.includes("conditioner") ? "Fabric Conditioner"
     : catLower.includes("detergent") ? "Detergent" : isAsset ? "Asset" : "Other";
-  // Normalize unit for canonical consumables (prevents "liters" showing for packs items)
-  const unit = (!isAsset && canonical?.unit) ? canonical.unit : (record.unit || (isAsset ? "units" : "sachets"));
+  // Use the unit stored in the record (respects what was saved); fall back to canonical or a safe default.
+  const unit = record.unit || (canonical?.unit ?? (isAsset ? "units" : "packs"));
   const daysRemaining = isAsset ? null : calcDaysRemaining(Number(record.currentStock || 0), dailyUsage);
   const hasUsage = !isAsset && (itemForecast?.usage ?? 0) >= 0.001;
-  const currentStock = Number(record.currentStock || 0);
-  const reorderLevel = Number(record.reorderLevel || 0);
-  const status = isAsset ? "Healthy" : getStatus(daysRemaining, hasUsage, currentStock, reorderLevel);
+  const status = isAsset ? "Healthy" : getStatus(daysRemaining, hasUsage);
   const daysUntilService = calcDaysUntilService(record.lastServicedDate, record.maintenanceIntervalDays);
   return {
     id: record.id,
@@ -437,7 +410,7 @@ function mapInventoryRecord(
     currentStock: Number(record.currentStock || 0),
     reorderLevel: Number(record.reorderLevel || 0),
     unit,
-    category: canonical?.category ?? record.category ?? "General",
+    category: resolvedCategory || "General",
     forecastedUsage: dailyUsage,
     projectedAfter7Days: Math.max(0, Number(record.currentStock || 0) - dailyUsage * 7),
     status,
@@ -470,7 +443,6 @@ export default function PredictiveInventoryPage() {
   const [bookingPipelineData, setBookingPipelineData] = useState<BookingPipelineRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [retrying, setRetrying] = useState(false);
   const [selectedTab, setSelectedTab] = useState("All");
   const [branches, setBranches] = useState<string[]>([]);
   const [dynamicBranches, setDynamicBranches] = useState<string[]>([]);
@@ -514,9 +486,8 @@ export default function PredictiveInventoryPage() {
 
   const [orderedItemIds, setOrderedItemIds] = useState<Set<number>>(new Set());
 
-  const loadInventory = async (isManualRetry = false) => {
+  const loadInventory = async () => {
     try {
-      if (isManualRetry) setRetrying(true);
       setError("");
       const [items, _alerts, forecastResp, pending, stats, activityStats, pipelineData, kpi, volumeData] = await Promise.all([
         inventoryApi.list(),
@@ -556,15 +527,9 @@ export default function PredictiveInventoryPage() {
       });
       setInventory(deduped);
       setBranches(Array.from(new Set(deduped.map((i) => i.branch))).sort());
-      setError("");
     } catch (err: any) {
-      const isNet = isNetworkError(err);
-      const message = isNet
-        ? "Unable to load data. Please check your internet connection and try again."
-        : (err?.message || "Unable to load inventory data.");
-      setError(message);
-    } finally {
-      if (isManualRetry) setRetrying(false);
+      setError(err?.message || "Unable to load inventory data.");
+      setInventory([]);
     }
   };
 
@@ -597,52 +562,54 @@ export default function PredictiveInventoryPage() {
   const allConsumables = useMemo(() => inventory.filter((i) => !i.isAsset), [inventory]);
   const allAssets = useMemo(() => inventory.filter((i) => i.isAsset), [inventory]);
 
-  // Always show exactly 4 canonical supply items sorted by urgency.
-  // Strictly scoped to the currently active branch.
+  // Show ALL consumable items for the current branch, sorted by urgency.
+  // For any catalog item not yet created in the DB, show a placeholder row so staff
+  // know it exists and can create it.
   const canonicalFour = useMemo(() => {
     const statusOrder: Record<string, number> = { Critical: 0, Low: 1, Healthy: 2, "No Data": 3 };
     const currentBranchName = isStaff ? (userBranch || "Your Branch") : selectedTab;
-    return CONSUMABLE_CATALOG.map((cat) => {
-      const found = consumableItems.find((i) => {
-        if (i.product === cat.name) return true;
-        const baseName = cat.name.split(" ")[0].toLowerCase();
-        return i.product.toLowerCase().includes(baseName);
-      });
-      if (found) return found;
-      return {
+
+    // Start with all consumable items already in the inventory for this branch view.
+    const existingItems = [...consumableItems];
+    const existingNames = new Set(existingItems.map((i) => i.product.toLowerCase()));
+
+    // Add placeholders for catalog items that haven't been created yet in the DB.
+    const placeholders = CONSUMABLE_CATALOG
+      .filter((cat) => !existingNames.has(cat.name.toLowerCase()))
+      .map((cat) => ({
         id: `placeholder-${cat.name}-${currentBranchName}`,
         product: cat.name,
         branch: currentBranchName,
         category: cat.category,
-        type: cat.category === "Fabric Conditioner" ? "Fabric Conditioner" : "Detergent",
+        type: (cat.category === "Fabric Conditioner" ? "Fabric Conditioner" : "Detergent") as InventoryItem["type"],
         unit: cat.unit,
         currentStock: 0,
         reorderLevel: CONSUMABLE_DEFAULTS[cat.name]?.reorderLevel ?? 5,
+        forecastedUsage: 0,
+        projectedAfter7Days: 0,
         status: "No Data" as const,
         isAsset: false,
         assetType: "Consumable",
         daysUntilEmpty: null,
         historicalDailyUsage: 0,
-        hasUsage: false,
+        confirmedDemand7D: 0,
         assetStatus: undefined,
         supplierLeadTimeDays: 3,
         maintenanceIntervalDays: null,
         lastServicedDate: null,
         purchaseDate: null,
         daysUntilService: null,
-        assetStatusField: undefined,
-      } as any;
-    }).sort((a, b) => (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3));
+      } as any));
+
+    return [...existingItems, ...placeholders]
+      .sort((a, b) => (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3));
   }, [consumableItems, isStaff, selectedTab, userBranch]);
 
   const summary = useMemo(() => {
-    // Count consumables only — assets always show "Healthy" and inflate the numbers.
-    const consumablePool = filteredInventory.filter((i) => !i.isAsset);
-    const critical = consumablePool.filter((i) => i.status === "Critical").length;
-    const low = consumablePool.filter((i) => i.status === "Low").length;
-    const healthy = consumablePool.filter((i) => i.status === "Healthy").length;
-    const urgent = consumablePool
-      .filter((i) => i.status !== "Healthy" && i.status !== "No Data")
+    const critical = filteredInventory.filter((i) => i.status === "Critical").length;
+    const low = filteredInventory.filter((i) => i.status === "Low").length;
+    const healthy = filteredInventory.filter((i) => i.status === "Healthy").length;
+    const urgent = filteredInventory.filter((i) => i.status !== "Healthy")
       .sort((a, b) => {
         if (a.daysUntilEmpty === null) return 1;
         if (b.daysUntilEmpty === null) return -1;
@@ -676,17 +643,8 @@ export default function PredictiveInventoryPage() {
 
   const reorderSuggestions = useMemo(() => {
     return needsAttention.map((item) => {
-      // Base formula: how many units are needed to bring stock up to a 30-day supply
-      const formulaBased = Math.round(item.historicalDailyUsage * 30 - item.currentStock);
-
-      // Minimum practical reorder floor:
-      // If the item is Critical (especially at 0 stock), never suggest fewer than
-      // 30 units — ordering 3 sachets when you're out is not useful.
-      // If the item is Low, floor at 20 units so the restock is meaningful.
-      const minFloor = item.status === "Critical" ? 30 : 20;
-
-      const recommended = Math.max(minFloor, formulaBased > 0 ? formulaBased : 0);
-      return { ...item, recommended, formulaBased };
+      const recommended = Math.max(0, Math.round(item.historicalDailyUsage * 30 - item.currentStock));
+      return { ...item, recommended };
     });
   }, [needsAttention]);
 
@@ -1087,6 +1045,7 @@ export default function PredictiveInventoryPage() {
       // Always Consumable — assets/equipment are managed in Branch Assets page
       assetType: "Consumable",
       brand: "", purchaseDate: "", lastServicedDate: "", maintenanceIntervalDays: "", assetStatus: "Active",
+      _customMode: false,
     });
     setCreateOpen(true);
   };
@@ -1220,8 +1179,8 @@ export default function PredictiveInventoryPage() {
             {isStaff
               ? `Viewing inventory for ${userBranch || "your branch"}`
               : selectedTab === "All"
-              ? "Actionable restock dashboard for all branches."
-              : `Viewing detailed consumable inventory for ${selectedTab}.`}
+                ? "Actionable restock dashboard for all branches."
+                : `Viewing detailed consumable inventory for ${selectedTab}.`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -1237,61 +1196,33 @@ export default function PredictiveInventoryPage() {
         </div>
       </div>
 
-      {error && inventory.length === 0 ? (
-        <ConnectivityErrorState
-          variant="card"
-          title="Unable to load data"
-          message="Please check your internet connection and try again."
-          onRetry={() => { setLoading(true); void loadInventory(true).finally(() => setLoading(false)); }}
-          retrying={retrying || loading}
-        />
-      ) : (
-        <>
-          {error && (
-            <ConnectivityErrorState
-              variant="banner"
-              title="Unable to load data"
-              message="Please check your internet connection and try again."
-              onRetry={() => { setLoading(true); void loadInventory(true).finally(() => setLoading(false)); }}
-              retrying={retrying || loading}
-              className="mb-4"
-            />
-          )}
-
-          {/* Action Banner — shown for Critical or Low stock items */}
+      {/* Action Banner */}
       {!loading && !bannerDismissed && (() => {
         const activePool = (isAdmin && selectedTab === "All") ? allConsumables : consumableItems;
         const criticalItems = activePool.filter((i) => i.status === "Critical");
-        const lowItems = activePool.filter((i) => i.status === "Low");
-        if (criticalItems.length === 0 && lowItems.length === 0) return null;
+        if (criticalItems.length === 0) return null;
 
         const outOfStockCount = criticalItems.filter((i) => i.currentStock === 0).length;
-        const criticalLowCount = criticalItems.filter((i) => i.currentStock > 0).length;
+        const lowStockCount = criticalItems.length - outOfStockCount;
         const parts: string[] = [];
         if (outOfStockCount > 0) {
           parts.push(`${outOfStockCount} supply item${outOfStockCount > 1 ? "s" : ""} ${outOfStockCount === 1 ? "is" : "are"} out of stock and need${outOfStockCount === 1 ? "s" : ""} immediate restocking`);
         }
-        if (criticalLowCount > 0) {
-          parts.push(`${criticalLowCount} supply item${criticalLowCount > 1 ? "s" : ""} ${criticalLowCount === 1 ? "is" : "are"} critically low (≤7 days remaining)`);
-        }
-        if (lowItems.length > 0) {
-          parts.push(`${lowItems.length} supply item${lowItems.length > 1 ? "s" : ""} ${lowItems.length === 1 ? "is" : "are"} running low (8–14 days remaining)`);
+        if (lowStockCount > 0) {
+          parts.push(`${lowStockCount} supply item${lowStockCount > 1 ? "s" : ""} ${lowStockCount === 1 ? "is" : "are"} expected to run out within 7 days`);
         }
         const bannerText = parts.join(" · ");
-        const isCritical = criticalItems.length > 0;
+        const isOutOfStock = outOfStockCount > 0 && lowStockCount === 0;
         return (
-          <div className={`rounded-2xl border p-4 flex items-start justify-between gap-3 ${
-            isCritical ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"
-          }`}>
-            <div className={`flex items-center gap-2 text-sm font-medium ${
-              isCritical ? "text-red-900" : "text-amber-900"
+          <div className={`rounded-2xl border p-4 flex items-start justify-between gap-3 ${isOutOfStock ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"
             }`}>
-              <AlertTriangle className={`h-4 w-4 shrink-0 ${isCritical ? "text-red-600" : "text-amber-600"}`} />
+            <div className={`flex items-center gap-2 text-sm font-medium ${isOutOfStock ? "text-red-900" : "text-amber-900"
+              }`}>
+              <AlertTriangle className={`h-4 w-4 shrink-0 ${isOutOfStock ? "text-red-600" : "text-amber-600"}`} />
               <span>{bannerText}</span>
             </div>
-            <button onClick={() => setBannerDismissed(true)} className={`shrink-0 transition-colors ${
-              isCritical ? "text-red-700 hover:text-red-900" : "text-amber-700 hover:text-amber-900"
-            }`} aria-label="Dismiss">
+            <button onClick={() => setBannerDismissed(true)} className={`shrink-0 transition-colors ${isOutOfStock ? "text-red-700 hover:text-red-900" : "text-amber-700 hover:text-amber-900"
+              }`} aria-label="Dismiss">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -1302,35 +1233,35 @@ export default function PredictiveInventoryPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {loading
           ? Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="glass-card rounded-2xl p-6 space-y-3">
-                <Skeleton className="h-10 w-10 rounded-xl" />
-                <Skeleton className="h-8 w-20" />
-                <Skeleton className="h-4 w-36" />
-              </div>
-            ))
+            <div key={i} className="glass-card rounded-2xl p-6 space-y-3">
+              <Skeleton className="h-10 w-10 rounded-xl" />
+              <Skeleton className="h-8 w-20" />
+              <Skeleton className="h-4 w-36" />
+            </div>
+          ))
           : (isAdmin && selectedTab === "All"
-              ? [
-                  { label: "Total Branches", value: branches.length || branchOverview.length, icon: Building2, color: "bg-primary/10 text-primary" },
-                  { label: "Critical Items (System-Wide)", value: summary.critical, icon: AlertTriangle, color: "bg-red-100 text-red-700" },
-                  { label: "Low Items (System-Wide)", value: summary.low, icon: CalendarClock, color: "bg-amber-100 text-amber-700" },
-                  { label: "Healthy Items (System-Wide)", value: summary.healthy, icon: TrendingUp, color: "bg-emerald-100 text-emerald-700" },
-                ]
-              : [
-                  { label: "Critical Items", value: summary.critical, icon: AlertTriangle, color: "bg-red-100 text-red-700" },
-                  { label: "Low Items", value: summary.low, icon: CalendarClock, color: "bg-amber-100 text-amber-700" },
-                  { label: "Healthy Items", value: summary.healthy, icon: TrendingUp, color: "bg-emerald-100 text-emerald-700" },
-                  { label: "Next Restock Priority", value: summary.urgent ? summary.urgent.product : "None", icon: Package, color: "bg-primary/10 text-primary" },
-                ]
-            ).map((s) => (
-              <div key={s.label} className="glass-card rounded-2xl p-6">
-                <div className={`p-2.5 rounded-xl ${s.color} w-fit mb-3`}><s.icon className="h-5 w-5" /></div>
-                <p className="text-2xl font-bold text-foreground break-words">{s.value}</p>
-                <p className="text-base text-muted-foreground mt-1">{s.label}</p>
-              </div>
-            ))}
+            ? [
+              { label: "Total Branches", value: branches.length || branchOverview.length, icon: Building2, color: "bg-primary/10 text-primary" },
+              { label: "Critical Items (System-Wide)", value: summary.critical, icon: AlertTriangle, color: "bg-red-100 text-red-700" },
+              { label: "Low Items (System-Wide)", value: summary.low, icon: CalendarClock, color: "bg-amber-100 text-amber-700" },
+              { label: "Healthy Items (System-Wide)", value: summary.healthy, icon: TrendingUp, color: "bg-emerald-100 text-emerald-700" },
+            ]
+            : [
+              { label: "Critical Items", value: summary.critical, icon: AlertTriangle, color: "bg-red-100 text-red-700" },
+              { label: "Low Items", value: summary.low, icon: CalendarClock, color: "bg-amber-100 text-amber-700" },
+              { label: "Healthy Items", value: summary.healthy, icon: TrendingUp, color: "bg-emerald-100 text-emerald-700" },
+              { label: "Next Restock Priority", value: summary.urgent ? summary.urgent.product : "None", icon: Package, color: "bg-primary/10 text-primary" },
+            ]
+          ).map((s) => (
+            <div key={s.label} className="glass-card rounded-2xl p-6">
+              <div className={`p-2.5 rounded-xl ${s.color} w-fit mb-3`}><s.icon className="h-5 w-5" /></div>
+              <p className="text-2xl font-bold text-foreground break-words">{s.value}</p>
+              <p className="text-base text-muted-foreground mt-1">{s.label}</p>
+            </div>
+          ))}
       </div>
 
-
+      {error && <p className="text-base text-destructive">{error}</p>}
 
       {!loading && inventory.length === 0 && !error && (
         <div className="glass-card rounded-2xl p-12 text-center">
@@ -1414,8 +1345,8 @@ export default function PredictiveInventoryPage() {
                 const badgeStyle = isCritical
                   ? "bg-red-100 text-red-800 border border-red-200"
                   : isLow
-                  ? "bg-amber-100 text-amber-800 border border-amber-200"
-                  : "bg-emerald-100 text-emerald-800 border border-emerald-200";
+                    ? "bg-amber-100 text-amber-800 border border-amber-200"
+                    : "bg-emerald-100 text-emerald-800 border border-emerald-200";
                 const headerBg = isCritical ? "bg-red-50/60" : isLow ? "bg-amber-50/60" : "bg-emerald-50/40";
                 const statusLabel = isCritical ? "Critical Restock" : isLow ? "Low Stock" : "Healthy";
 
@@ -1482,7 +1413,7 @@ export default function PredictiveInventoryPage() {
                     </div>
 
                     <div className="px-4 py-3 bg-muted/10 border-t border-border/20 flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground font-medium">4 canonical supplies</span>
+                      <span className="text-muted-foreground font-medium">{row.totalItems} consumable{row.totalItems !== 1 ? "s" : ""}</span>
                       <span className="text-primary font-bold group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-1">
                         View Branch Inventory →
                       </span>
@@ -1524,7 +1455,7 @@ export default function PredictiveInventoryPage() {
                         <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
                         {row.branch}
                       </td>
-                      <td className="p-4 text-center font-semibold text-foreground">{row.totalItems || 4}</td>
+                      <td className="p-4 text-center font-semibold text-foreground">{row.totalItems}</td>
                       <td className="p-4 text-center">
                         <span className={row.critical > 0 ? "font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full" : "text-muted-foreground"}>
                           {row.critical}
@@ -1603,7 +1534,7 @@ export default function PredictiveInventoryPage() {
                   {isStaff ? (userBranch || "Your Branch") : selectedTab} Consumable Inventory
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  Showing strictly the 4 canonical supplies (Ariel, Charm, Downy, Surf) for this branch.
+                  Detergent &amp; fabric conditioner consumables for this branch. Use "Create Item" to add new products.
                 </p>
               </div>
             </div>
@@ -1626,490 +1557,481 @@ export default function PredictiveInventoryPage() {
                 <ShoppingCart className="h-5 w-5 text-primary" />
                 <h2 className="text-xl font-semibold text-foreground">Reorder Suggestions</h2>
               </div>
-          <div className="p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {reorderSuggestions.map((item) => (
-              <div key={item.id} className={`rounded-xl border p-4 space-y-2 ${item.status === "Critical" ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"}`}>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusStyle[item.status]}`}>{item.status}</span>
-                  <p className="font-semibold text-foreground text-base">{item.product} — {item.status}</p>
-                </div>
-                <p className="text-sm text-muted-foreground">{item.branch}</p>
-                <StockBar current={item.currentStock} reorder={item.reorderLevel} max={Math.max(item.reorderLevel * 3, item.currentStock, 1)} />
-                <p className="text-sm text-foreground">
-                  Current: <strong>{item.currentStock} {item.unit}</strong> | Avg usage: <strong>{item.historicalDailyUsage > 0 ? `${item.historicalDailyUsage.toFixed(1)}/day` : "no data"}</strong> | ~{item.daysUntilEmpty !== null ? `${item.daysUntilEmpty} days left` : "unknown days left"}
-                </p>
-                {item.recommended > 0 ? (
-                  <p className="text-sm font-semibold text-foreground">
-                    Reorder{" "}
-                    <span className={item.status === "Critical" ? "text-red-700" : "text-amber-700"}>
-                      {item.recommended} {item.unit}
-                    </span>
-                    <span className="text-xs text-muted-foreground font-normal ml-1">
-                      {item.historicalDailyUsage > 0.001
-                        ? item.recommended > (item.formulaBased ?? 0)
-                          ? `to maintain 30-day supply (min. restock floor applied)`
-                          : `to maintain 30-day supply`
-                        : `recommended minimum restock`}
-                    </span>
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Reorder quantity calculation pending</p>
+              <div className="p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {reorderSuggestions.map((item) => (
+                  <div key={item.id} className={`rounded-xl border p-4 space-y-2 ${item.status === "Critical" ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"}`}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusStyle[item.status]}`}>{item.status}</span>
+                      <p className="font-semibold text-foreground text-base">{item.product} — {item.status}</p>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{item.branch}</p>
+                    <StockBar current={item.currentStock} reorder={item.reorderLevel} max={Math.max(item.reorderLevel * 3, item.currentStock, 1)} />
+                    <p className="text-sm text-foreground">
+                      Current: <strong>{item.currentStock} {item.unit}</strong> | Avg usage: <strong>{item.historicalDailyUsage > 0 ? `${item.historicalDailyUsage.toFixed(1)}/day` : "no data"}</strong> | ~{item.daysUntilEmpty !== null ? `${item.daysUntilEmpty} days left` : "unknown days left"}
+                    </p>
+                    {item.recommended > 0 ? (
+                      <p className="text-sm font-semibold text-foreground">
+                        Reorder <span className={item.status === "Critical" ? "text-red-700" : "text-amber-700"}>{item.recommended} {item.unit}</span>
+                        <span className="text-xs text-muted-foreground font-normal ml-1">to maintain 30-day supply</span>
+                      </p>
+                    ) : item.historicalDailyUsage < 0.001 ? (
+                      <p className="text-sm text-muted-foreground">Enable usage tracking to get reorder quantity suggestion</p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Reorder quantity calculation pending</p>
+                    )}
+                    <div className="flex gap-2 pt-1">
+                      <Button size="sm" onClick={() => openAdjust(item)}>Add Stock</Button>
+                      {orderedItemIds.has(item.id) ? (
+                        <Button size="sm" variant="outline" disabled className="text-emerald-700 border-emerald-300">
+                          ✓ Marked as Ordered
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="outline" className="text-primary border-primary/30"
+                          onClick={() => setOrderedItemIds((prev) => new Set([...prev, item.id]))}>
+                          Mark as Ordered
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Needs Attention */}
+          {!loading && (
+            <div className="rounded-2xl border border-border/30 bg-white p-6">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <h2 className="text-xl font-semibold text-foreground">Needs Attention</h2>
+                {needsAttention.length > ATTENTION_DEFAULT_LIMIT && (
+                  <Button variant="outline" onClick={() => setShowAllAttention((v) => !v)}>
+                    {showAllAttention ? "Show top 5" : "View all"}
+                  </Button>
                 )}
-                <div className="flex gap-2 pt-1">
-                  <Button size="sm" onClick={() => openAdjust(item)}>Add Stock</Button>
-                  {orderedItemIds.has(item.id) ? (
-                    <Button size="sm" variant="outline" disabled className="text-emerald-700 border-emerald-300">
-                      ✓ Marked as Ordered
-                    </Button>
+              </div>
+              {visibleAttention.length === 0 ? (
+                <p className="text-base text-muted-foreground">All consumable supplies are healthy based on current stock and expected use.</p>
+              ) : (
+                <div className="space-y-3">
+                  {visibleAttention.map((item) => (
+                    <div key={item.id} className="rounded-xl border border-border/30 p-4 bg-muted/10">
+                      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                        <div className="space-y-1">
+                          <p className="text-lg font-semibold text-foreground">{item.product}</p>
+                          <p className="text-sm text-muted-foreground">{item.branch}</p>
+                          <StockBar current={item.currentStock} reorder={item.reorderLevel} max={Math.max(item.reorderLevel * 3, item.currentStock, 1)} />
+                          <p className="text-sm text-foreground">
+                            Stock: {formatQuantity(item.currentStock, item.unit)} | 7D use: {formatExpectedUse7D(item)} | Days left:{" "}
+                            {item.daysUntilEmpty !== null ? `${item.daysUntilEmpty} day(s)` : "Not enough data yet"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-sm font-semibold px-3 py-1 rounded-full ${statusStyle[item.status]}`}>{item.status}</span>
+                          <Button size="sm" onClick={() => openAdjust(item)}>Add Stock</Button>
+                          <Button size="sm" variant="outline" onClick={() => setExpandedRowId((v) => (v === item.id ? null : item.id))}>View Details</Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Filters — consumable table only */}
+          {/* ── Consumable Supplies Table ── */}
+          <div className="glass-card rounded-2xl overflow-hidden">
+            <div className="p-6 border-b border-border/30">
+              <h2 className="text-xl font-semibold text-foreground">Consumable Supplies — Stock Summary</h2>
+              <p className="text-sm text-muted-foreground mt-1">Detergent and fabric conditioner only. Sorted by urgency: Critical → Low → Healthy. Does not include equipment assets.</p>
+            </div>
+            <div className="px-6 py-3 border-b border-border/20 bg-muted/10 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+              <span className="font-semibold text-muted-foreground">Status:</span>
+              <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-red-500" /> Critical = ≤7 days stock remaining</span>
+              <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-amber-500" /> Low = 8–14 days remaining</span>
+              <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-emerald-500" /> Healthy = &gt;14 days remaining</span>
+              <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-slate-400" /> No Data = no order history yet</span>
+            </div>
+
+            {/* Desktop table */}
+            <div className="overflow-x-auto hidden md:block">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/30 bg-muted/20">
+                    <th className="text-left p-4 font-semibold text-[15px] text-foreground">Supply Item</th>
+                    <th className="text-left p-4 font-semibold text-[15px] text-foreground">Current Stock</th>
+                    <th className="text-left p-4 font-semibold text-[15px] text-foreground">Status</th>
+                    <th className="text-left p-4 font-semibold text-[15px] text-foreground">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading
+                    ? Array.from({ length: 4 }).map((_, i) => (
+                      <tr key={i} className="border-b border-border/20">
+                        {Array.from({ length: 4 }).map((__, j) => <td key={j} className="p-4"><Skeleton className="h-5 w-full rounded" /></td>)}
+                      </tr>
+                    ))
+                    : canonicalFour.map((inv) => {
+                      const isPlaceholder = inv.id.toString().startsWith("placeholder-");
+                      const isExpanded = expandedRowId === inv.id;
+                      const itemIcon = inv.type === "Detergent" ? <Droplets className="h-4 w-4 text-primary shrink-0" /> : <Sparkles className="h-4 w-4 text-secondary shrink-0" />;
+                      return (
+                        <>
+                          <tr key={inv.id} className="border-b border-border/20 hover:bg-muted/20 align-middle">
+                            <td className="p-4">
+                              <div className="flex items-center gap-2">
+                                {itemIcon}
+                                <span className="text-base font-semibold text-foreground">{inv.product}</span>
+                              </div>
+                              <div className="ml-6 text-xs text-muted-foreground">{inv.branch} · {inv.type}</div>
+                            </td>
+                            <td className="p-4 text-base text-foreground">
+                              {isPlaceholder ? <span className="text-muted-foreground text-sm">Not recorded</span> : formatQuantity(inv.currentStock, inv.unit)}
+                            </td>
+                            <td className="p-4">
+                              <span className={`text-sm font-semibold px-3 py-1 rounded-full ${statusStyle[inv.status]}`}>{inv.status}</span>
+                            </td>
+                            <td className="p-4">
+                              {!isPlaceholder && (
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Button size="sm" onClick={() => openAdjust(inv)}>Add Stock</Button>
+                                  <Button size="sm" variant="outline"
+                                    onClick={() => setExpandedRowId((v) => (v === inv.id ? null : inv.id))}>
+                                    {isExpanded ? "Hide" : "Details"}
+                                    <ChevronDown className={`h-4 w-4 ml-1 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                                  </Button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                          {isExpanded && !isPlaceholder && (
+                            <tr className="border-b border-border/20 bg-muted/10">
+                              <td colSpan={4} className="p-5">
+                                <ConsumableDetailPanel item={inv} chartData={selectedItemChart} pendingConsumption={pendingConsumption} onEdit={openEdit} onDelete={openDelete} isAdmin={isAdmin} isStaff={isStaff} />
+                              </td>
+                            </tr>
+                          )}
+                        </>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile card view — consumables only */}
+            <div className="md:hidden divide-y divide-border/20">
+              {loading
+                ? Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="p-4 space-y-2">
+                    <Skeleton className="h-5 w-40" />
+                    <Skeleton className="h-4 w-24" />
+                  </div>
+                ))
+                : canonicalFour.map((inv) => {
+                  const isPlaceholder = inv.id.toString().startsWith("placeholder-");
+                  const isExpanded = expandedRowId === inv.id;
+                  return (
+                    <div key={inv.id} className="p-4 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-semibold text-foreground text-base">{inv.product}</p>
+                          <p className="text-xs text-muted-foreground">{inv.branch} · {inv.category}</p>
+                        </div>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${statusStyle[inv.status]}`}>{inv.status}</span>
+                      </div>
+                      <p className="text-sm text-foreground">
+                        {isPlaceholder ? <span className="text-muted-foreground">Not recorded</span> : formatQuantity(inv.currentStock, inv.unit)}
+                      </p>
+                      {!isPlaceholder && (
+                        <div className="flex gap-2 pt-1">
+                          <Button size="sm" onClick={() => openAdjust(inv)}>Add Stock</Button>
+                          <Button size="sm" variant="outline" onClick={() => setExpandedRowId((v) => (v === inv.id ? null : inv.id))}>
+                            {isExpanded ? "Hide" : "Details"}
+                          </Button>
+                        </div>
+                      )}
+                      {isExpanded && !isPlaceholder && (
+                        <div className="pt-2">
+                          <ConsumableDetailPanel item={inv} chartData={selectedItemChart} pendingConsumption={pendingConsumption} onEdit={openEdit} onDelete={openDelete} isAdmin={isAdmin} isStaff={isStaff} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+
+
+          {/* ── Operations KPI Cards ── */}
+          {!loading && operationsKpi && (
+            <div className="glass-card rounded-2xl overflow-hidden">
+              <div className="p-5 border-b border-border/30 flex items-center gap-2">
+                <Activity className="h-5 w-5 text-primary" />
+                <div>
+                  <h2 className="text-xl font-semibold text-foreground">Operations Overview</h2>
+                  <p className="text-xs text-muted-foreground">Live order data — last 30 days</p>
+                </div>
+              </div>
+              <div className="p-5 grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {[
+                  { label: "Orders Today", value: String(operationsKpi.ordersToday), sub: "orders placed today", icon: Package },
+                  { label: "Orders This Week", value: String(operationsKpi.ordersThisWeek), sub: "Mon–today", icon: TrendingUp },
+                  { label: "Avg Weight / Order", value: operationsKpi.avgKgPerOrder30d > 0 ? `${operationsKpi.avgKgPerOrder30d} kg` : "—", sub: "last 30 days", icon: Droplets },
+                  { label: "Peak Day", value: operationsKpi.peakDayOfWeek, sub: `${operationsKpi.peakDayOrderCount} orders avg`, icon: CalendarClock },
+                ].map((card) => (
+                  <div key={card.label} className="rounded-xl border border-border/20 bg-background p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <card.icon className="h-4 w-4 text-primary" />
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{card.label}</span>
+                    </div>
+                    <p className="text-2xl font-bold text-foreground">{card.value}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Supply vs. 30-Day Demand Overview ── */}
+          {!loading && allConsumables.length > 0 && supplyDemandData.some((d) => d.demand30d > 0) && (
+            <div className="glass-card rounded-2xl overflow-hidden">
+              <div className="p-5 border-b border-border/30">
+                <h2 className="text-xl font-semibold text-foreground">Supply vs. 30-Day Projected Demand</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Will current stock last 30 days? Dark bar = stock on hand. Light bar = estimated demand over next 30 days based on avg daily usage.
+                  A short dark bar vs a tall light bar means risk of stockout.
+                </p>
+              </div>
+              <div className="p-5">
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={supplyDemandData} margin={{ top: 8, right: 24, left: 8, bottom: 8 }} barCategoryGap="30%">
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,25%,90%)" />
+                    <XAxis dataKey="name" tick={{ fontSize: 12, fill: "hsl(215,20%,35%)" }}
+                      label={{ value: "Supply Item", position: "insideBottom", offset: -4, fontSize: 12 }} />
+                    <YAxis tick={{ fontSize: 11 }} allowDecimals={false}
+                      label={{ value: "Sachets", angle: -90, position: "insideLeft", offset: 8, fontSize: 12 }} />
+                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                      formatter={(value: number, name: string) => [
+                        `${value} sachets`, name === "currentStock" ? "Current Stock (on hand)" : "30-Day Projected Demand"
+                      ]} />
+                    <Legend verticalAlign="top" wrapperStyle={{ fontSize: 12 }} />
+                    <Bar dataKey="currentStock" name="Current Stock" radius={[4, 4, 0, 0]}>
+                      {supplyDemandData.map((entry, idx) => (
+                        <Cell key={idx} fill={
+                          entry.status === "Critical" ? "#EF4444"
+                            : entry.status === "Low" ? "#F59E0B"
+                              : entry.status === "Healthy" ? "#10B981"
+                                : "#94A3B8"
+                        } />
+                      ))}
+                    </Bar>
+                    <Bar dataKey="demand30d" name="30-Day Demand" fill="hsl(218,58%,80%)" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  {supplyDemandData.map((d) => (
+                    <div key={d.name} className="text-xs text-muted-foreground">
+                      <strong className="text-foreground">{d.name}:</strong>{" "}
+                      {d.demand30d > 0
+                        ? d.coverage !== null && d.coverage >= 100
+                          ? <span className="text-emerald-600">✓ Covered ({d.coverage}% of 30d demand)</span>
+                          : <span className="text-red-600">⚠ Only {d.coverage ?? 0}% covered — needs restock</span>
+                        : <span className="text-slate-500">No usage data yet</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Supply Risk Score Cards ── */}
+          {!loading && allConsumables.length > 0 && (
+            <div className="glass-card rounded-2xl overflow-hidden">
+              <div className="p-5 border-b border-border/30 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-foreground">Supply Risk Score — With Lead Time</h2>
+                  <p className="text-xs text-muted-foreground">Each score factors in how long your supplier takes to deliver. "Order Today" means stock may run out before a new delivery arrives.</p>
+                </div>
+              </div>
+              <div className="p-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                {riskScoreData.map((item, i) => {
+                  const urgency = item.riskScore >= 95 ? "Order Today" : item.riskScore >= 65 ? "Order Soon" : item.riskScore >= 40 ? "Monitor" : "Sufficient";
+                  return (
+                    <div key={i} className="rounded-xl border p-4 space-y-3" style={{ borderColor: item.riskColor + "40", background: item.riskColor + "08" }}>
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-semibold text-foreground text-base">{item.name}</p>
+                          <p className="text-xs text-muted-foreground">{item.branch}</p>
+                        </div>
+                        <span className="text-2xl font-black" style={{ color: item.riskColor }}>{item.riskScore}</span>
+                      </div>
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div style={{ width: `${item.riskScore}%`, background: item.riskColor }} className="h-full rounded-full transition-all" />
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">{item.daysLeft !== null ? `${item.daysLeft}d left · ${item.leadTime}d lead` : "No usage data"}</span>
+                        <span className="font-semibold px-2 py-0.5 rounded-full text-white text-xs" style={{ background: item.riskColor }}>{urgency}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{item.currentStock} {item.unit} in stock</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Stock Runway Table ── */}
+          {!loading && runwayData.some((r) => r.daysUntilEmpty !== null) && (
+            <div className="glass-card rounded-2xl overflow-hidden">
+              <div className="p-5 border-b border-border/30">
+                <h2 className="text-xl font-semibold text-foreground">Stock Runway — Exact Stockout Dates</h2>
+                <p className="text-xs text-muted-foreground">When each item runs out and the latest safe date to place an order. Based on avg daily usage from completed orders.</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[640px]">
+                  <thead>
+                    <tr className="border-b border-border/30 bg-muted/20">
+                      <th className="text-left p-3 font-semibold text-foreground">Item</th>
+                      <th className="text-left p-3 font-semibold text-foreground">Branch</th>
+                      <th className="text-left p-3 font-semibold text-foreground">Stock</th>
+                      <th className="text-left p-3 font-semibold text-foreground">Days Left</th>
+                      <th className="text-left p-3 font-semibold text-foreground">Stockout Date</th>
+                      <th className="text-left p-3 font-semibold text-foreground">
+                        <span className="inline-flex items-center gap-1">Must Order By <InfoHint text="Stockout date minus supplier lead time. 'Order Now' means you are already within the lead-time window." /></span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {runwayData.map((item) => {
+                      const rowBg = item.urgencyStatus === "Already Late" ? "bg-red-50 border-l-4 border-l-red-500"
+                        : item.urgencyStatus === "Order Soon" ? "bg-amber-50 border-l-4 border-l-amber-500" : "";
+                      const badge = item.urgencyStatus === "Already Late" ? "bg-red-100 text-red-700"
+                        : item.urgencyStatus === "Order Soon" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700";
+                      return (
+                        <tr key={item.id} className={`border-b border-border/20 ${rowBg}`}>
+                          <td className="p-3 font-medium text-foreground">{item.product.replace(" Detergent", "").replace(" Fabric Conditioner", "")}</td>
+                          <td className="p-3 text-xs text-muted-foreground">{item.branch.replace(" Branch", "")}</td>
+                          <td className="p-3 text-foreground">{item.currentStock} {item.unit}</td>
+                          <td className="p-3 text-foreground">{item.daysUntilEmpty !== null ? `${item.daysUntilEmpty}d` : <span className="text-muted-foreground text-xs">No usage data</span>}</td>
+                          <td className="p-3 text-foreground">{item.stockoutDate ?? <span className="text-muted-foreground">—</span>}</td>
+                          <td className="p-3"><span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badge}`}>{item.mustOrderBy ?? "—"}</span></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ── Wave Forecast ── */}
+          {!loading && waveForecastData.length > 0 && (
+            <div className="glass-card rounded-2xl overflow-hidden">
+              <div className="p-5 border-b border-border/30">
+                <h2 className="text-xl font-semibold text-foreground">Wave-Shaped 30-Day Stock Forecast</h2>
+                <p className="text-xs text-muted-foreground">Stock depletes faster on busy days and slower on quiet days — based on your 60-day order pattern. Calendar dates on the X-axis.</p>
+              </div>
+              <div className="p-5">
+                {waveForecastData.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No usage data yet — appears once orders are processing.</p>
+                ) : (
+                  <WaveForecastPanel data={waveForecastData} lineColors={LINE_COLORS} />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Order Volume Trend + Booking Pipeline side by side ── */}
+          {!loading && (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+
+              {/* Order Volume Trend */}
+              <div className="glass-card rounded-2xl overflow-hidden">
+                <div className="p-5 border-b border-border/30">
+                  <h2 className="text-lg font-semibold text-foreground">Daily Order Volume — Last 30 Days</h2>
+                  <p className="text-xs text-muted-foreground">Number of customer orders placed per day. The dashed line shows the 7-day running average — useful for spotting busy periods and trends.</p>
+                </div>
+                <div className="p-5">
+                  {dailyOrderVolume.every((d) => d.orderCount === 0) ? (
+                    <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">No order data yet.</div>
                   ) : (
-                    <Button size="sm" variant="outline" className="text-primary border-primary/30"
-                      onClick={() => setOrderedItemIds((prev) => new Set([...prev, item.id]))}>
-                      Mark as Ordered
-                    </Button>
+                    <>
+                      <ResponsiveContainer width="100%" height={240}>
+                        <LineChart data={dailyOrderVolume} margin={{ top: 8, right: 16, left: 4, bottom: 40 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,25%,90%)" />
+                          <XAxis dataKey="dateLabel" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" interval={Math.floor(dailyOrderVolume.length / 6)}
+                            label={{ value: "Date", position: "insideBottom", offset: -28, fontSize: 11 }} />
+                          <YAxis tick={{ fontSize: 11 }} allowDecimals={false}
+                            label={{ value: "Number of Orders", angle: -90, position: "insideLeft", offset: 8, fontSize: 11 }} />
+                          <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                            formatter={(value: number, name: string) => [
+                              name === "orderCount" ? `${value} orders` : `${value} orders (7-day avg)`, name === "orderCount" ? "Orders" : "7-Day Avg"
+                            ]} />
+                          <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11 }} />
+                          <Line type="monotone" dataKey="orderCount" name="Orders" stroke="hsl(218,58%,35%)" strokeWidth={2} dot={false} />
+                          <Line type="monotone" dataKey="rollingAvg7d" name="7-Day Avg" stroke="#f97316" strokeWidth={2} strokeDasharray="6 3" dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                      <p className="text-xs text-muted-foreground mt-2 text-right">Last updated: {new Date().toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })}</p>
+                    </>
                   )}
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {/* Needs Attention */}
-      {!loading && (
-        <div className="rounded-2xl border border-border/30 bg-white p-6">
-          <div className="flex items-center justify-between gap-3 mb-4">
-            <h2 className="text-xl font-semibold text-foreground">Needs Attention</h2>
-            {needsAttention.length > ATTENTION_DEFAULT_LIMIT && (
-              <Button variant="outline" onClick={() => setShowAllAttention((v) => !v)}>
-                {showAllAttention ? "Show top 5" : "View all"}
-              </Button>
-            )}
-          </div>
-          {visibleAttention.length === 0 ? (
-            <p className="text-base text-muted-foreground">All consumable supplies are healthy based on current stock and expected use.</p>
-          ) : (
-            <div className="space-y-3">
-              {visibleAttention.map((item) => (
-                <div key={item.id} className="rounded-xl border border-border/30 p-4 bg-muted/10">
-                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className="text-lg font-semibold text-foreground">{item.product}</p>
-                      <p className="text-sm text-muted-foreground">{item.branch}</p>
-                      <StockBar current={item.currentStock} reorder={item.reorderLevel} max={Math.max(item.reorderLevel * 3, item.currentStock, 1)} />
-                      <p className="text-sm text-foreground">
-                        Stock: {formatQuantity(item.currentStock, item.unit)} | 7D use: {formatExpectedUse7D(item)} | Days left:{" "}
-                        {item.daysUntilEmpty !== null ? `${item.daysUntilEmpty} day(s)` : "Not enough data yet"}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-sm font-semibold px-3 py-1 rounded-full ${statusStyle[item.status]}`}>{item.status}</span>
-                      <Button size="sm" onClick={() => openAdjust(item)}>Add Stock</Button>
-                      <Button size="sm" variant="outline" onClick={() => setExpandedRowId((v) => (v === item.id ? null : item.id))}>View Details</Button>
-                    </div>
-                  </div>
+              {/* Booking Pipeline */}
+              <div className="glass-card rounded-2xl overflow-hidden">
+                <div className="p-5 border-b border-border/30">
+                  <h2 className="text-lg font-semibold text-foreground">Upcoming Booking Demand — Next 14 Days</h2>
+                  <p className="text-xs text-muted-foreground">Soap and fabric conditioner demand from upcoming confirmed bookings — orders already scheduled for the next 14 days.</p>
                 </div>
-              ))}
+                <div className="p-5">
+                  {bookingPipelineData.length === 0 ? (
+                    <div className="flex items-center justify-center h-48 text-sm text-muted-foreground text-center px-4">No upcoming bookings with supply requests in the next 14 days.</div>
+                  ) : (
+                    <>
+                      {bookingPipelineData.map((record) => {
+                        const totalDemand = record.upcoming.reduce((s, d) => s + d.quantity, 0);
+                        const peakDay = record.upcoming.reduce((a, b) => a.quantity >= b.quantity ? a : b);
+                        return (
+                          <div key={record.itemName} className="mb-4">
+                            <div className="flex items-center justify-between mb-1">
+                              <p className="text-sm font-semibold text-foreground">{record.itemName}</p>
+                              <span className="text-xs text-muted-foreground">{totalDemand.toFixed(0)} sachets confirmed · peak: {peakDay.date} ({peakDay.quantity})</span>
+                            </div>
+                            <ResponsiveContainer width="100%" height={120}>
+                              <BarChart data={record.upcoming} margin={{ top: 4, right: 8, left: 4, bottom: 24 }}>
+                                <XAxis dataKey="date" tick={{ fontSize: 9 }} angle={-35} textAnchor="end" interval={1} />
+                                <YAxis tick={{ fontSize: 10 }} allowDecimals={false} label={{ value: "Sachets", angle: -90, position: "insideLeft", fontSize: 10 }} />
+                                <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} formatter={(v: number) => [`${v} sachets`, "Demand"]} />
+                                <Bar dataKey="quantity" radius={[2, 2, 0, 0]}>
+                                  {record.upcoming.map((e, idx) => <Cell key={idx} fill={e.quantity > 0 ? "hsl(218,58%,35%)" : "#e2e8f0"} />)}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        );
+                      })}
+                      <p className="text-xs text-muted-foreground mt-1 text-right">Last updated: {new Date().toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })}</p>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Order Activity Calendar ── */}
+          {!loading && dailyOrderVolume.length > 0 && (
+            <div className="glass-card rounded-2xl overflow-hidden">
+              <div className="p-5 border-b border-border/30">
+                <h2 className="text-xl font-semibold text-foreground">Order Activity Calendar — Last 30 Days</h2>
+                <p className="text-sm text-muted-foreground">Each cell shows how many orders were placed that day. Darker = busier. The bottom row shows each day's average across all weeks — use this to plan when to restock and when to schedule maintenance.</p>
+              </div>
+              <div className="p-5">
+                <OperationsHeatmap dailyOrderVolume={dailyOrderVolume} />
+              </div>
             </div>
           )}
         </div>
-      )}
-
-      {/* Filters — consumable table only */}
-      {/* ── Consumable Supplies Table ── */}
-      <div className="glass-card rounded-2xl overflow-hidden">
-        <div className="p-6 border-b border-border/30">
-          <h2 className="text-xl font-semibold text-foreground">Consumable Supplies — Stock Summary</h2>
-          <p className="text-sm text-muted-foreground mt-1">Detergent and fabric conditioner only. Sorted by urgency: Critical → Low → Healthy. Does not include equipment assets.</p>
-        </div>
-        <div className="px-6 py-3 border-b border-border/20 bg-muted/10 flex flex-wrap gap-x-6 gap-y-2 text-sm">
-          <span className="font-semibold text-muted-foreground">Status:</span>
-          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-red-500" /> Critical = ≤7 days stock remaining</span>
-          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-amber-500" /> Low = 8–14 days remaining</span>
-          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-emerald-500" /> Healthy = &gt;14 days remaining</span>
-          <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-slate-400" /> No Data = no order history yet</span>
-        </div>
-
-        {/* Desktop table */}
-        <div className="overflow-x-auto hidden md:block">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border/30 bg-muted/20">
-                <th className="text-left p-4 font-semibold text-[15px] text-foreground">Supply Item</th>
-                <th className="text-left p-4 font-semibold text-[15px] text-foreground">Current Stock</th>
-                <th className="text-left p-4 font-semibold text-[15px] text-foreground">Status</th>
-                <th className="text-left p-4 font-semibold text-[15px] text-foreground">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading
-                ? Array.from({ length: 4 }).map((_, i) => (
-                    <tr key={i} className="border-b border-border/20">
-                      {Array.from({ length: 4 }).map((__, j) => <td key={j} className="p-4"><Skeleton className="h-5 w-full rounded" /></td>)}
-                    </tr>
-                  ))
-                : canonicalFour.map((inv) => {
-                    const isPlaceholder = inv.id.toString().startsWith("placeholder-");
-                    const isExpanded = expandedRowId === inv.id;
-                    const itemIcon = inv.type === "Detergent" ? <Droplets className="h-4 w-4 text-primary shrink-0" /> : <Sparkles className="h-4 w-4 text-secondary shrink-0" />;
-                    return (
-                      <>
-                        <tr key={inv.id} className="border-b border-border/20 hover:bg-muted/20 align-middle">
-                          <td className="p-4">
-                            <div className="flex items-center gap-2">
-                              {itemIcon}
-                              <span className="text-base font-semibold text-foreground">{inv.product}</span>
-                            </div>
-                            <div className="ml-6 text-xs text-muted-foreground">{inv.branch} · {inv.type}</div>
-                          </td>
-                          <td className="p-4 text-base text-foreground">
-                            {isPlaceholder ? <span className="text-muted-foreground text-sm">Not recorded</span> : formatQuantity(inv.currentStock, inv.unit)}
-                          </td>
-                          <td className="p-4">
-                            <span className={`text-sm font-semibold px-3 py-1 rounded-full ${statusStyle[inv.status]}`}>{inv.status}</span>
-                          </td>
-                          <td className="p-4">
-                            {!isPlaceholder && (
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Button size="sm" onClick={() => openAdjust(inv)}>Add Stock</Button>
-                                <Button size="sm" variant="outline"
-                                  onClick={() => setExpandedRowId((v) => (v === inv.id ? null : inv.id))}>
-                                  {isExpanded ? "Hide" : "Details"}
-                                  <ChevronDown className={`h-4 w-4 ml-1 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-                                </Button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                        {isExpanded && !isPlaceholder && (
-                          <tr className="border-b border-border/20 bg-muted/10">
-                            <td colSpan={4} className="p-5">
-                              <ConsumableDetailPanel item={inv} chartData={selectedItemChart} pendingConsumption={pendingConsumption} onEdit={openEdit} onDelete={openDelete} isAdmin={isAdmin} isStaff={isStaff} />
-                            </td>
-                          </tr>
-                        )}
-                      </>
-                    );
-                  })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Mobile card view — consumables only */}
-        <div className="md:hidden divide-y divide-border/20">
-          {loading
-            ? Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="p-4 space-y-2">
-                  <Skeleton className="h-5 w-40" />
-                  <Skeleton className="h-4 w-24" />
-                </div>
-              ))
-            : canonicalFour.map((inv) => {
-                const isPlaceholder = inv.id.toString().startsWith("placeholder-");
-                const isExpanded = expandedRowId === inv.id;
-                return (
-                  <div key={inv.id} className="p-4 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="font-semibold text-foreground text-base">{inv.product}</p>
-                        <p className="text-xs text-muted-foreground">{inv.branch} · {inv.category}</p>
-                      </div>
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${statusStyle[inv.status]}`}>{inv.status}</span>
-                    </div>
-                    <p className="text-sm text-foreground">
-                      {isPlaceholder ? <span className="text-muted-foreground">Not recorded</span> : formatQuantity(inv.currentStock, inv.unit)}
-                    </p>
-                    {!isPlaceholder && (
-                      <div className="flex gap-2 pt-1">
-                        <Button size="sm" onClick={() => openAdjust(inv)}>Add Stock</Button>
-                        <Button size="sm" variant="outline" onClick={() => setExpandedRowId((v) => (v === inv.id ? null : inv.id))}>
-                          {isExpanded ? "Hide" : "Details"}
-                        </Button>
-                      </div>
-                    )}
-                    {isExpanded && !isPlaceholder && (
-                      <div className="pt-2">
-                        <ConsumableDetailPanel item={inv} chartData={selectedItemChart} pendingConsumption={pendingConsumption} onEdit={openEdit} onDelete={openDelete} isAdmin={isAdmin} isStaff={isStaff} />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-        </div>
-      </div>
-
-
-      {/* ── Operations KPI Cards ── */}
-      {!loading && operationsKpi && (
-        <div className="glass-card rounded-2xl overflow-hidden">
-          <div className="p-5 border-b border-border/30 flex items-center gap-2">
-            <Activity className="h-5 w-5 text-primary" />
-            <div>
-              <h2 className="text-xl font-semibold text-foreground">Operations Overview</h2>
-              <p className="text-xs text-muted-foreground">Live order data — last 30 days</p>
-            </div>
-          </div>
-          <div className="p-5 grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {[
-              { label: "Orders Today", value: String(operationsKpi.ordersToday), sub: "orders placed today", icon: Package },
-              { label: "Orders This Week", value: String(operationsKpi.ordersThisWeek), sub: "Mon–today", icon: TrendingUp },
-              { label: "Avg Weight / Order", value: operationsKpi.avgKgPerOrder30d > 0 ? `${operationsKpi.avgKgPerOrder30d} kg` : "—", sub: "last 30 days", icon: Droplets },
-              { label: "Peak Day", value: operationsKpi.peakDayOfWeek, sub: `${operationsKpi.peakDayOrderCount} orders avg`, icon: CalendarClock },
-            ].map((card) => (
-              <div key={card.label} className="rounded-xl border border-border/20 bg-background p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <card.icon className="h-4 w-4 text-primary" />
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{card.label}</span>
-                </div>
-                <p className="text-2xl font-bold text-foreground">{card.value}</p>
-                <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Supply vs. 30-Day Demand Overview ── */}
-      {!loading && allConsumables.length > 0 && supplyDemandData.some((d) => d.demand30d > 0) && (
-        <div className="glass-card rounded-2xl overflow-hidden">
-          <div className="p-5 border-b border-border/30">
-            <h2 className="text-xl font-semibold text-foreground">Supply vs. 30-Day Projected Demand</h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              Will current stock last 30 days? Dark bar = stock on hand. Light bar = estimated demand over next 30 days based on avg daily usage.
-              A short dark bar vs a tall light bar means risk of stockout.
-            </p>
-          </div>
-          <div className="p-5">
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={supplyDemandData} margin={{ top: 8, right: 24, left: 8, bottom: 8 }} barCategoryGap="30%">
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,25%,90%)" />
-                <XAxis dataKey="name" tick={{ fontSize: 12, fill: "hsl(215,20%,35%)" }}
-                  label={{ value: "Supply Item", position: "insideBottom", offset: -4, fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 11 }} allowDecimals={false}
-                  label={{ value: "Sachets", angle: -90, position: "insideLeft", offset: 8, fontSize: 12 }} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                  formatter={(value: number, name: string) => [
-                    `${value} sachets`, name === "currentStock" ? "Current Stock (on hand)" : "30-Day Projected Demand"
-                  ]} />
-                <Legend verticalAlign="top" wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="currentStock" name="Current Stock" radius={[4, 4, 0, 0]}>
-                  {supplyDemandData.map((entry, idx) => (
-                    <Cell key={idx} fill={
-                      entry.status === "Critical" ? "#EF4444"
-                      : entry.status === "Low" ? "#F59E0B"
-                      : entry.status === "Healthy" ? "#10B981"
-                      : "#94A3B8"
-                    } />
-                  ))}
-                </Bar>
-                <Bar dataKey="demand30d" name="30-Day Demand" fill="hsl(218,58%,80%)" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-            <div className="mt-3 flex flex-wrap gap-3">
-              {supplyDemandData.map((d) => (
-                <div key={d.name} className="text-xs text-muted-foreground">
-                  <strong className="text-foreground">{d.name}:</strong>{" "}
-                  {d.demand30d > 0
-                    ? d.coverage !== null && d.coverage >= 100
-                      ? <span className="text-emerald-600">✓ Covered ({d.coverage}% of 30d demand)</span>
-                      : <span className="text-red-600">⚠ Only {d.coverage ?? 0}% covered — needs restock</span>
-                    : <span className="text-slate-500">No usage data yet</span>}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Supply Risk Score Cards ── */}
-      {!loading && allConsumables.length > 0 && (
-        <div className="glass-card rounded-2xl overflow-hidden">
-          <div className="p-5 border-b border-border/30 flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-foreground">Supply Risk Score — With Lead Time</h2>
-              <p className="text-xs text-muted-foreground">Each score factors in how long your supplier takes to deliver. "Order Today" means stock may run out before a new delivery arrives.</p>
-            </div>
-          </div>
-          <div className="p-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-            {riskScoreData.map((item, i) => {
-              const urgency = item.riskScore >= 95 ? "Order Today" : item.riskScore >= 65 ? "Order Soon" : item.riskScore >= 40 ? "Monitor" : "Sufficient";
-              return (
-                <div key={i} className="rounded-xl border p-4 space-y-3" style={{ borderColor: item.riskColor + "40", background: item.riskColor + "08" }}>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="font-semibold text-foreground text-base">{item.name}</p>
-                      <p className="text-xs text-muted-foreground">{item.branch}</p>
-                    </div>
-                    <span className="text-2xl font-black" style={{ color: item.riskColor }}>{item.riskScore}</span>
-                  </div>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div style={{ width: `${item.riskScore}%`, background: item.riskColor }} className="h-full rounded-full transition-all" />
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">{item.daysLeft !== null ? `${item.daysLeft}d left · ${item.leadTime}d lead` : "No usage data"}</span>
-                    <span className="font-semibold px-2 py-0.5 rounded-full text-white text-xs" style={{ background: item.riskColor }}>{urgency}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">{item.currentStock} {item.unit} in stock</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── Stock Runway Table ── */}
-      {!loading && runwayData.some((r) => r.daysUntilEmpty !== null) && (
-        <div className="glass-card rounded-2xl overflow-hidden">
-          <div className="p-5 border-b border-border/30">
-            <h2 className="text-xl font-semibold text-foreground">Stock Runway — Exact Stockout Dates</h2>
-            <p className="text-xs text-muted-foreground">When each item runs out and the latest safe date to place an order. Based on avg daily usage from completed orders.</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px]">
-              <thead>
-                <tr className="border-b border-border/30 bg-muted/20">
-                  <th className="text-left p-3 font-semibold text-foreground">Item</th>
-                  <th className="text-left p-3 font-semibold text-foreground">Branch</th>
-                  <th className="text-left p-3 font-semibold text-foreground">Stock</th>
-                  <th className="text-left p-3 font-semibold text-foreground">Days Left</th>
-                  <th className="text-left p-3 font-semibold text-foreground">Stockout Date</th>
-                  <th className="text-left p-3 font-semibold text-foreground">
-                    <span className="inline-flex items-center gap-1">Must Order By <InfoHint text="Stockout date minus supplier lead time. 'Order Now' means you are already within the lead-time window." /></span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {runwayData.map((item) => {
-                  const rowBg = item.urgencyStatus === "Already Late" ? "bg-red-50 border-l-4 border-l-red-500"
-                    : item.urgencyStatus === "Order Soon" ? "bg-amber-50 border-l-4 border-l-amber-500" : "";
-                  const badge = item.urgencyStatus === "Already Late" ? "bg-red-100 text-red-700"
-                    : item.urgencyStatus === "Order Soon" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700";
-                  return (
-                    <tr key={item.id} className={`border-b border-border/20 ${rowBg}`}>
-                      <td className="p-3 font-medium text-foreground">{item.product.replace(" Detergent", "").replace(" Fabric Conditioner", "")}</td>
-                      <td className="p-3 text-xs text-muted-foreground">{item.branch.replace(" Branch", "")}</td>
-                      <td className="p-3 text-foreground">{item.currentStock} {item.unit}</td>
-                      <td className="p-3 text-foreground">{item.daysUntilEmpty !== null ? `${item.daysUntilEmpty}d` : <span className="text-muted-foreground text-xs">No usage data</span>}</td>
-                      <td className="p-3 text-foreground">{item.stockoutDate ?? <span className="text-muted-foreground">—</span>}</td>
-                      <td className="p-3"><span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badge}`}>{item.mustOrderBy ?? "—"}</span></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ── Wave Forecast ── */}
-      {!loading && waveForecastData.length > 0 && (
-        <div className="glass-card rounded-2xl overflow-hidden">
-          <div className="p-5 border-b border-border/30">
-            <h2 className="text-xl font-semibold text-foreground">Wave-Shaped 30-Day Stock Forecast</h2>
-            <p className="text-xs text-muted-foreground">Stock depletes faster on busy days and slower on quiet days — based on your 60-day order pattern. Calendar dates on the X-axis.</p>
-          </div>
-          <div className="p-5">
-            {waveForecastData.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No usage data yet — appears once orders are processing.</p>
-            ) : (
-              <WaveForecastPanel data={waveForecastData} lineColors={LINE_COLORS} />
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Order Volume Trend + Booking Pipeline side by side ── */}
-      {!loading && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-
-          {/* Order Volume Trend */}
-          <div className="glass-card rounded-2xl overflow-hidden">
-            <div className="p-5 border-b border-border/30">
-              <h2 className="text-lg font-semibold text-foreground">Daily Order Volume — Last 30 Days</h2>
-              <p className="text-xs text-muted-foreground">Number of customer orders placed per day. The dashed line shows the 7-day running average — useful for spotting busy periods and trends.</p>
-            </div>
-            <div className="p-5">
-              {dailyOrderVolume.every((d) => d.orderCount === 0) ? (
-                <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">No order data yet.</div>
-              ) : (
-                <>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <LineChart data={dailyOrderVolume} margin={{ top: 8, right: 16, left: 4, bottom: 40 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,25%,90%)" />
-                      <XAxis dataKey="dateLabel" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" interval={Math.floor(dailyOrderVolume.length / 6)}
-                        label={{ value: "Date", position: "insideBottom", offset: -28, fontSize: 11 }} />
-                      <YAxis tick={{ fontSize: 11 }} allowDecimals={false}
-                        label={{ value: "Number of Orders", angle: -90, position: "insideLeft", offset: 8, fontSize: 11 }} />
-                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                        formatter={(value: number, name: string) => [
-                          name === "orderCount" ? `${value} orders` : `${value} orders (7-day avg)`, name === "orderCount" ? "Orders" : "7-Day Avg"
-                        ]} />
-                      <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11 }} />
-                      <Line type="monotone" dataKey="orderCount" name="Orders" stroke="hsl(218,58%,35%)" strokeWidth={2} dot={false} />
-                      <Line type="monotone" dataKey="rollingAvg7d" name="7-Day Avg" stroke="#f97316" strokeWidth={2} strokeDasharray="6 3" dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                  <p className="text-xs text-muted-foreground mt-2 text-right">Last updated: {new Date().toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })}</p>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Booking Pipeline */}
-          <div className="glass-card rounded-2xl overflow-hidden">
-            <div className="p-5 border-b border-border/30">
-              <h2 className="text-lg font-semibold text-foreground">Upcoming Booking Demand — Next 14 Days</h2>
-              <p className="text-xs text-muted-foreground">Soap and fabric conditioner demand from upcoming confirmed bookings — orders already scheduled for the next 14 days.</p>
-            </div>
-            <div className="p-5">
-              {bookingPipelineData.length === 0 ? (
-                <div className="flex items-center justify-center h-48 text-sm text-muted-foreground text-center px-4">No upcoming bookings with supply requests in the next 14 days.</div>
-              ) : (
-                <>
-                  {bookingPipelineData.map((record) => {
-                    const totalDemand = record.upcoming.reduce((s, d) => s + d.quantity, 0);
-                    const peakDay = record.upcoming.reduce((a, b) => a.quantity >= b.quantity ? a : b);
-                    return (
-                      <div key={record.itemName} className="mb-4">
-                        <div className="flex items-center justify-between mb-1">
-                          <p className="text-sm font-semibold text-foreground">{record.itemName}</p>
-                          <span className="text-xs text-muted-foreground">{totalDemand.toFixed(0)} sachets confirmed · peak: {peakDay.date} ({peakDay.quantity})</span>
-                        </div>
-                        <ResponsiveContainer width="100%" height={120}>
-                          <BarChart data={record.upcoming} margin={{ top: 4, right: 8, left: 4, bottom: 24 }}>
-                            <XAxis dataKey="date" tick={{ fontSize: 9 }} angle={-35} textAnchor="end" interval={1} />
-                            <YAxis tick={{ fontSize: 10 }} allowDecimals={false} label={{ value: "Sachets", angle: -90, position: "insideLeft", fontSize: 10 }} />
-                            <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} formatter={(v: number) => [`${v} sachets`, "Demand"]} />
-                            <Bar dataKey="quantity" radius={[2, 2, 0, 0]}>
-                              {record.upcoming.map((e, idx) => <Cell key={idx} fill={e.quantity > 0 ? "hsl(218,58%,35%)" : "#e2e8f0"} />)}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    );
-                  })}
-                  <p className="text-xs text-muted-foreground mt-1 text-right">Last updated: {new Date().toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })}</p>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Order Activity Calendar ── */}
-      {!loading && dailyOrderVolume.length > 0 && (
-        <div className="glass-card rounded-2xl overflow-hidden">
-          <div className="p-5 border-b border-border/30">
-            <h2 className="text-xl font-semibold text-foreground">Order Activity Calendar — Last 30 Days</h2>
-            <p className="text-sm text-muted-foreground">Each cell shows how many orders were placed that day. Darker = busier. The bottom row shows each day's average across all weeks — use this to plan when to restock and when to schedule maintenance.</p>
-          </div>
-          <div className="p-5">
-            <OperationsHeatmap dailyOrderVolume={dailyOrderVolume} />
-          </div>
-        </div>
-      )}
-        </div>
-      )}
-        </>
       )}
 
 
@@ -2273,8 +2195,8 @@ function OperationsHeatmap({ dailyOrderVolume }: { dailyOrderVolume: DailyOrderV
   const peakIdx = dowAvgs.indexOf(Math.max(...dowAvgs));
   const nonZeroAvgs = dowAvgs.filter((v) => v > 0);
   const slowIdx = nonZeroAvgs.length > 0 ? dowAvgs.indexOf(Math.min(...nonZeroAvgs)) : -1;
-  const weekdayAvg = [0,1,2,3,4].reduce((s, i) => s + dowAvgs[i], 0) / 5;
-  const weekendAvg = [5,6].reduce((s, i) => s + dowAvgs[i], 0) / 2;
+  const weekdayAvg = [0, 1, 2, 3, 4].reduce((s, i) => s + dowAvgs[i], 0) / 5;
+  const weekendAvg = [5, 6].reduce((s, i) => s + dowAvgs[i], 0) / 2;
 
   const cellColor = (count: number, hasData: boolean) => {
     if (!hasData) return { bg: "#f1f5f9", text: "#94a3b8" };
@@ -2620,6 +2542,8 @@ function AssetDetailPanel({
   );
 }
 
+const CUSTOM_ITEM_SENTINEL = "__custom__";
+
 function CreateEditForm({
   form, setForm, isAdmin, dynamicBranches, userBranch, mode,
 }: {
@@ -2632,6 +2556,33 @@ function CreateEditForm({
 }) {
   // Predictive Inventory only manages consumables (detergent / fabric conditioner).
   // Equipment and branch assets are managed in the Branch Assets page.
+
+  // Determine whether the current itemName is one of the catalog presets or a custom entry.
+  const isKnownItem = CONSUMABLE_CATALOG.some((c) => c.name === form.itemName);
+  // In edit mode, the item name comes from the DB and may or may not match the catalog.
+  const selectValue = isKnownItem ? form.itemName : (form.itemName ? CUSTOM_ITEM_SENTINEL : "");
+
+  const handleSelectChange = (v: string) => {
+    if (v === CUSTOM_ITEM_SENTINEL) {
+      // Switch to free-text mode; keep existing values but clear itemName so user types it.
+      setForm((p: any) => ({ ...p, itemName: "", _customMode: true }));
+    } else {
+      const def = CONSUMABLE_DEFAULTS[v];
+      setForm((p: any) => ({
+        ...p,
+        itemName: v,
+        _customMode: false,
+        category: def?.category ?? p.category,
+        unit: def?.unit ?? p.unit,
+        reorderLevel: String(def?.reorderLevel ?? p.reorderLevel),
+      }));
+    }
+  };
+
+  // In edit mode the item name is always shown as free-text (cannot change the canonical name).
+  const showFreeText = mode === "edit" || form._customMode === "true" || form._customMode === true
+    || (form.itemName !== "" && !isKnownItem);
+
   return (
     <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
       {/* Branch */}
@@ -2650,31 +2601,91 @@ function CreateEditForm({
       {/* Consumable fields only */}
       <div className="space-y-2">
         <Label>Item Name</Label>
-        <Select value={form.itemName} onValueChange={(v) => {
-          const def = CONSUMABLE_DEFAULTS[v];
-          setForm((p: any) => ({
-            ...p, itemName: v,
-            category: def?.category ?? p.category,
-            unit: def?.unit ?? p.unit,
-            reorderLevel: String(def?.reorderLevel ?? p.reorderLevel),
-          }));
-        }}>
-          <SelectTrigger className="w-full text-foreground"><SelectValue placeholder="Select a consumable" /></SelectTrigger>
-          <SelectContent>
-            {CONSUMABLE_CATALOG.map((c) => <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        {mode === "create" && !showFreeText ? (
+          <>
+            <Select value={selectValue} onValueChange={handleSelectChange}>
+              <SelectTrigger className="w-full text-foreground">
+                <SelectValue placeholder="Select a consumable or add custom" />
+              </SelectTrigger>
+              <SelectContent>
+                {CONSUMABLE_CATALOG.map((c) => (
+                  <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>
+                ))}
+                <SelectItem value={CUSTOM_ITEM_SENTINEL}>
+                  <span className="text-primary font-medium">+ Add custom item…</span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Choose a preset consumable or select "Add custom item" to enter a name manually.
+            </p>
+          </>
+        ) : (
+          <>
+            <Input
+              value={form.itemName}
+              onChange={(e) => setForm((p: any) => ({ ...p, itemName: e.target.value }))}
+              placeholder="e.g. Breeze Baby Detergent"
+              readOnly={mode === "edit"}
+              className={mode === "edit" ? "bg-muted text-muted-foreground" : ""}
+            />
+            {mode === "create" && (
+              <button
+                type="button"
+                className="text-xs text-primary underline underline-offset-2 hover:text-primary/80"
+                onClick={() => setForm((p: any) => ({ ...p, itemName: "", _customMode: false, category: "", unit: "", reorderLevel: "0" }))}
+              >
+                ← Back to preset list
+              </button>
+            )}
+          </>
+        )}
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label>Category</Label>
+
+      {/* Category */}
+      <div className="space-y-2">
+        <Label>Category</Label>
+        {showFreeText && mode === "create" ? (
+          <Select
+            value={form.category}
+            onValueChange={(v) => setForm((p: any) => ({ ...p, category: v }))}
+          >
+            <SelectTrigger className="w-full text-foreground">
+              <SelectValue placeholder="Select a category" />
+            </SelectTrigger>
+            <SelectContent>
+              {CONSUMABLE_CATEGORIES.map((cat) => (
+                <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
           <Input value={form.category} readOnly className="bg-muted text-muted-foreground" placeholder="Auto-filled" />
-        </div>
-        <div className="space-y-2">
-          <Label>Unit</Label>
-          <Input value={form.unit} readOnly className="bg-muted text-muted-foreground" placeholder="Auto-filled" />
-        </div>
+        )}
       </div>
+
+      {/* Unit */}
+      <div className="space-y-2">
+        <Label>Unit</Label>
+        {showFreeText && mode === "create" ? (
+          <Select
+            value={form.unit}
+            onValueChange={(v) => setForm((p: any) => ({ ...p, unit: v }))}
+          >
+            <SelectTrigger className="w-full text-foreground">
+              <SelectValue placeholder="Select a unit" />
+            </SelectTrigger>
+            <SelectContent>
+              {INVENTORY_UNITS.map((u) => (
+                <SelectItem key={u} value={u}>{u}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input value={form.unit} readOnly className="bg-muted text-muted-foreground" placeholder="Auto-filled" />
+        )}
+      </div>
+
       {mode === "create" && (
         <div className="space-y-2">
           <Label>Current Stock</Label>
@@ -2683,7 +2694,7 @@ function CreateEditForm({
         </div>
       )}
       <div className="space-y-2">
-        <Label>Reorder Level <span className="text-xs text-muted-foreground">(auto-filled, editable)</span></Label>
+        <Label>Reorder Level <span className="text-xs text-muted-foreground">(editable)</span></Label>
         <Input type="number" min="0" step="0.01" value={form.reorderLevel}
           onChange={(e) => setForm((p: any) => ({ ...p, reorderLevel: e.target.value }))} />
       </div>
