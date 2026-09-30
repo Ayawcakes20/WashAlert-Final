@@ -91,9 +91,9 @@ public class PriceConfirmationScheduler {
                     log.info("[PriceConfirm] Auto-confirming order #{} (deadline passed)", order.getTrackingNumber());
 
                     int detQty = (order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0)
-                            ? order.getDetergentQuantity() : 1;
+                            ? order.getDetergentQuantity() : 0;
                     int conQty = (order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0)
-                            ? order.getConditionerQuantity() : 1;
+                            ? order.getConditionerQuantity() : 0;
                     pricingService.validateAddonQuantities(
                             order.getServiceName(),
                             order.getEstimatedWeightKg(),

@@ -183,17 +183,16 @@ public class BookingService {
                 req.conditionerQuantity() != null ? req.conditionerQuantity() : 0
         );
 
-        int computedLoads = pricingService.computeLoadCount(req.serviceName(), req.estimatedWeightKg());
-        // Only default quantity to computedLoads for actual shop supplies.
-        // Customer Provided / None must store qty=0 — no shop inventory involved.
+        // Only use explicitly-sent quantities from the client. When quantity is null or 0
+        // (e.g. old APK builds that did not send these fields), fall back to 0 so that
+        // no phantom deduction occurs. Stock is deducted at booking time in deductAtBooking()
+        // which also uses 0-fallback, so this must remain consistent.
         boolean detIsShop = pricingService.isShopSupply(req.detergentPreference());
         boolean conIsShop = pricingService.isShopSupply(req.fabricConditionerPreference());
-        int detQty = detIsShop
-                ? (req.detergentQuantity() != null && req.detergentQuantity() > 0 ? req.detergentQuantity() : computedLoads)
-                : 0;
-        int conQty = conIsShop
-                ? (req.conditionerQuantity() != null && req.conditionerQuantity() > 0 ? req.conditionerQuantity() : computedLoads)
-                : 0;
+        int detQty = detIsShop && req.detergentQuantity() != null && req.detergentQuantity() > 0
+                ? req.detergentQuantity() : 0;
+        int conQty = conIsShop && req.conditionerQuantity() != null && req.conditionerQuantity() > 0
+                ? req.conditionerQuantity() : 0;
 
         // Validate inventory availability before committing the booking.
         // Does NOT deduct stock — deduction happens when order reaches WASHING.

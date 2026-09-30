@@ -453,9 +453,9 @@ public class JobOrderService {
                             + "Please wait for the customer's GCash payment to be verified.");
                 }
                 int detQty = (jo.getDetergentQuantity() != null && jo.getDetergentQuantity() > 0)
-                        ? jo.getDetergentQuantity() : 1;
+                        ? jo.getDetergentQuantity() : 0;
                 int conQty = (jo.getConditionerQuantity() != null && jo.getConditionerQuantity() > 0)
-                        ? jo.getConditionerQuantity() : 1;
+                        ? jo.getConditionerQuantity() : 0;
                 // Validate load-count and dry-only rules against what is stored on the order.
                 pricingService.validateAddonQuantities(
                         jo.getServiceName(),

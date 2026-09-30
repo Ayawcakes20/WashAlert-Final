@@ -302,13 +302,13 @@ public class InventoryService {
 
             String det = jo.getDetergentPreference();
             if (hasConsumableSelection(det)) {
-                int qty = (jo.getDetergentQuantity() != null && jo.getDetergentQuantity() > 0) ? jo.getDetergentQuantity() : 1;
-                demand.merge(branchKey + "||" + normalizeItemName(det), BigDecimal.valueOf(qty), BigDecimal::add);
+                int qty = (jo.getDetergentQuantity() != null && jo.getDetergentQuantity() > 0) ? jo.getDetergentQuantity() : 0;
+                if (qty > 0) demand.merge(branchKey + "||" + normalizeItemName(det), BigDecimal.valueOf(qty), BigDecimal::add);
             }
             String fab = jo.getFabricConditionerPreference();
             if (hasConsumableSelection(fab)) {
-                int qty = (jo.getConditionerQuantity() != null && jo.getConditionerQuantity() > 0) ? jo.getConditionerQuantity() : 1;
-                demand.merge(branchKey + "||" + normalizeItemName(fab), BigDecimal.valueOf(qty), BigDecimal::add);
+                int qty = (jo.getConditionerQuantity() != null && jo.getConditionerQuantity() > 0) ? jo.getConditionerQuantity() : 0;
+                if (qty > 0) demand.merge(branchKey + "||" + normalizeItemName(fab), BigDecimal.valueOf(qty), BigDecimal::add);
             }
         }
         return demand;
@@ -1017,7 +1017,7 @@ public class InventoryService {
                     && !NO_SUPPLY_LABELS.contains(rawDet.trim().toLowerCase(Locale.ROOT))) {
                 String detName = normalizeItemName(rawDet);
                 int qty = order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0
-                        ? order.getDetergentQuantity() : 1;
+                        ? order.getDetergentQuantity() : 0;
                 if (CANONICAL_ITEM_NAMES.containsValue(detName) && detName.contains("Detergent")) {
                     // Specific brand selected — count exactly for that item
                     grouped.computeIfAbsent(branch + "||" + detName, k -> new LinkedHashMap<>())
@@ -1039,7 +1039,7 @@ public class InventoryService {
                     && !NO_SUPPLY_LABELS.contains(rawFab.trim().toLowerCase(Locale.ROOT))) {
                 String fabName = normalizeItemName(rawFab);
                 int qty = order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0
-                        ? order.getConditionerQuantity() : 1;
+                        ? order.getConditionerQuantity() : 0;
                 if (CANONICAL_ITEM_NAMES.containsValue(fabName) && fabName.contains("Conditioner")) {
                     // Specific brand selected — count exactly
                     grouped.computeIfAbsent(branch + "||" + fabName, k -> new LinkedHashMap<>())
@@ -1197,15 +1197,15 @@ public class InventoryService {
             String det = jo.getDetergentPreference();
             if (hasConsumableSelection(det)) {
                 String name = normalizeItemName(det);
-                int qty = (jo.getDetergentQuantity() != null && jo.getDetergentQuantity() > 0) ? jo.getDetergentQuantity() : 1;
-                itemDayDemand.computeIfAbsent(name, k -> new LinkedHashMap<>()).merge(dateKey, (double) qty, Double::sum);
+                int qty = (jo.getDetergentQuantity() != null && jo.getDetergentQuantity() > 0) ? jo.getDetergentQuantity() : 0;
+                if (qty > 0) itemDayDemand.computeIfAbsent(name, k -> new LinkedHashMap<>()).merge(dateKey, (double) qty, Double::sum);
             }
 
             String fab = jo.getFabricConditionerPreference();
             if (hasConsumableSelection(fab)) {
                 String name = normalizeItemName(fab);
-                int qty = (jo.getConditionerQuantity() != null && jo.getConditionerQuantity() > 0) ? jo.getConditionerQuantity() : 1;
-                itemDayDemand.computeIfAbsent(name, k -> new LinkedHashMap<>()).merge(dateKey, (double) qty, Double::sum);
+                int qty = (jo.getConditionerQuantity() != null && jo.getConditionerQuantity() > 0) ? jo.getConditionerQuantity() : 0;
+                if (qty > 0) itemDayDemand.computeIfAbsent(name, k -> new LinkedHashMap<>()).merge(dateKey, (double) qty, Double::sum);
             }
         }
 
