@@ -160,7 +160,7 @@ interface InventoryItem {
   forecastedUsage: number;
   daysUntilEmpty: number | null;
   projectedAfter7Days: number;
-  status: "Healthy" | "Low" | "Critical" | "No Data";
+  status: "Healthy" | "Low" | "Critical" | "Out of Stock" | "No Data";
   historicalDailyUsage: number;
   confirmedDemand7D: number;
   isAsset: boolean;
@@ -190,10 +190,10 @@ function calcDaysUntilService(
   return Math.floor((next.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
 }
 
-function getStatus(daysRemaining: number | null, hasUsage: boolean): "Healthy" | "Low" | "Critical" | "No Data" {
-  if (!hasUsage || daysRemaining === null) return "No Data";
-  if (daysRemaining <= 7) return "Critical";
-  if (daysRemaining <= 14) return "Low";
+function getStatus(currentStock: number): "Healthy" | "Low" | "Critical" | "Out of Stock" | "No Data" {
+  if (currentStock === 0) return "Out of Stock";
+  if (currentStock >= 1 && currentStock <= 9) return "Critical";
+  if (currentStock >= 10 && currentStock <= 20) return "Low";
   return "Healthy";
 }
 
@@ -215,6 +215,7 @@ function getCanonicalBranchName(branch?: string): string {
 }
 
 function getRecommendedAction(item: InventoryItem): string {
+  if (item.status === "Out of Stock") return "Restock immediately";
   if (item.status === "Critical") return "Restock now";
   if (item.status === "Low") return "Plan restock";
   return "Healthy";
@@ -268,6 +269,7 @@ const statusStyle: Record<string, string> = {
   Healthy: "bg-emerald-100 text-emerald-700",
   Low: "bg-amber-100 text-amber-700",
   Critical: "bg-red-100 text-red-700",
+  "Out of Stock": "bg-gray-200 text-gray-800",
   "No Data": "bg-slate-100 text-slate-500",
 };
 
@@ -277,7 +279,7 @@ const assetStatusStyle: Record<string, string> = {
   Decommissioned: "bg-red-100 text-red-700",
 };
 
-const DONUT_COLORS = ["#EF4444", "#F59E0B", "#10B981"];
+const DONUT_COLORS = ["#6B7280", "#EF4444", "#F59E0B", "#10B981"];
 const BAR_COLORS = ["hsl(218,58%,20%)", "hsl(218,58%,36%)", "hsl(218,58%,52%)", "hsl(218,58%,68%)"];
 const HEATMAP_DAYS_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -399,8 +401,8 @@ function mapInventoryRecord(
   // Use the unit stored in the record (respects what was saved); fall back to canonical or a safe default.
   const unit = record.unit || (canonical?.unit ?? (isAsset ? "units" : "packs"));
   const daysRemaining = isAsset ? null : calcDaysRemaining(Number(record.currentStock || 0), dailyUsage);
-  const hasUsage = !isAsset && (itemForecast?.usage ?? 0) >= 0.001;
-  const status = isAsset ? "Healthy" : getStatus(daysRemaining, hasUsage);
+  const stock = Number(record.currentStock || 0);
+  const status = isAsset ? "Healthy" : getStatus(stock);
   const daysUntilService = calcDaysUntilService(record.lastServicedDate, record.maintenanceIntervalDays);
   return {
     id: record.id,
@@ -447,7 +449,7 @@ export default function PredictiveInventoryPage() {
   const [branches, setBranches] = useState<string[]>([]);
   const [dynamicBranches, setDynamicBranches] = useState<string[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "Critical" | "Low" | "Healthy">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "Critical" | "Low" | "Healthy" | "Out of Stock">("all");
   const [itemTypeFilter, setItemTypeFilter] = useState<"all" | "consumable" | "asset">("all");
   const [tablePage, setTablePage] = useState(1);
   const [tablePageSize, setTablePageSize] = useState(DEFAULT_TABLE_PAGE_SIZE);
@@ -457,7 +459,7 @@ export default function PredictiveInventoryPage() {
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [operationsKpi, setOperationsKpi] = useState<OperationsKpiRecord | null>(null);
   const [dailyOrderVolume, setDailyOrderVolume] = useState<DailyOrderVolumeRecord[]>([]);
-  const [donutSegmentFilter, setDonutSegmentFilter] = useState<"all" | "Critical" | "Low" | "Healthy">("all");
+  const [donutSegmentFilter, setDonutSegmentFilter] = useState<"all" | "Critical" | "Low" | "Healthy" | "Out of Stock">("all");
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createSubmitting, setCreateSubmitting] = useState(false);
@@ -552,7 +554,7 @@ export default function PredictiveInventoryPage() {
     const effectiveStatus = donutSegmentFilter !== "all" ? donutSegmentFilter : statusFilter;
     if (effectiveStatus !== "all") items = items.filter((i) => i.status === effectiveStatus);
     return [...items].sort((a, b) => {
-      const score = (s: InventoryItem) => s.status === "Critical" ? 0 : s.status === "Low" ? 1 : 2;
+      const score = (s: InventoryItem) => s.status === "Out of Stock" ? -1 : s.status === "Critical" ? 0 : s.status === "Low" ? 1 : 2;
       return score(a) - score(b);
     });
   }, [inventory, selectedTab, isStaff, categoryFilter, statusFilter, itemTypeFilter, donutSegmentFilter]);
@@ -566,7 +568,7 @@ export default function PredictiveInventoryPage() {
   // For any catalog item not yet created in the DB, show a placeholder row so staff
   // know it exists and can create it.
   const canonicalFour = useMemo(() => {
-    const statusOrder: Record<string, number> = { Critical: 0, Low: 1, Healthy: 2, "No Data": 3 };
+    const statusOrder: Record<string, number> = { "Out of Stock": -1, Critical: 0, Low: 1, Healthy: 2, "No Data": 3 };
     const currentBranchName = isStaff ? (userBranch || "Your Branch") : selectedTab;
 
     // Start with all consumable items already in the inventory for this branch view.
@@ -609,13 +611,17 @@ export default function PredictiveInventoryPage() {
     const critical = filteredInventory.filter((i) => i.status === "Critical").length;
     const low = filteredInventory.filter((i) => i.status === "Low").length;
     const healthy = filteredInventory.filter((i) => i.status === "Healthy").length;
-    const urgent = filteredInventory.filter((i) => i.status !== "Healthy")
+    const outOfStock = filteredInventory.filter((i) => i.status === "Out of Stock").length;
+    const urgent = filteredInventory.filter((i) => i.status !== "Healthy" && i.status !== "No Data")
       .sort((a, b) => {
+        // Out of Stock first, then by days until empty
+        if (a.status === "Out of Stock" && b.status !== "Out of Stock") return -1;
+        if (b.status === "Out of Stock" && a.status !== "Out of Stock") return 1;
         if (a.daysUntilEmpty === null) return 1;
         if (b.daysUntilEmpty === null) return -1;
         return a.daysUntilEmpty - b.daysUntilEmpty;
       })[0] ?? null;
-    return { critical, low, healthy, urgent };
+    return { critical, low, healthy, outOfStock, urgent };
   }, [filteredInventory]);
 
   const actionItems = useMemo(() => {
@@ -630,10 +636,10 @@ export default function PredictiveInventoryPage() {
   }, [allConsumables, allAssets]);
 
   const needsAttention = useMemo(() => {
-    return filteredInventory.filter((i) => !i.isAsset && (i.status === "Critical" || i.status === "Low"))
+    return filteredInventory.filter((i) => !i.isAsset && (i.status === "Out of Stock" || i.status === "Critical" || i.status === "Low"))
       .sort((a, b) => {
-        const scoreA = a.status === "Critical" ? 0 : 1;
-        const scoreB = b.status === "Critical" ? 0 : 1;
+        const scoreA = a.status === "Out of Stock" ? -1 : a.status === "Critical" ? 0 : 1;
+        const scoreB = b.status === "Out of Stock" ? -1 : b.status === "Critical" ? 0 : 1;
         if (scoreA !== scoreB) return scoreA - scoreB;
         if (a.daysUntilEmpty === null) return 1;
         if (b.daysUntilEmpty === null) return -1;
@@ -667,8 +673,11 @@ export default function PredictiveInventoryPage() {
       const critical = items.filter((i) => i.status === "Critical").length;
       const low = items.filter((i) => i.status === "Low").length;
       const healthy = items.filter((i) => i.status === "Healthy").length;
+      const outOfStock = items.filter((i) => i.status === "Out of Stock").length;
       const noData = items.filter((i) => i.status === "No Data").length;
-      const urgent = items.filter((i) => i.status !== "Healthy").sort((a, b) => {
+      const urgent = items.filter((i) => i.status !== "Healthy" && i.status !== "No Data").sort((a, b) => {
+        if (a.status === "Out of Stock" && b.status !== "Out of Stock") return -1;
+        if (b.status === "Out of Stock" && a.status !== "Out of Stock") return 1;
         if (a.daysUntilEmpty === null) return 1;
         if (b.daysUntilEmpty === null) return -1;
         return a.daysUntilEmpty - b.daysUntilEmpty;
@@ -676,10 +685,10 @@ export default function PredictiveInventoryPage() {
       const daysCandidates = items.map((i) => i.daysUntilEmpty).filter((d): d is number => typeof d === "number");
       const fewestDaysLeft = daysCandidates.length ? Math.min(...daysCandidates) : null;
       const expectedUse7DTotal = items.reduce((sum, i) => sum + Math.max(0, i.forecastedUsage * 7), 0);
-      const overallStatus: "Critical" | "Low" | "Healthy" | "No Data" =
-        critical > 0 ? "Critical" : low > 0 ? "Low" : healthy > 0 ? "Healthy" : "No Data";
+      const overallStatus: "Critical" | "Low" | "Healthy" | "Out of Stock" | "No Data" =
+        outOfStock > 0 ? "Out of Stock" : critical > 0 ? "Critical" : low > 0 ? "Low" : healthy > 0 ? "Healthy" : "No Data";
       return {
-        branch, totalItems: items.length || 4, critical, low, healthy, noData,
+        branch, totalItems: items.length || 4, critical, low, healthy, outOfStock, noData,
         urgentItem: urgent?.product ?? "All items healthy", fewestDaysLeft, expectedUse7DTotal,
         action: urgent ? getRecommendedAction(urgent) : "Healthy",
         overallStatus,
@@ -705,6 +714,7 @@ export default function PredictiveInventoryPage() {
   // Donut data — based on all consumables (unfiltered)
   const donutData = useMemo(() => {
     return [
+      { name: "Out of Stock", value: allConsumables.filter((i) => i.status === "Out of Stock").length },
       { name: "Critical", value: allConsumables.filter((i) => i.status === "Critical").length },
       { name: "Low", value: allConsumables.filter((i) => i.status === "Low").length },
       { name: "Healthy", value: allConsumables.filter((i) => i.status === "Healthy").length },
@@ -1199,20 +1209,24 @@ export default function PredictiveInventoryPage() {
       {/* Action Banner */}
       {!loading && !bannerDismissed && (() => {
         const activePool = (isAdmin && selectedTab === "All") ? allConsumables : consumableItems;
-        const criticalItems = activePool.filter((i) => i.status === "Critical");
-        if (criticalItems.length === 0) return null;
+        const alertItems = activePool.filter((i) => i.status === "Out of Stock" || i.status === "Critical" || i.status === "Low");
+        if (alertItems.length === 0) return null;
 
-        const outOfStockCount = criticalItems.filter((i) => i.currentStock === 0).length;
-        const lowStockCount = criticalItems.length - outOfStockCount;
+        const outOfStockCount = alertItems.filter((i) => i.status === "Out of Stock").length;
+        const criticalCount = alertItems.filter((i) => i.status === "Critical").length;
+        const lowCount = alertItems.filter((i) => i.status === "Low").length;
         const parts: string[] = [];
         if (outOfStockCount > 0) {
           parts.push(`${outOfStockCount} supply item${outOfStockCount > 1 ? "s" : ""} ${outOfStockCount === 1 ? "is" : "are"} out of stock and need${outOfStockCount === 1 ? "s" : ""} immediate restocking`);
         }
-        if (lowStockCount > 0) {
-          parts.push(`${lowStockCount} supply item${lowStockCount > 1 ? "s" : ""} ${lowStockCount === 1 ? "is" : "are"} expected to run out within 7 days`);
+        if (criticalCount > 0) {
+          parts.push(`${criticalCount} supply item${criticalCount > 1 ? "s" : ""} ${criticalCount === 1 ? "has" : "have"} critical stock (1–9 units)`);
+        }
+        if (lowCount > 0) {
+          parts.push(`${lowCount} supply item${lowCount > 1 ? "s" : ""} ${lowCount === 1 ? "has" : "have"} low stock (10–20 units)`);
         }
         const bannerText = parts.join(" · ");
-        const isOutOfStock = outOfStockCount > 0 && lowStockCount === 0;
+        const isOutOfStock = outOfStockCount > 0;
         return (
           <div className={`rounded-2xl border p-4 flex items-start justify-between gap-3 ${isOutOfStock ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"
             }`}>
@@ -1230,7 +1244,7 @@ export default function PredictiveInventoryPage() {
       })()}
 
       {/* Summary KPI cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {loading
           ? Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="glass-card rounded-2xl p-6 space-y-3">
@@ -1242,11 +1256,13 @@ export default function PredictiveInventoryPage() {
           : (isAdmin && selectedTab === "All"
             ? [
               { label: "Total Branches", value: branches.length || branchOverview.length, icon: Building2, color: "bg-primary/10 text-primary" },
+              { label: "Out of Stock (System-Wide)", value: summary.outOfStock, icon: Package, color: "bg-gray-200 text-gray-800" },
               { label: "Critical Items (System-Wide)", value: summary.critical, icon: AlertTriangle, color: "bg-red-100 text-red-700" },
               { label: "Low Items (System-Wide)", value: summary.low, icon: CalendarClock, color: "bg-amber-100 text-amber-700" },
               { label: "Healthy Items (System-Wide)", value: summary.healthy, icon: TrendingUp, color: "bg-emerald-100 text-emerald-700" },
             ]
             : [
+              { label: "Out of Stock", value: summary.outOfStock, icon: Package, color: "bg-gray-200 text-gray-800" },
               { label: "Critical Items", value: summary.critical, icon: AlertTriangle, color: "bg-red-100 text-red-700" },
               { label: "Low Items", value: summary.low, icon: CalendarClock, color: "bg-amber-100 text-amber-700" },
               { label: "Healthy Items", value: summary.healthy, icon: TrendingUp, color: "bg-emerald-100 text-emerald-700" },
@@ -1339,16 +1355,19 @@ export default function PredictiveInventoryPage() {
             {/* Cards grid */}
             <div className="p-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
               {branchOverview.map((row) => {
-                const isCritical = row.critical > 0;
-                const isLow = row.low > 0 && !isCritical;
-                const borderColor = isCritical ? "border-red-300" : isLow ? "border-amber-300" : "border-emerald-200";
-                const badgeStyle = isCritical
-                  ? "bg-red-100 text-red-800 border border-red-200"
-                  : isLow
-                    ? "bg-amber-100 text-amber-800 border border-amber-200"
-                    : "bg-emerald-100 text-emerald-800 border border-emerald-200";
-                const headerBg = isCritical ? "bg-red-50/60" : isLow ? "bg-amber-50/60" : "bg-emerald-50/40";
-                const statusLabel = isCritical ? "Critical Restock" : isLow ? "Low Stock" : "Healthy";
+                const isOutOfStock = row.outOfStock > 0;
+                const isCritical = row.critical > 0 && !isOutOfStock;
+                const isLow = row.low > 0 && !isCritical && !isOutOfStock;
+                const borderColor = isOutOfStock ? "border-gray-400" : isCritical ? "border-red-300" : isLow ? "border-amber-300" : "border-emerald-200";
+                const badgeStyle = isOutOfStock
+                  ? "bg-gray-200 text-gray-800 border border-gray-300"
+                  : isCritical
+                    ? "bg-red-100 text-red-800 border border-red-200"
+                    : isLow
+                      ? "bg-amber-100 text-amber-800 border border-amber-200"
+                      : "bg-emerald-100 text-emerald-800 border border-emerald-200";
+                const headerBg = isOutOfStock ? "bg-gray-50/60" : isCritical ? "bg-red-50/60" : isLow ? "bg-amber-50/60" : "bg-emerald-50/40";
+                const statusLabel = isOutOfStock ? "Out of Stock" : isCritical ? "Critical Restock" : isLow ? "Low Stock" : "Healthy";
 
                 return (
                   <div
@@ -1370,8 +1389,14 @@ export default function PredictiveInventoryPage() {
                       </div>
 
                       <div className="p-4 space-y-4">
-                        {/* 3 Metrics: Critical / Low / Healthy */}
-                        <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-muted/20 border border-border/20 text-center">
+                        {/* 4 Metrics: Out of Stock / Critical / Low / Healthy */}
+                        <div className="grid grid-cols-4 gap-2 p-3 rounded-xl bg-muted/20 border border-border/20 text-center">
+                          <div>
+                            <p className={`text-xl font-black ${row.outOfStock > 0 ? "text-gray-700" : "text-foreground"}`}>
+                              {row.outOfStock}
+                            </p>
+                            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mt-0.5">Out</p>
+                          </div>
                           <div>
                             <p className={`text-xl font-black ${row.critical > 0 ? "text-red-600" : "text-foreground"}`}>
                               {row.critical}
@@ -1436,6 +1461,7 @@ export default function PredictiveInventoryPage() {
                   <tr className="border-b border-border/30 bg-muted/20">
                     <th className="text-left p-4 font-semibold text-foreground">Branch</th>
                     <th className="text-center p-4 font-semibold text-foreground">Supplies</th>
+                    <th className="text-center p-4 font-semibold text-foreground">Out of Stock</th>
                     <th className="text-center p-4 font-semibold text-foreground">Critical</th>
                     <th className="text-center p-4 font-semibold text-foreground">Low</th>
                     <th className="text-center p-4 font-semibold text-foreground">Healthy</th>
@@ -1456,6 +1482,11 @@ export default function PredictiveInventoryPage() {
                         {row.branch}
                       </td>
                       <td className="p-4 text-center font-semibold text-foreground">{row.totalItems}</td>
+                      <td className="p-4 text-center">
+                        <span className={row.outOfStock > 0 ? "font-bold text-gray-700 bg-gray-100 px-2 py-0.5 rounded-full" : "text-muted-foreground"}>
+                          {row.outOfStock}
+                        </span>
+                      </td>
                       <td className="p-4 text-center">
                         <span className={row.critical > 0 ? "font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full" : "text-muted-foreground"}>
                           {row.critical}
@@ -1559,7 +1590,7 @@ export default function PredictiveInventoryPage() {
               </div>
               <div className="p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {reorderSuggestions.map((item) => (
-                  <div key={item.id} className={`rounded-xl border p-4 space-y-2 ${item.status === "Critical" ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"}`}>
+                  <div key={item.id} className={`rounded-xl border p-4 space-y-2 ${item.status === "Out of Stock" ? "border-gray-300 bg-gray-50" : item.status === "Critical" ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"}`}>
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusStyle[item.status]}`}>{item.status}</span>
                       <p className="font-semibold text-foreground text-base">{item.product} — {item.status}</p>
@@ -1571,7 +1602,7 @@ export default function PredictiveInventoryPage() {
                     </p>
                     {item.recommended > 0 ? (
                       <p className="text-sm font-semibold text-foreground">
-                        Reorder <span className={item.status === "Critical" ? "text-red-700" : "text-amber-700"}>{item.recommended} {item.unit}</span>
+                        Reorder <span className={item.status === "Out of Stock" ? "text-gray-700" : item.status === "Critical" ? "text-red-700" : "text-amber-700"}>{item.recommended} {item.unit}</span>
                         <span className="text-xs text-muted-foreground font-normal ml-1">to maintain 30-day supply</span>
                       </p>
                     ) : item.historicalDailyUsage < 0.001 ? (
@@ -1647,10 +1678,11 @@ export default function PredictiveInventoryPage() {
             </div>
             <div className="px-6 py-3 border-b border-border/20 bg-muted/10 flex flex-wrap gap-x-6 gap-y-2 text-sm">
               <span className="font-semibold text-muted-foreground">Status:</span>
-              <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-red-500" /> Critical = ≤7 days stock remaining</span>
-              <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-amber-500" /> Low = 8–14 days remaining</span>
-              <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-emerald-500" /> Healthy = &gt;14 days remaining</span>
-              <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-slate-400" /> No Data = no order history yet</span>
+              <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-gray-500" /> Out of Stock = 0 units</span>
+              <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-red-500" /> Critical = 1–9 units</span>
+              <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-amber-500" /> Low Stock = 10–20 units</span>
+              <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-emerald-500" /> Healthy = &gt;20 units</span>
+              <span className="inline-flex items-center gap-1.5 text-foreground"><span className="h-3 w-3 rounded-full bg-slate-400" /> No Data = not yet recorded</span>
             </div>
 
             {/* Desktop table */}
@@ -1818,10 +1850,11 @@ export default function PredictiveInventoryPage() {
                     <Bar dataKey="currentStock" name="Current Stock" radius={[4, 4, 0, 0]}>
                       {supplyDemandData.map((entry, idx) => (
                         <Cell key={idx} fill={
-                          entry.status === "Critical" ? "#EF4444"
-                            : entry.status === "Low" ? "#F59E0B"
-                              : entry.status === "Healthy" ? "#10B981"
-                                : "#94A3B8"
+                          entry.status === "Out of Stock" ? "#6B7280"
+                            : entry.status === "Critical" ? "#EF4444"
+                              : entry.status === "Low" ? "#F59E0B"
+                                : entry.status === "Healthy" ? "#10B981"
+                                  : "#94A3B8"
                         } />
                       ))}
                     </Bar>
