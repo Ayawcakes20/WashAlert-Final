@@ -87,12 +87,12 @@ type DailyStatsRecord = {
 // ── Catalog ───────────────────────────────────────────────────────────────────
 
 const CONSUMABLE_CATALOG = [
-  { name: "Surf Detergent",           category: "Detergent",          unit: "packs" },
-  { name: "Ariel Detergent",          category: "Detergent",          unit: "packs" },
-  { name: "Breeze Baby Detergent",    category: "Detergent",          unit: "packs" },
-  { name: "UniLove Baby Detergent",   category: "Detergent",          unit: "packs" },
-  { name: "Charm Fabric Conditioner", category: "Fabric Conditioner", unit: "packs" },
-  { name: "Downy Fabric Conditioner", category: "Fabric Conditioner", unit: "packs" },
+  { name: "Surf Detergent",           category: "Detergent",          unit: "sachets" },
+  { name: "Ariel Detergent",          category: "Detergent",          unit: "sachets" },
+  { name: "Breeze Baby Detergent",    category: "Detergent",          unit: "sachets" },
+  { name: "UniLove Baby Detergent",   category: "Detergent",          unit: "sachets" },
+  { name: "Charm Fabric Conditioner", category: "Fabric Conditioner", unit: "sachets" },
+  { name: "Downy Fabric Conditioner", category: "Fabric Conditioner", unit: "sachets" },
 ];
 
 const ASSET_CATALOG = [
@@ -129,12 +129,12 @@ const ATTENTION_DEFAULT_LIMIT = 5;
 const CONSUMABLE_NAMES = CONSUMABLE_CATALOG.map((c) => c.name);
 
 const CONSUMABLE_DEFAULTS: Record<string, { category: string; unit: string; reorderLevel: number }> = {
-  "Surf Detergent":           { category: "Detergent",          unit: "packs", reorderLevel: 2 },
-  "Ariel Detergent":          { category: "Detergent",          unit: "packs", reorderLevel: 5 },
-  "Breeze Baby Detergent":    { category: "Detergent",          unit: "packs", reorderLevel: 5 },
-  "UniLove Baby Detergent":   { category: "Detergent",          unit: "packs", reorderLevel: 5 },
-  "Charm Fabric Conditioner": { category: "Fabric Conditioner", unit: "packs", reorderLevel: 1 },
-  "Downy Fabric Conditioner": { category: "Fabric Conditioner", unit: "packs", reorderLevel: 10 },
+  "Surf Detergent":           { category: "Detergent",          unit: "sachets", reorderLevel: 2 },
+  "Ariel Detergent":          { category: "Detergent",          unit: "sachets", reorderLevel: 5 },
+  "Breeze Baby Detergent":    { category: "Detergent",          unit: "sachets", reorderLevel: 5 },
+  "UniLove Baby Detergent":   { category: "Detergent",          unit: "sachets", reorderLevel: 5 },
+  "Charm Fabric Conditioner": { category: "Fabric Conditioner", unit: "sachets", reorderLevel: 1 },
+  "Downy Fabric Conditioner": { category: "Fabric Conditioner", unit: "sachets", reorderLevel: 10 },
 };
 
 const ASSET_TYPES = ["Washing Machine", "Dryer", "Aircon", "Electric Fan"] as const;

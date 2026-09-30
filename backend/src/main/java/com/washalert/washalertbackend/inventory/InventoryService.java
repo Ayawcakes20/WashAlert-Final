@@ -169,15 +169,20 @@ public class InventoryService {
 
         record ItemDef(String id, String itemName) {}
 
-
-        List<ItemDef> detDefs = List.of(
-                new ItemDef("surf",  "Surf Detergent"),
-                new ItemDef("ariel", "Ariel Detergent")
-        );
-        List<ItemDef> fabDefs = List.of(
-                new ItemDef("charm", "Charm Fabric Conditioner"),
-                new ItemDef("downy", "Downy Fabric Conditioner")
-        );
+        // Build item lists dynamically from CANONICAL_ITEM_NAMES so that every entry
+        // (including newly added items like breeze_baby and unilove) is automatically
+        // included in the availability response without any code changes.
+        List<ItemDef> detDefs = new ArrayList<>();
+        List<ItemDef> fabDefs = new ArrayList<>();
+        CANONICAL_ITEM_NAMES.forEach((id, canonicalName) -> {
+            String lower = canonicalName.toLowerCase(java.util.Locale.ROOT);
+            if (lower.contains("conditioner")) {
+                fabDefs.add(new ItemDef(id, canonicalName));
+            } else {
+                // Detergents and any other consumables go in detergent list
+                detDefs.add(new ItemDef(id, canonicalName));
+            }
+        });
 
         var detItems = detDefs.stream().map(def -> {
             InventoryItem item = itemRepository
@@ -530,13 +535,11 @@ public class InventoryService {
     }
 
     private String resolveInventoryItemName(String preference) {
-        if (preference == null) return "";
-        String p = preference.toLowerCase(Locale.ROOT);
-        if (p.contains("surf")) return "Surf Detergent";
-        if (p.contains("ariel")) return "Ariel Detergent";
-        if (p.contains("charm")) return "Charm Fabric Conditioner";
-        if (p.contains("downy")) return "Downy Fabric Conditioner";
-        return preference.trim();
+        // Delegate to normalizeItemName which uses CANONICAL_ITEM_NAMES — the single
+        // source of truth for all id→canonical-name mappings including newly added items
+        // like breeze_baby and unilove. This avoids duplicating the mapping here and
+        // ensures validation always uses the same resolution logic as the rest of the system.
+        return normalizeItemName(preference);
     }
 
     private void deductConsumable(String branch, String itemName, int qty, String reason, String actor) {
