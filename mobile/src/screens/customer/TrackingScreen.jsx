@@ -84,6 +84,34 @@ export default function TrackingScreen({ route, navigation }) {
     latitude: 14.5995, longitude: 120.9842,
     latitudeDelta: 0.005, longitudeDelta: 0.005,
   })).current;
+  const hasDriverLocation = useRef(false);
+
+  const updateDriverLocation = (lat, lng, duration = 5000) => {
+    // Avoid treating an absent Firestore field as coordinate 0 because
+    // Number(null) and Number('') both evaluate to zero.
+    if (lat === null || lat === undefined || lat === '' ||
+        lng === null || lng === undefined || lng === '') {
+      return;
+    }
+
+    const latitude = Number(lat);
+    const longitude = Number(lng);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+        latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return;
+
+    const location = { latitude, longitude };
+    setDriverLoc(location);
+
+    // Put the marker at the first live point immediately. Subsequent Firestore
+    // updates animate from that point to the driver's new GPS location.
+    if (!hasDriverLocation.current) {
+      driverCoord.setValue(location);
+      hasDriverLocation.current = true;
+    } else {
+      driverCoord.timing({ ...location, duration, useNativeDriver: false }).start();
+    }
+    setTrackingWarning('');
+  };
 
   useEffect(() => {
     Animated.loop(Animated.sequence([
@@ -96,7 +124,10 @@ export default function TrackingScreen({ route, navigation }) {
   useEffect(() => { loadOrder(); }, [orderId]);
 
   useEffect(() => {
-    const trackingDocId = String(delivData?.id || order?.trackingNumber || '').trim();
+    // Driver GPS is published at delivery_tracking/{trackingNumber}. A delivery
+    // database ID is a separate identifier and can point this listener at a
+    // document the driver never updates.
+    const trackingDocId = String(order?.trackingNumber || '').trim();
     if (!trackingDocId) return;
     if (!db) {
       setTrackingWarning('Tracking unavailable right now. Please try again later.');
@@ -127,14 +158,7 @@ export default function TrackingScreen({ route, navigation }) {
           }
           const d = snap.data() || {};
           setDelivData(d);
-          const lat = Number(d.lat);
-          const lng = Number(d.lng);
-          if (Number.isFinite(lat) && Number.isFinite(lng)) {
-            const c = { latitude: lat, longitude: lng };
-            setDriverLoc(c);
-            setTrackingWarning('');
-            driverCoord.timing({ ...c, duration: 5000, useNativeDriver: false }).start();
-          }
+          updateDriverLocation(d.lat, d.lng);
         },
         (error) => {
           console.warn('[Tracking] Firestore listener failed:', error?.message || error);
@@ -147,7 +171,7 @@ export default function TrackingScreen({ route, navigation }) {
       setTrackingWarning('Tracking unavailable right now. Please check again later.');
       return undefined;
     }
-  }, [order?.trackingNumber, order?.status, order?.assignedDriverId, order?.assignedDriverName, delivData?.id, delivData?.assignedDriverId, delivData?.driverName]);
+  }, [order?.trackingNumber, order?.status, order?.assignedDriverId, order?.assignedDriverName, delivData?.assignedDriverId, delivData?.driverName]);
 
   const loadOrder = async () => {
     if (!orderId) {
@@ -164,13 +188,9 @@ export default function TrackingScreen({ route, navigation }) {
         const delivery = await deliveriesApi.trackByTrackingNumber(d.trackingNumber);
         if (delivery) {
           setDelivData((prev) => ({ ...(prev || {}), ...delivery }));
-          const lat = Number(delivery.currentLatitude);
-          const lng = Number(delivery.currentLongitude);
-          if (Number.isFinite(lat) && Number.isFinite(lng)) {
-            const c = { latitude: lat, longitude: lng };
-            setDriverLoc(c);
-            setTrackingWarning('');
-            driverCoord.timing({ ...c, duration: 800, useNativeDriver: false }).start();
+          if (delivery.currentLatitude != null && delivery.currentLatitude !== '' &&
+              delivery.currentLongitude != null && delivery.currentLongitude !== '') {
+            updateDriverLocation(delivery.currentLatitude, delivery.currentLongitude, 800);
           } else if (
             delivery.assignedDriverId ||
             delivery.driverName ||
