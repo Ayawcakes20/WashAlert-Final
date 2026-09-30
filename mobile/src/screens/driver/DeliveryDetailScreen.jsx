@@ -44,12 +44,16 @@ const SHEET_COLLAPSED_RATIO = 0.24;
 const SHEET_EXPANDED_RATIO = 0.74;
 const SHEET_ACTION_BAR_HEIGHT = 92;
 const TRACKABLE_STATUSES = [
-  'ASSIGNED_FOR_PICKUP',
-  'EN_ROUTE_TO_CUSTOMER',
-  'LAUNDRY_COLLECTED',
-  'EN_ROUTE_TO_BRANCH',
-  'ASSIGNED_FOR_DELIVERY',
-  'OUT_FOR_DELIVERY'
+  // driverOrders maps the backend statuses to these mobile values before this
+  // screen receives them. The old uppercase workflow values never matched, so
+  // the GPS watcher was never started for an active driver assignment.
+  'accepted',
+  'at_customer',
+  'picked_up',
+  'at_branch',
+  'ready_for_dispatch',
+  'en_route',
+  'at_delivery',
 ];
 const GPS_MIN_UPDATE_INTERVAL_MS = 3000;
 const GPS_MIN_MOVE_METERS = 8;
@@ -319,6 +323,27 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
     let active = true;
 
     const startTracking = async () => {
+      const publishDriverLocation = async (coords) => {
+        const trackingNumber = String(delivery?.trackingNumber || '').trim();
+        if (!trackingNumber) return;
+
+        await setDoc(
+          doc(db, 'delivery_tracking', trackingNumber),
+          {
+            lat: coords.latitude,
+            lng: coords.longitude,
+            heading: coords.heading || 0,
+            status: delivery.status,
+            timestamp: serverTimestamp(),
+            driverId: String(user?.id || ''),
+            orderId: String(delivery.id || ''),
+            trackingNumber,
+            driverName: String(user?.fullName || ''),
+          },
+          { merge: true }
+        );
+      };
+
       try {
         if (locationSubscriptionRef.current) {
           locationSubscriptionRef.current.remove();
@@ -339,6 +364,8 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
           };
           lastAcceptedLocationRef.current = { ...startingCoords, timestamp: Date.now() };
           setDriverCoords(startingCoords);
+          // Do not wait for movement before customers can see the assigned rider.
+          await publishDriverLocation(startingCoords);
         }
         setLocationWarning('');
 
@@ -387,26 +414,11 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
               setLocationWarning('');
             }
 
-            // Firestore real-time sync (write by deliveryId and trackingNumber for compatibility)
-            const trackingDocIds = [
-              delivery?.id ? String(delivery.id) : '',
-              delivery?.trackingNumber ? String(delivery.trackingNumber) : '',
-            ].filter(Boolean);
-            for (const trackingDocId of trackingDocIds) {
-              await setDoc(
-                doc(db, 'delivery_tracking', trackingDocId),
-                {
-                  lat: coords.latitude,
-                  lng: coords.longitude,
-                  status: delivery.status,
-                  timestamp: serverTimestamp(),
-                  driverId: String(user?.id || ''),
-                  orderId: String(delivery.id || ''),
-                  trackingNumber: String(delivery.trackingNumber || ''),
-                  driverName: String(user?.fullName || ''),
-                },
-                { merge: true }
-              );
+            try {
+              await publishDriverLocation(coords);
+            } catch (error) {
+              console.warn('[GPS] Unable to publish driver location:', error?.message || error);
+              setLocationWarning('Unable to share live location right now.');
             }
 
             const shouldSyncBackend =
@@ -439,7 +451,7 @@ const DeliveryDetailScreen = ({ route, navigation }) => {
         locationSubscriptionRef.current = null;
       }
     };
-  }, [delivery?.id, delivery?.status, delivery?.orderNumber, mockDelivery, trackingRefreshKey]);
+  }, [delivery?.id, delivery?.status, delivery?.trackingNumber, mockDelivery, trackingRefreshKey, user?.id, user?.fullName]);
 
   // ─── Load from backend ─────────────────────────────────────────────────────
   const loadDelivery = useCallback(async ({ silent = false } = {}) => {
@@ -2440,5 +2452,4 @@ const styles = StyleSheet.create({
 });
 
 export default DeliveryDetailScreen;
-
 
