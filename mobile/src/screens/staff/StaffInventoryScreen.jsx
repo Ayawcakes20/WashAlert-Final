@@ -300,16 +300,19 @@ const calcDaysRemaining = (stock, avgDailyUsage) => {
   return Math.floor(stock / avgDailyUsage);
 };
 
-const getStatus = (currentStock, reorderLevel, stockAfter7) => {
-  if (currentStock <= reorderLevel || stockAfter7 < 0) return 'Critical';
-  if (currentStock <= reorderLevel * 1.5) return 'Low Stock';
+const getStatus = (currentStock) => {
+  const stock = Number(currentStock ?? 0);
+  if (stock <= 0) return 'Out of Stock';
+  if (stock <= 9) return 'Low Stock';
+  if (stock <= 20) return 'Critical Stock';
   return 'Healthy';
 };
 
 const STATUS_STYLE = {
-  Critical:   { bg: colors.errorLight,   text: colors.error,   label: 'Critical' },
-  'Low Stock': { bg: colors.warningLight, text: colors.warning, label: 'Low Stock' },
-  Healthy:    { bg: colors.successLight, text: colors.success, label: 'Healthy' },
+  'Out of Stock':  { bg: colors.errorLight,   text: colors.error,   label: 'Out of Stock' },
+  'Critical Stock':{ bg: colors.errorLight,   text: colors.error,   label: 'Critical Stock' },
+  'Low Stock':     { bg: colors.warningLight, text: colors.warning, label: 'Low Stock' },
+  Healthy:         { bg: colors.successLight, text: colors.success, label: 'Healthy' },
 };
 
 const ITEMS_PER_PAGE = 5;
@@ -330,7 +333,7 @@ function InventoryItemCard({ item }) {
   const avgUsage = item.estimatedDailyUsage ?? 0;
   const estUse7 = +(avgUsage * 7).toFixed(1);
   const stockAfter7 = +(item.currentStock - estUse7).toFixed(1);
-  const status = getStatus(item.currentStock, item.reorderLevel, stockAfter7);
+  const status = getStatus(item.currentStock);
   const daysLeft = calcDaysRemaining(item.currentStock, avgUsage);
   const st = STATUS_STYLE[status];
 
@@ -339,7 +342,8 @@ function InventoryItemCard({ item }) {
     : 50;
 
   const barColor =
-    status === 'Critical' ? colors.error :
+    status === 'Out of Stock' ? colors.error :
+    status === 'Critical Stock' ? colors.error :
     status === 'Low Stock' ? colors.warning :
     colors.success;
 
@@ -399,10 +403,9 @@ function NarrativeCard({ item }) {
   const avgUsage = item.estimatedDailyUsage ?? 0;
   const daysLeft = calcDaysRemaining(item.currentStock, avgUsage);
   const estUse7 = +(avgUsage * 7).toFixed(1);
-  const stockAfter7 = +(item.currentStock - estUse7).toFixed(1);
-  const status = getStatus(item.currentStock, item.reorderLevel, stockAfter7);
+  const status = getStatus(item.currentStock);
 
-  const isCritical = status === 'Critical' || (daysLeft !== null && daysLeft <= 7);
+  const isCritical = status === 'Critical Stock' || status === 'Out of Stock' || (daysLeft !== null && daysLeft <= 7);
   const isMonitor = !isCritical && daysLeft !== null && daysLeft <= 30;
 
   const accentColor = isCritical ? colors.error : isMonitor ? colors.warning : colors.success;
@@ -560,14 +563,11 @@ export default function StaffInventoryScreen() {
   });
 
   const criticalItems = enriched.filter((i) => {
-    const estUse7 = +((i.estimatedDailyUsage ?? 0) * 7).toFixed(1);
-    const after7 = +(i.currentStock - estUse7).toFixed(1);
-    return getStatus(i.currentStock, i.reorderLevel, after7) === 'Critical';
+    return getStatus(i.currentStock) !== 'Healthy';
   });
 
   const healthy = enriched.filter((i) => {
-    const estUse7 = +((i.estimatedDailyUsage ?? 0) * 7).toFixed(1);
-    return getStatus(i.currentStock, i.reorderLevel, i.currentStock - estUse7) === 'Healthy';
+    return getStatus(i.currentStock) === 'Healthy';
   }).length;
 
   const nextRestockDays = enriched
@@ -644,8 +644,10 @@ export default function StaffInventoryScreen() {
                     {item.currentStock} / {item.reorderLevel} {item.unit} · {item.branch}
                   </Text>
                 </View>
-                <View style={[styles.statusBadge, { backgroundColor: colors.errorLight }]}>
-                  <Text style={[styles.statusText, { color: colors.error }]}>Critical</Text>
+                <View style={[styles.statusBadge, { backgroundColor: (STATUS_STYLE[getStatus(item.currentStock)] || STATUS_STYLE['Critical Stock']).bg }]}>
+                  <Text style={[styles.statusText, { color: (STATUS_STYLE[getStatus(item.currentStock)] || STATUS_STYLE['Critical Stock']).text }]}>
+                    {getStatus(item.currentStock)}
+                  </Text>
                 </View>
               </View>
             ))}
