@@ -78,7 +78,13 @@ public class InventoryService {
         if (rawName == null) return rawName;
         String lower = rawName.trim().toLowerCase(java.util.Locale.ROOT);
         for (java.util.Map.Entry<String, String> entry : CANONICAL_ITEM_NAMES.entrySet()) {
-            if (lower.contains(entry.getKey())) return entry.getValue();
+            String key = entry.getKey();
+            if (lower.contains(key)
+                    || lower.contains(key.replace('_', ' '))
+                    || (key.contains("_") && lower.contains(key.split("_")[0]))
+                    || lower.contains(entry.getValue().toLowerCase(java.util.Locale.ROOT))) {
+                return entry.getValue();
+            }
         }
         return rawName.trim();
     }
