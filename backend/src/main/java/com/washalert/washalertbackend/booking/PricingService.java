@@ -203,6 +203,12 @@ public class PricingService {
             } else if (d.contains("ariel")) {
                 detergentPricePerSachet = new BigDecimal("30.00");
                 detergentLabel = "Ariel Detergent";
+            } else if (d.contains("breeze") || d.contains("breeze_baby")) {
+                detergentPricePerSachet = new BigDecimal("35.00");
+                detergentLabel = "Breeze Baby Detergent";
+            } else if (d.contains("unilove")) {
+                detergentPricePerSachet = new BigDecimal("35.00");
+                detergentLabel = "UniLove Baby Detergent";
             }
         }
 

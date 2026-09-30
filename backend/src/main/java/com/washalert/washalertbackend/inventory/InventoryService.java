@@ -132,7 +132,7 @@ public class InventoryService {
             String availableStr = available.stripTrailingZeros().toPlainString();
             throw new IllegalArgumentException(
                     "Insufficient inventory at this branch. " + resolvedName +
-                    " requires " + requiredQty + " pack(s) but only " +
+                    " requires " + requiredQty + " sachet(s) but only " +
                     availableStr + " are available. Please contact the branch or choose a different product.");
         }
     }
@@ -492,8 +492,10 @@ public class InventoryService {
     public void deductAtBooking(JobOrder order) {
         if (order == null || order.getBranch() == null) return;
         String branch = order.getBranch().trim();
-        int detQty = (order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0) ? order.getDetergentQuantity() : 1;
-        int conQty = (order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0) ? order.getConditionerQuantity() : 1;
+        // Use the exact quantity from the order. Fall back to 0 (skip deduction) rather than 1
+        // so that a missing/null quantity never causes a phantom 1-sachet deduction.
+        int detQty = (order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0) ? order.getDetergentQuantity() : 0;
+        int conQty = (order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0) ? order.getConditionerQuantity() : 0;
         deductConsumable(branch, order.getDetergentPreference(), detQty, "Booking: " + order.getTrackingNumber(), "system");
         deductConsumable(branch, order.getFabricConditionerPreference(), conQty, "Booking: " + order.getTrackingNumber(), "system");
     }
@@ -510,8 +512,9 @@ public class InventoryService {
             return;
         }
         String branch = order.getBranch().trim();
-        int detQty = (order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0) ? order.getDetergentQuantity() : 1;
-        int conQty = (order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0) ? order.getConditionerQuantity() : 1;
+        // Use the exact quantity from the order. Fall back to 0 (skip release) to mirror deductAtBooking.
+        int detQty = (order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0) ? order.getDetergentQuantity() : 0;
+        int conQty = (order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0) ? order.getConditionerQuantity() : 0;
         releaseConsumable(branch, order.getDetergentPreference(), detQty, "Booking-Release: " + order.getTrackingNumber(), "system");
         releaseConsumable(branch, order.getFabricConditionerPreference(), conQty, "Booking-Release: " + order.getTrackingNumber(), "system");
     }
@@ -528,8 +531,9 @@ public class InventoryService {
             return;
         }
         String branch = order.getBranch().trim();
-        int detQty = (order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0) ? order.getDetergentQuantity() : 1;
-        int conQty = (order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0) ? order.getConditionerQuantity() : 1;
+        // Use the exact quantity from the order. Fall back to 0 (skip deduction) to mirror deductAtBooking.
+        int detQty = (order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0) ? order.getDetergentQuantity() : 0;
+        int conQty = (order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0) ? order.getConditionerQuantity() : 0;
         deductConsumable(branch, order.getDetergentPreference(), detQty, "Order: " + order.getTrackingNumber(), "system");
         deductConsumable(branch, order.getFabricConditionerPreference(), conQty, "Order: " + order.getTrackingNumber(), "system");
     }
