@@ -17,3 +17,6 @@ firebase-service-account.json
 serviceAccountKey.json
 **/firebase-service-account.json
 **/*-service-account.json
+
+# Binaries
+*.apk

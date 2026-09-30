@@ -102,16 +102,11 @@ public class PriceConfirmationScheduler {
                             order.getFabricConditionerPreference(),
                             conQty
                     );
-                    inventoryService.validateSuppliesForBooking(
-                            order.getBranch(),
-                            order.getDetergentPreference(),
-                            order.getFabricConditionerPreference(),
-                            detQty,
-                            conQty
-                    );
 
                     order.setStatus(JobOrderStatus.WASHING);
                     order.setPriceConfirmedAt(now);
+                    // Stock was already deducted at booking time (deductAtBooking). Safety net
+                    // for legacy orders — skips if "Booking: TN" movement already exists.
                     inventoryService.deductForOrder(order);
                     timelineService.log(order, JobOrderStatus.WASHING, "system",
                             "Auto-confirmed after 1 hour of no customer response. Washing started.");

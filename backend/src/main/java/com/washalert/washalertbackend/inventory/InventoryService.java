@@ -493,15 +493,23 @@ public class InventoryService {
     /**
      * Deducts stock at booking time so inventory reflects reserved supplies immediately.
      * Uses reason prefix "Booking: TN" so WASHING can detect and skip double-deduction.
+     * Guarded: if a "Booking: TN" movement already exists (e.g. retry), the deduction is skipped.
      */
     @Transactional
     public void deductAtBooking(JobOrder order) {
         if (order == null || order.getBranch() == null) return;
+        if (movementRepository.existsByReasonStartingWith("Booking: " + order.getTrackingNumber())) {
+            log.info("[INVENTORY] Booking deduction already exists for {} — skipping duplicate deduction", order.getTrackingNumber());
+            return;
+        }
         String branch = order.getBranch().trim();
         // Use the exact quantity from the order. Fall back to 0 (skip deduction) rather than 1
         // so that a missing/null quantity never causes a phantom 1-sachet deduction.
         int detQty = (order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0) ? order.getDetergentQuantity() : 0;
         int conQty = (order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0) ? order.getConditionerQuantity() : 0;
+        log.info("[INVENTORY] Booking-time deduction for {}: det='{}' x{}, fab='{}' x{}, branch='{}'",
+                order.getTrackingNumber(), order.getDetergentPreference(), detQty,
+                order.getFabricConditionerPreference(), conQty, branch);
         deductConsumable(branch, order.getDetergentPreference(), detQty, "Booking: " + order.getTrackingNumber(), "system");
         deductConsumable(branch, order.getFabricConditionerPreference(), conQty, "Booking: " + order.getTrackingNumber(), "system");
     }
@@ -509,6 +517,7 @@ public class InventoryService {
     /**
      * Releases inventory reserved at booking when an order is cancelled.
      * Adds stock back using reason "Booking-Release: TN".
+     * Guarded: skips if release already exists OR if no booking deduction was ever recorded.
      */
     @Transactional
     public void releaseForOrder(JobOrder order) {
@@ -517,10 +526,17 @@ public class InventoryService {
             log.info("[INVENTORY] Release already exists for {} — skipping duplicate release", order.getTrackingNumber());
             return;
         }
+        if (!movementRepository.existsByReasonStartingWith("Booking: " + order.getTrackingNumber())) {
+            log.info("[INVENTORY] No booking deduction found for {} — nothing to release", order.getTrackingNumber());
+            return;
+        }
         String branch = order.getBranch().trim();
         // Use the exact quantity from the order. Fall back to 0 (skip release) to mirror deductAtBooking.
         int detQty = (order.getDetergentQuantity() != null && order.getDetergentQuantity() > 0) ? order.getDetergentQuantity() : 0;
         int conQty = (order.getConditionerQuantity() != null && order.getConditionerQuantity() > 0) ? order.getConditionerQuantity() : 0;
+        log.info("[INVENTORY] Releasing booking inventory for {}: det='{}' x{}, fab='{}' x{}, branch='{}'",
+                order.getTrackingNumber(), order.getDetergentPreference(), detQty,
+                order.getFabricConditionerPreference(), conQty, branch);
         releaseConsumable(branch, order.getDetergentPreference(), detQty, "Booking-Release: " + order.getTrackingNumber(), "system");
         releaseConsumable(branch, order.getFabricConditionerPreference(), conQty, "Booking-Release: " + order.getTrackingNumber(), "system");
     }

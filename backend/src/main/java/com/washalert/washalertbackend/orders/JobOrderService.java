@@ -465,14 +465,9 @@ public class JobOrderService {
                         jo.getFabricConditionerPreference(),
                         conQty
                 );
-                // Re-validate inventory availability in case stock changed since booking.
-                inventoryService.validateSuppliesForBooking(
-                        jo.getBranch(),
-                        jo.getDetergentPreference(),
-                        jo.getFabricConditionerPreference(),
-                        detQty,
-                        conQty
-                );
+                // Stock was already deducted at booking time (deductAtBooking). The call below
+                // is a safety net for legacy orders that did not have booking-time deduction —
+                // it skips automatically if a "Booking: TN" movement already exists.
                 inventoryService.deductForOrder(jo);
             }
             timelineService.log(jo, jo.getStatus(), actor.getEmail(), "Status updated by staff/admin");

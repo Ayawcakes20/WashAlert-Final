@@ -195,7 +195,7 @@ public class BookingService {
                 ? req.conditionerQuantity() : 0;
 
         // Validate inventory availability before committing the booking.
-        // Does NOT deduct stock — deduction happens when order reaches WASHING.
+        // Stock will be deducted immediately after save via deductAtBooking().
         inventoryService.validateSuppliesForBooking(
                 cleanBranch,
                 req.detergentPreference(),
