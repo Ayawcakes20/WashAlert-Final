@@ -287,7 +287,18 @@ public class AuthController {
         log.info("[AUTH][REGISTER] Mobile customer registration requested");
         User user;
         try {
-            user = authService.upsertMobileCustomerProfile(req.idToken(), req.fullName(), req.mobileNumber());
+            if (req.address() != null || req.addressLine1() != null || req.addressLine2() != null) {
+                user = authService.upsertMobileCustomerProfile(
+                        req.idToken(),
+                        req.fullName(),
+                        req.mobileNumber(),
+                        req.address(),
+                        req.addressLine1(),
+                        req.addressLine2()
+                );
+            } else {
+                user = authService.upsertMobileCustomerProfile(req.idToken(), req.fullName(), req.mobileNumber());
+            }
         } catch (IllegalArgumentException ex) {
             log.warn("[AUTH][REGISTER] Registration rejected: {}", ex.getMessage());
             return ResponseEntity.status(400).body(apiError(request, 400, ex.getMessage()));

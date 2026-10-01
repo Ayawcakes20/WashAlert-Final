@@ -11,6 +11,7 @@ import {
   HelpCircle,
   Loader2,
   Mail,
+  MapPin,
   MessageSquare,
   Pencil,
   Phone,
@@ -23,6 +24,7 @@ import {
   Trash2,
   User,
 } from "lucide-react";
+import { CustomerAddressManagerDialog } from "@/components/CustomerAddressManagerDialog";
 
 import {
   ordersApi,
@@ -536,6 +538,7 @@ export default function OrderManagementPage() {
   const [setPriceOrderId, setSetPriceOrderId] = useState<number | null>(null);
   const [setPriceSubmitting, setSetPriceSubmitting] = useState(false);
   const [showReceiptPreview, setShowReceiptPreview] = useState(false);
+  const [addressManagerOpen, setAddressManagerOpen] = useState(false);
 
   // Rider Assignment state
   const [assignRiderOpen, setAssignRiderOpen] = useState(false);
@@ -1220,6 +1223,14 @@ export default function OrderManagementPage() {
             onClick={() => void handleExportCsv()}
           >
             <Download className="h-4 w-4 mr-1" /> Export CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 px-3 rounded-brand border-teal-500/30 text-teal-700 hover:bg-teal-50 font-medium"
+            onClick={() => setAddressManagerOpen(true)}
+          >
+            <MapPin className="h-4 w-4 mr-1.5 text-teal-600" /> Customer Addresses
           </Button>
           {isAdmin && (
             <Button className="h-10 px-5 rounded-brand bg-brand-navy text-white hover:bg-brand-navyDark" onClick={openCreateModal}>
@@ -2920,6 +2931,11 @@ export default function OrderManagementPage() {
           </DialogContent>
         </Dialog>
       )}
+
+      <CustomerAddressManagerDialog
+        open={addressManagerOpen}
+        onOpenChange={setAddressManagerOpen}
+      />
 
     </motion.div>
   );

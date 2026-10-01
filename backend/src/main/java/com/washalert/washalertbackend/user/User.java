@@ -95,6 +95,15 @@ public class User {
     @Column(name = "profile_image_url", length = 1000)
     private String profileImageUrl;
 
+    @Column(name = "address", length = 255)
+    private String address;
+
+    @Column(name = "address_line_1", length = 255)
+    private String addressLine1;
+
+    @Column(name = "address_line_2", length = 255)
+    private String addressLine2;
+
     @PrePersist
     void onCreate() {
         LocalDateTime now = LocalDateTime.now();

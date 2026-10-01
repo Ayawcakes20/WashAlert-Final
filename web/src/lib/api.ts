@@ -678,6 +678,34 @@ export const usersApi = {
     }),
 };
 
+export interface CustomerRecord {
+  id: number;
+  fullName: string;
+  email: string;
+  mobileNumber?: string | null;
+  address?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  status: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export const customersApi = {
+  search: (query?: string, limit = 25) =>
+    apiRequest<CustomerRecord[]>(
+      `/api/customers/search?query=${encodeURIComponent(query || "")}&limit=${limit}`,
+    ),
+  updateAddress: (
+    id: number,
+    payload: { address: string; addressLine1?: string; addressLine2?: string },
+  ) =>
+    apiRequest<CustomerRecord>(`/api/customers/${id}/address`, {
+      method: "PUT",
+      body: payload,
+    }),
+};
+
 export const machinesApi = {
   list: () =>
     apiRequest<

@@ -69,6 +69,9 @@ public class SchemaMigrationRunner implements ApplicationRunner {
         addColumnIfMissing("users", "profile_image_url",  "VARCHAR(1000)");
         addColumnIfMissing("users", "branch_id",          "BIGINT");
         addColumnIfMissing("users", "fcm_token",          "VARCHAR(500)");
+        addColumnIfMissing("users", "address",            "VARCHAR(255)");
+        addColumnIfMissing("users", "address_line_1",     "VARCHAR(255)");
+        addColumnIfMissing("users", "address_line_2",     "VARCHAR(255)");
 
         // ── FK indexes (best-effort, ignored if they already exist) ────────────
         addIndexIfMissing("job_orders", "idx_jo_pickup_driver",   "assigned_pickup_driver_id");

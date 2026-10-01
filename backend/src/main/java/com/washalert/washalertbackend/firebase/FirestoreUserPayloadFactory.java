@@ -18,6 +18,9 @@ public final class FirestoreUserPayloadFactory {
         payload.put("fullName", user.getFullName());
         payload.put("mobileNumber", user.getMobileNumber());
         payload.put("profileImageUrl", user.getProfileImageUrl());
+        payload.put("address", user.getAddress());
+        payload.put("addressLine1", user.getAddressLine1());
+        payload.put("addressLine2", user.getAddressLine2());
         payload.put("role", user.getRole());
         payload.put("status", user.getStatus());
         payload.put("branch", user.getBranch());

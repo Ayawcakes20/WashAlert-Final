@@ -15,5 +15,13 @@ public record MobileCustomerProfileRequest(
                 regexp = "^$|^09\\d{9}$",
                 message = "Mobile number must use format 09XXXXXXXXX."
         )
-        String mobileNumber
-) {}
+        String mobileNumber,
+
+        String address,
+        String addressLine1,
+        String addressLine2
+) {
+    public MobileCustomerProfileRequest(String idToken, String fullName, String mobileNumber) {
+        this(idToken, fullName, mobileNumber, null, null, null);
+    }
+}

@@ -195,6 +195,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/payments/proof", "/api/payments/validate").hasRole("CUSTOMER")
 
                         .requestMatchers(HttpMethod.GET, "/api/admin/users/drivers").hasAnyRole("ADMIN", "STAFF")
+                        .requestMatchers("/api/customers/**").hasAnyRole("ADMIN", "STAFF")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/machines/**").hasAnyRole("ADMIN", "STAFF")
                         .requestMatchers("/api/inventory/**").hasAnyRole("ADMIN", "STAFF")

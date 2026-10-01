@@ -517,6 +517,9 @@ export const AuthProvider = ({ children }) => {
           idToken: signup.idToken,
           fullName: data.fullName,
           mobileNumber: data.phone,
+          address: data.address?.trim() || null,
+          addressLine1: (data.addressLine1?.trim()?.toLowerCase() === data.address?.trim()?.toLowerCase() ? '' : data.addressLine1?.trim()) || null,
+          addressLine2: data.addressLine2?.trim() || null,
         },
       });
       const createdProfile = requireSessionProfilePayload(registerProfile, 'Registration');

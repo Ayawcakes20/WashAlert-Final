@@ -62,9 +62,25 @@ public class AuthService {
     }
 
     public User upsertMobileCustomerProfile(String idToken, String fullName, String mobileNumber) {
+        return upsertMobileCustomerProfile(idToken, fullName, mobileNumber, null, null, null);
+    }
+
+    public User upsertMobileCustomerProfile(
+            String idToken,
+            String fullName,
+            String mobileNumber,
+            String address,
+            String addressLine1,
+            String addressLine2
+    ) {
         FirebaseToken token = firebaseIdentityService.verifyIdToken(idToken);
         String email = normalizeEmail(token.getEmail());
         String normalizedMobile = (mobileNumber == null || mobileNumber.isBlank()) ? null : mobileNumber.trim();
+        String normalizedAddress = (address == null || address.isBlank()) ? null : address.trim();
+        String rawLine1 = (addressLine1 == null || addressLine1.isBlank()) ? null : addressLine1.trim();
+        String normalizedLine1 = (rawLine1 != null && normalizedAddress != null && rawLine1.equalsIgnoreCase(normalizedAddress)) ? null : rawLine1;
+        String normalizedLine2 = (addressLine2 == null || addressLine2.isBlank()) ? null : addressLine2.trim();
+
         log.info("[AUTH][REGISTER] upsertMobileCustomerProfile uid={} email={}", token.getUid(), maskEmail(email));
         if (email.isBlank()) {
             throw new IllegalArgumentException("Firebase token does not contain an email.");
@@ -87,6 +103,11 @@ public class AuthService {
             if (normalizedMobile != null) {
                 existing.setMobileNumber(normalizedMobile);
             }
+            if (normalizedAddress != null) {
+                existing.setAddress(normalizedAddress);
+                existing.setAddressLine1(normalizedLine1);
+                existing.setAddressLine2(normalizedLine2);
+            }
             // Transition back to PENDING if they were not ACTIVE
             if (existing.getStatus() != UserStatus.ACTIVE) {
                 existing.setStatus(UserStatus.PENDING);
@@ -105,6 +126,9 @@ public class AuthService {
                 .email(email)
                 .fullName(fullName.trim())
                 .mobileNumber(normalizedMobile)
+                .address(normalizedAddress)
+                .addressLine1(normalizedLine1)
+                .addressLine2(normalizedLine2)
                 .passwordHash(encoder.encode("firebase-managed-" + token.getUid()))
                 .role(Role.CUSTOMER)
                 .status(UserStatus.PENDING) // Must be PENDING to trigger OTP
@@ -276,7 +300,10 @@ public class AuthService {
                 user.getBranchId(),
                 user.getBranch(),
                 allowedModules(user),
-                platform
+                platform,
+                user.getAddress(),
+                user.getAddressLine1(),
+                user.getAddressLine2()
         );
     }
 

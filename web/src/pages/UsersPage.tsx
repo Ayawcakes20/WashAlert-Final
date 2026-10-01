@@ -1,7 +1,8 @@
 import { motion } from "framer-motion";
-import { Shield, UserCog, Search, Plus, Pencil, Loader2, Truck, Mail } from "lucide-react";
+import { Shield, UserCog, Search, Plus, Pencil, Loader2, Truck, Mail, MapPin } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { usersApi, branchesApi, type UserAdminRecord } from "@/lib/api";
+import { CustomerAddressManagerDialog } from "@/components/CustomerAddressManagerDialog";
 import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,6 +96,7 @@ export default function UsersPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [addressManagerOpen, setAddressManagerOpen] = useState(false);
   const [createForm, setCreateForm] = useState({
     fullName: "",
     email: "",
@@ -322,9 +324,18 @@ export default function UsersPage() {
           <h1 className="text-2xl font-bold text-foreground tracking-tight">User Management</h1>
           <p className="text-sm text-muted-foreground mt-1">Manage internal staff and driver accounts</p>
         </div>
-        <Button className="h-10 px-5 rounded-xl gradient-navy" onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4" /> Invite User
-        </Button>
+        <div className="flex items-center gap-2.5">
+          <Button
+            variant="outline"
+            className="h-10 px-4 rounded-xl border-teal-500/30 text-teal-700 hover:bg-teal-50 font-medium"
+            onClick={() => setAddressManagerOpen(true)}
+          >
+            <MapPin className="h-4 w-4 mr-1.5 text-teal-600" /> Customer Addresses
+          </Button>
+          <Button className="h-10 px-5 rounded-xl gradient-navy" onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4" /> Invite User
+          </Button>
+        </div>
       </motion.div>
 
       <motion.div variants={item} className="flex items-center gap-2 bg-muted/50 rounded-xl px-4 py-2.5 max-w-md">
@@ -690,6 +701,11 @@ export default function UsersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CustomerAddressManagerDialog
+        open={addressManagerOpen}
+        onOpenChange={setAddressManagerOpen}
+      />
     </motion.div>
   );
 }

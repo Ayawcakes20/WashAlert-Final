@@ -68,4 +68,16 @@ public interface UserRepository extends JpaRepository<User, Long> {
             @Param("search") String search,
             Pageable pageable
     );
+
+    @Query("""
+            select u
+            from User u
+            where u.role = com.washalert.washalertbackend.user.Role.CUSTOMER
+              and (:search is null or :search = ''
+                   or lower(u.fullName) like lower(concat('%', :search, '%'))
+                   or lower(u.email) like lower(concat('%', :search, '%'))
+                   or u.mobileNumber like concat('%', :search, '%'))
+            order by u.updatedAt desc
+            """)
+    List<User> searchCustomers(@Param("search") String search, Pageable pageable);
 }
