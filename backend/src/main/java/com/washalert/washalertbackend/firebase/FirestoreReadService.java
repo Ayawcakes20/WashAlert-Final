@@ -45,7 +45,10 @@ public class FirestoreReadService {
             String provider,
             LocalDateTime verifiedAt,
             LocalDateTime createdAt,
-            String passwordHash
+            String passwordHash,
+            String address,
+            String addressLine1,
+            String addressLine2
     ) {
     }
 
@@ -333,7 +336,10 @@ public class FirestoreReadService {
                 provider,
                 asLocalDateTime(data.get("verifiedAt")),
                 asLocalDateTime(data.get("createdAt")),
-                asString(data.get("passwordHash"))
+                asString(data.get("passwordHash")),
+                asString(data.get("address")),
+                asString(data.get("addressLine1")),
+                asString(data.get("addressLine2"))
         );
     }
 

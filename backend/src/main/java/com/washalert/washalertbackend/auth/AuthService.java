@@ -416,7 +416,10 @@ public class AuthService {
                 u.getBranch(),
                 u.isEnabled(),
                 u.isMustChangePassword(),
-                u.getProvider().name()
+                u.getProvider().name(),
+                u.getAddress(),
+                u.getAddressLine1(),
+                u.getAddressLine2()
         );
     }
 
@@ -434,7 +437,10 @@ public class AuthService {
                 u.branch(),
                 Boolean.TRUE.equals(u.enabled()),
                 Boolean.TRUE.equals(u.mustChangePassword()),
-                u.provider()
+                u.provider(),
+                u.address(),
+                u.addressLine1(),
+                u.addressLine2()
         );
     }
 

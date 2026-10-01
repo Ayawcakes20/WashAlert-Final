@@ -40,7 +40,10 @@ class CustomUserDetailsServiceTests {
                 "LOCAL",
                 LocalDateTime.now(),
                 LocalDateTime.now(),
-                "encoded-password"
+                "encoded-password",
+                null,
+                null,
+                null
         );
 
         when(firestoreReadService.findUserByEmail("staff@example.com")).thenReturn(Optional.of(firestoreUser));
@@ -74,6 +77,9 @@ class CustomUserDetailsServiceTests {
                 "LOCAL",
                 LocalDateTime.now(),
                 LocalDateTime.now(),
+                null,
+                null,
+                null,
                 null
         );
         when(firestoreReadService.findUserByEmail("staff@example.com")).thenReturn(Optional.of(firestoreUser));

@@ -52,7 +52,7 @@ class MigrationParityServiceTests {
 
         when(firestoreReadService.listUsers()).thenReturn(List.of(
                 new FirestoreReadService.FirestoreUserRecord(
-                        1L, "a@test.com", "A", null, null, "STAFF", "Main", true, false, "LOCAL", null, null, "x")
+                        1L, "a@test.com", "A", null, null, "STAFF", "Main", true, false, "LOCAL", null, null, "x", null, null, null)
         ));
         when(firestoreReadService.listMachines()).thenReturn(List.of(
                 new MachineResponse(1L, "M-1", "Main", MachineType.WASHER, MachineStatus.AVAILABLE, LocalDateTime.now())

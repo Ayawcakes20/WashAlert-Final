@@ -13,5 +13,8 @@ public record MeResponse(
         String branch,
         boolean enabled,
         boolean mustChangePassword,
-        String provider
+        String provider,
+        String address,
+        String addressLine1,
+        String addressLine2
 ) {}

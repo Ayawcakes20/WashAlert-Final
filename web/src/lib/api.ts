@@ -14,6 +14,9 @@ export type MeResponse = {
   enabled: boolean;
   mustChangePassword: boolean;
   provider: string;
+  address?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
 };
 
 export type AuthSessionProfile = {

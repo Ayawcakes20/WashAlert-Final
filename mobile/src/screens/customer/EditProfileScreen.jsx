@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -26,7 +27,7 @@ const NAME_DISALLOWED_RE = /[^a-zA-Z\s'.-]/g;
 const MAX_LEN = { fullName: 60, phone: 11, address: 160, addressLine1: 100, addressLine2: 100 };
 
 const EditProfileScreen = ({ navigation }) => {
-  const { user, firebaseIdToken, updateUserProfile } = useAuth();
+  const { user, firebaseIdToken, updateUserProfile, refreshProfile } = useAuth();
   const isAdminOrStaff = user?.role === 'admin' || user?.role === 'staff';
   const scrollCue = useScrollCue();
   const [form, setForm] = useState({
@@ -89,6 +90,36 @@ const EditProfileScreen = ({ navigation }) => {
       isMounted = false;
     };
   }, [user?.fullName, user?.phone, user?.email, user?.profileImageUrl, user?.address, user?.addressLine1, user?.addressLine2]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      let isMounted = true;
+      if (refreshProfile) {
+        refreshProfile()
+          .then((updatedUser) => {
+            if (!isMounted || !updatedUser) return;
+            const updatedAddr = String(updatedUser.address || '').trim();
+            const rawLine1 = String(updatedUser.addressLine1 || '').trim();
+            const cleanLine1 = rawLine1.toLowerCase() === updatedAddr.toLowerCase() ? '' : rawLine1;
+            const cleanLine2 = String(updatedUser.addressLine2 || '').trim();
+            setForm((prev) => ({
+              ...prev,
+              fullName: updatedUser.fullName || prev.fullName,
+              phone: updatedUser.phone || prev.phone,
+              email: updatedUser.email || prev.email,
+              profileImageUrl: updatedUser.profileImageUrl || prev.profileImageUrl,
+              address: updatedAddr || prev.address,
+              addressLine1: cleanLine1,
+              addressLine2: cleanLine2 || prev.addressLine2,
+            }));
+          })
+          .catch(() => {});
+      }
+      return () => {
+        isMounted = false;
+      };
+    }, [refreshProfile])
+  );
 
   const isBusy = saving || uploadingPhoto;
 

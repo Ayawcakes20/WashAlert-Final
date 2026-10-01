@@ -78,7 +78,10 @@ class AuthServiceTests {
                 "LOCAL",
                 LocalDateTime.now(),
                 LocalDateTime.now(),
-                "hash"
+                "hash",
+                null,
+                null,
+                null
         );
         when(firestoreReadService.findUserById(100L)).thenReturn(Optional.of(firestoreUser));
 

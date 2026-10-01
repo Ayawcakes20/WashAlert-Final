@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   Alert,
   ScrollView,
@@ -37,7 +38,7 @@ const getLabelIcon = (label = '') => {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const SavedAddressesScreen = () => {
-  const { user } = useAuth();
+  const { user, refreshProfile } = useAuth();
   const isAdminOrStaff = user?.role === 'admin' || user?.role === 'staff';
   const scrollCue = useScrollCue();
   const [items, setItems] = useState([]);
@@ -45,9 +46,29 @@ const SavedAddressesScreen = () => {
   const [editingItem, setEditingItem] = useState(null); // null = adding new
 
   // ── Load ───────────────────────────────────────────────────────────────
-  useEffect(() => {
-    loadSavedAddresses().then(setItems).catch(() => setItems([]));
-  }, []);
+  useFocusEffect(
+    React.useCallback(() => {
+      let isMounted = true;
+      if (refreshProfile) {
+        refreshProfile()
+          .then(() => {
+            if (isMounted) {
+              loadSavedAddresses().then(setItems).catch(() => setItems([]));
+            }
+          })
+          .catch(() => {
+            if (isMounted) {
+              loadSavedAddresses().then(setItems).catch(() => setItems([]));
+            }
+          });
+      } else {
+        loadSavedAddresses().then(setItems).catch(() => setItems([]));
+      }
+      return () => {
+        isMounted = false;
+      };
+    }, [refreshProfile])
+  );
 
   const persist = async (next) => {
     const saved = await saveSavedAddresses(next);

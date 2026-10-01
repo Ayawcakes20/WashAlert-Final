@@ -351,7 +351,18 @@ export const AuthProvider = ({ children }) => {
             await AsyncStorage.removeItem(USER_STORAGE_KEY);
             setUser(null);
           } else {
-            if (!mapped.address) {
+            if (mapped.address) {
+              try {
+                await saveOrUpdateDefaultAddress({
+                  label: 'Home',
+                  address: mapped.address,
+                  addressLine1: mapped.addressLine1 || '',
+                  addressLine2: mapped.addressLine2 || '',
+                  unitFloor: [mapped.addressLine1, mapped.addressLine2].filter(Boolean).join(', '),
+                  isDefault: true,
+                });
+              } catch {}
+            } else {
               try {
                 const def = await getDefaultSavedAddress();
                 if (def?.address) {
@@ -361,7 +372,8 @@ export const AuthProvider = ({ children }) => {
                   mapped.addressLine2 = def.addressLine2 || '';
                 }
               } catch {}
-            } else if (mapped.addressLine1 && mapped.address && mapped.addressLine1.trim().toLowerCase() === mapped.address.trim().toLowerCase()) {
+            }
+            if (mapped.addressLine1 && mapped.address && mapped.addressLine1.trim().toLowerCase() === mapped.address.trim().toLowerCase()) {
               mapped.addressLine1 = '';
             }
             setUser(mapped);
@@ -574,6 +586,48 @@ export const AuthProvider = ({ children }) => {
       return next;
     });
   }, []);
+
+  const refreshProfile = useCallback(async () => {
+    try {
+      const profile = await authRequest('/api/auth/me');
+      const mapped = mapSessionProfile(profile, user);
+      if (mapped.role) {
+        if (mapped.address) {
+          try {
+            await saveOrUpdateDefaultAddress({
+              label: 'Home',
+              address: mapped.address,
+              addressLine1: mapped.addressLine1 || '',
+              addressLine2: mapped.addressLine2 || '',
+              unitFloor: [mapped.addressLine1, mapped.addressLine2].filter(Boolean).join(', '),
+              isDefault: true,
+            });
+          } catch {}
+        } else {
+          try {
+            const def = await getDefaultSavedAddress();
+            if (def?.address) {
+              mapped.address = def.address;
+              const defLine1 = def.addressLine1 || '';
+              mapped.addressLine1 = defLine1.toLowerCase() === def.address.toLowerCase() ? '' : defLine1;
+              mapped.addressLine2 = def.addressLine2 || '';
+            }
+          } catch {}
+        }
+        if (mapped.addressLine1 && mapped.address && mapped.addressLine1.trim().toLowerCase() === mapped.address.trim().toLowerCase()) {
+          mapped.addressLine1 = '';
+        }
+        setUser(mapped);
+        await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(mapped));
+        return mapped;
+      }
+    } catch (err) {
+      if (__DEV__) {
+        console.warn('[Auth] refreshProfile failed:', err?.message);
+      }
+    }
+    return user;
+  }, [user]);
 
   const changePassword = useCallback(async ({ currentPassword, newPassword, forcePasswordUpdate = false }) => {
     const accountEmail = normalizeEmail(user?.email || firebaseSession?.email || '');
@@ -826,6 +880,7 @@ export const AuthProvider = ({ children }) => {
         resetPassword,
         completeOnboarding,
         updateUserProfile,
+        refreshProfile,
         changePassword,
         firebaseIdToken: firebaseSession?.idToken || '',
       }}

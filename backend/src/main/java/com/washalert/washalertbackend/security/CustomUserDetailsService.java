@@ -73,6 +73,9 @@ public class CustomUserDetailsService implements UserDetailsService {
                 .createdAt(record.createdAt())
                 .branch(record.branch())
                 .provider(parseProvider(record.provider()))
+                .address(record.address())
+                .addressLine1(record.addressLine1())
+                .addressLine2(record.addressLine2())
                 .build();
     }
 
