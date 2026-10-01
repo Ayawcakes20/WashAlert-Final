@@ -14,6 +14,7 @@ import {
   loadSavedAddresses,
   saveSavedAddresses,
 } from '../../services/savedAddresses';
+import { useAuth } from '../../context/AuthContext';
 import AddressPickerSheet from '../../components/AddressPickerSheet';
 import ScrollCue from '../../components/ScrollCue';
 import { useScrollCue } from '../../hooks/useScrollCue';
@@ -36,6 +37,8 @@ const getLabelIcon = (label = '') => {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const SavedAddressesScreen = () => {
+  const { user } = useAuth();
+  const isAdminOrStaff = user?.role === 'admin' || user?.role === 'staff';
   const scrollCue = useScrollCue();
   const [items, setItems] = useState([]);
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -58,6 +61,13 @@ const SavedAddressesScreen = () => {
   };
 
   const handleEdit = (item) => {
+    if (item?.isDefault && !isAdminOrStaff) {
+      Alert.alert(
+        'Default Address Locked',
+        'Only Admin and Staff are authorized to edit the default address.'
+      );
+      return;
+    }
     setEditingItem(item);
     setPickerVisible(true);
   };
@@ -101,6 +111,15 @@ const SavedAddressesScreen = () => {
   };
 
   const removeAddress = async (id) => {
+    const target = items.find((i) => i.id === id);
+    if (target?.isDefault && !isAdminOrStaff) {
+      Alert.alert(
+        'Default Address Locked',
+        'Only Admin and Staff are authorized to remove the default address.'
+      );
+      return;
+    }
+
     Alert.alert('Remove Address', 'Remove this address?', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -168,12 +187,20 @@ const SavedAddressesScreen = () => {
                     )}
                   </View>
                   <View style={styles.cardActions}>
-                    <TouchableOpacity onPress={() => handleEdit(item)} style={styles.actionBtn}>
-                      <Ionicons name="pencil-outline" size={16} color={colors.primary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => removeAddress(item.id)} style={styles.actionBtn}>
-                      <Ionicons name="trash-outline" size={16} color={colors.error} />
-                    </TouchableOpacity>
+                    {item.isDefault && !isAdminOrStaff ? (
+                      <TouchableOpacity onPress={() => handleEdit(item)} style={styles.actionBtn}>
+                        <Ionicons name="lock-closed" size={16} color={colors.textTertiary} />
+                      </TouchableOpacity>
+                    ) : (
+                      <>
+                        <TouchableOpacity onPress={() => handleEdit(item)} style={styles.actionBtn}>
+                          <Ionicons name="pencil-outline" size={16} color={colors.primary} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => removeAddress(item.id)} style={styles.actionBtn}>
+                          <Ionicons name="trash-outline" size={16} color={colors.error} />
+                        </TouchableOpacity>
+                      </>
+                    )}
                   </View>
                 </View>
 

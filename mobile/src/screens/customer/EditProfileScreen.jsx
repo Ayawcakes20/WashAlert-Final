@@ -15,6 +15,7 @@ import { colors } from '../../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { profileApi } from '../../services/api';
+import { getDefaultSavedAddress, saveOrUpdateDefaultAddress } from '../../services/savedAddresses';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadImageAsync } from '../../services/storageService';
 import ScrollCue from '../../components/ScrollCue';
@@ -22,16 +23,20 @@ import { useScrollCue } from '../../hooks/useScrollCue';
 
 // Same name allowlist as RegisterScreen — letters, spaces, and name punctuation only.
 const NAME_DISALLOWED_RE = /[^a-zA-Z\s'.-]/g;
-const MAX_LEN = { fullName: 60, phone: 11 };
+const MAX_LEN = { fullName: 60, phone: 11, address: 160, addressLine1: 100, addressLine2: 100 };
 
 const EditProfileScreen = ({ navigation }) => {
   const { user, firebaseIdToken, updateUserProfile } = useAuth();
+  const isAdminOrStaff = user?.role === 'admin' || user?.role === 'staff';
   const scrollCue = useScrollCue();
   const [form, setForm] = useState({
     fullName: user?.fullName || '',
     phone: user?.phone || '',
     email: user?.email || '',
     profileImageUrl: user?.profileImageUrl || '',
+    address: user?.address || '',
+    addressLine1: user?.addressLine1 || '',
+    addressLine2: user?.addressLine2 || '',
   });
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
@@ -39,19 +44,45 @@ const EditProfileScreen = ({ navigation }) => {
   const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
-    setForm({
+    let isMounted = true;
+    setForm((prev) => ({
+      ...prev,
       fullName: user?.fullName || '',
       phone: user?.phone || '',
       email: user?.email || '',
       profileImageUrl: user?.profileImageUrl || '',
-    });
-  }, [user?.fullName, user?.phone, user?.email, user?.profileImageUrl]);
+      address: user?.address || prev.address || '',
+      addressLine1: user?.addressLine1 || prev.addressLine1 || '',
+      addressLine2: user?.addressLine2 || prev.addressLine2 || '',
+    }));
+
+    getDefaultSavedAddress()
+      .then((def) => {
+        if (isMounted && def) {
+          setForm((prev) => ({
+            ...prev,
+            address: user?.address || prev.address || def.address || '',
+            addressLine1: user?.addressLine1 || prev.addressLine1 || def.addressLine1 || def.unitFloor || '',
+            addressLine2: user?.addressLine2 || prev.addressLine2 || def.addressLine2 || '',
+          }));
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.fullName, user?.phone, user?.email, user?.profileImageUrl, user?.address, user?.addressLine1, user?.addressLine2]);
 
   const isBusy = saving || uploadingPhoto;
 
   const canSave = useMemo(() => {
-    return !!form.fullName?.trim() && /^09\d{9}$/.test(form.phone || '');
-  }, [form.fullName, form.phone]);
+    const hasValidNameAndPhone = !!form.fullName?.trim() && /^09\d{9}$/.test(form.phone || '');
+    if (isAdminOrStaff && isEditing) {
+      return hasValidNameAndPhone && !!form.address?.trim();
+    }
+    return hasValidNameAndPhone;
+  }, [form.fullName, form.phone, form.address, isAdminOrStaff, isEditing]);
 
   const setField = (key, value) => {
     let next = value;
@@ -68,6 +99,11 @@ const EditProfileScreen = ({ navigation }) => {
     }
     if (!/^09\d{9}$/.test(form.phone || '')) {
       next.phone = 'Valid PH number (09XXXXXXXXX)';
+    }
+    if (isAdminOrStaff && isEditing) {
+      if (!form.address?.trim()) {
+        next.address = 'Address is required';
+      }
     }
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -119,11 +155,32 @@ const EditProfileScreen = ({ navigation }) => {
         mobileNumber: form.phone.trim(),
         profileImageUrl: form.profileImageUrl || null,
       });
-      await updateUserProfile({
+
+      const profileUpdates = {
         fullName: form.fullName.trim(),
         phone: form.phone.trim(),
         profileImageUrl: form.profileImageUrl || '',
-      });
+      };
+
+      if (isAdminOrStaff) {
+        const trimmedAddress = form.address.trim();
+        const trimmedLine1 = form.addressLine1?.trim() || '';
+        const trimmedLine2 = form.addressLine2?.trim() || '';
+        profileUpdates.address = trimmedAddress;
+        profileUpdates.addressLine1 = trimmedLine1;
+        profileUpdates.addressLine2 = trimmedLine2;
+
+        await saveOrUpdateDefaultAddress({
+          label: 'Home',
+          address: trimmedAddress,
+          addressLine1: trimmedLine1,
+          addressLine2: trimmedLine2,
+          unitFloor: [trimmedLine1, trimmedLine2].filter(Boolean).join(', '),
+          isDefault: true,
+        }).catch(() => {});
+      }
+
+      await updateUserProfile(profileUpdates);
       console.log('[Profile][Save] Save complete userId=', user?.id);
       setIsEditing(false);
       Alert.alert('Profile Updated', 'Your profile details were saved successfully.', [
@@ -143,7 +200,22 @@ const EditProfileScreen = ({ navigation }) => {
       phone: user?.phone || '',
       email: user?.email || '',
       profileImageUrl: user?.profileImageUrl || '',
+      address: user?.address || '',
+      addressLine1: user?.addressLine1 || '',
+      addressLine2: user?.addressLine2 || '',
     });
+    getDefaultSavedAddress()
+      .then((def) => {
+        if (def) {
+          setForm((prev) => ({
+            ...prev,
+            address: user?.address || def.address || '',
+            addressLine1: user?.addressLine1 || def.addressLine1 || def.unitFloor || '',
+            addressLine2: user?.addressLine2 || def.addressLine2 || '',
+          }));
+        }
+      })
+      .catch(() => {});
     setErrors({});
     setIsEditing(false);
   };
@@ -234,6 +306,101 @@ const EditProfileScreen = ({ navigation }) => {
               </>
             ) : (
               <Text style={styles.viewValue}>{form.email || '—'}</Text>
+            )}
+          </View>
+
+          {/* Default Address Section */}
+          <View style={styles.addressSectionHeader}>
+            <View style={styles.addressTitleRow}>
+              <Ionicons name="location" size={18} color={colors.primary} />
+              <Text style={styles.addressSectionTitle}>Default Address</Text>
+              <View style={styles.defaultBadge}>
+                <Text style={styles.defaultBadgeText}>DEFAULT</Text>
+              </View>
+            </View>
+            {!isAdminOrStaff && (
+              <View style={styles.lockRow}>
+                <Ionicons name="lock-closed" size={13} color={colors.textTertiary} />
+                <Text style={styles.lockNotice}>Only Admin/Staff can edit</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.fieldBox}>
+            <Text style={styles.label}>Address</Text>
+            {isEditing && isAdminOrStaff ? (
+              <>
+                <TextInput
+                  style={[styles.input, errors.address && styles.inputError]}
+                  value={form.address}
+                  onChangeText={(t) => setField('address', t)}
+                  placeholder="Street / Barangay / City"
+                  maxLength={MAX_LEN.address}
+                />
+                {errors.address ? <Text style={styles.errorText}>{errors.address}</Text> : null}
+              </>
+            ) : isEditing && !isAdminOrStaff ? (
+              <>
+                <TextInput
+                  style={[styles.input, styles.inputDisabled]}
+                  value={form.address}
+                  editable={false}
+                  placeholder="No address set"
+                />
+                <Text style={styles.hintText}>Default address can only be changed by Admin or Staff.</Text>
+              </>
+            ) : (
+              <Text style={styles.viewValue}>{form.address || '—'}</Text>
+            )}
+          </View>
+
+          <View style={styles.fieldBox}>
+            <Text style={styles.label}>Address Line 1 (Optional)</Text>
+            {isEditing && isAdminOrStaff ? (
+              <TextInput
+                style={styles.input}
+                value={form.addressLine1}
+                onChangeText={(t) => setField('addressLine1', t)}
+                placeholder="Apt, suite, unit, building"
+                maxLength={MAX_LEN.addressLine1}
+              />
+            ) : isEditing && !isAdminOrStaff ? (
+              <>
+                <TextInput
+                  style={[styles.input, styles.inputDisabled]}
+                  value={form.addressLine1}
+                  editable={false}
+                  placeholder="—"
+                />
+                <Text style={styles.hintText}>Default address can only be changed by Admin or Staff.</Text>
+              </>
+            ) : (
+              <Text style={styles.viewValue}>{form.addressLine1 || '—'}</Text>
+            )}
+          </View>
+
+          <View style={styles.fieldBox}>
+            <Text style={styles.label}>Address Line 2 (Optional)</Text>
+            {isEditing && isAdminOrStaff ? (
+              <TextInput
+                style={styles.input}
+                value={form.addressLine2}
+                onChangeText={(t) => setField('addressLine2', t)}
+                placeholder="Landmark, floor, delivery notes"
+                maxLength={MAX_LEN.addressLine2}
+              />
+            ) : isEditing && !isAdminOrStaff ? (
+              <>
+                <TextInput
+                  style={[styles.input, styles.inputDisabled]}
+                  value={form.addressLine2}
+                  editable={false}
+                  placeholder="—"
+                />
+                <Text style={styles.hintText}>Default address can only be changed by Admin or Staff.</Text>
+              </>
+            ) : (
+              <Text style={styles.viewValue}>{form.addressLine2 || '—'}</Text>
             )}
           </View>
 
@@ -347,6 +514,49 @@ const styles = StyleSheet.create({
   inputDisabled: { backgroundColor: colors.border, color: colors.textSecondary },
   errorText: { color: colors.error, fontSize: 12, marginTop: 4 },
   hintText: { color: colors.textSecondary, fontSize: 10, marginTop: 4 },
+
+  addressSectionHeader: {
+    marginTop: 8,
+    marginBottom: 16,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  addressTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  addressSectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  defaultBadge: {
+    backgroundColor: 'rgba(46, 196, 182, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(46, 196, 182, 0.3)',
+  },
+  defaultBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#0F766E',
+    letterSpacing: 0.5,
+  },
+  lockRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+  },
+  lockNotice: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    fontStyle: 'italic',
+  },
 
   pwdBtn: {
     width: '100%',

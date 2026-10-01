@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { API_BASE_URL, FIREBASE_API_KEY, FIREBASE_PROJECT_ID } from '../config/env';
 import { auth as firebaseAuth } from '../services/firebase';
+import { getDefaultSavedAddress, saveOrUpdateDefaultAddress } from '../services/savedAddresses';
 
 const AuthContext = createContext(undefined);
 
@@ -312,6 +313,9 @@ const mapSessionProfile = (profile, fallback = null) => ({
   platform: profile.platform || 'MOBILE',
   branch: profile.branch || '',
   mustChangePassword: Boolean(profile.mustChangePassword),
+  address: profile.address || fallback?.address || '',
+  addressLine1: profile.addressLine1 || fallback?.addressLine1 || '',
+  addressLine2: profile.addressLine2 || fallback?.addressLine2 || '',
 });
 
 export const AuthProvider = ({ children }) => {
@@ -340,6 +344,16 @@ export const AuthProvider = ({ children }) => {
             await AsyncStorage.removeItem(USER_STORAGE_KEY);
             setUser(null);
           } else {
+            if (!mapped.address) {
+              try {
+                const def = await getDefaultSavedAddress();
+                if (def?.address) {
+                  mapped.address = def.address;
+                  mapped.addressLine1 = def.addressLine1 || def.unitFloor || '';
+                  mapped.addressLine2 = def.addressLine2 || '';
+                }
+              } catch {}
+            }
             setUser(mapped);
             await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(mapped));
           }
@@ -436,6 +450,16 @@ export const AuthProvider = ({ children }) => {
       }
       const profile = requireSessionProfilePayload(result, 'Login');
       const mapped = mapSessionProfile(profile);
+      if (!mapped.address) {
+        try {
+          const def = await getDefaultSavedAddress();
+          if (def?.address) {
+            mapped.address = def.address;
+            mapped.addressLine1 = def.addressLine1 || def.unitFloor || '';
+            mapped.addressLine2 = def.addressLine2 || '';
+          }
+        } catch {}
+      }
       setUser(mapped);
       await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(mapped));
       return {
@@ -452,6 +476,19 @@ export const AuthProvider = ({ children }) => {
   const register = useCallback(async (data) => {
     const normalizedEmail = normalizeEmail(data.email);
     try {
+      if (data.address && data.address.trim()) {
+        const defaultEntry = {
+          label: 'Home',
+          address: data.address.trim(),
+          addressLine1: (data.addressLine1 || '').trim(),
+          addressLine2: (data.addressLine2 || '').trim(),
+          unitFloor: [(data.addressLine1 || '').trim(), (data.addressLine2 || '').trim()].filter(Boolean).join(', '),
+          isDefault: true,
+        };
+        await saveOrUpdateDefaultAddress(defaultEntry).catch(() => {});
+        await AsyncStorage.setItem(`pending_address_${normalizedEmail}`, JSON.stringify(defaultEntry)).catch(() => {});
+      }
+
       const signup = await firebaseRequest('accounts:signUp', {
         email: normalizedEmail,
         password: data.password,
@@ -627,9 +664,10 @@ export const AuthProvider = ({ children }) => {
 
   const verifyOTP = useCallback(async (code, email) => {
     try {
+      const normalizedEmail = normalizeEmail(email);
       const profile = await authRequest('/api/auth/otp/verify', {
         method: 'POST',
-        body: { email: normalizeEmail(email), code },
+        body: { email: normalizedEmail, code },
       });
 
       const mapped = mapSessionProfile(requireSessionProfilePayload(profile, 'OTP verification'));
@@ -638,6 +676,31 @@ export const AuthProvider = ({ children }) => {
           success: false,
           error: `Account role "${mapped.backendRole || 'UNKNOWN'}" is not allowed on mobile.`,
         };
+      }
+
+      try {
+        const pendingJson = await AsyncStorage.getItem(`pending_address_${normalizedEmail}`);
+        if (pendingJson) {
+          const parsed = JSON.parse(pendingJson);
+          if (parsed?.address) {
+            mapped.address = parsed.address;
+            mapped.addressLine1 = parsed.addressLine1 || '';
+            mapped.addressLine2 = parsed.addressLine2 || '';
+            await saveOrUpdateDefaultAddress(parsed).catch(() => {});
+          }
+          await AsyncStorage.removeItem(`pending_address_${normalizedEmail}`);
+        }
+      } catch {}
+
+      if (!mapped.address) {
+        try {
+          const def = await getDefaultSavedAddress();
+          if (def?.address) {
+            mapped.address = def.address;
+            mapped.addressLine1 = def.addressLine1 || def.unitFloor || '';
+            mapped.addressLine2 = def.addressLine2 || '';
+          }
+        } catch {}
       }
 
       setUser(mapped);

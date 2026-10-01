@@ -20,11 +20,20 @@ import { WashingMachineLoader } from '../../components';
 // (apostrophes, periods, hyphens) — strips anything else as the user types instead of
 // only rejecting at submit time.
 const NAME_DISALLOWED_RE = /[^a-zA-Z\s'.-]/g;
-const MAX_LEN = { fullName: 60, email: 100, phone: 11, password: 64, confirm: 64 };
+const MAX_LEN = { fullName: 60, email: 100, phone: 11, password: 64, confirm: 64, address: 160, addressLine1: 100, addressLine2: 100 };
 
 const RegisterScreen = ({ navigation }) => {
   const { register, requestOTP } = useAuth();
-  const [form, setForm] = useState({ fullName: '', email: '', phone: '', password: '', confirm: '' });
+  const [form, setForm] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    address: '',
+    addressLine1: '',
+    addressLine2: '',
+    password: '',
+    confirm: '',
+  });
   const [showPw, setShowPw] = useState(false);
   const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [agreed, setAgreed] = useState(false);
@@ -46,6 +55,10 @@ const RegisterScreen = ({ navigation }) => {
     if (key === 'phone') {
       if (!value || !/^09\d{9}$/.test(value)) e.phone = 'Valid PH number (09XXXXXXXXX)';
       else delete e.phone;
+    }
+    if (key === 'address') {
+      if (!value || !value.trim()) e.address = 'Address is required';
+      else delete e.address;
     }
     if (key === 'password') {
       if (!value || value.length < 8) e.password = 'Min 8 characters';
@@ -73,6 +86,7 @@ const RegisterScreen = ({ navigation }) => {
     if (!trimmedName || trimmedName.split(/\s+/).length < 2) e.fullName = 'Please enter both first and last name';
     if (!form.email || !/\S+@\S+\.\S+/.test(form.email)) e.email = 'Valid email required';
     if (!form.phone || !/^09\d{9}$/.test(form.phone)) e.phone = 'Valid PH number (09XXXXXXXXX)';
+    if (!form.address || !form.address.trim()) e.address = 'Address is required';
     if (!form.password || form.password.length < 8) e.password = 'Min 8 characters';
     else if (!/(?=.*[a-zA-Z])(?=.*\d)/.test(form.password)) e.password = 'Must contain letter and number';
     if (form.confirm !== form.password) e.confirm = "Passwords don't match";
@@ -150,9 +164,12 @@ const RegisterScreen = ({ navigation }) => {
   }
 
   const inputFields = [
-    { key: 'fullName', icon: 'person-outline', placeholder: 'Full Name', keyboardType: 'default' },
-    { key: 'email', icon: 'mail-outline', placeholder: 'Email address', keyboardType: 'email-address' },
-    { key: 'phone', icon: 'call-outline', placeholder: 'Phone (09XXXXXXXXX)', keyboardType: 'phone-pad' },
+    { key: 'fullName', icon: 'person-outline', placeholder: 'Full Name *', keyboardType: 'default', autoCapitalize: 'words' },
+    { key: 'email', icon: 'mail-outline', placeholder: 'Email address *', keyboardType: 'email-address', autoCapitalize: 'none' },
+    { key: 'phone', icon: 'call-outline', placeholder: 'Phone (09XXXXXXXXX) *', keyboardType: 'phone-pad', autoCapitalize: 'none' },
+    { key: 'address', icon: 'location-outline', placeholder: 'Address (Street, Barangay, City) *', keyboardType: 'default', autoCapitalize: 'words' },
+    { key: 'addressLine1', icon: 'business-outline', placeholder: 'Address Line 1 (Optional)', keyboardType: 'default', autoCapitalize: 'words' },
+    { key: 'addressLine2', icon: 'map-outline', placeholder: 'Address Line 2 (Optional)', keyboardType: 'default', autoCapitalize: 'words' },
   ];
 
   return (
@@ -180,7 +197,7 @@ const RegisterScreen = ({ navigation }) => {
 
           {/* Form Fields */}
           <View style={styles.formSection}>
-            {inputFields.map(({ key, icon, placeholder, keyboardType }) => (
+            {inputFields.map(({ key, icon, placeholder, keyboardType, autoCapitalize }) => (
               <View key={key} style={styles.inputWrapper}>
                 <View style={[
                   styles.inputContainer,
@@ -194,8 +211,8 @@ const RegisterScreen = ({ navigation }) => {
                     value={form[key]}
                     onChangeText={(val) => set(key, val)}
                     keyboardType={keyboardType}
-                    autoCapitalize={key === 'email' ? 'none' : 'words'}
-                    maxLength={MAX_LEN[key]}
+                    autoCapitalize={autoCapitalize || (key === 'email' ? 'none' : 'words')}
+                    maxLength={MAX_LEN[key] || 100}
                   />
                 </View>
                 {errors[key] ? <Text style={styles.errorText}>{errors[key]}</Text> : null}
