@@ -2,21 +2,29 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const SAVED_ADDRESSES_STORAGE_KEY = 'washalert_saved_addresses_v2';
 
-const normalizeAddress = (item = {}) => ({
-  id: String(item.id || Date.now()),
-  label: String(item.label || '').trim(),
-  address: String(item.address || '').trim(),
-  // Optional detail fields
-  unitFloor: String(item.unitFloor || '').trim(),
-  addressLine1: String(item.addressLine1 || '').trim(),
-  addressLine2: String(item.addressLine2 || '').trim(),
-  contactName: String(item.contactName || '').trim(),
-  phone: String(item.phone || '').trim(),
-  // Coords — stored for fast map navigation without geocoding
-  latitude: item.latitude ? Number(item.latitude) : null,
-  longitude: item.longitude ? Number(item.longitude) : null,
-  isDefault: Boolean(item.isDefault),
-});
+const normalizeAddress = (item = {}) => {
+  const rawAddr = String(item.address || '').trim();
+  const rawLine1 = String(item.addressLine1 || '').trim();
+  const rawLine2 = String(item.addressLine2 || '').trim();
+  const cleanLine1 = rawLine1.toLowerCase() === rawAddr.toLowerCase() ? '' : rawLine1;
+  const rawUnitFloor = String(item.unitFloor || '').trim();
+  const cleanUnitFloor = rawUnitFloor.toLowerCase() === rawAddr.toLowerCase() ? '' : rawUnitFloor;
+  const combinedUnitFloor = [cleanLine1, rawLine2].filter(Boolean).join(', ') || cleanUnitFloor;
+
+  return {
+    id: String(item.id || Date.now()),
+    label: String(item.label || '').trim(),
+    address: rawAddr,
+    unitFloor: combinedUnitFloor,
+    addressLine1: cleanLine1,
+    addressLine2: rawLine2,
+    contactName: String(item.contactName || '').trim(),
+    phone: String(item.phone || '').trim(),
+    latitude: item.latitude ? Number(item.latitude) : null,
+    longitude: item.longitude ? Number(item.longitude) : null,
+    isDefault: Boolean(item.isDefault),
+  };
+};
 
 const ensureSingleDefault = (items = []) => {
   const normalized = items.map(normalizeAddress).filter((e) => e.label && e.address);
@@ -54,9 +62,10 @@ export const saveOrUpdateDefaultAddress = async (entry = {}) => {
   const addressText = String(entry.address || '').trim();
   if (!addressText) return addresses;
 
-  const line1 = String(entry.addressLine1 || '').trim();
+  const rawLine1 = String(entry.addressLine1 || '').trim();
+  const line1 = rawLine1.toLowerCase() === addressText.toLowerCase() ? '' : rawLine1;
   const line2 = String(entry.addressLine2 || '').trim();
-  const combinedUnitFloor = String(entry.unitFloor || [line1, line2].filter(Boolean).join(', ')).trim();
+  const combinedUnitFloor = [line1, line2].filter(Boolean).join(', ');
 
   const defaultIndex = addresses.findIndex((e) => e.isDefault);
   if (defaultIndex >= 0) {
@@ -67,7 +76,7 @@ export const saveOrUpdateDefaultAddress = async (entry = {}) => {
             address: addressText,
             addressLine1: line1,
             addressLine2: line2,
-            unitFloor: combinedUnitFloor || item.unitFloor,
+            unitFloor: combinedUnitFloor,
           }
         : item
     );

@@ -45,26 +45,42 @@ const EditProfileScreen = ({ navigation }) => {
 
   useEffect(() => {
     let isMounted = true;
-    setForm((prev) => ({
-      ...prev,
-      fullName: user?.fullName || '',
-      phone: user?.phone || '',
-      email: user?.email || '',
-      profileImageUrl: user?.profileImageUrl || '',
-      address: user?.address || prev.address || '',
-      addressLine1: user?.addressLine1 || prev.addressLine1 || '',
-      addressLine2: user?.addressLine2 || prev.addressLine2 || '',
-    }));
+    const initialAddr = String(user?.address || '').trim();
+    const initialRawLine1 = String(user?.addressLine1 || '').trim();
+    const initialLine1 = initialRawLine1.toLowerCase() === initialAddr.toLowerCase() ? '' : initialRawLine1;
+    const initialLine2 = String(user?.addressLine2 || '').trim();
+
+    setForm((prev) => {
+      const prevAddr = String(initialAddr || prev.address || '').trim();
+      const prevLine1 = String(initialLine1 || prev.addressLine1 || '').trim();
+      const cleanPrevLine1 = prevLine1.toLowerCase() === prevAddr.toLowerCase() ? '' : prevLine1;
+      return {
+        ...prev,
+        fullName: user?.fullName || '',
+        phone: user?.phone || '',
+        email: user?.email || '',
+        profileImageUrl: user?.profileImageUrl || '',
+        address: prevAddr,
+        addressLine1: cleanPrevLine1,
+        addressLine2: initialLine2 || prev.addressLine2 || '',
+      };
+    });
 
     getDefaultSavedAddress()
       .then((def) => {
         if (isMounted && def) {
-          setForm((prev) => ({
-            ...prev,
-            address: user?.address || prev.address || def.address || '',
-            addressLine1: user?.addressLine1 || prev.addressLine1 || def.addressLine1 || def.unitFloor || '',
-            addressLine2: user?.addressLine2 || prev.addressLine2 || def.addressLine2 || '',
-          }));
+          setForm((prev) => {
+            const finalAddr = String(user?.address || prev.address || def.address || '').trim();
+            const rawLine1 = String(user?.addressLine1 || prev.addressLine1 || def.addressLine1 || '').trim();
+            const cleanLine1 = rawLine1.toLowerCase() === finalAddr.toLowerCase() ? '' : rawLine1;
+            const cleanLine2 = String(user?.addressLine2 || prev.addressLine2 || def.addressLine2 || '').trim();
+            return {
+              ...prev,
+              address: finalAddr,
+              addressLine1: cleanLine1,
+              addressLine2: cleanLine2,
+            };
+          });
         }
       })
       .catch(() => {});
@@ -195,24 +211,36 @@ const EditProfileScreen = ({ navigation }) => {
   };
 
   const handleCancelEdit = () => {
+    const finalAddr = String(user?.address || '').trim();
+    const userLine1 = String(user?.addressLine1 || '').trim();
+    const cleanLine1 = userLine1.toLowerCase() === finalAddr.toLowerCase() ? '' : userLine1;
+    const cleanLine2 = String(user?.addressLine2 || '').trim();
+
     setForm({
       fullName: user?.fullName || '',
       phone: user?.phone || '',
       email: user?.email || '',
       profileImageUrl: user?.profileImageUrl || '',
-      address: user?.address || '',
-      addressLine1: user?.addressLine1 || '',
-      addressLine2: user?.addressLine2 || '',
+      address: finalAddr,
+      addressLine1: cleanLine1,
+      addressLine2: cleanLine2,
     });
+
     getDefaultSavedAddress()
       .then((def) => {
         if (def) {
-          setForm((prev) => ({
-            ...prev,
-            address: user?.address || def.address || '',
-            addressLine1: user?.addressLine1 || def.addressLine1 || def.unitFloor || '',
-            addressLine2: user?.addressLine2 || def.addressLine2 || '',
-          }));
+          setForm((prev) => {
+            const defAddr = String(user?.address || def.address || '').trim();
+            const rawLine1 = String(user?.addressLine1 || def.addressLine1 || '').trim();
+            const fLine1 = rawLine1.toLowerCase() === defAddr.toLowerCase() ? '' : rawLine1;
+            const fLine2 = String(user?.addressLine2 || def.addressLine2 || '').trim();
+            return {
+              ...prev,
+              address: defAddr,
+              addressLine1: fLine1,
+              addressLine2: fLine2,
+            };
+          });
         }
       })
       .catch(() => {});

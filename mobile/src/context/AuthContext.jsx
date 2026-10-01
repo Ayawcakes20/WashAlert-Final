@@ -300,23 +300,30 @@ const resolveMobileRole = (profile = {}) => {
   return '';
 };
 
-const mapSessionProfile = (profile, fallback = null) => ({
-  id: String(profile.id),
-  fullName: profile.fullName || 'WashAlert User',
-  email: profile.email || '',
-  phone: profile.mobileNumber || profile.phone || fallback?.phone || '',
-  profileImageUrl: profile.profileImageUrl || fallback?.profileImageUrl || '',
-  role: resolveMobileRole(profile),
-  status: String(profile.status || '').toLowerCase(),
-  backendRole: profile.role || '',
-  allowedModules: profile.allowedModules || [],
-  platform: profile.platform || 'MOBILE',
-  branch: profile.branch || '',
-  mustChangePassword: Boolean(profile.mustChangePassword),
-  address: profile.address || fallback?.address || '',
-  addressLine1: profile.addressLine1 || fallback?.addressLine1 || '',
-  addressLine2: profile.addressLine2 || fallback?.addressLine2 || '',
-});
+const mapSessionProfile = (profile, fallback = null) => {
+  const rawAddr = profile.address || fallback?.address || '';
+  const rawLine1 = profile.addressLine1 || fallback?.addressLine1 || '';
+  const cleanLine1 = rawLine1 && rawAddr && rawLine1.trim().toLowerCase() === rawAddr.trim().toLowerCase() ? '' : rawLine1;
+  const rawLine2 = profile.addressLine2 || fallback?.addressLine2 || '';
+
+  return {
+    id: String(profile.id),
+    fullName: profile.fullName || 'WashAlert User',
+    email: profile.email || '',
+    phone: profile.mobileNumber || profile.phone || fallback?.phone || '',
+    profileImageUrl: profile.profileImageUrl || fallback?.profileImageUrl || '',
+    role: resolveMobileRole(profile),
+    status: String(profile.status || '').toLowerCase(),
+    backendRole: profile.role || '',
+    allowedModules: profile.allowedModules || [],
+    platform: profile.platform || 'MOBILE',
+    branch: profile.branch || '',
+    mustChangePassword: Boolean(profile.mustChangePassword),
+    address: rawAddr,
+    addressLine1: cleanLine1,
+    addressLine2: rawLine2,
+  };
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -349,10 +356,13 @@ export const AuthProvider = ({ children }) => {
                 const def = await getDefaultSavedAddress();
                 if (def?.address) {
                   mapped.address = def.address;
-                  mapped.addressLine1 = def.addressLine1 || def.unitFloor || '';
+                  const defLine1 = def.addressLine1 || '';
+                  mapped.addressLine1 = defLine1.toLowerCase() === def.address.toLowerCase() ? '' : defLine1;
                   mapped.addressLine2 = def.addressLine2 || '';
                 }
               } catch {}
+            } else if (mapped.addressLine1 && mapped.address && mapped.addressLine1.trim().toLowerCase() === mapped.address.trim().toLowerCase()) {
+              mapped.addressLine1 = '';
             }
             setUser(mapped);
             await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(mapped));
@@ -455,10 +465,13 @@ export const AuthProvider = ({ children }) => {
           const def = await getDefaultSavedAddress();
           if (def?.address) {
             mapped.address = def.address;
-            mapped.addressLine1 = def.addressLine1 || def.unitFloor || '';
+            const defLine1 = def.addressLine1 || '';
+            mapped.addressLine1 = defLine1.toLowerCase() === def.address.toLowerCase() ? '' : defLine1;
             mapped.addressLine2 = def.addressLine2 || '';
           }
         } catch {}
+      } else if (mapped.addressLine1 && mapped.address && mapped.addressLine1.trim().toLowerCase() === mapped.address.trim().toLowerCase()) {
+        mapped.addressLine1 = '';
       }
       setUser(mapped);
       await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(mapped));
@@ -477,12 +490,16 @@ export const AuthProvider = ({ children }) => {
     const normalizedEmail = normalizeEmail(data.email);
     try {
       if (data.address && data.address.trim()) {
+        const addrText = data.address.trim();
+        const line1 = (data.addressLine1 || '').trim();
+        const cleanLine1 = line1.toLowerCase() === addrText.toLowerCase() ? '' : line1;
+        const line2 = (data.addressLine2 || '').trim();
         const defaultEntry = {
           label: 'Home',
-          address: data.address.trim(),
-          addressLine1: (data.addressLine1 || '').trim(),
-          addressLine2: (data.addressLine2 || '').trim(),
-          unitFloor: [(data.addressLine1 || '').trim(), (data.addressLine2 || '').trim()].filter(Boolean).join(', '),
+          address: addrText,
+          addressLine1: cleanLine1,
+          addressLine2: line2,
+          unitFloor: [cleanLine1, line2].filter(Boolean).join(', '),
           isDefault: true,
         };
         await saveOrUpdateDefaultAddress(defaultEntry).catch(() => {});
@@ -684,7 +701,8 @@ export const AuthProvider = ({ children }) => {
           const parsed = JSON.parse(pendingJson);
           if (parsed?.address) {
             mapped.address = parsed.address;
-            mapped.addressLine1 = parsed.addressLine1 || '';
+            const pLine1 = parsed.addressLine1 || '';
+            mapped.addressLine1 = pLine1.toLowerCase() === parsed.address.toLowerCase() ? '' : pLine1;
             mapped.addressLine2 = parsed.addressLine2 || '';
             await saveOrUpdateDefaultAddress(parsed).catch(() => {});
           }
@@ -697,10 +715,13 @@ export const AuthProvider = ({ children }) => {
           const def = await getDefaultSavedAddress();
           if (def?.address) {
             mapped.address = def.address;
-            mapped.addressLine1 = def.addressLine1 || def.unitFloor || '';
+            const defLine1 = def.addressLine1 || '';
+            mapped.addressLine1 = defLine1.toLowerCase() === def.address.toLowerCase() ? '' : defLine1;
             mapped.addressLine2 = def.addressLine2 || '';
           }
         } catch {}
+      } else if (mapped.addressLine1 && mapped.address && mapped.addressLine1.trim().toLowerCase() === mapped.address.trim().toLowerCase()) {
+        mapped.addressLine1 = '';
       }
 
       setUser(mapped);
